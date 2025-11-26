@@ -10,7 +10,7 @@ kotlinxSerializationJson = "1.7.3"
 kotlinxCoroutines = "1.9.0"
 
 # Testing
-mockk = "1.13.13"
+mockk = "1.14.6"
 
 # plugins
 changelog = "2.4.0"
