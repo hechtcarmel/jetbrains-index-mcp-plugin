@@ -54,8 +54,7 @@ data class ResourceContent(
 @Serializable
 data class ServerInfo(
     val name: String,
-    val version: String,
-    val protocolVersion: String = "2024-11-05"
+    val version: String
 )
 
 @Serializable

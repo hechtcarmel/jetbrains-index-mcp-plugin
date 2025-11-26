@@ -1,3 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 13 13">
-  <circle cx="6.5" cy="6.5" r="5" fill="#E05555"/>
+  <defs>
+    <linearGradient id="errorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F87171"/>
+      <stop offset="100%" style="stop-color:#EF4444"/>
+    </linearGradient>
+  </defs>
+  <circle cx="6.5" cy="6.5" r="5" fill="url(#errorGrad)"/>
+  <line x1="4.5" y1="4.5" x2="8.5" y2="8.5" stroke="#FFFFFF" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="8.5" y1="4.5" x2="4.5" y2="8.5" stroke="#FFFFFF" stroke-width="1.2" stroke-linecap="round"/>
 </svg>
