@@ -14,7 +14,7 @@ mockk = "1.13.13"
 
 # plugins
 changelog = "2.4.0"
-intelliJPlatform = "2.9.0"
+intelliJPlatform = "2.10.5"
 kotlin = "2.1.20"
 kotlinSerialization = "2.1.20"
 kover = "0.9.1"
