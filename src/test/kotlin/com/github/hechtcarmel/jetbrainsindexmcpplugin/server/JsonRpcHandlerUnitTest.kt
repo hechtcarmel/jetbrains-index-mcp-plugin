@@ -59,6 +59,11 @@ class JsonRpcHandlerUnitTest : TestCase() {
 
         val serverInfo = result["serverInfo"]!!.jsonObject
         assertEquals("intellij-index-mcp", serverInfo["name"]?.jsonPrimitive?.content)
+        assertNotNull("serverInfo should contain description", serverInfo["description"])
+        assertTrue(
+            "description should mention code intelligence",
+            serverInfo["description"]?.jsonPrimitive?.content?.contains("code intelligence") == true
+        )
     }
 
     fun testToolsListRequest() = runBlocking {

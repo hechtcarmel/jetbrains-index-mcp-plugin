@@ -60,6 +60,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
         val serverInfo = result["serverInfo"]!!.jsonObject
         assertEquals("intellij-index-mcp", serverInfo["name"]?.jsonPrimitive?.content)
+        assertNotNull("serverInfo should contain description", serverInfo["description"])
+        assertTrue(
+            "description should mention refactoring",
+            serverInfo["description"]?.jsonPrimitive?.content?.contains("refactoring") == true
+        )
     }
 
     fun testInitializedEndpoint() = runBlocking {

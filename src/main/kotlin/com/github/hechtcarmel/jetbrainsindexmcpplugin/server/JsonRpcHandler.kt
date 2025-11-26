@@ -65,7 +65,8 @@ class JsonRpcHandler(
             protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
             serverInfo = ServerInfo(
                 name = McpConstants.SERVER_NAME,
-                version = McpConstants.SERVER_VERSION
+                version = McpConstants.SERVER_VERSION,
+                description = McpConstants.SERVER_DESCRIPTION
             ),
             capabilities = ServerCapabilities(
                 tools = ToolCapability(listChanged = false),
