@@ -25,7 +25,7 @@ data class FindUsagesResult(
     val totalCount: Int
 )
 
-// go_to_definition output
+// find_definition output
 @Serializable
 data class DefinitionResult(
     val file: String,

@@ -10,7 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetSymb
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.GoToDefinitionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetDependenciesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetFileStructureTool
@@ -52,8 +52,8 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         assertTrue("Should error with invalid file", resultInvalid.isError)
     }
 
-    fun testGoToDefinitionToolEndToEnd() = runBlocking {
-        val tool = GoToDefinitionTool()
+    fun testFindDefinitionToolEndToEnd() = runBlocking {
+        val tool = FindDefinitionTool()
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
@@ -269,7 +269,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
 
         val expectedTools = listOf(
             "find_usages",
-            "go_to_definition",
+            "find_definition",
             "type_hierarchy",
             "call_hierarchy",
             "find_implementations",

@@ -17,13 +17,13 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-class GoToDefinitionTool : AbstractMcpTool() {
+class FindDefinitionTool : AbstractMcpTool() {
 
-    override val name = "go_to_definition"
+    override val name = "find_definition"
 
     override val description = """
-        Navigate to the definition of a symbol. Returns the file path, line number,
-        and a code preview of the definition.
+        Find the definition of a symbol at a given location. Returns the file path,
+        line number, column, and a code preview of the definition.
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

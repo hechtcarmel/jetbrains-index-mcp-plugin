@@ -27,7 +27,9 @@ data class CommandFilter(
     val toolName: String? = null,
     val status: CommandStatus? = null,
     val searchText: String? = null
-)
+) {
+    fun isEmpty(): Boolean = toolName == null && status == null && searchText == null
+}
 
 @Serializable
 data class CommandEntryExport(

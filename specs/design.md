@@ -235,7 +235,7 @@ src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/
 │   │
 │   ├── navigation/                        # Navigation tools
 │   │   ├── FindUsagesTool.kt
-│   │   ├── GoToDefinitionTool.kt
+│   │   ├── FindDefinitionTool.kt
 │   │   ├── TypeHierarchyTool.kt
 │   │   ├── CallHierarchyTool.kt
 │   │   └── FindImplementationsTool.kt
@@ -683,7 +683,7 @@ data class FindUsagesResult(
     val totalCount: Int
 )
 
-// go_to_definition output
+// find_definition output
 @Serializable
 data class DefinitionResult(
     val file: String,
@@ -1035,7 +1035,7 @@ class FindUsagesTool : AbstractMcpTool() {
 fun registerBuiltInTools(project: Project) {
     // Navigation tools
     register(FindUsagesTool())
-    register(GoToDefinitionTool())
+    register(FindDefinitionTool())
     register(TypeHierarchyTool())
     register(CallHierarchyTool())
     register(FindImplementationsTool())
@@ -1642,7 +1642,7 @@ src/test/kotlin/
 ├── tools/
 │   ├── navigation/
 │   │   ├── FindUsagesToolTest.kt
-│   │   └── GoToDefinitionToolTest.kt
+│   │   └── FindDefinitionToolTest.kt
 │   └── refactoring/
 │       └── RenameSymbolToolTest.kt
 │

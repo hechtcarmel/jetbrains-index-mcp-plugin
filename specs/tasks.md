@@ -13,6 +13,7 @@
 | `[~]` | In progress |
 | `[x]` | Completed |
 | `[!]` | Blocked |
+| `[B]` | Backlog (skipped for now) |
 
 ---
 
@@ -72,7 +73,7 @@
   - `PositionInput.kt` - Common file/line/column input
   - `UsageLocation.kt` - Usage search result
   - `FindUsagesResult.kt` - find_usages output
-  - `DefinitionResult.kt` - go_to_definition output
+  - `DefinitionResult.kt` - find_definition output
   - `SymbolInfoResult.kt` - get_symbol_info output
 
 ### 1.3 McpRequestHandler (HTTP+SSE Transport)
@@ -172,14 +173,14 @@
   - Test class usage finding
   - Test no usages case
 
-- [x] **TASK-022**: Implement `GoToDefinitionTool.kt`
+- [x] **TASK-022**: Implement `FindDefinitionTool.kt`
   - Define input schema (file, line, column, project_path)
   - Implement reference resolution
   - Navigate to declaration element
   - Extract file, line, column from target
   - Generate code preview
 
-- [x] **TASK-023**: Write integration tests for GoToDefinitionTool
+- [x] **TASK-023**: Write integration tests for FindDefinitionTool
   - Test method definition navigation
   - Test class definition navigation
   - Test field definition navigation
@@ -310,105 +311,105 @@
 
 ### 2.1 Additional Navigation Tools
 
-- [ ] **TASK-041**: Implement `TypeHierarchyTool.kt`
+- [x] **TASK-041**: Implement `TypeHierarchyTool.kt`
   - Define input schema (file, line, column, optional className)
   - Resolve class element
   - Use `HierarchyProvider` to get type hierarchy
   - Extract supertypes and subtypes
   - Return `TypeHierarchyResult`
 
-- [ ] **TASK-042**: Write integration tests for TypeHierarchyTool
+- [B] **TASK-042**: Write integration tests for TypeHierarchyTool
   - Test class hierarchy extraction
   - Test interface hierarchy
   - Test with multiple inheritance levels
 
-- [ ] **TASK-043**: Implement `CallHierarchyTool.kt`
+- [x] **TASK-043**: Implement `CallHierarchyTool.kt`
   - Define input schema (file, line, column, direction)
   - Resolve method element
   - Use `CallerMethodsTreeStructure` for callers
   - Use `CalleeMethodsTreeStructure` for callees
   - Return tree structure as `CallHierarchyResult`
 
-- [ ] **TASK-044**: Write integration tests for CallHierarchyTool
+- [B] **TASK-044**: Write integration tests for CallHierarchyTool
   - Test caller hierarchy
   - Test callee hierarchy
   - Test with recursive calls
 
-- [ ] **TASK-045**: Implement `FindImplementationsTool.kt`
+- [x] **TASK-045**: Implement `FindImplementationsTool.kt`
   - Define input schema (file, line, column)
   - Resolve interface/abstract class/method
   - Use `DefinitionsScopedSearch` or `OverridingMethodsSearch`
   - Return list of implementations
 
-- [ ] **TASK-046**: Write integration tests for FindImplementationsTool
+- [B] **TASK-046**: Write integration tests for FindImplementationsTool
   - Test interface implementations
   - Test abstract method implementations
   - Test overriding methods
 
 ### 2.2 Code Intelligence Tools
 
-- [ ] **TASK-047**: Implement `GetCompletionsTool.kt`
+- [x] **TASK-047**: Implement `GetCompletionsTool.kt`
   - Define input schema (file, line, column)
   - Use `CompletionService` API
   - Extract completion items
   - Return list of suggestions with type info
 
-- [ ] **TASK-048**: Write integration tests for GetCompletionsTool
+- [B] **TASK-048**: Write integration tests for GetCompletionsTool
   - Test method completion
   - Test variable completion
   - Test import completion
 
-- [ ] **TASK-049**: Implement `GetInspectionsTool.kt`
+- [x] **TASK-049**: Implement `GetInspectionsTool.kt`
   - Define input schema (file, optional startLine, endLine)
   - Use `InspectionManager` to run inspections
   - Extract problems with severity
   - Return list of problems
 
-- [ ] **TASK-050**: Write integration tests for GetInspectionsTool
+- [B] **TASK-050**: Write integration tests for GetInspectionsTool
   - Test error detection
   - Test warning detection
   - Test range-limited inspection
 
-- [ ] **TASK-051**: Implement `GetQuickFixesTool.kt`
+- [x] **TASK-051**: Implement `GetQuickFixesTool.kt`
   - Define input schema (file, line, column)
   - Resolve problems at position
   - Extract available quick fixes
   - Generate unique fix IDs
   - Return list of applicable fixes
 
-- [ ] **TASK-052**: Write integration tests for GetQuickFixesTool
+- [B] **TASK-052**: Write integration tests for GetQuickFixesTool
   - Test quick fix discovery
   - Test fix ID generation
 
-- [ ] **TASK-053**: Implement `ApplyQuickFixTool.kt`
+- [x] **TASK-053**: Implement `ApplyQuickFixTool.kt`
   - Define input schema (file, line, column, fixId)
   - Locate the quick fix by ID
   - Apply fix using `WriteCommandAction`
   - Return modified code or success message
 
-- [ ] **TASK-054**: Write integration tests for ApplyQuickFixTool
+- [B] **TASK-054**: Write integration tests for ApplyQuickFixTool
   - Test fix application
   - Test invalid fix ID handling
 
 ### 2.3 Project Structure Tools
 
-- [ ] **TASK-055**: Implement `GetFileStructureTool.kt`
+- [x] **TASK-055**: Implement `GetFileStructureTool.kt`
   - Define input schema (file)
   - Parse PSI tree of file
   - Extract classes, methods, fields
   - Return hierarchical structure
 
-- [ ] **TASK-056**: Write integration tests for GetFileStructureTool
+- [B] **TASK-056**: Write integration tests for GetFileStructureTool
   - Test Java file structure
   - Test Kotlin file structure
   - Test nested class extraction
 
-- [ ] **TASK-057**: Implement `GetProjectStructureTool.kt`
+- [x] **TASK-057**: Implement `GetProjectStructureTool.kt`
   - Use `ModuleManager` to get modules
   - Extract source roots for each module
   - Return project structure tree
 
-- [ ] **TASK-058**: Implement `GetDependenciesTool.kt`
+- [x] **TASK-058**: Implement `GetDependenciesTool.kt`
   - Use `OrderEnumerator` to get libraries
   - Extract library names and versions
   - Return dependency list
@@ -433,12 +434,12 @@
   - URI: `project://structure`
   - Return project module tree as JSON
 
-- [ ] **TASK-063**: Implement `FileContentResource.kt`
+- [x] **TASK-063**: Implement `FileContentResource.kt`
   - URI pattern: `file://content/{path}`
   - Read file content
   - Return with metadata
 
-- [ ] **TASK-064**: Implement `SymbolInfoResource.kt`
+- [x] **TASK-064**: Implement `SymbolInfoResource.kt`
   - URI pattern: `symbol://info/{fqn}`
   - Resolve symbol by fully qualified name
   - Return symbol information
@@ -452,26 +453,28 @@
 
 ### 2.5 Full Command History UI
 
-- [ ] **TASK-067**: Implement `CommandHistoryPanel.kt`
+- [x] **TASK-067**: Implement `CommandHistoryPanel.kt`
   - Create JBList with custom model
   - Implement `CommandHistoryListener`
   - Handle selection events
   - Implement auto-scroll behavior
+  - *Note: Implemented as part of McpToolWindowPanel*
 
-- [ ] **TASK-068**: Implement `CommandListCellRenderer.kt`
+- [x] **TASK-068**: Implement `CommandListCellRenderer.kt`
   - Display timestamp
   - Display tool name (bold)
   - Display status with color coding
   - Support expand/collapse indicator
 
-- [ ] **TASK-069**: Implement `CommandDetailPanel.kt`
+- [x] **TASK-069**: Implement `CommandDetailPanel.kt`
   - Create split panel layout
   - Add JSON viewer for request
   - Add JSON viewer for response
   - Display execution duration
   - Display affected files (if any)
+  - *Note: Implemented as part of McpToolWindowPanel*
 
-- [ ] **TASK-070**: Implement `FilterToolbar.kt`
+- [x] **TASK-070**: Implement `FilterToolbar.kt`
   - Add tool name filter (ComboBox)
   - Add status filter (ComboBox)
   - Add search field
@@ -496,21 +499,21 @@
   - Show confirmation dialog
   - Clear history on confirm
 
-- [ ] **TASK-075**: Update McpToolWindowPanel with full UI
+- [x] **TASK-075**: Update McpToolWindowPanel with full UI
   - Integrate ServerStatusPanel
   - Integrate FilterToolbar
   - Integrate CommandHistoryPanel
   - Integrate CommandDetailPanel with splitter
 
-### 2.6 Integration Tests
+### 2.6 Integration Tests (Backlog)
 
-- [ ] **TASK-076**: Create `McpServerIntegrationTest.kt`
+- [B] **TASK-076**: Create `McpServerIntegrationTest.kt`
   - Test full server startup
   - Test tools/list endpoint
   - Test tools/call endpoint
   - Test resources/list endpoint
 
-- [ ] **TASK-077**: Create `ToolExecutionIntegrationTest.kt`
+- [B] **TASK-077**: Create `ToolExecutionIntegrationTest.kt`
   - Test each navigation tool end-to-end
   - Test each intelligence tool end-to-end
   - Test error scenarios
@@ -785,13 +788,13 @@
 
 ### Task Count by Phase
 
-| Phase | Task Count | Completed | Status |
-|-------|------------|-----------|--------|
-| Phase 1: Foundation | 40 tasks | 40 | **Complete** |
-| Phase 2: Navigation & Intelligence | 37 tasks | 10 | In Progress |
-| Phase 3: Refactoring Operations | 20 tasks | 0 | Not Started |
-| Phase 4: Polish & Extensions | 24 tasks | 0 | Not Started |
-| **Total** | **121 tasks** | **50** | |
+| Phase | Task Count | Completed | Backlog | Status |
+|-------|------------|-----------|---------|--------|
+| Phase 1: Foundation | 40 tasks | 40 | 0 | **Complete** |
+| Phase 2: Navigation & Intelligence | 37 tasks | 27 | 10 | **Complete** (backlog items are test tasks) |
+| Phase 3: Refactoring Operations | 20 tasks | 0 | 0 | Not Started |
+| Phase 4: Polish & Extensions | 24 tasks | 0 | 0 | Not Started |
+| **Total** | **121 tasks** | **67** | **10** | |
 
 ### Critical Path
 

@@ -151,7 +151,7 @@ class CommandHistoryServiceTest : BasePlatformTestCase() {
             parameters = buildJsonObject { }
         ))
         historyService.recordCommand(CommandEntry(
-            toolName = "go_to_definition",
+            toolName = "find_definition",
             parameters = buildJsonObject { }
         ))
 

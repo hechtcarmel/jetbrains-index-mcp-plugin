@@ -54,9 +54,9 @@ class CommandHistoryUnitTest : TestCase() {
     }
 
     fun testCommandFilterCombined() {
-        val filter = CommandFilter(toolName = "go_to_definition", status = CommandStatus.SUCCESS)
+        val filter = CommandFilter(toolName = "find_definition", status = CommandStatus.SUCCESS)
 
-        assertEquals("go_to_definition", filter.toolName)
+        assertEquals("find_definition", filter.toolName)
         assertEquals(CommandStatus.SUCCESS, filter.status)
     }
 

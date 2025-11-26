@@ -126,7 +126,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
         val expectedNavigationTools = listOf(
             "find_usages",
-            "go_to_definition",
+            "find_definition",
             "type_hierarchy",
             "call_hierarchy",
             "find_implementations"

@@ -52,8 +52,8 @@ class McpPluginUnitTest : TestCase() {
         val findUsagesTool = registry.getTool("find_usages")
         assertNotNull("find_usages tool should be registered", findUsagesTool)
 
-        val goToDefTool = registry.getTool("go_to_definition")
-        assertNotNull("go_to_definition tool should be registered", goToDefTool)
+        val goToDefTool = registry.getTool("find_definition")
+        assertNotNull("find_definition tool should be registered", goToDefTool)
 
         val indexStatusTool = registry.getTool("get_index_status")
         assertNotNull("get_index_status tool should be registered", indexStatusTool)

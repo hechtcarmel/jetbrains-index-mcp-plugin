@@ -237,7 +237,7 @@ Tests are split into two categories to optimize execution time:
 
 2. **Navigation**
    - `find_usages` - Find all usages of a symbol
-   - `go_to_definition` - Navigate to symbol definition
+   - `find_definition` - Find symbol definition location
    - `type_hierarchy` - Get type hierarchy for a class
    - `call_hierarchy` - Get call hierarchy for a method
 

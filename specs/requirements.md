@@ -80,7 +80,7 @@
 | NAV-008 | Each usage location SHALL contain: `context` (string, code snippet) |
 | NAV-009 | Each usage location SHALL contain: `type` (string, e.g., METHOD_CALL) |
 
-#### 3.1.2 go_to_definition
+#### 3.1.2 find_definition
 
 | ID | Requirement |
 |----|-------------|
@@ -432,7 +432,7 @@
 | PH1-001 | Phase 1 SHALL deliver: McpRequestHandler on IDE built-in web server at `/index-mcp` |
 | PH1-002 | Phase 1 SHALL deliver: Tool registry and JSON-RPC routing |
 | PH1-003 | Phase 1 SHALL deliver: `find_usages` tool |
-| PH1-004 | Phase 1 SHALL deliver: `go_to_definition` tool |
+| PH1-004 | Phase 1 SHALL deliver: `find_definition` tool |
 | PH1-005 | Phase 1 SHALL deliver: `get_symbol_info` tool |
 | PH1-006 | Phase 1 SHALL deliver: Basic tool window with server URL and status |
 | PH1-007 | Phase 1 SHALL deliver: Unit tests for core functionality |

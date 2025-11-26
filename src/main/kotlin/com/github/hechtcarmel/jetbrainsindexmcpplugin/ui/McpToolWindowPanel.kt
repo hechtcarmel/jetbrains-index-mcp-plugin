@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.ui
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryListener
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
@@ -10,6 +11,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.JBSplitter
+import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBPanel
@@ -29,15 +31,29 @@ class McpToolWindowPanel(
 ) : JBPanel<McpToolWindowPanel>(BorderLayout()), Disposable, CommandHistoryListener {
 
     private val serverStatusPanel: ServerStatusPanel
+    private val filterToolbar: FilterToolbar
     private val historyListModel = DefaultListModel<CommandEntry>()
     private val historyList: JBList<CommandEntry>
     private val detailsArea: JBTextArea
     private val historyService: CommandHistoryService
+    private var currentFilter = CommandFilter()
 
     init {
+        // Header panel containing server status and filter toolbar
+        val headerPanel = JBPanel<JBPanel<*>>(BorderLayout())
+
         // Server status panel at top
         serverStatusPanel = ServerStatusPanel(project)
-        add(serverStatusPanel, BorderLayout.NORTH)
+        headerPanel.add(serverStatusPanel, BorderLayout.NORTH)
+
+        // Filter toolbar below status
+        filterToolbar = FilterToolbar { filter ->
+            currentFilter = filter
+            refreshHistory()
+        }
+        headerPanel.add(filterToolbar, BorderLayout.SOUTH)
+
+        add(headerPanel, BorderLayout.NORTH)
 
         // Create command history list
         historyList = JBList(historyListModel).apply {
@@ -78,7 +94,12 @@ class McpToolWindowPanel(
 
     private fun refreshHistory() {
         historyListModel.clear()
-        historyService.entries.forEach { historyListModel.addElement(it) }
+        val entries = if (currentFilter.isEmpty()) {
+            historyService.entries
+        } else {
+            historyService.getFilteredHistory(currentFilter)
+        }
+        entries.forEach { historyListModel.addElement(it) }
     }
 
     private fun showCommandDetails(entry: CommandEntry) {
@@ -244,5 +265,73 @@ class CommandListCellRenderer : ListCellRenderer<CommandEntry> {
         toolNameLabel.foreground = if (isSelected) list.selectionForeground else list.foreground
 
         return panel
+    }
+}
+
+class FilterToolbar(
+    private val onFilterChanged: (CommandFilter) -> Unit
+) : JBPanel<FilterToolbar>(FlowLayout(FlowLayout.LEFT, 8, 4)) {
+
+    private val toolNameComboBox: JComboBox<String>
+    private val statusComboBox: JComboBox<String>
+    private val searchField: SearchTextField
+
+    init {
+        border = JBUI.Borders.empty(4, 8)
+
+        // Tool name filter
+        add(JBLabel("Tool:"))
+        toolNameComboBox = JComboBox(arrayOf(
+            "All",
+            "find_usages",
+            "find_definition",
+            "type_hierarchy",
+            "call_hierarchy",
+            "find_implementations",
+            "get_symbol_info",
+            "get_completions",
+            "get_inspections",
+            "get_quick_fixes",
+            "apply_quick_fix",
+            "get_index_status",
+            "get_file_structure",
+            "get_project_structure",
+            "get_dependencies"
+        )).apply {
+            addActionListener { notifyFilterChanged() }
+        }
+        add(toolNameComboBox)
+
+        // Status filter
+        add(JBLabel("Status:"))
+        statusComboBox = JComboBox(arrayOf("All", "SUCCESS", "ERROR", "PENDING")).apply {
+            addActionListener { notifyFilterChanged() }
+        }
+        add(statusComboBox)
+
+        // Search field
+        add(JBLabel("Search:"))
+        searchField = SearchTextField().apply {
+            textEditor.columns = 15
+            addDocumentListener(object : com.intellij.ui.DocumentAdapter() {
+                override fun textChanged(e: javax.swing.event.DocumentEvent) {
+                    notifyFilterChanged()
+                }
+            })
+        }
+        add(searchField)
+    }
+
+    private fun notifyFilterChanged() {
+        val toolName = toolNameComboBox.selectedItem as? String
+        val status = statusComboBox.selectedItem as? String
+        val searchText = searchField.text.takeIf { it.isNotBlank() }
+
+        val filter = CommandFilter(
+            toolName = if (toolName == "All") null else toolName,
+            status = if (status == "All") null else CommandStatus.valueOf(status!!),
+            searchText = searchText
+        )
+        onFilterChanged(filter)
     }
 }

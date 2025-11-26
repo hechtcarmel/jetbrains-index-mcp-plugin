@@ -8,7 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetSymb
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.GoToDefinitionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetDependenciesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetFileStructureTool
@@ -49,10 +49,10 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have required array", required)
     }
 
-    fun testGoToDefinitionToolSchema() {
-        val tool = GoToDefinitionTool()
+    fun testFindDefinitionToolSchema() {
+        val tool = FindDefinitionTool()
 
-        assertEquals("go_to_definition", tool.name)
+        assertEquals("find_definition", tool.name)
         assertNotNull(tool.description)
 
         val schema = tool.inputSchema
@@ -244,7 +244,7 @@ class ToolsUnitTest : TestCase() {
         val expectedTools = listOf(
             // Navigation tools
             "find_usages",
-            "go_to_definition",
+            "find_definition",
             "type_hierarchy",
             "call_hierarchy",
             "find_implementations",
