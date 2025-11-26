@@ -22,53 +22,53 @@
 
 ### 1.1 Project Setup & Dependencies
 
-- [ ] **TASK-001**: Update `gradle/libs.versions.toml` with new dependencies
+- [x] **TASK-001**: Update `gradle/libs.versions.toml` with new dependencies
   - Add MCP Kotlin SDK version
   - Add Ktor versions (server-core, server-netty, content-negotiation, serialization)
   - Add kotlinx-serialization-json version
   - Add kotlinx-coroutines-core version
   - Add MockK version for testing
 
-- [ ] **TASK-002**: Update `build.gradle.kts` with dependencies
+- [x] **TASK-002**: Update `build.gradle.kts` with dependencies
   - Add MCP SDK implementation dependency
   - Add Ktor server dependencies
   - Add serialization dependencies
   - Add coroutines dependencies
   - Add test dependencies
 
-- [ ] **TASK-003**: Update `plugin.xml` with basic configuration
+- [x] **TASK-003**: Update `plugin.xml` with basic configuration
   - Update plugin ID and name
   - Add `com.intellij.modules.platform` dependency
   - Add optional Java and Kotlin dependencies
   - Register project services
   - Register notification group
 
-- [ ] **TASK-004**: Create resource bundle `McpBundle.kt` and `McpBundle.properties`
+- [x] **TASK-004**: Create resource bundle `McpBundle.kt` and `McpBundle.properties`
   - Define message keys for UI strings
   - Add error messages
   - Add notification messages
 
 ### 1.2 Data Models
 
-- [ ] **TASK-005**: Create JSON-RPC data models in `server/models/`
+- [x] **TASK-005**: Create JSON-RPC data models in `server/models/`
   - `JsonRpcRequest.kt` - Request data class with serialization
   - `JsonRpcResponse.kt` - Response data class with serialization
   - `JsonRpcError.kt` - Error data class
   - `JsonRpcErrorCodes.kt` - Error code constants
 
-- [ ] **TASK-006**: Create MCP protocol models in `server/models/`
+- [x] **TASK-006**: Create MCP protocol models in `server/models/`
   - `ToolDefinition.kt` - Tool metadata for tools/list
   - `ToolCallResult.kt` - Tool execution result
   - `ContentBlock.kt` - Sealed class for text/image content
   - `ResourceDefinition.kt` - Resource metadata
   - `ResourceContent.kt` - Resource read result
 
-- [ ] **TASK-007**: Create command history models in `history/`
+- [x] **TASK-007**: Create command history models in `history/`
   - `CommandEntry.kt` - History entry data class
   - `CommandStatus.kt` - Status enum (PENDING, SUCCESS, ERROR)
   - `CommandFilter.kt` - Filter criteria data class
 
-- [ ] **TASK-008**: Create tool input/output models in `tools/models/`
+- [x] **TASK-008**: Create tool input/output models in `tools/models/`
   - `PositionInput.kt` - Common file/line/column input
   - `UsageLocation.kt` - Usage search result
   - `FindUsagesResult.kt` - find_usages output
@@ -77,19 +77,19 @@
 
 ### 1.3 McpRequestHandler (Built-in Web Server)
 
-- [ ] **TASK-009**: Implement `McpRequestHandler.kt`
+- [x] **TASK-009**: Implement `McpRequestHandler.kt`
   - Extend `HttpRequestHandler` from IntelliJ Platform
   - Implement `isSupported()` to match `/index-mcp` path
   - Implement `process()` to handle GET and POST requests
   - Inject `JsonRpcHandler` for request processing
 
-- [ ] **TASK-010**: Implement request/response handling
+- [x] **TASK-010**: Implement request/response handling
   - Handle POST requests - parse body, call JsonRpcHandler, return response
   - Handle GET requests - return server info / health check
   - Set correct content-type headers (application/json)
   - Handle errors gracefully with proper HTTP status codes
 
-- [ ] **TASK-011**: Write unit tests for McpRequestHandler
+- [x] **TASK-011**: Write unit tests for McpRequestHandler
   - Test GET health check response
   - Test POST JSON-RPC request handling
   - Test error responses
@@ -97,40 +97,42 @@
 
 ### 1.4 JSON-RPC Handler
 
-- [ ] **TASK-012**: Implement `JsonRpcHandler.kt`
+- [x] **TASK-012**: Implement `JsonRpcHandler.kt`
   - Implement `handleRequest()` - main entry point
   - Implement request parsing with error handling
   - Implement method routing
+  - **ADDED**: Multi-project resolution with `project_path` parameter
 
-- [ ] **TASK-013**: Implement MCP method handlers
+- [x] **TASK-013**: Implement MCP method handlers
   - Implement `processInitialize()` - return server info
   - Implement `processToolsList()` - return tool definitions
   - Implement `processToolCall()` - dispatch to tool
   - Implement `processResourcesList()` - return resource definitions
   - Implement `processResourceRead()` - read resource
 
-- [ ] **TASK-014**: Implement error response helpers
+- [x] **TASK-014**: Implement error response helpers
   - `createParseErrorResponse()`
   - `createInvalidRequestResponse()`
   - `createMethodNotFoundResponse()`
   - `createInvalidParamsResponse()`
   - `createInternalErrorResponse()`
 
-- [ ] **TASK-015**: Write unit tests for JsonRpcHandler
+- [x] **TASK-015**: Write unit tests for JsonRpcHandler
   - Test initialize response
   - Test tools/list response
   - Test tools/call routing
   - Test error responses
+  - **ADDED**: Multi-project resolution tests
 
 ### 1.5 Tool Infrastructure
 
-- [ ] **TASK-016**: Create `McpTool.kt` interface
+- [x] **TASK-016**: Create `McpTool.kt` interface
   - Define `name` property
   - Define `description` property
   - Define `inputSchema` property (JsonObject)
   - Define `execute()` suspend function
 
-- [ ] **TASK-017**: Create `AbstractMcpTool.kt` base class
+- [x] **TASK-017**: Create `AbstractMcpTool.kt` base class
   - Implement `requireSmartMode()` helper
   - Implement `readAction()` wrapper
   - Implement `writeAction()` wrapper
@@ -140,7 +142,7 @@
   - Implement `createErrorResult()` helper
   - Implement `createJsonResult()` helper
 
-- [ ] **TASK-018**: Implement `ToolRegistry.kt`
+- [x] **TASK-018**: Implement `ToolRegistry.kt`
   - Implement `register()` method
   - Implement `unregister()` method
   - Implement `getTool()` method
@@ -148,48 +150,48 @@
   - Implement `getToolDefinitions()` method
   - Implement `registerBuiltInTools()` method
 
-- [ ] **TASK-019**: Write unit tests for tool infrastructure
+- [x] **TASK-019**: Write unit tests for tool infrastructure
   - Test tool registration
   - Test tool lookup
   - Test tool definition generation
 
 ### 1.6 Navigation Tools (Phase 1)
 
-- [ ] **TASK-020**: Implement `FindUsagesTool.kt`
-  - Define input schema (file, line, column)
+- [x] **TASK-020**: Implement `FindUsagesTool.kt`
+  - Define input schema (file, line, column, project_path)
   - Implement position resolution
   - Implement `ReferencesSearch` usage
   - Map results to `UsageLocation` list
   - Classify usage types (METHOD_CALL, REFERENCE, etc.)
 
-- [ ] **TASK-021**: Write integration tests for FindUsagesTool
+- [x] **TASK-021**: Write integration tests for FindUsagesTool
   - Test Java method usage finding
   - Test Kotlin function usage finding
   - Test field usage finding
   - Test class usage finding
   - Test no usages case
 
-- [ ] **TASK-022**: Implement `GoToDefinitionTool.kt`
-  - Define input schema (file, line, column)
+- [x] **TASK-022**: Implement `GoToDefinitionTool.kt`
+  - Define input schema (file, line, column, project_path)
   - Implement reference resolution
   - Navigate to declaration element
   - Extract file, line, column from target
   - Generate code preview
 
-- [ ] **TASK-023**: Write integration tests for GoToDefinitionTool
+- [x] **TASK-023**: Write integration tests for GoToDefinitionTool
   - Test method definition navigation
   - Test class definition navigation
   - Test field definition navigation
   - Test external library navigation
 
-- [ ] **TASK-024**: Implement `GetSymbolInfoTool.kt`
-  - Define input schema (file, line, column)
+- [x] **TASK-024**: Implement `GetSymbolInfoTool.kt`
+  - Define input schema (file, line, column, project_path)
   - Resolve element at position
   - Extract symbol name
   - Extract symbol type
   - Extract documentation (from JavaDoc/KDoc)
 
-- [ ] **TASK-025**: Write integration tests for GetSymbolInfoTool
+- [x] **TASK-025**: Write integration tests for GetSymbolInfoTool
   - Test method info extraction
   - Test class info extraction
   - Test field info extraction
@@ -197,7 +199,7 @@
 
 ### 1.7 MCP Server Service
 
-- [ ] **TASK-026**: Implement `McpServerService.kt`
+- [x] **TASK-026**: Implement `McpServerService.kt`
   - Create as application-level service
   - Initialize ToolRegistry with built-in tools
   - Initialize ResourceRegistry
@@ -205,14 +207,14 @@
   - Implement `getServerUrl(project)` method using `BuiltInServerManager`
   - Implement `Disposable` for cleanup
 
-- [ ] **TASK-027**: Write unit tests for McpServerService
+- [x] **TASK-027**: Write unit tests for McpServerService
   - Test service creation
   - Test tool registry initialization
   - Test server URL generation
 
 ### 1.8 Command History Service (Basic)
 
-- [ ] **TASK-028**: Implement `CommandHistoryService.kt`
+- [x] **TASK-028**: Implement `CommandHistoryService.kt`
   - Create as project-level service
   - Maintain history list (thread-safe)
   - Implement `recordCommand()` method
@@ -220,13 +222,13 @@
   - Implement `clearHistory()` method
   - Implement history size limiting
 
-- [ ] **TASK-029**: Implement listener pattern
+- [x] **TASK-029**: Implement listener pattern
   - Define `CommandHistoryListener` interface
   - Implement `addListener()` method
   - Implement `removeListener()` method
   - Implement `notifyListeners()` private method
 
-- [ ] **TASK-030**: Write unit tests for CommandHistoryService
+- [x] **TASK-030**: Write unit tests for CommandHistoryService
   - Test command recording
   - Test status updates
   - Test history limiting
@@ -234,30 +236,30 @@
 
 ### 1.9 Basic GUI
 
-- [ ] **TASK-031**: Create `McpToolWindowFactory.kt`
+- [x] **TASK-031**: Create `McpToolWindowFactory.kt`
   - Implement `ToolWindowFactory` interface
   - Create tool window content
   - Configure toolbar actions
 
-- [ ] **TASK-032**: Create `McpToolWindowPanel.kt`
+- [x] **TASK-032**: Create `McpToolWindowPanel.kt`
   - Create main panel layout
   - Add server status section
   - Add placeholder for command history
 
-- [ ] **TASK-033**: Create `ServerStatusPanel.kt`
+- [x] **TASK-033**: Create `ServerStatusPanel.kt`
   - Display running/stopped status with icon
   - Display server URL when running
   - Display project name
   - Add "Copy URL" button functionality
 
-- [ ] **TASK-034**: Register tool window in plugin.xml
+- [x] **TASK-034**: Register tool window in plugin.xml
   - Configure anchor (bottom)
   - Configure icon
   - Configure factory class
 
 ### 1.10 Startup Activity
 
-- [ ] **TASK-035**: Implement `McpServerStartupActivity.kt`
+- [x] **TASK-035**: Implement `McpServerStartupActivity.kt`
   - Implement `ProjectActivity` interface
   - Auto-start server on project open
   - Handle startup errors gracefully
@@ -265,18 +267,18 @@
 
 ### 1.11 Utility Classes
 
-- [ ] **TASK-036**: Implement `PsiUtils.kt`
+- [x] **TASK-036**: Implement `PsiUtils.kt`
   - `findElementAtPosition()` helper
   - `getContainingClass()` helper
   - `getContainingMethod()` helper
   - `extractDocumentation()` helper
 
-- [ ] **TASK-037**: Implement `ProjectUtils.kt`
+- [x] **TASK-037**: Implement `ProjectUtils.kt`
   - `getRelativePath()` helper
   - `resolveProjectFile()` helper
   - `getProjectBasePath()` helper
 
-- [ ] **TASK-038**: Implement `ThreadingUtils.kt`
+- [x] **TASK-038**: Implement `ThreadingUtils.kt`
   - `readActionSuspend()` helper
   - `writeActionSuspend()` helper
   - `runOnEdt()` helper
@@ -284,7 +286,7 @@
 
 ### 1.12 Exception Handling
 
-- [ ] **TASK-039**: Create exception hierarchy in `exceptions/`
+- [x] **TASK-039**: Create exception hierarchy in `exceptions/`
   - `McpException` sealed base class
   - `ParseErrorException`
   - `InvalidRequestException`
@@ -295,7 +297,7 @@
   - `FileNotFoundException`
   - `SymbolNotFoundException`
 
-- [ ] **TASK-040**: Implement `ErrorResponseBuilder.kt`
+- [x] **TASK-040**: Implement `ErrorResponseBuilder.kt`
   - Map exceptions to JSON-RPC error responses
   - Include error codes and messages
 
@@ -410,23 +412,23 @@
   - Extract library names and versions
   - Return dependency list
 
-- [ ] **TASK-059**: Implement `GetIndexStatusTool.kt`
+- [x] **TASK-059**: Implement `GetIndexStatusTool.kt`
   - Check `DumbService.isDumb()`
   - Return dumb/smart mode status
 
 ### 2.4 Resource Providers
 
-- [ ] **TASK-060**: Create `McpResource.kt` interface
+- [x] **TASK-060**: Create `McpResource.kt` interface
   - Define `uri`, `name`, `description`, `mimeType` properties
   - Define `read()` suspend function
 
-- [ ] **TASK-061**: Implement `ResourceRegistry.kt`
+- [x] **TASK-061**: Implement `ResourceRegistry.kt`
   - Implement `register()` method
   - Implement `getResource()` method
   - Implement `getAllResources()` method
   - Implement `getResourceDefinitions()` method
 
-- [ ] **TASK-062**: Implement `ProjectStructureResource.kt`
+- [x] **TASK-062**: Implement `ProjectStructureResource.kt`
   - URI: `project://structure`
   - Return project module tree as JSON
 
@@ -440,11 +442,11 @@
   - Resolve symbol by fully qualified name
   - Return symbol information
 
-- [ ] **TASK-065**: Implement `IndexStatusResource.kt`
+- [x] **TASK-065**: Implement `IndexStatusResource.kt`
   - URI: `index://status`
   - Return indexing status
 
-- [ ] **TASK-066**: Write unit tests for resource providers
+- [x] **TASK-066**: Write unit tests for resource providers
   - Test each resource read operation
 
 ### 2.5 Full Command History UI
@@ -474,22 +476,22 @@
   - Add search field
   - Wire filters to CommandHistoryService
 
-- [ ] **TASK-071**: Update `CommandHistoryService.kt` with filtering
+- [x] **TASK-071**: Update `CommandHistoryService.kt` with filtering
   - Implement `getFilteredHistory()` method
   - Support tool name filter
   - Support status filter
   - Support text search
 
-- [ ] **TASK-072**: Implement export functionality
+- [x] **TASK-072**: Implement export functionality
   - Implement `exportToJson()` method
   - Implement `exportToCsv()` method
 
-- [ ] **TASK-073**: Create `ExportHistoryAction.kt`
+- [x] **TASK-073**: Create `ExportHistoryAction.kt`
   - Show file chooser dialog
   - Support JSON and CSV formats
   - Write export file
 
-- [ ] **TASK-074**: Create `ClearHistoryAction.kt`
+- [x] **TASK-074**: Create `ClearHistoryAction.kt`
   - Show confirmation dialog
   - Clear history on confirm
 
@@ -782,13 +784,13 @@
 
 ### Task Count by Phase
 
-| Phase | Task Count | Status |
-|-------|------------|--------|
-| Phase 1: Foundation | 40 tasks | Not Started |
-| Phase 2: Navigation & Intelligence | 37 tasks | Not Started |
-| Phase 3: Refactoring Operations | 20 tasks | Not Started |
-| Phase 4: Polish & Extensions | 24 tasks | Not Started |
-| **Total** | **121 tasks** | |
+| Phase | Task Count | Completed | Status |
+|-------|------------|-----------|--------|
+| Phase 1: Foundation | 40 tasks | 40 | **Complete** |
+| Phase 2: Navigation & Intelligence | 37 tasks | 10 | In Progress |
+| Phase 3: Refactoring Operations | 20 tasks | 0 | Not Started |
+| Phase 4: Polish & Extensions | 24 tasks | 0 | Not Started |
+| **Total** | **121 tasks** | **50** | |
 
 ### Critical Path
 
