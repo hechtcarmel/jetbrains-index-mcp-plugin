@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.actions
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowPanel
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -14,7 +15,7 @@ class RefreshAction : AnAction(
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
 
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Index MCP Server")
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(McpConstants.TOOL_WINDOW_ID)
         toolWindow?.contentManager?.contents?.forEach { content ->
             val component = content.component
             if (component is McpToolWindowPanel) {

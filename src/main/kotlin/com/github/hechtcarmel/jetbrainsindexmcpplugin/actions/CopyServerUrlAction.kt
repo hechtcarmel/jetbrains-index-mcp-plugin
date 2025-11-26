@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.actions
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -19,7 +20,7 @@ class CopyServerUrlAction : AnAction(
         CopyPasteManager.getInstance().setContents(StringSelection(url))
 
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("Index MCP Server")
+            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
             .createNotification(
                 McpBundle.message("notification.urlCopied"),
                 NotificationType.INFORMATION

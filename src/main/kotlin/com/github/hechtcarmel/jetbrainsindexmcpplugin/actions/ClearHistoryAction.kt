@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.actions
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -27,7 +28,7 @@ class ClearHistoryAction : AnAction(
             CommandHistoryService.getInstance(project).clearHistory()
 
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("Index MCP Server")
+                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
                     McpBundle.message("notification.historyCleared"),
                     NotificationType.INFORMATION

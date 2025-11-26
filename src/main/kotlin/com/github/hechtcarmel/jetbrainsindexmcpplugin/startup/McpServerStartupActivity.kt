@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.startup
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -26,9 +27,9 @@ class McpServerStartupActivity : ProjectActivity {
 
             // Show notification
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("Index MCP Server")
+                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
-                    "Index MCP Server",
+                    McpConstants.PLUGIN_NAME,
                     McpBundle.message("notification.serverStarted", serverUrl),
                     NotificationType.INFORMATION
                 )
@@ -38,9 +39,9 @@ class McpServerStartupActivity : ProjectActivity {
             LOG.error("Failed to start MCP Server", e)
 
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("Index MCP Server")
+                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
-                    "Index MCP Server",
+                    McpConstants.PLUGIN_NAME,
                     McpBundle.message("notification.serverError", e.message ?: "Unknown error"),
                     NotificationType.ERROR
                 )
