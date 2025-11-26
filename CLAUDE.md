@@ -147,10 +147,70 @@ Register in `plugin.xml`:
 
 ## Testing
 
-- Use `BasePlatformTestCase` for tests requiring IntelliJ platform
-- Place test data in `src/test/testData/`
-- Test both smart mode and dumb mode scenarios
-- Mock services where appropriate
+### Test Architecture
+
+Tests are split into two categories to optimize execution time:
+
+1. **Unit Tests (`*UnitTest.kt`)** - Extend `junit.framework.TestCase`
+   - Fast, no IntelliJ Platform initialization required
+   - Use for: serialization, schema validation, data classes, registries, pure logic
+   - Run with: `./gradlew test --tests "*UnitTest*"`
+
+2. **Platform Tests (`*Test.kt`)** - Extend `BasePlatformTestCase`
+   - Slower, requires full IntelliJ Platform with indexing
+   - Use for: tests needing `project`, PSI operations, tool execution, resource reads
+   - Run with: `./gradlew test --tests "*Test" --tests "!*UnitTest*"`
+
+### Test File Conventions
+
+| Test Class | Base Class | Purpose |
+|------------|------------|---------|
+| `McpPluginUnitTest` | `TestCase` | JSON-RPC serialization, error codes, registry |
+| `McpPluginTest` | `BasePlatformTestCase` | Platform availability |
+| `ToolsUnitTest` | `TestCase` | Tool schemas, registry, definitions |
+| `ToolsTest` | `BasePlatformTestCase` | Tool execution with project |
+| `JsonRpcHandlerUnitTest` | `TestCase` | JSON-RPC protocol, error handling |
+| `JsonRpcHandlerTest` | `BasePlatformTestCase` | Tool calls requiring project |
+| `ResourcesUnitTest` | `TestCase` | Resource registry, metadata |
+| `ResourcesTest` | `BasePlatformTestCase` | Resource reads with project |
+| `CommandHistoryUnitTest` | `TestCase` | Data classes, filters |
+| `CommandHistoryServiceTest` | `BasePlatformTestCase` | Service with project |
+
+### When to Use Each Base Class
+
+**Use `TestCase` (unit test) when:**
+- Testing serialization/deserialization
+- Validating schemas and definitions
+- Testing data classes and their properties
+- Testing registries without executing tools
+- No `project` instance is needed
+
+**Use `BasePlatformTestCase` (platform test) when:**
+- Test needs `project` instance
+- Test executes tools against a project
+- Test reads resources that require project context
+- Test uses project-level services (e.g., `CommandHistoryService`)
+- Test needs PSI or index access
+
+### Running Tests
+
+```bash
+# Run all tests
+./gradlew test
+
+# Run only fast unit tests (recommended for quick feedback)
+./gradlew test --tests "*UnitTest*"
+
+# Run only platform tests
+./gradlew test --tests "*Test" --tests "!*UnitTest*"
+
+# Run specific test class
+./gradlew test --tests "McpPluginUnitTest"
+```
+
+### Test Data
+- Place test fixtures in `src/test/testData/`
+- Test both smart mode and dumb mode scenarios for platform tests
 
 ## MCP Implementation Notes
 

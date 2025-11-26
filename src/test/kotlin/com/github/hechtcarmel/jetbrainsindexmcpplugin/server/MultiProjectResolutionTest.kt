@@ -10,11 +10,14 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
+/**
+ * Platform-dependent tests for multi-project resolution.
+ * For schema validation tests that don't need the platform, see ToolsUnitTest.
+ */
 class MultiProjectResolutionTest : BasePlatformTestCase() {
 
     private lateinit var handler: JsonRpcHandler
@@ -109,33 +112,6 @@ class MultiProjectResolutionTest : BasePlatformTestCase() {
 
         assertEquals("project_not_found", errorJson["error"]?.jsonPrimitive?.content)
         assertNotNull("Should include available_projects", errorJson["available_projects"])
-    }
-
-    fun testToolInputSchemaIncludesProjectPath() {
-        val tool = toolRegistry.getTool("find_usages")
-        assertNotNull("find_usages tool should exist", tool)
-
-        val schema = tool!!.inputSchema
-        val properties = schema["properties"]?.jsonObject
-        assertNotNull("Schema should have properties", properties)
-
-        val projectPathProp = properties?.get("project_path")?.jsonObject
-        assertNotNull("Schema should include project_path property", projectPathProp)
-        assertEquals("string", projectPathProp?.get("type")?.jsonPrimitive?.content)
-    }
-
-    fun testAllToolsHaveProjectPathInSchema() {
-        val tools = toolRegistry.getAllTools()
-
-        for (tool in tools) {
-            val schema = tool.inputSchema
-            val properties = schema["properties"]?.jsonObject
-
-            assertNotNull("${tool.name} schema should have properties", properties)
-
-            val projectPathProp = properties?.get("project_path")?.jsonObject
-            assertNotNull("${tool.name} schema should include project_path property", projectPathProp)
-        }
     }
 
     fun testResourceReadWithExplicitProjectPath() = runBlocking {
