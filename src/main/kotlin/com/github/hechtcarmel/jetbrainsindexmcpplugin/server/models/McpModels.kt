@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
@@ -18,18 +19,17 @@ data class ToolCallResult(
 )
 
 @Serializable
+@JsonClassDiscriminator("type")
 sealed class ContentBlock {
     @Serializable
     @SerialName("text")
     data class Text(
-        val type: String = "text",
         val text: String
     ) : ContentBlock()
 
     @Serializable
     @SerialName("image")
     data class Image(
-        val type: String = "image",
         val data: String,
         val mimeType: String
     ) : ContentBlock()
