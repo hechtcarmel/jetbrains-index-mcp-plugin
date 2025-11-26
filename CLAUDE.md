@@ -83,7 +83,22 @@ MCP servers expose:
 - **Resources** - Data that provides context (e.g., project structure, file contents)
 - **Prompts** - Pre-defined interaction templates (optional)
 
-Communication happens over stdio or HTTP with JSON-RPC 2.0.
+**Transport**: This plugin uses HTTP+SSE transport with JSON-RPC 2.0:
+- `GET /index-mcp/sse` → Opens SSE stream, sends `endpoint` event with POST URL
+- `POST /index-mcp` → JSON-RPC requests/responses
+
+**Client Configuration** (Cursor, Claude Desktop, etc.):
+```json
+{
+  "mcpServers": {
+    "intellij-index": {
+      "url": "http://localhost:{IDE_PORT}/index-mcp/sse"
+    }
+  }
+}
+```
+
+Find IDE port: Settings → Build, Execution, Deployment → Debugger → Built-in Server Port (default: 63342)
 
 ## Development Guidelines
 

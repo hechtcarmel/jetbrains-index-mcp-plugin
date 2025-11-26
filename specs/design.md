@@ -1,6 +1,6 @@
 # IntelliJ Index MCP Plugin - Design Document
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Status**: Draft
 **Based on**: requirements.md v1.0
 
@@ -358,13 +358,14 @@ class McpServerService : Disposable {
 
 ### 3.2 McpRequestHandler
 
-**Responsibility**: Handles HTTP requests on `/index-mcp` path via IDE's built-in web server.
+**Responsibility**: Handles HTTP+SSE transport on `/index-mcp` and `/index-mcp/sse` paths via IDE's built-in web server.
 
 ```kotlin
 class McpRequestHandler : HttpRequestHandler() {
 
     companion object {
         const val MCP_PATH = "/index-mcp"
+        const val SSE_PATH = "$MCP_PATH/sse"
     }
 
     override fun isSupported(request: FullHttpRequest): Boolean {
@@ -379,29 +380,42 @@ class McpRequestHandler : HttpRequestHandler() {
         val path = urlDecoder.path()
 
         return when {
-            request.method() == HttpMethod.GET && path == MCP_PATH -> {
-                handleGetRequest(request, context)
+            // GET /index-mcp/sse → SSE stream
+            request.method() == HttpMethod.GET && path == SSE_PATH -> {
+                handleSseRequest(context)
                 true
             }
-            request.method() == HttpMethod.POST && path == MCP_PATH -> {
+            // POST /index-mcp OR /index-mcp/sse → JSON-RPC
+            // (Some clients POST to /sse endpoint for streamable HTTP fallback)
+            request.method() == HttpMethod.POST && (path == MCP_PATH || path == SSE_PATH) -> {
                 handlePostRequest(request, context)
+                true
+            }
+            // OPTIONS for CORS
+            request.method() == HttpMethod.OPTIONS -> {
+                handleOptionsRequest(context)
                 true
             }
             else -> false
         }
     }
 
-    private fun handleGetRequest(
-        request: FullHttpRequest,
-        context: ChannelHandlerContext
-    ) {
-        // Return server info / health check
-        val serverInfo = buildJsonObject {
-            put("name", "intellij-index-mcp")
-            put("version", "1.0.0")
-            put("status", "running")
+    private fun handleSseRequest(context: ChannelHandlerContext) {
+        // Send SSE response headers
+        val response = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+        response.headers().apply {
+            set(HttpHeaderNames.CONTENT_TYPE, "text/event-stream; charset=UTF-8")
+            set(HttpHeaderNames.CACHE_CONTROL, "no-cache")
+            set(HttpHeaderNames.CONNECTION, "keep-alive")
         }
-        sendJsonResponse(context, serverInfo.toString())
+        context.write(response)
+
+        // Send endpoint event with POST URL
+        val port = BuiltInServerManager.getInstance().port
+        val endpointUrl = "http://localhost:$port$MCP_PATH"
+        val endpointEvent = "event: endpoint\ndata: $endpointUrl\n\n"
+        val buffer = Unpooled.copiedBuffer(endpointEvent, StandardCharsets.UTF_8)
+        context.writeAndFlush(DefaultHttpContent(buffer))
     }
 
     private fun handlePostRequest(
@@ -416,20 +430,24 @@ class McpRequestHandler : HttpRequestHandler() {
             mcpService.getJsonRpcHandler().handleRequest(body)
         }
 
-        sendJsonResponse(context, response)
+        sendJsonResponse(context, HttpResponseStatus.OK, response)
     }
 
     private fun sendJsonResponse(
         context: ChannelHandlerContext,
+        status: HttpResponseStatus,
         json: String
     ) {
-        val response = DefaultFullHttpResponse(
-            HttpVersion.HTTP_1_1,
-            HttpResponseStatus.OK,
-            Unpooled.copiedBuffer(json, Charsets.UTF_8)
-        )
-        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json")
-        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes())
+        val content = Unpooled.copiedBuffer(json, Charsets.UTF_8)
+        val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, content)
+        response.headers().apply {
+            set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8")
+            set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes())
+            // CORS headers
+            set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS")
+            set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Accept")
+        }
         context.writeAndFlush(response)
     }
 }
@@ -530,11 +548,17 @@ data class JsonRpcRequest(
     val params: JsonObject? = null
 )
 
+// IMPORTANT: @EncodeDefault(EncodeDefault.Mode.NEVER) is critical!
+// Without it, null fields are serialized as "error":null which causes
+// client parsing errors (e.g., Cursor's "Unrecognized key(s) in object: 'error'")
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class JsonRpcResponse(
     val jsonrpc: String = "2.0",
     val id: JsonElement? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val result: JsonElement? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val error: JsonRpcError? = null
 )
 
@@ -551,6 +575,12 @@ object JsonRpcErrorCodes {
     const val METHOD_NOT_FOUND = -32601
     const val INVALID_PARAMS = -32602
     const val INTERNAL_ERROR = -32603
+
+    // Custom error codes for MCP tools
+    const val INDEX_NOT_READY = -32001
+    const val FILE_NOT_FOUND = -32002
+    const val SYMBOL_NOT_FOUND = -32003
+    const val REFACTORING_CONFLICT = -32004
 }
 ```
 
@@ -1708,3 +1738,4 @@ dependencies {
 | Version | Date | Description |
 |---------|------|-------------|
 | 1.0 | 2025-01-25 | Initial design document |
+| 1.1 | 2025-01-26 | Updated HTTP+SSE transport implementation, added @EncodeDefault annotation for JSON-RPC serialization |
