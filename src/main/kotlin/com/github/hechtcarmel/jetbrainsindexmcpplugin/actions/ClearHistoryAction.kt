@@ -27,7 +27,7 @@ class ClearHistoryAction : AnAction(
             CommandHistoryService.getInstance(project).clearHistory()
 
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("MCP Server")
+                .getNotificationGroup("Index MCP Server")
                 .createNotification(
                     McpBundle.message("notification.historyCleared"),
                     NotificationType.INFORMATION

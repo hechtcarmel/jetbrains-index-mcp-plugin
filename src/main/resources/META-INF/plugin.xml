@@ -30,7 +30,7 @@
 
         <!-- Tool Window -->
         <toolWindow
-            id="MCP Server"
+            id="Index MCP Server"
             anchor="bottom"
             icon="com.github.hechtcarmel.jetbrainsindexmcpplugin.icons.McpIcons.ToolWindow"
             factoryClass="com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowFactory"/>
@@ -40,7 +40,7 @@
             serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings"/>
         <applicationConfigurable
             id="mcp.settings"
-            displayName="MCP Server"
+            displayName="Index MCP Server"
             instance="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable"/>
 
         <!-- Startup Activity -->
@@ -49,7 +49,7 @@
 
         <!-- Notification Group -->
         <notificationGroup
-            id="MCP Server"
+            id="Index MCP Server"
             displayType="BALLOON"/>
     </extensions>
 
@@ -62,7 +62,7 @@
     </extensionPoints>
 
     <actions>
-        <group id="McpServer.Actions" text="MCP Server">
+        <group id="McpServer.Actions" text="Index MCP Server">
             <action id="McpServer.CopyUrl"
                 class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyServerUrlAction"
                 text="Copy Server URL"

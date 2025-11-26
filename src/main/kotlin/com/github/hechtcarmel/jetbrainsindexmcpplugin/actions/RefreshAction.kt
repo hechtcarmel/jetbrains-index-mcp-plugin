@@ -14,7 +14,7 @@ class RefreshAction : AnAction(
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
 
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("MCP Server")
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Index MCP Server")
         toolWindow?.contentManager?.contents?.forEach { content ->
             val component = content.component
             if (component is McpToolWindowPanel) {

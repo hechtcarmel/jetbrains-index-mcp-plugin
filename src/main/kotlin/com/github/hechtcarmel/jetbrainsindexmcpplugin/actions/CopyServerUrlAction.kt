@@ -19,7 +19,7 @@ class CopyServerUrlAction : AnAction(
         CopyPasteManager.getInstance().setContents(StringSelection(url))
 
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("MCP Server")
+            .getNotificationGroup("Index MCP Server")
             .createNotification(
                 McpBundle.message("notification.urlCopied"),
                 NotificationType.INFORMATION

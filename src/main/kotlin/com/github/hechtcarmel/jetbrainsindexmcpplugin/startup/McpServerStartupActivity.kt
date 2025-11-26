@@ -26,9 +26,9 @@ class McpServerStartupActivity : ProjectActivity {
 
             // Show notification
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("MCP Server")
+                .getNotificationGroup("Index MCP Server")
                 .createNotification(
-                    "MCP Server",
+                    "Index MCP Server",
                     McpBundle.message("notification.serverStarted", serverUrl),
                     NotificationType.INFORMATION
                 )
@@ -38,9 +38,9 @@ class McpServerStartupActivity : ProjectActivity {
             LOG.error("Failed to start MCP Server", e)
 
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("MCP Server")
+                .getNotificationGroup("Index MCP Server")
                 .createNotification(
-                    "MCP Server",
+                    "Index MCP Server",
                     McpBundle.message("notification.serverError", e.message ?: "Unknown error"),
                     NotificationType.ERROR
                 )

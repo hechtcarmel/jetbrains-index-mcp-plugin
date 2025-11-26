@@ -41,7 +41,7 @@ class ExportHistoryAction : AnAction(
             file.writeText(content)
 
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("MCP Server")
+                .getNotificationGroup("Index MCP Server")
                 .createNotification(
                     McpBundle.message("notification.historyCopied", file.path),
                     NotificationType.INFORMATION
