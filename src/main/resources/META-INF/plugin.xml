@@ -3,6 +3,80 @@
     <id>com.github.hechtcarmel.jetbrainsindexmcpplugin</id>
     <name>IntelliJ Index MCP Server</name>
     <vendor email="hechtcarmel@gmail.com" url="https://github.com/hechtcarmel">hechtcarmel</vendor>
+    <description><![CDATA[
+<h2>IntelliJ Index MCP Server</h2>
+
+<p>Expose your IDE's powerful indexing and refactoring capabilities to AI coding assistants via the
+<a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a>.</p>
+
+<h3>🚀 Features</h3>
+
+<h4>Navigation Tools</h4>
+<ul>
+    <li><b>Find References</b> - Locate all usages of any symbol across your project</li>
+    <li><b>Go to Definition</b> - Navigate to symbol declarations</li>
+    <li><b>Type Hierarchy</b> - Explore class and interface inheritance</li>
+    <li><b>Call Hierarchy</b> - Trace method call chains</li>
+    <li><b>Find Implementations</b> - Discover interface and abstract class implementations</li>
+</ul>
+
+<h4>Refactoring Tools</h4>
+<ul>
+    <li><b>Rename</b> - Safely rename symbols across the entire project</li>
+    <li><b>Extract Method</b> - Extract code blocks into new methods</li>
+    <li><b>Extract Variable</b> - Extract expressions into variables</li>
+    <li><b>Inline</b> - Inline variables and methods</li>
+    <li><b>Safe Delete</b> - Remove unused code safely</li>
+    <li><b>Move</b> - Move elements between files</li>
+</ul>
+
+<h4>Code Intelligence</h4>
+<ul>
+    <li><b>Code Completions</b> - Get intelligent completion suggestions</li>
+    <li><b>Code Analysis</b> - Run inspections and detect issues</li>
+    <li><b>Quick Fixes</b> - List and apply available fixes</li>
+    <li><b>Symbol Info</b> - Get documentation and type information</li>
+</ul>
+
+<h4>Project Insights</h4>
+<ul>
+    <li><b>Project Structure</b> - Query module and source root layout</li>
+    <li><b>File Structure</b> - Get class, method, and field outlines</li>
+    <li><b>Dependencies</b> - List project libraries and versions</li>
+    <li><b>Index Status</b> - Check if IDE indexing is complete</li>
+</ul>
+
+<h3>🤖 Supported AI Assistants</h3>
+<ul>
+    <li>Claude Desktop</li>
+    <li>Claude Code (CLI)</li>
+    <li>Cursor</li>
+    <li>VS Code with MCP extension</li>
+    <li>Windsurf</li>
+    <li>Any MCP-compatible client</li>
+</ul>
+
+<h3>⚡ Quick Start</h3>
+<ol>
+    <li>Install the plugin and restart the IDE</li>
+    <li>Open the <b>Index MCP Server</b> tool window (View → Tool Windows)</li>
+    <li>Click <b>Copy Config</b> and select your AI assistant</li>
+    <li>Paste the configuration into your assistant's MCP settings</li>
+    <li>Start using IDE-powered tools in your AI assistant!</li>
+</ol>
+
+<h3>🔧 How It Works</h3>
+<p>The plugin runs an MCP server on your IDE's built-in web server, exposing tools that leverage
+IntelliJ's semantic understanding of your code. AI assistants connect via HTTP+SSE transport and
+can invoke any of the 20 available tools to perform accurate refactoring, navigation, and code analysis.</p>
+
+<h3>📚 Documentation</h3>
+<p>See the <a href="https://github.com/hechtcarmel/jetbrains-index-mcp-plugin">GitHub repository</a>
+for detailed documentation, examples, and troubleshooting guides.</p>
+
+<h3>🔒 Privacy</h3>
+<p>All processing happens locally within your IDE. No code is sent to external servers by this plugin.</p>
+]]></description>
 
     <!-- Platform dependency (required) -->
     <depends>com.intellij.modules.platform</depends>
