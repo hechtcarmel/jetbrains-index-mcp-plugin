@@ -35,11 +35,13 @@ class RenameSymbolTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_rename"
 
     override val description = """
-        Renames a symbol (variable, method, class, field, parameter) and updates all references across the project.
-        Use when renaming identifiers to improve code clarity or follow naming conventions.
-        Use when refactoring code structure while maintaining correctness.
-        Automatically renames related elements (constructor parameters, getters/setters) without prompting.
-        WARNING: This modifies files. Returns affected file list, change count, and success/failure status.
+        Renames a symbol and updates all references across the project. Supports Ctrl+Z undo.
+
+        REQUIRED: file + line + column to identify the symbol, plus newName.
+
+        WARNING: This modifies files. Returns affected files and change count.
+
+        EXAMPLE: {"file": "src/main/java/com/example/UserService.java", "line": 15, "column": 18, "newName": "CustomerService"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -47,23 +49,23 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file containing the symbol, relative to project root")
+                put("description", "Path to file relative to project root. REQUIRED.")
             }
             putJsonObject("line") {
                 put("type", "integer")
-                put("description", "1-based line number where the symbol is located")
+                put("description", "1-based line number where the symbol is located. REQUIRED.")
             }
             putJsonObject("column") {
                 put("type", "integer")
-                put("description", "1-based column number where the symbol is located")
+                put("description", "1-based column number. REQUIRED.")
             }
             putJsonObject("newName") {
                 put("type", "string")
-                put("description", "The new name for the symbol")
+                put("description", "The new name for the symbol. REQUIRED.")
             }
         }
         putJsonArray("required") {

@@ -52,12 +52,16 @@ class GetDiagnosticsTool : AbstractMcpTool() {
     override val name = "ide_diagnostics"
 
     override val description = """
-        Analyzes a file for code problems and available intentions/improvements.
-        Runs IntelliJ's code inspections to detect errors, warnings, and code quality issues.
-        Also returns available intention actions (code improvements) at a specific position.
-        Use when checking for compilation errors, potential bugs, or code style violations.
-        Use when exploring available code transformations or improvements.
-        Returns problems with severity (ERROR, WARNING, WEAK_WARNING, INFO) and available intentions.
+        Analyzes a file for code problems (errors, warnings) and available quick fixes/intentions.
+
+        REQUIRED: file - the file to analyze.
+        OPTIONAL: line + column - position for intention lookup; startLine/endLine - filter problems to line range.
+
+        RETURNS: List of problems with severity and available intentions/quick fixes.
+
+        EXAMPLE (whole file): {"file": "src/main/java/com/example/MyClass.java"}
+        EXAMPLE (specific position): {"file": "src/main/java/MyClass.java", "line": 25, "column": 10}
+        EXAMPLE (line range): {"file": "src/main/java/MyClass.java", "startLine": 10, "endLine": 50}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -65,27 +69,27 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open in IDE.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file relative to project root")
+                put("description", "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). REQUIRED.")
             }
             putJsonObject("line") {
                 put("type", "integer")
-                put("description", "1-based line number for intention lookup (optional, defaults to 1)")
+                put("description", "1-based line number for intention lookup. Optional, defaults to 1.")
             }
             putJsonObject("column") {
                 put("type", "integer")
-                put("description", "1-based column number for intention lookup (optional, defaults to 1)")
+                put("description", "1-based column number for intention lookup. Optional, defaults to 1.")
             }
             putJsonObject("startLine") {
                 put("type", "integer")
-                put("description", "1-based start line for filtering problems (optional)")
+                put("description", "Filter problems to start from this line. Optional.")
             }
             putJsonObject("endLine") {
                 put("type", "integer")
-                put("description", "1-based end line for filtering problems (optional)")
+                put("description", "Filter problems to end at this line. Optional.")
             }
         }
         putJsonArray("required") {

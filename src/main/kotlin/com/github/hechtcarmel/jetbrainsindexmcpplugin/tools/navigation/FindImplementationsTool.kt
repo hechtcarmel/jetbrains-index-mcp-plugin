@@ -25,10 +25,14 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val name = "ide_find_implementations"
 
     override val description = """
-        Finds all concrete implementations of an interface, abstract class, or abstract/interface method.
-        Use when locating classes that implement an interface or extend an abstract class.
-        Use when finding all overriding methods for polymorphic behavior analysis.
-        Returns implementation locations with class/method names, file paths, line numbers, and element kinds.
+        Finds all implementations of an interface, abstract class, or abstract/interface method.
+
+        REQUIRED: file + line + column to identify the interface/abstract class/method.
+
+        RETURNS: All implementing classes or overriding methods with file locations and line numbers.
+
+        EXAMPLE: {"file": "src/main/java/com/example/Repository.java", "line": 8, "column": 18}
+        This finds all classes implementing the interface at line 8, or all methods overriding the method.
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

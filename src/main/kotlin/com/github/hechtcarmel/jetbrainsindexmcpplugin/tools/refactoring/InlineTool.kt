@@ -28,10 +28,13 @@ class InlineTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_inline"
 
     override val description = """
-        Inlines a variable or method, replacing all usages with the actual value/body and removing the declaration.
-        Use when simplifying code by eliminating unnecessary intermediate variables.
-        Use when a method is trivial and inlining improves readability.
-        WARNING: This modifies files. Removes the original declaration. Returns affected files and change count.
+        Inlines a variable or method, replacing all usages with the value/body. Supports Ctrl+Z undo.
+
+        REQUIRED: file + line + column to identify the variable or method to inline.
+
+        WARNING: This modifies files and removes the original declaration.
+
+        EXAMPLE: {"file": "src/main/java/com/example/MyClass.java", "line": 15, "column": 12}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -39,19 +42,19 @@ class InlineTool : AbstractRefactoringTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file containing the element to inline, relative to project root")
+                put("description", "Path to file relative to project root. REQUIRED.")
             }
             putJsonObject("line") {
                 put("type", "integer")
-                put("description", "1-based line number where the variable or method is located")
+                put("description", "1-based line number where the variable or method is located. REQUIRED.")
             }
             putJsonObject("column") {
                 put("type", "integer")
-                put("description", "1-based column number where the variable or method is located")
+                put("description", "1-based column number. REQUIRED.")
             }
         }
         putJsonArray("required") {

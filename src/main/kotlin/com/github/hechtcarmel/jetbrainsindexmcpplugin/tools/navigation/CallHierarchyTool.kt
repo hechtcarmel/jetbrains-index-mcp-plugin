@@ -25,10 +25,18 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val name = "ide_call_hierarchy"
 
     override val description = """
-        Analyzes method call relationships to find callers (methods invoking this method) or callees (methods this method invokes).
-        Use when tracing execution flow, understanding code dependencies, or analyzing impact of method changes.
-        Use when debugging to understand how a method is reached or what it triggers.
-        Returns a tree structure with method signatures, file locations, and line numbers.
+        Analyzes method call relationships recursively to build a call hierarchy tree.
+
+        REQUIRED: file + line + column to identify the method, plus direction.
+
+        PARAMETERS:
+        - direction: 'callers' = methods that call this method, 'callees' = methods this method calls
+        - depth: how many levels deep to traverse (default: 3, max: 5)
+
+        RETURNS: Tree structure with method signatures, file locations, and nested children.
+
+        EXAMPLE: {"file": "src/main/java/com/example/Service.java", "line": 42, "column": 10, "direction": "callers"}
+        EXAMPLE with depth: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callees", "depth": 2}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -192,7 +200,8 @@ class CallHierarchyTool : AbstractMcpTool() {
                 PsiTreeUtil.findChildrenOfType(body, com.intellij.psi.PsiMethodCallExpression::class.java)
                     .take(MAX_RESULTS_PER_LEVEL)
                     .forEach { methodCall ->
-                        methodCall.resolveMethod()?.let { calledMethod ->
+                        val calledMethod = methodCall.resolveMethod()
+                        if (calledMethod != null) {
                             val children = if (depth > 1) {
                                 findCalleesRecursive(project, calledMethod, depth - 1, visited)
                             } else {
@@ -201,6 +210,18 @@ class CallHierarchyTool : AbstractMcpTool() {
                             val element = createCallElement(project, calledMethod, children)
                             if (callees.none { it.name == element.name && it.file == element.file && it.line == element.line }) {
                                 callees.add(element)
+                            }
+                        } else {
+                            // Fallback: can't resolve method, but report the call expression text
+                            val callText = methodCall.methodExpression.referenceName ?: methodCall.text.take(50)
+                            val unresolvedElement = CallElement(
+                                name = "$callText(...) [unresolved]",
+                                file = "unknown",
+                                line = 0,
+                                children = null
+                            )
+                            if (callees.none { it.name == unresolvedElement.name }) {
+                                callees.add(unresolvedElement)
                             }
                         }
                     }
@@ -215,7 +236,13 @@ class CallHierarchyTool : AbstractMcpTool() {
     private fun getMethodKey(method: PsiMethod): String {
         val className = method.containingClass?.qualifiedName ?: ""
         val methodName = method.name
-        val params = method.parameterList.parameters.joinToString(",") { it.type.canonicalText }
+        val params = method.parameterList.parameters.joinToString(",") { param ->
+            try {
+                param.type.canonicalText
+            } catch (e: Exception) {
+                param.name ?: "?"
+            }
+        }
         return "$className.$methodName($params)"
     }
 
@@ -240,8 +267,12 @@ class CallHierarchyTool : AbstractMcpTool() {
             }
             append(method.name)
             append("(")
-            append(method.parameterList.parameters.joinToString(", ") {
-                it.type.presentableText
+            append(method.parameterList.parameters.joinToString(", ") { param ->
+                try {
+                    param.type.presentableText
+                } catch (e: Exception) {
+                    param.name ?: "?"
+                }
             })
             append(")")
         }

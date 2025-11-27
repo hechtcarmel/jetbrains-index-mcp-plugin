@@ -31,10 +31,13 @@ class ExtractMethodTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_extract_method"
 
     override val description = """
-        Extracts a code block into a new method, automatically determining parameters and return values.
-        Use when consolidating duplicated code or improving method cohesion.
-        Use when breaking down long methods into smaller, more focused pieces.
-        WARNING: This modifies files. Returns new method location, affected files, and success/failure status.
+        Extracts a code block into a new method. Supports Ctrl+Z undo.
+
+        REQUIRED: file + startLine + endLine to select the code block, plus methodName.
+
+        WARNING: This modifies files. Returns new method location and affected files.
+
+        EXAMPLE: {"file": "src/main/java/com/example/Service.java", "startLine": 45, "endLine": 60, "methodName": "processUserData"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -42,23 +45,23 @@ class ExtractMethodTool : AbstractRefactoringTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file containing the code to extract, relative to project root")
+                put("description", "Path to file relative to project root. REQUIRED.")
             }
             putJsonObject("startLine") {
                 put("type", "integer")
-                put("description", "1-based line number where the code block starts")
+                put("description", "1-based line number where the code block starts. REQUIRED.")
             }
             putJsonObject("endLine") {
                 put("type", "integer")
-                put("description", "1-based line number where the code block ends (inclusive)")
+                put("description", "1-based line number where the code block ends (inclusive). REQUIRED.")
             }
             putJsonObject("methodName") {
                 put("type", "string")
-                put("description", "Name for the new extracted method")
+                put("description", "Name for the new method. REQUIRED.")
             }
         }
         putJsonArray("required") {

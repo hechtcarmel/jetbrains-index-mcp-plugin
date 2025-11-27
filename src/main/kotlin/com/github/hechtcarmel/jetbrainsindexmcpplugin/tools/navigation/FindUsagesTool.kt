@@ -30,9 +30,13 @@ class FindUsagesTool : AbstractMcpTool() {
 
     override val description = """
         Finds all references to a symbol across the entire project using IntelliJ's semantic index.
-        Use when locating where a method, class, variable, or field is called or accessed.
-        Use when understanding code dependencies or preparing for refactoring.
-        Returns file locations with line numbers, column positions, context snippets, and reference types (METHOD_CALL, FIELD_ACCESS, IMPORT, etc.).
+
+        REQUIRED: file + line + column to identify the symbol to search for.
+
+        RETURNS: All locations where the symbol is referenced, with context snippets and reference types.
+
+        EXAMPLE: {"file": "src/main/java/com/example/UserService.java", "line": 25, "column": 18}
+        This finds all places where the symbol at line 25, column 18 is used.
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -40,19 +44,19 @@ class FindUsagesTool : AbstractMcpTool() {
         putJsonObject(SchemaConstants.PROPERTIES) {
             putJsonObject(ParamNames.PROJECT_PATH) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_PROJECT_PATH)
+                put(SchemaConstants.DESCRIPTION, "Absolute path to project root. Only needed when multiple projects are open in IDE.")
             }
             putJsonObject(ParamNames.FILE) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_FILE)
+                put(SchemaConstants.DESCRIPTION, "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). REQUIRED.")
             }
             putJsonObject(ParamNames.LINE) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_LINE)
+                put(SchemaConstants.DESCRIPTION, "1-based line number where the symbol is located. REQUIRED.")
             }
             putJsonObject(ParamNames.COLUMN) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_COLUMN)
+                put(SchemaConstants.DESCRIPTION, "1-based column number within the line. REQUIRED.")
             }
         }
         putJsonArray(SchemaConstants.REQUIRED) {

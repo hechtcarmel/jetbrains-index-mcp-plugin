@@ -28,10 +28,15 @@ class MoveElementTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_move"
 
     override val description = """
-        Moves a class to a different package/directory, or moves a static method to a different class.
-        Use when reorganizing code structure, changing package hierarchy, or consolidating related code.
-        Use when relocating classes to more appropriate packages.
-        WARNING: This modifies files. Updates all imports and references automatically. Returns new location.
+        Moves a class to a different package, or moves a static method to a different class. Supports Ctrl+Z undo.
+
+        REQUIRED: file + line + column to identify the element.
+        THEN EITHER: targetDirectory (for class moves) OR targetClass (for method moves).
+
+        WARNING: This modifies files and updates all imports/references automatically.
+
+        EXAMPLE (move class): {"file": "src/main/java/old/MyClass.java", "line": 5, "column": 14, "targetDirectory": "src/main/java/com/example/newpackage"}
+        EXAMPLE (move method): {"file": "src/main/java/Utils.java", "line": 20, "column": 18, "targetClass": "com.example.Helper"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -39,27 +44,27 @@ class MoveElementTool : AbstractRefactoringTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file containing the element to move, relative to project root")
+                put("description", "Path to file relative to project root. REQUIRED.")
             }
             putJsonObject("line") {
                 put("type", "integer")
-                put("description", "1-based line number where the element is located")
+                put("description", "1-based line number where the element is located. REQUIRED.")
             }
             putJsonObject("column") {
                 put("type", "integer")
-                put("description", "1-based column number where the element is located")
+                put("description", "1-based column number. REQUIRED.")
             }
             putJsonObject("targetDirectory") {
                 put("type", "string")
-                put("description", "Target directory path relative to project root (for class moves)")
+                put("description", "Target directory for class moves (e.g., 'src/main/java/com/newpackage'). Use this OR targetClass.")
             }
             putJsonObject("targetClass") {
                 put("type", "string")
-                put("description", "Fully qualified name of the target class (for method moves)")
+                put("description", "Fully qualified target class for method moves (e.g., 'com.example.Helper'). Use this OR targetDirectory.")
             }
         }
         putJsonArray("required") {
@@ -295,9 +300,8 @@ class MoveElementTool : AbstractRefactoringTool() {
 
         // Find the target class
         val targetClass = readAction {
-            com.intellij.psi.JavaPsiFacade.getInstance(project)
-                .findClass(targetClassName, com.intellij.psi.search.GlobalSearchScope.projectScope(project))
-        } ?: return createErrorResult("Target class not found: $targetClassName")
+            findClassByName(project, targetClassName)
+        } ?: return createErrorResult("Target class not found: $targetClassName. Verify the fully qualified name is correct and the class is part of project '${project.name}'.")
 
         val affectedFiles = mutableSetOf<String>()
         var success = false
@@ -393,6 +397,7 @@ class MoveElementTool : AbstractRefactoringTool() {
         val psiMethod = com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
         return psiMethod
     }
+
 }
 
 @Serializable

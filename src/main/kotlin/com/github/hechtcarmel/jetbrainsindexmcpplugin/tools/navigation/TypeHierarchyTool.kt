@@ -7,7 +7,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchy
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.searches.ClassInheritorsSearch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -23,10 +22,16 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val name = "ide_type_hierarchy"
 
     override val description = """
-        Retrieves the complete type hierarchy for a class or interface, showing inheritance relationships.
-        Use when exploring class inheritance chains, understanding polymorphism, or finding all subclasses.
-        Use when analyzing interface implementations or abstract class extensions.
-        Returns the target element with its supertypes (superclass, interfaces) and subtypes (implementing/extending classes).
+        Retrieves the complete type hierarchy for a class or interface, showing all inheritance relationships.
+
+        INPUT OPTIONS (use one):
+        - Option A: Provide className with the fully qualified class name (e.g., "com.example.MyClass")
+        - Option B: Provide file + line + column to identify a class by source location
+
+        RETURNS: The target class with full supertype chain (recursive) and all subtypes in the project.
+
+        EXAMPLE with className: {"className": "com.example.service.UserService"}
+        EXAMPLE with location: {"file": "src/main/java/com/example/MyClass.java", "line": 10, "column": 14}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -34,36 +39,46 @@ class TypeHierarchyTool : AbstractMcpTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
-            }
-            putJsonObject("file") {
-                put("type", "string")
-                put("description", "Path to the file relative to project root")
-            }
-            putJsonObject("line") {
-                put("type", "integer")
-                put("description", "1-based line number")
-            }
-            putJsonObject("column") {
-                put("type", "integer")
-                put("description", "1-based column number")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open in IDE.")
             }
             putJsonObject("className") {
                 put("type", "string")
-                put("description", "Fully qualified class name (alternative to file/line/column)")
+                put("description", "Fully qualified class name (e.g., 'com.example.MyClass'). RECOMMENDED - use this if you know the class name.")
+            }
+            putJsonObject("file") {
+                put("type", "string")
+                put("description", "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
+            }
+            putJsonObject("line") {
+                put("type", "integer")
+                put("description", "1-based line number where the class is defined. Required if using file parameter.")
+            }
+            putJsonObject("column") {
+                put("type", "integer")
+                put("description", "1-based column number. Required if using file parameter.")
             }
         }
         putJsonArray("required") {
-            // Either file/line/column OR className must be provided
+            // Empty because either className OR (file+line+column) must be provided
         }
     }
 
     override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 
+        val className = arguments["className"]?.jsonPrimitive?.content
+        val file = arguments["file"]?.jsonPrimitive?.content
+
         return readAction {
             val targetClass = resolveTargetClass(project, arguments)
-                ?: return@readAction createErrorResult("Could not resolve class. Provide file/line/column or className.")
+            if (targetClass == null) {
+                val errorMsg = when {
+                    className != null -> "Class '$className' not found in project '${project.name}'. Verify the fully qualified name is correct and the class is part of this project."
+                    file != null -> "No class found at the specified file/line/column position."
+                    else -> "Provide either 'className' (e.g., 'com.example.MyClass') or 'file' + 'line' + 'column'."
+                }
+                return@readAction createErrorResult(errorMsg)
+            }
 
             val supertypes = getSupertypes(project, targetClass)
             val subtypes = getSubtypes(project, targetClass)
@@ -103,15 +118,6 @@ class TypeHierarchyTool : AbstractMcpTool() {
         return findContainingClass(element)
     }
 
-    private fun findClassByName(project: Project, qualifiedName: String): PsiClass? {
-        return try {
-            val javaPsiFacade = com.intellij.psi.JavaPsiFacade.getInstance(project)
-            javaPsiFacade.findClass(qualifiedName, com.intellij.psi.search.GlobalSearchScope.allScope(project))
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     private fun findContainingClass(element: PsiElement): PsiClass? {
         var current: PsiElement? = element
         while (current != null) {
@@ -131,28 +137,76 @@ class TypeHierarchyTool : AbstractMcpTool() {
         if (className in visited) return supertypes
         visited.add(className)
 
-        // Add superclass with its own supertypes (recursive)
-        psiClass.superClass?.let { superClass ->
-            if (superClass.qualifiedName != "java.lang.Object") {
-                val superSupertypes = getSupertypes(project, superClass, visited)
-                supertypes.add(TypeElement(
-                    name = superClass.qualifiedName ?: superClass.name ?: "unknown",
-                    file = superClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
-                    kind = getClassKind(superClass),
-                    supertypes = superSupertypes.takeIf { it.isNotEmpty() }
-                ))
+        // Try resolved superclass first
+        val superClass = psiClass.superClass
+        if (superClass != null && superClass.qualifiedName != "java.lang.Object") {
+            val superSupertypes = getSupertypes(project, superClass, visited)
+            supertypes.add(TypeElement(
+                name = superClass.qualifiedName ?: superClass.name ?: "unknown",
+                file = superClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                kind = getClassKind(superClass),
+                supertypes = superSupertypes.takeIf { it.isNotEmpty() }
+            ))
+        } else {
+            // Fallback: check unresolved extends list (when type resolution fails)
+            psiClass.extendsList?.referenceElements?.forEach { ref ->
+                val resolved = ref.resolve() as? PsiClass
+                if (resolved != null && resolved.qualifiedName != "java.lang.Object") {
+                    val superSupertypes = getSupertypes(project, resolved, visited)
+                    supertypes.add(TypeElement(
+                        name = resolved.qualifiedName ?: resolved.name ?: "unknown",
+                        file = resolved.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        kind = getClassKind(resolved),
+                        supertypes = superSupertypes.takeIf { it.isNotEmpty() }
+                    ))
+                } else {
+                    // Can't resolve, but report the declared type name
+                    val typeName = ref.qualifiedName ?: ref.referenceName ?: "unknown"
+                    if (typeName != "java.lang.Object") {
+                        supertypes.add(TypeElement(
+                            name = typeName,
+                            file = null,
+                            kind = "CLASS"
+                        ))
+                    }
+                }
             }
         }
 
-        // Add interfaces with their own supertypes (recursive)
-        psiClass.interfaces.forEach { iface ->
-            val ifaceSupertypes = getSupertypes(project, iface, visited)
-            supertypes.add(TypeElement(
-                name = iface.qualifiedName ?: iface.name ?: "unknown",
-                file = iface.containingFile?.virtualFile?.let { getRelativePath(project, it) },
-                kind = "INTERFACE",
-                supertypes = ifaceSupertypes.takeIf { it.isNotEmpty() }
-            ))
+        // Try resolved interfaces first
+        val interfaces = psiClass.interfaces
+        if (interfaces.isNotEmpty()) {
+            interfaces.forEach { iface ->
+                val ifaceSupertypes = getSupertypes(project, iface, visited)
+                supertypes.add(TypeElement(
+                    name = iface.qualifiedName ?: iface.name ?: "unknown",
+                    file = iface.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                    kind = "INTERFACE",
+                    supertypes = ifaceSupertypes.takeIf { it.isNotEmpty() }
+                ))
+            }
+        } else {
+            // Fallback: check unresolved implements list (when type resolution fails)
+            psiClass.implementsList?.referenceElements?.forEach { ref ->
+                val resolved = ref.resolve() as? PsiClass
+                if (resolved != null) {
+                    val ifaceSupertypes = getSupertypes(project, resolved, visited)
+                    supertypes.add(TypeElement(
+                        name = resolved.qualifiedName ?: resolved.name ?: "unknown",
+                        file = resolved.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        kind = "INTERFACE",
+                        supertypes = ifaceSupertypes.takeIf { it.isNotEmpty() }
+                    ))
+                } else {
+                    // Can't resolve, but report the declared type name
+                    val typeName = ref.qualifiedName ?: ref.referenceName ?: "unknown"
+                    supertypes.add(TypeElement(
+                        name = typeName,
+                        file = null,
+                        kind = "INTERFACE"
+                    ))
+                }
+            }
         }
 
         return supertypes

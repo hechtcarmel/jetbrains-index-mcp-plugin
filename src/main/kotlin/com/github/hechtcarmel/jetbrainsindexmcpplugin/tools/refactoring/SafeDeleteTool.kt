@@ -25,10 +25,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_safe_delete"
 
     override val description = """
-        Safely deletes a symbol after checking for usages. If usages exist, returns them instead of deleting.
-        Use when removing unused code like methods, classes, fields, or variables.
-        Use force=true with caution to delete even when usages exist (may break compilation).
-        WARNING: This modifies files. Returns blocking usages if found, or success status if deleted.
+        Safely deletes a symbol after checking for usages. Supports Ctrl+Z undo.
+
+        REQUIRED: file + line + column to identify the element to delete.
+        OPTIONAL: force=true to delete even when usages exist (may break compilation).
+
+        If usages exist and force=false, returns the usage list instead of deleting.
+
+        EXAMPLE: {"file": "src/main/java/com/example/OldClass.java", "line": 10, "column": 14}
+        EXAMPLE with force: {"file": "src/main/java/OldClass.java", "line": 10, "column": 14, "force": true}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -36,23 +41,23 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file containing the element to delete, relative to project root")
+                put("description", "Path to file relative to project root. REQUIRED.")
             }
             putJsonObject("line") {
                 put("type", "integer")
-                put("description", "1-based line number where the element is located")
+                put("description", "1-based line number where the element is located. REQUIRED.")
             }
             putJsonObject("column") {
                 put("type", "integer")
-                put("description", "1-based column number where the element is located")
+                put("description", "1-based column number. REQUIRED.")
             }
             putJsonObject("force") {
                 put("type", "boolean")
-                put("description", "Force deletion even if usages exist (default: false). Use with caution!")
+                put("description", "Force deletion even if usages exist. Optional, default: false. Use with caution!")
             }
         }
         putJsonArray("required") {

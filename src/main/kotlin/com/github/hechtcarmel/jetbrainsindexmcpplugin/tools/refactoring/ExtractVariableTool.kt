@@ -26,10 +26,15 @@ class ExtractVariableTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_extract_variable"
 
     override val description = """
-        Extracts an expression into a new local variable, optionally replacing all identical occurrences.
-        Use when simplifying complex expressions or giving meaningful names to computed values.
-        Use when eliminating repeated calculations by storing results in a variable.
-        WARNING: This modifies files. Returns variable declaration location and success/failure status.
+        Extracts an expression into a new local variable. Supports Ctrl+Z undo.
+
+        REQUIRED: file + line + column to identify the expression, plus variableName.
+        OPTIONAL: replaceAll=true to replace all identical occurrences.
+
+        WARNING: This modifies files. Returns variable declaration location.
+
+        EXAMPLE: {"file": "src/main/java/MyClass.java", "line": 25, "column": 20, "variableName": "userCount"}
+        EXAMPLE with replaceAll: {"file": "src/main/java/MyClass.java", "line": 25, "column": 20, "variableName": "userCount", "replaceAll": true}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -37,27 +42,27 @@ class ExtractVariableTool : AbstractRefactoringTool() {
         putJsonObject("properties") {
             putJsonObject("project_path") {
                 put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+                put("description", "Absolute path to project root. Only needed when multiple projects are open.")
             }
             putJsonObject("file") {
                 put("type", "string")
-                put("description", "Path to the file containing the expression, relative to project root")
+                put("description", "Path to file relative to project root. REQUIRED.")
             }
             putJsonObject("line") {
                 put("type", "integer")
-                put("description", "1-based line number where the expression is located")
+                put("description", "1-based line number where the expression is located. REQUIRED.")
             }
             putJsonObject("column") {
                 put("type", "integer")
-                put("description", "1-based column number where the expression is located")
+                put("description", "1-based column number. REQUIRED.")
             }
             putJsonObject("variableName") {
                 put("type", "string")
-                put("description", "Name for the new variable")
+                put("description", "Name for the new variable. REQUIRED.")
             }
             putJsonObject("replaceAll") {
                 put("type", "boolean")
-                put("description", "Whether to replace all occurrences of the expression (default: false)")
+                put("description", "Replace all identical occurrences. Optional, default: false.")
             }
         }
         putJsonArray("required") {

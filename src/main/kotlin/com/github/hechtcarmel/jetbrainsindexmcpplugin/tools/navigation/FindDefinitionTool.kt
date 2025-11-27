@@ -28,10 +28,14 @@ class FindDefinitionTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_DEFINITION
 
     override val description = """
-        Finds the definition/declaration of a symbol at a given source location.
-        Use when needing to understand where a method, class, variable, or field is declared.
-        Use when looking up the original definition from a usage site.
-        Returns the definition's file path, line number, column, symbol name, and a multi-line code preview.
+        Finds the definition/declaration of a symbol at a given source location (Go to Definition).
+
+        REQUIRED: file + line + column to identify the symbol reference.
+
+        RETURNS: The file path, line number, and code preview where the symbol is defined.
+
+        EXAMPLE: {"file": "src/main/java/com/example/Main.java", "line": 15, "column": 10}
+        This navigates from a usage of a symbol to where it's declared.
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -39,19 +43,19 @@ class FindDefinitionTool : AbstractMcpTool() {
         putJsonObject(SchemaConstants.PROPERTIES) {
             putJsonObject(ParamNames.PROJECT_PATH) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_PROJECT_PATH)
+                put(SchemaConstants.DESCRIPTION, "Absolute path to project root. Only needed when multiple projects are open in IDE.")
             }
             putJsonObject(ParamNames.FILE) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_FILE)
+                put(SchemaConstants.DESCRIPTION, "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). REQUIRED.")
             }
             putJsonObject(ParamNames.LINE) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_LINE)
+                put(SchemaConstants.DESCRIPTION, "1-based line number where the symbol reference is located. REQUIRED.")
             }
             putJsonObject(ParamNames.COLUMN) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
-                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_COLUMN)
+                put(SchemaConstants.DESCRIPTION, "1-based column number within the line. REQUIRED.")
             }
         }
         putJsonArray(SchemaConstants.REQUIRED) {

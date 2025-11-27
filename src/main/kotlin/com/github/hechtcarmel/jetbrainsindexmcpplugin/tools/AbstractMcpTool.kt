@@ -11,10 +11,15 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.JavaPsiFacade
+import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -222,6 +227,65 @@ abstract class AbstractMcpTool : McpTool {
     protected fun getRelativePath(project: Project, virtualFile: VirtualFile): String {
         val basePath = project.basePath ?: return virtualFile.path
         return virtualFile.path.removePrefix(basePath).removePrefix("/")
+    }
+
+    /**
+     * Finds a Java/Kotlin class by its fully qualified name.
+     *
+     * Uses multiple lookup strategies:
+     * 1. JavaPsiFacade with project scope (fastest, index-based)
+     * 2. JavaPsiFacade with all scope (includes libraries)
+     * 3. Filename index fallback (when index lookup fails)
+     *
+     * @param project The project context
+     * @param qualifiedName Fully qualified class name (e.g., "com.example.MyClass")
+     * @return The PsiClass, or null if not found
+     */
+    protected fun findClassByName(project: Project, qualifiedName: String): PsiClass? {
+        return try {
+            val javaPsiFacade = JavaPsiFacade.getInstance(project)
+
+            // Try indexed lookup first (fastest)
+            javaPsiFacade.findClass(qualifiedName, GlobalSearchScope.projectScope(project))
+                ?.let { return it }
+            javaPsiFacade.findClass(qualifiedName, GlobalSearchScope.allScope(project))
+                ?.let { return it }
+
+            // Fallback: search by filename if index lookup fails
+            val simpleClassName = qualifiedName.substringAfterLast('.')
+            val expectedPackage = qualifiedName.substringBeforeLast('.', "")
+
+            // Try Java files
+            val javaFiles = FilenameIndex.getVirtualFilesByName(
+                "$simpleClassName.java",
+                GlobalSearchScope.everythingScope(project)
+            )
+
+            val psiManager = PsiManager.getInstance(project)
+            for (virtualFile in javaFiles) {
+                val psiFile = psiManager.findFile(virtualFile) as? PsiJavaFile ?: continue
+                if (psiFile.packageName == expectedPackage) {
+                    psiFile.classes.firstOrNull { it.name == simpleClassName }?.let { return it }
+                }
+            }
+
+            // Try Kotlin files
+            val ktFiles = FilenameIndex.getVirtualFilesByName(
+                "$simpleClassName.kt",
+                GlobalSearchScope.everythingScope(project)
+            )
+
+            for (virtualFile in ktFiles) {
+                val psiFile = psiManager.findFile(virtualFile) ?: continue
+                // For Kotlin files, use JavaPsiFacade to find the class
+                val ktClass = javaPsiFacade.findClass(qualifiedName, GlobalSearchScope.fileScope(psiFile))
+                if (ktClass != null) return ktClass
+            }
+
+            null
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
