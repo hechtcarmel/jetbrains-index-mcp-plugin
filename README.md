@@ -276,7 +276,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 
 ## Requirements
 
-- **IntelliJ IDEA** 2024.3 or later (Community or Ultimate)
+- **IntelliJ IDEA** 2025.1 or later (Community or Ultimate)
 - **JVM** 21 or later
 - **MCP Protocol** 2024-11-05
 

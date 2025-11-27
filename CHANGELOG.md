@@ -92,7 +92,7 @@
 - Write operation confirmation toggle (default: enabled)
 
 ### Technical Details
-- **Platform**: IntelliJ IDEA 2024.3+ (build 243+)
+- **Platform**: IntelliJ IDEA 2025.1+ (build 251+)
 - **Language**: Kotlin 2.1+
 - **Protocol**: MCP Specification 2024-11-05
 - **Runtime**: JVM 21
