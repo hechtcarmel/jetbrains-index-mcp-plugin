@@ -45,7 +45,8 @@ object PsiUtils {
     fun getVirtualFile(project: Project, relativePath: String): VirtualFile? {
         val basePath = project.basePath ?: return null
         val fullPath = if (relativePath.startsWith("/")) relativePath else "$basePath/$relativePath"
-        return LocalFileSystem.getInstance().findFileByPath(fullPath)
+        // Use refreshAndFindFileByPath to handle externally created files
+        return LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath)
     }
 
     fun getContainingClass(element: PsiElement): PsiClass? {

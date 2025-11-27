@@ -129,6 +129,7 @@ abstract class AbstractMcpTool : McpTool {
 
     /**
      * Resolves a file path to a [VirtualFile].
+     * Uses refreshAndFindFileByPath to ensure externally created files are visible.
      *
      * @param project The project context
      * @param relativePath Path relative to project root, or absolute path
@@ -137,7 +138,8 @@ abstract class AbstractMcpTool : McpTool {
     protected fun resolveFile(project: Project, relativePath: String): VirtualFile? {
         val basePath = project.basePath ?: return null
         val fullPath = if (relativePath.startsWith("/")) relativePath else "$basePath/$relativePath"
-        return LocalFileSystem.getInstance().findFileByPath(fullPath)
+        // Use refreshAndFindFileByPath to handle externally created files
+        return LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath)
     }
 
     /**
