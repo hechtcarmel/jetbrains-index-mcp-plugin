@@ -248,16 +248,9 @@ src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/
 │   │   └── MoveElementTool.kt
 │   │
 │   ├── intelligence/                      # Code intelligence tools
-│   │   ├── GetCompletionsTool.kt
-│   │   ├── GetInspectionsTool.kt
-│   │   ├── GetQuickFixesTool.kt
-│   │   ├── ApplyQuickFixTool.kt
-│   │   └── GetSymbolInfoTool.kt
+│   │   └── GetDiagnosticsTool.kt
 │   │
 │   └── project/                           # Project structure tools
-│       ├── GetProjectStructureTool.kt
-│       ├── GetFileStructureTool.kt
-│       ├── GetDependenciesTool.kt
 │       └── GetIndexStatusTool.kt
 │
 ├── resources/                             # MCP Resource providers
@@ -1041,17 +1034,10 @@ fun registerBuiltInTools(project: Project) {
     register(FindImplementationsTool()) // ide_find_implementations
 
     // Intelligence tools (ide_* prefix)
-    register(GetSymbolInfoTool())     // ide_inspect_symbol
-    register(GetCompletionsTool())    // ide_code_completions
-    register(GetInspectionsTool())    // ide_analyze_code
-    register(GetQuickFixesTool())     // ide_list_quick_fixes
-    register(ApplyQuickFixTool())     // ide_apply_quick_fix
+    register(GetDiagnosticsTool())    // ide_diagnostics (problems + intentions)
 
     // Project tools (ide_* prefix)
-    register(GetProjectStructureTool()) // ide_project_structure
-    register(GetFileStructureTool())    // ide_file_structure
-    register(GetDependenciesTool())     // ide_list_dependencies
-    register(GetIndexStatusTool())      // ide_index_status
+    register(GetIndexStatusTool())    // ide_index_status
 
     // Refactoring tools (ide_refactor_* prefix)
     register(RenameSymbolTool())      // ide_refactor_rename

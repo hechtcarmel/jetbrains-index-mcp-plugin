@@ -187,80 +187,27 @@
 
 ### 3.3 Code Intelligence Tools
 
-#### 3.3.1 ide_code_completions (formerly get_completions)
+#### 3.3.1 ide_diagnostics
 
 | ID | Requirement |
 |----|-------------|
 | INT-001 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| INT-002 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| INT-003 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| INT-004 | The tool SHALL return a list of completion items |
-
-#### 3.3.2 ide_analyze_code (formerly get_inspections)
-
-| ID | Requirement |
-|----|-------------|
-| INT-005 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| INT-006 | The tool MAY accept input: `startLine` (integer, optional) |
-| INT-007 | The tool MAY accept input: `endLine` (integer, optional) |
-| INT-008 | The tool SHALL return a list of problems with severity |
-
-#### 3.3.3 ide_list_quick_fixes (formerly get_quick_fixes)
-
-| ID | Requirement |
-|----|-------------|
-| INT-009 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| INT-010 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| INT-011 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| INT-012 | The tool SHALL return a list of applicable fixes with unique IDs |
-
-#### 3.3.4 ide_apply_quick_fix (formerly apply_quick_fix)
-
-| ID | Requirement |
-|----|-------------|
-| INT-013 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| INT-014 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| INT-015 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| INT-016 | The tool SHALL accept input: `fixId` (string) |
-| INT-017 | The tool SHALL return the modified code |
-
-#### 3.3.5 ide_inspect_symbol (formerly get_symbol_info)
-
-| ID | Requirement |
-|----|-------------|
-| INT-018 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| INT-019 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| INT-020 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| INT-021 | The tool SHALL return symbol name |
-| INT-022 | The tool SHALL return symbol type |
-| INT-023 | The tool SHALL return symbol documentation |
+| INT-002 | The tool MAY accept input: `line` (integer, 1-based line number for intention lookup, default: 1) |
+| INT-003 | The tool MAY accept input: `column` (integer, 1-based column number for intention lookup, default: 1) |
+| INT-004 | The tool MAY accept input: `startLine` (integer, optional filter for problems) |
+| INT-005 | The tool MAY accept input: `endLine` (integer, optional filter for problems) |
+| INT-006 | The tool SHALL return a list of problems with severity (ERROR, WARNING, WEAK_WARNING, INFO) |
+| INT-007 | The tool SHALL return a list of available intentions at the specified position |
+| INT-008 | The tool SHALL return problemCount and intentionCount totals |
 
 ### 3.4 Project Structure Tools
 
-#### 3.4.1 ide_project_structure (formerly get_project_structure)
+#### 3.4.1 ide_index_status
 
 | ID | Requirement |
 |----|-------------|
-| PRJ-001 | The tool SHALL return the module tree with source roots |
-
-#### 3.4.2 ide_file_structure (formerly get_file_structure)
-
-| ID | Requirement |
-|----|-------------|
-| PRJ-002 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| PRJ-003 | The tool SHALL return a tree of classes, methods, and fields |
-
-#### 3.4.3 ide_list_dependencies (formerly get_dependencies)
-
-| ID | Requirement |
-|----|-------------|
-| PRJ-004 | The tool SHALL return a list of libraries and versions |
-
-#### 3.4.4 ide_index_status (formerly get_index_status)
-
-| ID | Requirement |
-|----|-------------|
-| PRJ-005 | The tool SHALL return whether the IDE is in dumb mode or smart mode |
+| PRJ-001 | The tool SHALL return whether the IDE is in dumb mode or smart mode |
+| PRJ-002 | The tool SHALL return the current indexing status |
 
 ---
 
@@ -420,7 +367,7 @@
 | PH1-002 | Phase 1 SHALL deliver: Tool registry and JSON-RPC routing |
 | PH1-003 | Phase 1 SHALL deliver: `ide_find_references` tool |
 | PH1-004 | Phase 1 SHALL deliver: `ide_find_definition` tool |
-| PH1-005 | Phase 1 SHALL deliver: `ide_inspect_symbol` tool |
+| PH1-005 | Phase 1 SHALL deliver: `ide_index_status` tool |
 | PH1-006 | Phase 1 SHALL deliver: Basic tool window with server URL and status |
 | PH1-007 | Phase 1 SHALL deliver: Unit tests for core functionality |
 
@@ -431,13 +378,10 @@
 | PH2-001 | Phase 2 SHALL deliver: `ide_type_hierarchy` tool |
 | PH2-002 | Phase 2 SHALL deliver: `ide_call_hierarchy` tool |
 | PH2-003 | Phase 2 SHALL deliver: `ide_find_implementations` tool |
-| PH2-004 | Phase 2 SHALL deliver: `ide_code_completions` tool |
-| PH2-005 | Phase 2 SHALL deliver: `ide_list_quick_fixes` tool |
-| PH2-006 | Phase 2 SHALL deliver: `ide_apply_quick_fix` tool |
-| PH2-007 | Phase 2 SHALL deliver: `ide_file_structure` tool |
-| PH2-008 | Phase 2 SHALL deliver: Full command history UI with filtering and search |
-| PH2-009 | Phase 2 SHALL deliver: Resource providers |
-| PH2-010 | Phase 2 SHALL deliver: Integration tests |
+| PH2-004 | Phase 2 SHALL deliver: `ide_diagnostics` tool (problems + intentions) |
+| PH2-005 | Phase 2 SHALL deliver: Full command history UI with filtering and search |
+| PH2-006 | Phase 2 SHALL deliver: Resource providers |
+| PH2-007 | Phase 2 SHALL deliver: Integration tests |
 
 ### Phase 3: Refactoring Operations
 

@@ -229,28 +229,34 @@ Tests are split into two categories to optimize execution time:
 
 ## MCP Implementation Notes
 
-### Tools to Implement
-1. **Refactoring**
-   - `rename_symbol` - Rename a symbol across the project
-   - `extract_method` - Extract selection to new method
-   - `inline` - Inline variable/method
+### Implemented Tools
 
-2. **Navigation**
-   - `find_usages` - Find all usages of a symbol
-   - `find_definition` - Find symbol definition location
-   - `type_hierarchy` - Get type hierarchy for a class
-   - `call_hierarchy` - Get call hierarchy for a method
+**Navigation:**
+- `ide_find_references` - Find all usages of a symbol
+- `ide_find_definition` - Find symbol definition location
+- `ide_type_hierarchy` - Get type hierarchy for a class
+- `ide_call_hierarchy` - Get call hierarchy for a method
+- `ide_find_implementations` - Find implementations of interface/method
 
-3. **Code Intelligence**
-   - `get_completions` - Get code completions at position
-   - `get_quick_fixes` - Get available quick fixes
-   - `run_inspection` - Run code inspection
+**Intelligence:**
+- `ide_diagnostics` - Analyze file for problems and available intentions
 
-### Resources to Expose
-- Project structure and module information
-- Open files and their contents
-- Current selection/cursor position
-- Index status (dumb/smart mode)
+**Project:**
+- `ide_index_status` - Check indexing status (dumb/smart mode)
+
+**Refactoring:**
+- `ide_refactor_rename` - Rename a symbol across the project
+- `ide_refactor_extract_method` - Extract selection to new method
+- `ide_refactor_extract_variable` - Extract expression to variable
+- `ide_refactor_inline` - Inline variable/method
+- `ide_refactor_safe_delete` - Safely delete element
+- `ide_refactor_move` - Move element to new location
+
+### Resources Exposed
+- `index://status` - Index status (dumb/smart mode)
+- `project://structure` - Project module tree
+- `file://content/{path}` - File contents
+- `symbol://info/{fqn}` - Symbol information
 
 ## Useful IntelliJ Platform Classes
 

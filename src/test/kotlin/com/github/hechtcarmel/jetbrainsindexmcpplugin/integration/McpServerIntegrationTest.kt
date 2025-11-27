@@ -114,7 +114,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val result = response.result!!.jsonObject
         val tools = result["tools"]?.jsonArray
         assertNotNull("Result should have tools array", tools)
-        assertTrue("Should have at least 20 tools", tools!!.size >= 20)
+        assertTrue("Should have at least 13 tools", tools!!.size >= 13)
     }
 
     fun testToolsListContainsNavigationTools() = runBlocking {
@@ -157,11 +157,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val toolNames = tools?.map { it.jsonObject["name"]?.jsonPrimitive?.content }
 
         val expectedIntelligenceTools = listOf(
-            ToolNames.INSPECT_SYMBOL,
-            ToolNames.CODE_COMPLETIONS,
-            ToolNames.ANALYZE_CODE,
-            ToolNames.LIST_QUICK_FIXES,
-            ToolNames.APPLY_QUICK_FIX
+            ToolNames.DIAGNOSTICS
         )
 
         expectedIntelligenceTools.forEach { toolName ->
@@ -183,10 +179,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val toolNames = tools?.map { it.jsonObject["name"]?.jsonPrimitive?.content }
 
         val expectedProjectTools = listOf(
-            ToolNames.INDEX_STATUS,
-            ToolNames.FILE_STRUCTURE,
-            ToolNames.PROJECT_STRUCTURE,
-            ToolNames.LIST_DEPENDENCIES
+            ToolNames.INDEX_STATUS
         )
 
         expectedProjectTools.forEach { toolName ->
@@ -211,40 +204,6 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
         assertNull("${ToolNames.INDEX_STATUS} should not return JSON-RPC error", response.error)
         assertNotNull("${ToolNames.INDEX_STATUS} should return result", response.result)
-    }
-
-    fun testToolsCallGetProjectStructure() = runBlocking {
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(21),
-            method = "tools/call",
-            params = buildJsonObject {
-                put("name", ToolNames.PROJECT_STRUCTURE)
-                put("arguments", buildJsonObject { })
-            }
-        )
-
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson)
-
-        assertNull("${ToolNames.PROJECT_STRUCTURE} should not return JSON-RPC error", response.error)
-        assertNotNull("${ToolNames.PROJECT_STRUCTURE} should return result", response.result)
-    }
-
-    fun testToolsCallGetDependencies() = runBlocking {
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(22),
-            method = "tools/call",
-            params = buildJsonObject {
-                put("name", ToolNames.LIST_DEPENDENCIES)
-                put("arguments", buildJsonObject { })
-            }
-        )
-
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson)
-
-        assertNull("${ToolNames.LIST_DEPENDENCIES} should not return JSON-RPC error", response.error)
-        assertNotNull("${ToolNames.LIST_DEPENDENCIES} should return result", response.result)
     }
 
     fun testToolsCallNonExistentTool() = runBlocking {

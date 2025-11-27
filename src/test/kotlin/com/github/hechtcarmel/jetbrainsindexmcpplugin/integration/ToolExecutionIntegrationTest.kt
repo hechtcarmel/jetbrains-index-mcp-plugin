@@ -3,20 +3,13 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.integration
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ApplyQuickFixTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetCompletionsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetInspectionsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetQuickFixesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetSymbolInfoTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetDependenciesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetFileStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetProjectStructureTool
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -117,40 +110,8 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
 
     // Intelligence Tools Tests
 
-    fun testGetSymbolInfoToolEndToEnd() = runBlocking {
-        val tool = GetSymbolInfoTool()
-
-        // Test missing required parameter
-        val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
-
-        // Test with invalid file
-        val resultInvalid = tool.execute(project, buildJsonObject {
-            put("file", "nonexistent.kt")
-            put("line", 1)
-            put("column", 1)
-        })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
-    }
-
-    fun testGetCompletionsToolEndToEnd() = runBlocking {
-        val tool = GetCompletionsTool()
-
-        // Test missing required parameter
-        val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
-
-        // Test with invalid file
-        val resultInvalid = tool.execute(project, buildJsonObject {
-            put("file", "nonexistent.kt")
-            put("line", 1)
-            put("column", 1)
-        })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
-    }
-
-    fun testGetInspectionsToolEndToEnd() = runBlocking {
-        val tool = GetInspectionsTool()
+    fun testGetDiagnosticsToolEndToEnd() = runBlocking {
+        val tool = GetDiagnosticsTool()
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
@@ -161,37 +122,6 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             put("file", "nonexistent.kt")
         })
         assertTrue("Should error with invalid file", resultInvalid.isError)
-    }
-
-    fun testGetQuickFixesToolEndToEnd() = runBlocking {
-        val tool = GetQuickFixesTool()
-
-        // Test missing required parameter
-        val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
-
-        // Test with invalid file
-        val resultInvalid = tool.execute(project, buildJsonObject {
-            put("file", "nonexistent.kt")
-            put("line", 1)
-            put("column", 1)
-        })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
-    }
-
-    fun testApplyQuickFixToolEndToEnd() = runBlocking {
-        val tool = ApplyQuickFixTool()
-
-        // Test missing required parameter
-        val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", resultMissing.isError)
-
-        // Test with invalid fix ID
-        val resultInvalid = tool.execute(project, buildJsonObject {
-            put("file", "test.kt")
-            put("fixId", "invalid-fix-id-123")
-        })
-        assertTrue("Should error with invalid fixId", resultInvalid.isError)
     }
 
     // Project Tools Tests
@@ -214,54 +144,6 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         assertNotNull("Result should have isIndexing", resultJson["isIndexing"])
     }
 
-    fun testGetFileStructureToolEndToEnd() = runBlocking {
-        val tool = GetFileStructureTool()
-
-        // Test missing required parameter
-        val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
-
-        // Test with invalid file
-        val resultInvalid = tool.execute(project, buildJsonObject {
-            put("file", "nonexistent.kt")
-        })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
-    }
-
-    fun testGetProjectStructureToolEndToEnd() = runBlocking {
-        val tool = GetProjectStructureTool()
-
-        val result = tool.execute(project, buildJsonObject { })
-
-        assertFalse("get_project_structure should succeed", result.isError)
-        assertTrue("Should have content", result.content.isNotEmpty())
-
-        val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
-
-        val textContent = (content as ContentBlock.Text).text
-        val resultJson = json.parseToJsonElement(textContent).jsonObject
-
-        assertNotNull("Result should have name", resultJson["name"])
-    }
-
-    fun testGetDependenciesToolEndToEnd() = runBlocking {
-        val tool = GetDependenciesTool()
-
-        val result = tool.execute(project, buildJsonObject { })
-
-        assertFalse("get_dependencies should succeed", result.isError)
-        assertTrue("Should have content", result.content.isNotEmpty())
-
-        val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
-
-        val textContent = (content as ContentBlock.Text).text
-        val resultJson = json.parseToJsonElement(textContent).jsonObject
-
-        assertNotNull("Result should have dependencies", resultJson["dependencies"])
-    }
-
     // Tool Registry Integration Tests
 
     fun testAllToolsRegistered() {
@@ -276,16 +158,9 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.CALL_HIERARCHY,
             ToolNames.FIND_IMPLEMENTATIONS,
             // Intelligence tools
-            ToolNames.INSPECT_SYMBOL,
-            ToolNames.CODE_COMPLETIONS,
-            ToolNames.ANALYZE_CODE,
-            ToolNames.LIST_QUICK_FIXES,
-            ToolNames.APPLY_QUICK_FIX,
+            ToolNames.DIAGNOSTICS,
             // Project tools
             ToolNames.INDEX_STATUS,
-            ToolNames.FILE_STRUCTURE,
-            ToolNames.PROJECT_STRUCTURE,
-            ToolNames.LIST_DEPENDENCIES,
             // Refactoring tools
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_EXTRACT_METHOD,

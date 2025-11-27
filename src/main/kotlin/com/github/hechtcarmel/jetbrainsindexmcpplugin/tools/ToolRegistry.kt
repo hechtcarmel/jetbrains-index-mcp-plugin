@@ -1,20 +1,13 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ApplyQuickFixTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetCompletionsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetInspectionsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetQuickFixesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetSymbolInfoTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetDependenciesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetFileStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetProjectStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ExtractMethodTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ExtractVariableTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InlineTool
@@ -32,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## Built-in Tools
  *
- * The registry automatically registers 20 built-in tools in these categories:
+ * The registry automatically registers 13 built-in tools in these categories:
  *
  * **Navigation:**
  * - `ide_find_references` - Find all usages of a symbol
@@ -42,16 +35,9 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_find_implementations` - Find interface/method implementations
  *
  * **Intelligence:**
- * - `ide_inspect_symbol` - Get symbol metadata and docs
- * - `ide_code_completions` - Get code completions
- * - `ide_analyze_code` - Run code inspections
- * - `ide_list_quick_fixes` - List available quick fixes
- * - `ide_apply_quick_fix` - Apply a quick fix
+ * - `ide_diagnostics` - Analyze code for problems and available intentions
  *
  * **Project:**
- * - `ide_project_structure` - Get module structure
- * - `ide_file_structure` - Get file outline
- * - `ide_list_dependencies` - List project dependencies
  * - `ide_index_status` - Check indexing status
  *
  * **Refactoring:**
@@ -147,17 +133,10 @@ class ToolRegistry {
         register(FindImplementationsTool())
 
         // Intelligence tools
-        register(GetSymbolInfoTool())
-        register(GetCompletionsTool())
-        register(GetInspectionsTool())
-        register(GetQuickFixesTool())
-        register(ApplyQuickFixTool())
+        register(GetDiagnosticsTool())
 
         // Project tools
         register(GetIndexStatusTool())
-        register(GetFileStructureTool())
-        register(GetProjectStructureTool())
-        register(GetDependenciesTool())
 
         // Refactoring tools
         register(RenameSymbolTool())

@@ -9,16 +9,9 @@ object ToolNames {
     const val FIND_IMPLEMENTATIONS = "ide_find_implementations"
 
     // Intelligence tools
-    const val INSPECT_SYMBOL = "ide_inspect_symbol"
-    const val CODE_COMPLETIONS = "ide_code_completions"
-    const val ANALYZE_CODE = "ide_analyze_code"
-    const val LIST_QUICK_FIXES = "ide_list_quick_fixes"
-    const val APPLY_QUICK_FIX = "ide_apply_quick_fix"
+    const val DIAGNOSTICS = "ide_diagnostics"
 
     // Project tools
-    const val PROJECT_STRUCTURE = "ide_project_structure"
-    const val FILE_STRUCTURE = "ide_file_structure"
-    const val LIST_DEPENDENCIES = "ide_list_dependencies"
     const val INDEX_STATUS = "ide_index_status"
 
     // Refactoring tools

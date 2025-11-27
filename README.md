@@ -13,8 +13,8 @@ An IntelliJ Platform plugin that exposes an **MCP (Model Context Protocol) serve
 
 - **Semantic Code Navigation** - Find usages, find definition, type/call hierarchies, find implementations using the IDE's semantic index
 - **Safe IDE-Powered Refactoring** - Rename symbols, extract methods/variables, inline, move, and safely delete code with full reference updates
-- **Code Analysis** - Get code completions, run inspections, and apply quick fixes
-- **Project Intelligence** - Query project structure, file structure, dependencies, and indexing status
+- **Code Diagnostics** - Analyze files for problems, warnings, and available code improvements
+- **Project Intelligence** - Query indexing status to check if code intelligence is available
 
 ### Why Use This Plugin?
 
@@ -148,7 +148,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Available Tools
 
-The plugin provides **20 MCP tools** organized into four categories:
+The plugin provides **13 MCP tools** organized into four categories:
 
 ### Navigation Tools
 
@@ -164,19 +164,12 @@ The plugin provides **20 MCP tools** organized into four categories:
 
 | Tool | Description |
 |------|-------------|
-| `ide_get_symbol_info` | Get detailed information about a symbol (type, docs, modifiers) |
-| `ide_get_completions` | Get code completions at a given position |
-| `ide_get_inspections` | Run code inspections on a file or range |
-| `ide_get_quick_fixes` | Get available quick fixes at a position |
-| `ide_apply_quick_fix` | Apply a quick fix at a position |
+| `ide_diagnostics` | Analyze a file for problems (errors, warnings) and available intentions/code improvements |
 
 ### Project Structure Tools
 
 | Tool | Description |
 |------|-------------|
-| `ide_get_project_structure` | Get the project module structure with source roots |
-| `ide_get_file_structure` | Get the structure of a file (classes, methods, fields) |
-| `ide_get_dependencies` | Get the project dependencies (libraries and versions) |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 
 ### Refactoring Tools
@@ -184,11 +177,11 @@ The plugin provides **20 MCP tools** organized into four categories:
 | Tool | Description |
 |------|-------------|
 | `ide_refactor_rename` | Rename a symbol and update all references |
-| `ide_extract_method` | Extract selected code into a new method |
-| `ide_extract_variable` | Extract an expression into a variable |
-| `ide_inline` | Inline a variable or method |
-| `ide_safe_delete` | Safely delete an element, checking for usages first |
-| `ide_move_element` | Move an element to a different file or package |
+| `ide_refactor_extract_method` | Extract selected code into a new method |
+| `ide_refactor_extract_variable` | Extract an expression into a variable |
+| `ide_refactor_inline` | Inline a variable or method |
+| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first |
+| `ide_refactor_move` | Move an element to a different file or package |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
 

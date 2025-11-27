@@ -2,17 +2,20 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.InspectionsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.IntentionInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
+import com.intellij.codeInsight.intention.IntentionAction
+import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.codeInspection.InspectionManager
 import com.intellij.codeInspection.LocalInspectionTool
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ProblemsHolder
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
+import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.project.Project
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElementVisitor
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -22,15 +25,17 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-class GetInspectionsTool : AbstractMcpTool() {
+class GetDiagnosticsTool : AbstractMcpTool() {
 
-    override val name = "ide_analyze_code"
+    override val name = "ide_diagnostics"
 
     override val description = """
-        Runs IntelliJ's code inspections to detect errors, warnings, and code quality issues in a file.
+        Analyzes a file for code problems and available intentions/improvements.
+        Runs IntelliJ's code inspections to detect errors, warnings, and code quality issues.
+        Also returns available intention actions (code improvements) at a specific position.
         Use when checking for compilation errors, potential bugs, or code style violations.
-        Use when verifying code changes haven't introduced new problems.
-        Returns problems with severity (ERROR, WARNING, WEAK_WARNING, INFO), messages, and precise locations.
+        Use when exploring available code transformations or improvements.
+        Returns problems with severity (ERROR, WARNING, WEAK_WARNING, INFO) and available intentions.
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -44,13 +49,21 @@ class GetInspectionsTool : AbstractMcpTool() {
                 put("type", "string")
                 put("description", "Path to the file relative to project root")
             }
+            putJsonObject("line") {
+                put("type", "integer")
+                put("description", "1-based line number for intention lookup (optional, defaults to 1)")
+            }
+            putJsonObject("column") {
+                put("type", "integer")
+                put("description", "1-based column number for intention lookup (optional, defaults to 1)")
+            }
             putJsonObject("startLine") {
                 put("type", "integer")
-                put("description", "1-based start line for filtering (optional)")
+                put("description", "1-based start line for filtering problems (optional)")
             }
             putJsonObject("endLine") {
                 put("type", "integer")
-                put("description", "1-based end line for filtering (optional)")
+                put("description", "1-based end line for filtering problems (optional)")
             }
         }
         putJsonArray("required") {
@@ -61,6 +74,8 @@ class GetInspectionsTool : AbstractMcpTool() {
     override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = arguments["file"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
+        val line = arguments["line"]?.jsonPrimitive?.int ?: 1
+        val column = arguments["column"]?.jsonPrimitive?.int ?: 1
         val startLine = arguments["startLine"]?.jsonPrimitive?.int
         val endLine = arguments["endLine"]?.jsonPrimitive?.int
 
@@ -73,13 +88,13 @@ class GetInspectionsTool : AbstractMcpTool() {
             val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
                 ?: return@readAction createErrorResult("Could not get document for file")
 
+            // Collect problems from inspections
             val problems = mutableListOf<ProblemInfo>()
 
             try {
                 val inspectionManager = InspectionManager.getInstance(project)
                 val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
 
-                // Get all enabled inspection tools
                 val tools = profile.getAllEnabledInspectionTools(project)
 
                 tools.forEach { toolWrapper ->
@@ -123,18 +138,66 @@ class GetInspectionsTool : AbstractMcpTool() {
                                 ))
                             }
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         // Individual inspection might fail
                     }
                 }
-            } catch (e: Exception) {
-                // Analysis might fail, return partial results
+            } catch (_: Exception) {
+                // Analysis might fail, continue with partial results
             }
 
-            createJsonResult(InspectionsResult(
+            // Collect intentions at the specified position
+            val intentions = mutableListOf<IntentionInfo>()
+
+            try {
+                val offset = getOffset(document, line, column) ?: 0
+
+                // Get highlights at the position from daemon
+                DaemonCodeAnalyzerEx.processHighlights(
+                    document,
+                    project,
+                    HighlightSeverity.INFORMATION,
+                    offset,
+                    offset + 1
+                ) { highlightInfo ->
+                    highlightInfo.findRegisteredQuickFix<IntentionAction> { descriptor, _ ->
+                        val action = descriptor.action
+                        if (action.isAvailable(project, null, psiFile)) {
+                            intentions.add(IntentionInfo(
+                                name = action.text,
+                                description = action.familyName.takeIf { it != action.text }
+                            ))
+                        }
+                        null
+                    }
+                    true
+                }
+
+                // Also check for general intention actions
+                val element = psiFile.findElementAt(offset)
+                if (element != null) {
+                    IntentionManager.getInstance()
+                        .getAvailableIntentions()
+                        .filter { it.isAvailable(project, null, psiFile) }
+                        .take(20)
+                        .forEach { action ->
+                            intentions.add(IntentionInfo(
+                                name = action.text,
+                                description = action.familyName.takeIf { it != action.text }
+                            ))
+                        }
+                }
+            } catch (_: Exception) {
+                // Intention discovery might fail
+            }
+
+            createJsonResult(DiagnosticsResult(
                 problems = problems.distinctBy { "${it.line}:${it.column}:${it.message}" },
-                totalCount = problems.size
+                intentions = intentions.distinctBy { it.name },
+                problemCount = problems.size,
+                intentionCount = intentions.size
             ))
         }
     }
 }
+
