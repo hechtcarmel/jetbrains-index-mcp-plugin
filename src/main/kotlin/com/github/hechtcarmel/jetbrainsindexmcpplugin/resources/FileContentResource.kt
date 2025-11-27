@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.resources
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ResourceUris
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ResourceContent
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
@@ -10,7 +11,7 @@ import kotlinx.serialization.json.Json
 
 class FileContentResource : McpResource {
 
-    override val uri = "file://content/{path}"
+    override val uri = ResourceUris.FILE_CONTENT_PATTERN
 
     override val name = "File Content"
 
@@ -64,7 +65,7 @@ class FileContentResource : McpResource {
                 )
 
                 ResourceContent(
-                    uri = "file://content/$relativePath",
+                    uri = "${ResourceUris.FILE_CONTENT_PREFIX}$relativePath",
                     mimeType = getMimeType(virtualFile.extension),
                     text = json.encodeToString(fileInfo)
                 )

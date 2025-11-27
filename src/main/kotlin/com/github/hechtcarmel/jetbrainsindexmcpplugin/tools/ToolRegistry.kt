@@ -36,37 +36,35 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * **Navigation:**
  * - `ide_find_references` - Find all usages of a symbol
- * - `ide_go_to_definition` - Navigate to symbol definition
+ * - `ide_find_definition` - Find symbol definition location
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
  * - `ide_call_hierarchy` - Analyze method call relationships
  * - `ide_find_implementations` - Find interface/method implementations
  *
  * **Intelligence:**
- * - `ide_get_symbol_info` - Get symbol metadata and docs
- * - `ide_get_completions` - Get code completions
- * - `ide_get_inspections` - Run code inspections
- * - `ide_get_quick_fixes` - List available quick fixes
+ * - `ide_inspect_symbol` - Get symbol metadata and docs
+ * - `ide_code_completions` - Get code completions
+ * - `ide_analyze_code` - Run code inspections
+ * - `ide_list_quick_fixes` - List available quick fixes
  * - `ide_apply_quick_fix` - Apply a quick fix
  *
  * **Project:**
- * - `ide_get_project_structure` - Get module structure
- * - `ide_get_file_structure` - Get file outline
- * - `ide_get_dependencies` - List project dependencies
+ * - `ide_project_structure` - Get module structure
+ * - `ide_file_structure` - Get file outline
+ * - `ide_list_dependencies` - List project dependencies
  * - `ide_index_status` - Check indexing status
  *
  * **Refactoring:**
  * - `ide_refactor_rename` - Rename symbol
- * - `ide_extract_method` - Extract method from code
- * - `ide_extract_variable` - Extract expression to variable
- * - `ide_inline` - Inline variable or method
- * - `ide_safe_delete` - Safely delete element
- * - `ide_move_element` - Move element to new location
+ * - `ide_refactor_extract_method` - Extract method from code
+ * - `ide_refactor_extract_variable` - Extract expression to variable
+ * - `ide_refactor_inline` - Inline variable or method
+ * - `ide_refactor_safe_delete` - Safely delete element
+ * - `ide_refactor_move` - Move element to new location
  *
  * ## Custom Tool Registration
  *
- * Custom tools can be registered via:
- * - Programmatic registration using [register]
- * - Extension point `com.github.hechtcarmel.jetbrainsindexmcpplugin.mcpTool`
+ * Custom tools can be registered programmatically using [register].
  *
  * @see McpTool
  * @see McpServerService
@@ -170,10 +168,5 @@ class ToolRegistry {
         register(MoveElementTool())
 
         LOG.info("Registered ${tools.size} built-in MCP tools")
-    }
-
-    fun registerExtensionTools() {
-        // This will be implemented to load tools from extension points
-        // For now, it's a placeholder
     }
 }

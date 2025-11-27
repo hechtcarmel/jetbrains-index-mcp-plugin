@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.JsonRpcMethods
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcErrorCodes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcRequest
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
@@ -19,14 +21,14 @@ class McpPluginUnitTest : TestCase() {
     fun testJsonRpcRequestSerialization() {
         val request = JsonRpcRequest(
             id = JsonPrimitive(1),
-            method = "tools/list"
+            method = JsonRpcMethods.TOOLS_LIST
         )
 
         val serialized = json.encodeToString(request)
         val deserialized = json.decodeFromString<JsonRpcRequest>(serialized)
 
-        assertEquals("2.0", deserialized.jsonrpc)
-        assertEquals("tools/list", deserialized.method)
+        assertEquals(McpConstants.JSON_RPC_VERSION, deserialized.jsonrpc)
+        assertEquals(JsonRpcMethods.TOOLS_LIST, deserialized.method)
     }
 
     fun testJsonRpcResponseSerialization() {
@@ -38,7 +40,7 @@ class McpPluginUnitTest : TestCase() {
         val serialized = json.encodeToString(response)
         val deserialized = json.decodeFromString<JsonRpcResponse>(serialized)
 
-        assertEquals("2.0", deserialized.jsonrpc)
+        assertEquals(McpConstants.JSON_RPC_VERSION, deserialized.jsonrpc)
         assertNull(deserialized.error)
     }
 
@@ -49,14 +51,14 @@ class McpPluginUnitTest : TestCase() {
         val tools = registry.getAllTools()
         assertTrue("Should have registered tools", tools.isNotEmpty())
 
-        val findUsagesTool = registry.getTool("find_usages")
-        assertNotNull("find_usages tool should be registered", findUsagesTool)
+        val findReferencesTool = registry.getTool(ToolNames.FIND_REFERENCES)
+        assertNotNull("${ToolNames.FIND_REFERENCES} tool should be registered", findReferencesTool)
 
-        val goToDefTool = registry.getTool("find_definition")
-        assertNotNull("find_definition tool should be registered", goToDefTool)
+        val findDefTool = registry.getTool(ToolNames.FIND_DEFINITION)
+        assertNotNull("${ToolNames.FIND_DEFINITION} tool should be registered", findDefTool)
 
-        val indexStatusTool = registry.getTool("get_index_status")
-        assertNotNull("get_index_status tool should be registered", indexStatusTool)
+        val indexStatusTool = registry.getTool(ToolNames.INDEX_STATUS)
+        assertNotNull("${ToolNames.INDEX_STATUS} tool should be registered", indexStatusTool)
     }
 
     fun testJsonRpcErrorCodes() {

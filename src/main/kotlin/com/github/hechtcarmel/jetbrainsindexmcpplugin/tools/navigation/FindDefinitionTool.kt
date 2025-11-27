@@ -1,11 +1,17 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiReference
 import kotlinx.serialization.json.JsonObject
@@ -19,55 +25,55 @@ import kotlinx.serialization.json.putJsonObject
 
 class FindDefinitionTool : AbstractMcpTool() {
 
-    override val name = "ide_go_to_definition"
+    override val name = ToolNames.FIND_DEFINITION
 
     override val description = """
-        Navigates to the definition/declaration of a symbol at a given source location.
+        Finds the definition/declaration of a symbol at a given source location.
         Use when needing to understand where a method, class, variable, or field is declared.
-        Use when jumping from a usage to its original definition.
+        Use when looking up the original definition from a usage site.
         Returns the definition's file path, line number, column, symbol name, and a multi-line code preview.
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("project_path") {
-                put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+        put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
+        putJsonObject(SchemaConstants.PROPERTIES) {
+            putJsonObject(ParamNames.PROJECT_PATH) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_PROJECT_PATH)
             }
-            putJsonObject("file") {
-                put("type", "string")
-                put("description", "Path to the file relative to project root")
+            putJsonObject(ParamNames.FILE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_FILE)
             }
-            putJsonObject("line") {
-                put("type", "integer")
-                put("description", "1-based line number")
+            putJsonObject(ParamNames.LINE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_LINE)
             }
-            putJsonObject("column") {
-                put("type", "integer")
-                put("description", "1-based column number")
+            putJsonObject(ParamNames.COLUMN) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_COLUMN)
             }
         }
-        putJsonArray("required") {
-            add(JsonPrimitive("file"))
-            add(JsonPrimitive("line"))
-            add(JsonPrimitive("column"))
+        putJsonArray(SchemaConstants.REQUIRED) {
+            add(JsonPrimitive(ParamNames.FILE))
+            add(JsonPrimitive(ParamNames.LINE))
+            add(JsonPrimitive(ParamNames.COLUMN))
         }
     }
 
     override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
-        val line = arguments["line"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: line")
-        val column = arguments["column"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: column")
+        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.FILE))
+        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
+        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
 
         requireSmartMode(project)
 
         return readAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult("No element found at position $file:$line:$column")
+                ?: return@readAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
             // Try to find a reference at this position
             val reference = element.reference ?: findReferenceInParent(element)
@@ -76,19 +82,19 @@ class FindDefinitionTool : AbstractMcpTool() {
                 reference.resolve()
             } else {
                 // If the element itself is a declaration, return it
-                findNamedElement(element)
+                PsiUtils.findNamedElement(element)
             }
 
             if (targetElement == null) {
-                return@readAction createErrorResult("Could not resolve symbol definition")
+                return@readAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
             }
 
             val targetFile = targetElement.containingFile?.virtualFile
-                ?: return@readAction createErrorResult("Definition file not found")
+                ?: return@readAction createErrorResult(ErrorMessages.DEFINITION_FILE_NOT_FOUND)
 
             val document = PsiDocumentManager.getInstance(project)
                 .getDocument(targetElement.containingFile)
-                ?: return@readAction createErrorResult("Could not get document for definition")
+                ?: return@readAction createErrorResult(ErrorMessages.DEFINITION_DOCUMENT_NOT_FOUND)
 
             val targetLine = document.getLineNumber(targetElement.textOffset) + 1
             val targetColumn = targetElement.textOffset -
@@ -120,22 +126,11 @@ class FindDefinitionTool : AbstractMcpTool() {
         }
     }
 
-    private fun findReferenceInParent(element: com.intellij.psi.PsiElement): PsiReference? {
-        var current: com.intellij.psi.PsiElement? = element
+    private fun findReferenceInParent(element: PsiElement): PsiReference? {
+        var current: PsiElement? = element
         repeat(3) {
             current = current?.parent ?: return null
             current?.reference?.let { return it }
-        }
-        return null
-    }
-
-    private fun findNamedElement(element: com.intellij.psi.PsiElement): PsiNamedElement? {
-        var current: com.intellij.psi.PsiElement? = element
-        while (current != null) {
-            if (current is PsiNamedElement && current.name != null) {
-                return current
-            }
-            current = current.parent
         }
         return null
     }

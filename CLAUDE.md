@@ -8,7 +8,7 @@ An IntelliJ Platform plugin that exposes an MCP (Model Context Protocol) server,
 Create an MCP server within an IntelliJ plugin that allows AI coding assistants to:
 - Perform refactoring operations (rename, extract, move, etc.)
 - Query type hierarchy and call hierarchy
-- Access code navigation features (find usages, go to definition)
+- Access code navigation features (find usages, find definition)
 - Leverage IDE indexes for fast code search and analysis
 - Use code completion and inspection APIs
 

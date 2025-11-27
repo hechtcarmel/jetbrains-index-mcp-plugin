@@ -11,7 +11,7 @@ An IntelliJ Platform plugin that exposes an **MCP (Model Context Protocol) serve
 
 ### Features
 
-- **Semantic Code Navigation** - Find usages, go to definition, type/call hierarchies, find implementations using the IDE's semantic index
+- **Semantic Code Navigation** - Find usages, find definition, type/call hierarchies, find implementations using the IDE's semantic index
 - **Safe IDE-Powered Refactoring** - Rename symbols, extract methods/variables, inline, move, and safely delete code with full reference updates
 - **Code Analysis** - Get code completions, run inspections, and apply quick fixes
 - **Project Intelligence** - Query project structure, file structure, dependencies, and indexing status
@@ -155,7 +155,7 @@ The plugin provides **20 MCP tools** organized into four categories:
 | Tool | Description |
 |------|-------------|
 | `ide_find_references` | Find all references to a symbol across the entire project |
-| `ide_go_to_definition` | Navigate to the definition/declaration of a symbol |
+| `ide_find_definition` | Find the definition/declaration location of a symbol |
 | `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) |
 | `ide_call_hierarchy` | Analyze method call relationships (callers or callees) |
 | `ide_find_implementations` | Find all implementations of an interface or abstract method |

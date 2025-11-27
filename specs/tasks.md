@@ -73,7 +73,7 @@
   - `PositionInput.kt` - Common file/line/column input
   - `UsageLocation.kt` - Usage search result
   - `FindUsagesResult.kt` - ide_find_references output
-  - `DefinitionResult.kt` - ide_go_to_definition output
+  - `DefinitionResult.kt` - ide_find_definition output
   - `SymbolInfoResult.kt` - ide_inspect_symbol output
 
 ### 1.3 McpRequestHandler (HTTP+SSE Transport)

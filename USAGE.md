@@ -103,13 +103,13 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 
 ---
 
-### ide_go_to_definition
+### ide_find_definition
 
-Navigates to the definition/declaration of a symbol at a given source location.
+Finds the definition/declaration location of a symbol at a given source location.
 
 **Use when:**
 - Understanding where a method, class, variable, or field is declared
-- Jumping from a usage to its original definition
+- Looking up the original definition from a usage site
 
 **Parameters:**
 
@@ -125,7 +125,7 @@ Navigates to the definition/declaration of a symbol at a given source location.
 {
   "method": "tools/call",
   "params": {
-    "name": "ide_go_to_definition",
+    "name": "ide_find_definition",
     "arguments": {
       "file": "src/main/java/com/example/App.java",
       "line": 25,

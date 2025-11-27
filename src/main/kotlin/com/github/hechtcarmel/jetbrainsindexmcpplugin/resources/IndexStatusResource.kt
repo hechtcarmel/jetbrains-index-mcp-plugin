@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.resources
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ResourceUris
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ResourceContent
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
@@ -12,7 +13,7 @@ class IndexStatusResource : McpResource {
 
     private val json = Json { prettyPrint = true }
 
-    override val uri = "index://status"
+    override val uri = ResourceUris.INDEX_STATUS
     override val name = "Index Status"
     override val description = "IDE indexing status (dumb/smart mode)"
     override val mimeType = "application/json"

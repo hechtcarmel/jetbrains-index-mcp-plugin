@@ -1,13 +1,19 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiElement
 import com.intellij.psi.search.searches.ReferencesSearch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,7 +26,7 @@ import kotlinx.serialization.json.putJsonObject
 
 class FindUsagesTool : AbstractMcpTool() {
 
-    override val name = "ide_find_references"
+    override val name = ToolNames.FIND_REFERENCES
 
     override val description = """
         Finds all references to a symbol across the entire project using IntelliJ's semantic index.
@@ -30,49 +36,49 @@ class FindUsagesTool : AbstractMcpTool() {
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("project_path") {
-                put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+        put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
+        putJsonObject(SchemaConstants.PROPERTIES) {
+            putJsonObject(ParamNames.PROJECT_PATH) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_PROJECT_PATH)
             }
-            putJsonObject("file") {
-                put("type", "string")
-                put("description", "Path to the file relative to project root")
+            putJsonObject(ParamNames.FILE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_FILE)
             }
-            putJsonObject("line") {
-                put("type", "integer")
-                put("description", "1-based line number")
+            putJsonObject(ParamNames.LINE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_LINE)
             }
-            putJsonObject("column") {
-                put("type", "integer")
-                put("description", "1-based column number")
+            putJsonObject(ParamNames.COLUMN) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_COLUMN)
             }
         }
-        putJsonArray("required") {
-            add(JsonPrimitive("file"))
-            add(JsonPrimitive("line"))
-            add(JsonPrimitive("column"))
+        putJsonArray(SchemaConstants.REQUIRED) {
+            add(JsonPrimitive(ParamNames.FILE))
+            add(JsonPrimitive(ParamNames.LINE))
+            add(JsonPrimitive(ParamNames.COLUMN))
         }
     }
 
     override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
-        val line = arguments["line"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: line")
-        val column = arguments["column"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: column")
+        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.FILE))
+        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
+        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
 
         requireSmartMode(project)
 
         return readAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult("No element found at position $file:$line:$column")
+                ?: return@readAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
             // Find the named element (go up the tree if needed)
-            val targetElement = findNamedElement(element)
-                ?: return@readAction createErrorResult("No named element at position")
+            val targetElement = PsiUtils.findNamedElement(element)
+                ?: return@readAction createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
 
             val usages = ReferencesSearch.search(targetElement)
                 .findAll()
@@ -112,29 +118,18 @@ class FindUsagesTool : AbstractMcpTool() {
         }
     }
 
-    private fun findNamedElement(element: com.intellij.psi.PsiElement): PsiNamedElement? {
-        var current: com.intellij.psi.PsiElement? = element
-        while (current != null) {
-            if (current is PsiNamedElement && current.name != null) {
-                return current
-            }
-            current = current.parent
-        }
-        return null
-    }
-
-    private fun classifyUsage(element: com.intellij.psi.PsiElement): String {
+    private fun classifyUsage(element: PsiElement): String {
         val parent = element.parent
         val parentClass = parent?.javaClass?.simpleName ?: "Unknown"
 
         return when {
-            parentClass.contains("MethodCall") -> "METHOD_CALL"
-            parentClass.contains("Reference") -> "REFERENCE"
-            parentClass.contains("Field") -> "FIELD_ACCESS"
-            parentClass.contains("Import") -> "IMPORT"
-            parentClass.contains("Parameter") -> "PARAMETER"
-            parentClass.contains("Variable") -> "VARIABLE"
-            else -> "REFERENCE"
+            parentClass.contains("MethodCall") -> UsageTypes.METHOD_CALL
+            parentClass.contains("Reference") -> UsageTypes.REFERENCE
+            parentClass.contains("Field") -> UsageTypes.FIELD_ACCESS
+            parentClass.contains("Import") -> UsageTypes.IMPORT
+            parentClass.contains("Parameter") -> UsageTypes.PARAMETER
+            parentClass.contains("Variable") -> UsageTypes.VARIABLE
+            else -> UsageTypes.REFERENCE
         }
     }
 }

@@ -1,6 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.JsonRpcMethods
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ResourceUris
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
@@ -49,13 +53,13 @@ class JsonRpcHandler(
 
     private suspend fun routeRequest(request: JsonRpcRequest): JsonRpcResponse {
         return when (request.method) {
-            "initialize" -> processInitialize(request)
-            "initialized" -> processInitialized(request)
-            "tools/list" -> processToolsList(request)
-            "tools/call" -> processToolCall(request)
-            "resources/list" -> processResourcesList(request)
-            "resources/read" -> processResourceRead(request)
-            "ping" -> processPing(request)
+            JsonRpcMethods.INITIALIZE -> processInitialize(request)
+            JsonRpcMethods.INITIALIZED -> processInitialized(request)
+            JsonRpcMethods.TOOLS_LIST -> processToolsList(request)
+            JsonRpcMethods.TOOLS_CALL -> processToolCall(request)
+            JsonRpcMethods.RESOURCES_LIST -> processResourcesList(request)
+            JsonRpcMethods.RESOURCES_READ -> processResourceRead(request)
+            JsonRpcMethods.PING -> processPing(request)
             else -> createMethodNotFoundResponse(request.id, request.method)
         }
     }
@@ -99,18 +103,18 @@ class JsonRpcHandler(
 
     private suspend fun processToolCall(request: JsonRpcRequest): JsonRpcResponse {
         val params = request.params
-            ?: return createInvalidParamsResponse(request.id, "Missing params")
+            ?: return createInvalidParamsResponse(request.id, ErrorMessages.MISSING_PARAMS)
 
-        val toolName = params["name"]?.jsonPrimitive?.contentOrNull
-            ?: return createInvalidParamsResponse(request.id, "Missing tool name")
+        val toolName = params[ParamNames.NAME]?.jsonPrimitive?.contentOrNull
+            ?: return createInvalidParamsResponse(request.id, ErrorMessages.MISSING_TOOL_NAME)
 
-        val arguments = params["arguments"]?.jsonObject ?: JsonObject(emptyMap())
+        val arguments = params[ParamNames.ARGUMENTS]?.jsonObject ?: JsonObject(emptyMap())
 
         val tool = toolRegistry.getTool(toolName)
-            ?: return createMethodNotFoundResponse(request.id, "Tool not found: $toolName")
+            ?: return createMethodNotFoundResponse(request.id, ErrorMessages.toolNotFound(toolName))
 
         // Extract optional project_path from arguments
-        val projectPath = arguments["project_path"]?.jsonPrimitive?.contentOrNull
+        val projectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
 
         val projectResult = resolveProject(projectPath)
         if (projectResult.isError) {
@@ -173,7 +177,7 @@ class JsonRpcHandler(
                 id = request.id,
                 result = json.encodeToJsonElement(
                     ToolCallResult(
-                        content = listOf(ContentBlock.Text(text = e.message ?: "Unknown error")),
+                        content = listOf(ContentBlock.Text(text = e.message ?: ErrorMessages.UNKNOWN_ERROR)),
                         isError = true
                     )
                 )
@@ -193,16 +197,16 @@ class JsonRpcHandler(
 
     private suspend fun processResourceRead(request: JsonRpcRequest): JsonRpcResponse {
         val params = request.params
-            ?: return createInvalidParamsResponse(request.id, "Missing params")
+            ?: return createInvalidParamsResponse(request.id, ErrorMessages.MISSING_PARAMS)
 
-        val uri = params["uri"]?.jsonPrimitive?.contentOrNull
-            ?: return createInvalidParamsResponse(request.id, "Missing resource URI")
+        val uri = params[ParamNames.URI]?.jsonPrimitive?.contentOrNull
+            ?: return createInvalidParamsResponse(request.id, ErrorMessages.MISSING_RESOURCE_URI)
 
         val resource = resourceRegistry.getResource(uri)
-            ?: return createMethodNotFoundResponse(request.id, "Resource not found: $uri")
+            ?: return createMethodNotFoundResponse(request.id, ErrorMessages.resourceNotFound(uri))
 
         // Extract optional project_path from params
-        val projectPath = params["project_path"]?.jsonPrimitive?.contentOrNull
+        val projectPath = params[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
 
         val projectResult = resolveProject(projectPath)
         if (projectResult.isError) {
@@ -219,7 +223,7 @@ class JsonRpcHandler(
             val content = when (resource) {
                 is FileContentResource -> {
                     // Extract path from URI: file://content/{path}
-                    val path = extractPathFromUri(uri, "file://content/")
+                    val path = extractPathFromUri(uri, ResourceUris.FILE_CONTENT_PREFIX)
                     if (path != null) {
                         resource.readWithPath(project, path)
                     } else {
@@ -228,7 +232,7 @@ class JsonRpcHandler(
                 }
                 is SymbolInfoResource -> {
                     // Extract FQN from URI: symbol://info/{fqn}
-                    val fqn = extractPathFromUri(uri, "symbol://info/")
+                    val fqn = extractPathFromUri(uri, ResourceUris.SYMBOL_INFO_PREFIX)
                     if (fqn != null) {
                         resource.readWithFqn(project, fqn)
                     } else {
@@ -245,7 +249,7 @@ class JsonRpcHandler(
             )
         } catch (e: Exception) {
             LOG.error("Resource read failed: $uri", e)
-            createInternalErrorResponse(request.id, e.message ?: "Unknown error")
+            createInternalErrorResponse(request.id, e.message ?: ErrorMessages.UNKNOWN_ERROR)
         }
     }
 
@@ -281,8 +285,8 @@ class JsonRpcHandler(
                 errorResult = ToolCallResult(
                     content = listOf(ContentBlock.Text(
                         text = json.encodeToString(buildJsonObject {
-                            put("error", "no_project_open")
-                            put("message", "No project is currently open in the IDE.")
+                            put("error", ErrorMessages.ERROR_NO_PROJECT_OPEN)
+                            put("message", ErrorMessages.MSG_NO_PROJECT_OPEN)
                         })
                     )),
                     isError = true
@@ -301,8 +305,8 @@ class JsonRpcHandler(
                     errorResult = ToolCallResult(
                         content = listOf(ContentBlock.Text(
                             text = json.encodeToString(buildJsonObject {
-                                put("error", "project_not_found")
-                                put("message", "No open project matches the specified path: $projectPath")
+                                put("error", ErrorMessages.ERROR_PROJECT_NOT_FOUND)
+                                put("message", ErrorMessages.msgProjectNotFound(projectPath))
                                 put("available_projects", buildJsonArray {
                                     openProjects.forEach { proj ->
                                         add(buildJsonObject {
@@ -330,8 +334,8 @@ class JsonRpcHandler(
             errorResult = ToolCallResult(
                 content = listOf(ContentBlock.Text(
                     text = json.encodeToString(buildJsonObject {
-                        put("error", "multiple_projects_open")
-                        put("message", "Multiple projects are open. Please specify 'project_path' parameter with one of the available project paths.")
+                        put("error", ErrorMessages.ERROR_MULTIPLE_PROJECTS)
+                        put("message", ErrorMessages.MSG_MULTIPLE_PROJECTS)
                         put("available_projects", buildJsonArray {
                             openProjects.forEach { proj ->
                                 add(buildJsonObject {
@@ -356,7 +360,7 @@ class JsonRpcHandler(
         return JsonRpcResponse(
             error = JsonRpcError(
                 code = JsonRpcErrorCodes.PARSE_ERROR,
-                message = "Failed to parse JSON-RPC request"
+                message = ErrorMessages.PARSE_ERROR
             )
         )
     }
@@ -376,7 +380,7 @@ class JsonRpcHandler(
             id = id,
             error = JsonRpcError(
                 code = JsonRpcErrorCodes.METHOD_NOT_FOUND,
-                message = "Method not found: $method"
+                message = ErrorMessages.methodNotFound(method)
             )
         )
     }

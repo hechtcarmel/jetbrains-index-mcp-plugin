@@ -1,8 +1,13 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolInfoResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.lang.documentation.DocumentationProvider
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -20,7 +25,7 @@ import kotlinx.serialization.json.putJsonObject
 
 class GetSymbolInfoTool : AbstractMcpTool() {
 
-    override val name = "ide_inspect_symbol"
+    override val name = ToolNames.INSPECT_SYMBOL
 
     override val description = """
         Retrieves comprehensive information about a symbol at a specific code location.
@@ -30,49 +35,49 @@ class GetSymbolInfoTool : AbstractMcpTool() {
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("project_path") {
-                put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open.")
+        put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
+        putJsonObject(SchemaConstants.PROPERTIES) {
+            putJsonObject(ParamNames.PROJECT_PATH) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_PROJECT_PATH)
             }
-            putJsonObject("file") {
-                put("type", "string")
-                put("description", "Path to the file relative to project root")
+            putJsonObject(ParamNames.FILE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_FILE)
             }
-            putJsonObject("line") {
-                put("type", "integer")
-                put("description", "1-based line number")
+            putJsonObject(ParamNames.LINE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_LINE)
             }
-            putJsonObject("column") {
-                put("type", "integer")
-                put("description", "1-based column number")
+            putJsonObject(ParamNames.COLUMN) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_COLUMN)
             }
         }
-        putJsonArray("required") {
-            add(JsonPrimitive("file"))
-            add(JsonPrimitive("line"))
-            add(JsonPrimitive("column"))
+        putJsonArray(SchemaConstants.REQUIRED) {
+            add(JsonPrimitive(ParamNames.FILE))
+            add(JsonPrimitive(ParamNames.LINE))
+            add(JsonPrimitive(ParamNames.COLUMN))
         }
     }
 
     override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
-        val line = arguments["line"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: line")
-        val column = arguments["column"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: column")
+        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.FILE))
+        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
+        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
+            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
 
         requireSmartMode(project)
 
         return readAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult("No element found at position $file:$line:$column")
+                ?: return@readAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
             // Try to resolve to the definition
             val targetElement = resolveToDefinition(element)
-                ?: return@readAction createErrorResult("Could not resolve symbol")
+                ?: return@readAction createErrorResult(ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
 
             val name = if (targetElement is PsiNamedElement) {
                 targetElement.name ?: "unknown"
@@ -115,7 +120,7 @@ class GetSymbolInfoTool : AbstractMcpTool() {
         }
 
         // Otherwise, find the nearest named element
-        return findNamedElement(element)
+        return PsiUtils.findNamedElement(element)
     }
 
     private fun findReferenceInParent(element: PsiElement): PsiReference? {
@@ -123,17 +128,6 @@ class GetSymbolInfoTool : AbstractMcpTool() {
         repeat(3) {
             current = current?.parent ?: return null
             current?.reference?.let { return it }
-        }
-        return null
-    }
-
-    private fun findNamedElement(element: PsiElement): PsiNamedElement? {
-        var current: PsiElement? = element
-        while (current != null) {
-            if (current is PsiNamedElement && current.name != null) {
-                return current
-            }
-            current = current.parent
         }
         return null
     }

@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.resources
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ResourceUris
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ResourceContent
 import com.intellij.lang.documentation.DocumentationProvider
 import com.intellij.openapi.application.ReadAction
@@ -19,7 +21,7 @@ import kotlinx.serialization.json.Json
 
 class SymbolInfoResource : McpResource {
 
-    override val uri = "symbol://info/{fqn}"
+    override val uri = ResourceUris.SYMBOL_INFO_PATTERN
 
     override val name = "Symbol Info"
 
@@ -47,7 +49,7 @@ class SymbolInfoResource : McpResource {
     suspend fun readWithFqn(project: Project, fqn: String): ResourceContent {
         return ReadAction.compute<ResourceContent, Throwable> {
             if (DumbService.isDumb(project)) {
-                return@compute createErrorResponse("IDE is in dumb mode, indexes not available")
+                return@compute createErrorResponse(ErrorMessages.INDEX_NOT_READY)
             }
 
             // Try to find the symbol
@@ -119,7 +121,7 @@ class SymbolInfoResource : McpResource {
         )
 
         return ResourceContent(
-            uri = "symbol://info/${psiClass.qualifiedName}",
+            uri = "${ResourceUris.SYMBOL_INFO_PREFIX}${psiClass.qualifiedName}",
             mimeType = mimeType,
             text = json.encodeToString(result)
         )
@@ -162,7 +164,7 @@ class SymbolInfoResource : McpResource {
         )
 
         return ResourceContent(
-            uri = "symbol://info/$fqn",
+            uri = "${ResourceUris.SYMBOL_INFO_PREFIX}$fqn",
             mimeType = mimeType,
             text = json.encodeToString(result)
         )
@@ -194,7 +196,7 @@ class SymbolInfoResource : McpResource {
         )
 
         return ResourceContent(
-            uri = "symbol://info/$fqn",
+            uri = "${ResourceUris.SYMBOL_INFO_PREFIX}$fqn",
             mimeType = mimeType,
             text = json.encodeToString(result)
         )

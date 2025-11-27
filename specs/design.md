@@ -1035,7 +1035,7 @@ class FindUsagesTool : AbstractMcpTool() {
 fun registerBuiltInTools(project: Project) {
     // Navigation tools (ide_* prefix)
     register(FindUsagesTool())        // ide_find_references
-    register(FindDefinitionTool())    // ide_go_to_definition
+    register(FindDefinitionTool())    // ide_find_definition
     register(TypeHierarchyTool())     // ide_type_hierarchy
     register(CallHierarchyTool())     // ide_call_hierarchy
     register(FindImplementationsTool()) // ide_find_implementations

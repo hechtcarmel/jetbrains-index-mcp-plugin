@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.resources
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ResourceUris
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ResourceContent
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.module.ModuleManager
@@ -16,7 +17,7 @@ class ProjectStructureResource : McpResource {
 
     private val json = Json { prettyPrint = true }
 
-    override val uri = "project://structure"
+    override val uri = ResourceUris.PROJECT_STRUCTURE
     override val name = "Project Structure"
     override val description = "Current project module structure with source roots"
     override val mimeType = "application/json"
