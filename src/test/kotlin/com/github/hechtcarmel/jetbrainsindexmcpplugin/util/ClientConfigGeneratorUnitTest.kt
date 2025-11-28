@@ -71,6 +71,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         assertTrue("Should mention scope user", hint.contains("--scope user"))
         assertTrue("Should mention scope project", hint.contains("--scope project"))
         assertTrue("Should mention remove command", hint.contains("mcp remove"))
+        assertTrue("Should mention automatic reinstall", hint.contains("reinstall") || hint.contains("Automatically"))
     }
 
     fun testClaudeDesktopHintContainsConfigPaths() {
@@ -122,5 +123,119 @@ class ClientConfigGeneratorUnitTest : TestCase() {
 
         assertEquals("Names should be unique", names.size, names.toSet().size)
         assertEquals("Display names should be unique", displayNames.size, displayNames.toSet().size)
+    }
+
+    // buildClaudeCodeCommand tests (reinstall pattern)
+
+    fun testBuildClaudeCodeCommandContainsRemoveCommand() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:63342/index-mcp/sse",
+            serverName = "test-server"
+        )
+
+        assertTrue(
+            "Command should contain remove command",
+            command.contains("claude mcp remove test-server")
+        )
+    }
+
+    fun testBuildClaudeCodeCommandContainsAddCommand() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:63342/index-mcp/sse",
+            serverName = "test-server"
+        )
+
+        assertTrue(
+            "Command should contain add command",
+            command.contains("claude mcp add --transport http test-server http://localhost:63342/index-mcp/sse --scope user")
+        )
+    }
+
+    fun testBuildClaudeCodeCommandUsesSemicolonSeparator() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:63342/index-mcp/sse",
+            serverName = "test-server"
+        )
+
+        assertTrue(
+            "Command should use ; separator (not &&) so add runs even if remove fails",
+            command.contains(";")
+        )
+        assertFalse(
+            "Command should not use && separator",
+            command.contains("&&")
+        )
+    }
+
+    fun testBuildClaudeCodeCommandSuppressesRemoveErrors() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:63342/index-mcp/sse",
+            serverName = "test-server"
+        )
+
+        assertTrue(
+            "Remove command should redirect stderr to /dev/null to suppress errors if not installed",
+            command.contains("2>/dev/null")
+        )
+    }
+
+    fun testBuildClaudeCodeCommandRemoveBeforeAdd() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:63342/index-mcp/sse",
+            serverName = "test-server"
+        )
+
+        val removeIndex = command.indexOf("remove")
+        val addIndex = command.indexOf("add")
+
+        assertTrue(
+            "Remove command should come before add command",
+            removeIndex < addIndex
+        )
+    }
+
+    fun testBuildClaudeCodeCommandWithDifferentServerName() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:12345/mcp/sse",
+            serverName = "custom-name"
+        )
+
+        assertTrue(
+            "Remove command should use custom server name",
+            command.contains("claude mcp remove custom-name")
+        )
+        assertTrue(
+            "Add command should use custom server name",
+            command.contains("claude mcp add --transport http custom-name")
+        )
+    }
+
+    fun testBuildClaudeCodeCommandWithDifferentServerUrl() {
+        val customUrl = "http://localhost:12345/custom-mcp/sse"
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = customUrl,
+            serverName = "test-server"
+        )
+
+        assertTrue(
+            "Add command should include the server URL",
+            command.contains(customUrl)
+        )
+    }
+
+    fun testBuildClaudeCodeCommandFormat() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://localhost:63342/index-mcp/sse",
+            serverName = "jetbrains-index"
+        )
+
+        val expectedCommand = "claude mcp remove jetbrains-index 2>/dev/null ; " +
+            "claude mcp add --transport http jetbrains-index http://localhost:63342/index-mcp/sse --scope user"
+
+        assertEquals(
+            "Command format should match expected reinstall pattern",
+            expectedCommand,
+            command
+        )
     }
 }

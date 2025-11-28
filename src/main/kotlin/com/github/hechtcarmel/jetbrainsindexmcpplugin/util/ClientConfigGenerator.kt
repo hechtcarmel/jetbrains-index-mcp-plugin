@@ -147,11 +147,13 @@ object ClientConfigGenerator {
     fun getConfigLocationHint(clientType: ClientType): String {
         return when (clientType) {
             ClientType.CLAUDE_CODE -> """
-                Run this command in your terminal:
+                Runs installation command in your terminal.
+                Automatically handles reinstall if already installed (port may change).
+
                 • --scope user: Adds globally for all projects
                 • --scope project: Adds to current project only
 
-                To remove: claude mcp remove jetbrains-index
+                To remove manually: claude mcp remove jetbrains-index
             """.trimIndent()
 
             ClientType.CLAUDE_DESKTOP -> """
