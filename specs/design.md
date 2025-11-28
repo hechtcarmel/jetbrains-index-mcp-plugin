@@ -241,11 +241,7 @@ src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/
 │   │
 │   ├── refactoring/                       # Refactoring tools
 │   │   ├── RenameSymbolTool.kt
-│   │   ├── ExtractMethodTool.kt
-│   │   ├── ExtractVariableTool.kt
-│   │   ├── InlineTool.kt
-│   │   ├── SafeDeleteTool.kt
-│   │   └── MoveElementTool.kt
+│   │   └── SafeDeleteTool.kt
 │   │
 │   ├── intelligence/                      # Code intelligence tools
 │   │   └── GetDiagnosticsTool.kt
@@ -1041,11 +1037,7 @@ fun registerBuiltInTools(project: Project) {
 
     // Refactoring tools (ide_refactor_* prefix)
     register(RenameSymbolTool())      // ide_refactor_rename
-    register(ExtractMethodTool())     // ide_refactor_extract_method
-    register(ExtractVariableTool())   // ide_refactor_extract_variable
-    register(InlineTool())            // ide_refactor_inline
     register(SafeDeleteTool())        // ide_refactor_safe_delete
-    register(MoveElementTool())       // ide_refactor_move
 }
 ```
 
@@ -1671,3 +1663,4 @@ dependencies {
 | 1.0 | 2025-01-25 | Initial design document |
 | 1.1 | 2025-01-26 | Updated HTTP+SSE transport implementation, added @EncodeDefault annotation for JSON-RPC serialization |
 | 1.2 | 2025-11-27 | Reduced tool count from 20 to 13; merged ide_analyze_code and ide_list_quick_fixes into ide_diagnostics; removed 7 tools |
+| 1.3 | 2025-11-28 | Reduced tool count from 13 to 9; removed extract_method, extract_variable, inline, move tools |

@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2025-11-28
+
+### Changed
+- **BREAKING**: Reduced tool count from 13 to 9 for a more focused API
+- Refactoring tools now limited to rename and safe delete
+
+### Removed
+- `ide_refactor_extract_method` - Complex refactoring removed for reliability
+- `ide_refactor_extract_variable` - Complex refactoring removed for reliability
+- `ide_refactor_inline` - Complex refactoring removed for reliability
+- `ide_refactor_move` - Complex refactoring removed for reliability
+
+---
+
 ## [1.2.0] - 2025-11-27
 
 ### Fixed
@@ -60,13 +74,9 @@
 - `ide_call_hierarchy` - Get method caller/callee hierarchy
 - `ide_find_implementations` - Find interface/abstract implementations
 
-#### Refactoring Tools (6 tools)
+#### Refactoring Tools (2 tools)
 - `ide_refactor_rename` - Rename symbols with reference updates
-- `ide_refactor_extract_method` - Extract code to new method
-- `ide_refactor_extract_variable` - Extract expression to variable
-- `ide_refactor_inline` - Inline variable or method
 - `ide_refactor_safe_delete` - Safely delete unused elements
-- `ide_refactor_move` - Move elements to different files
 
 #### Code Intelligence Tools (1 tool)
 - `ide_diagnostics` - Analyze code for problems and available intentions

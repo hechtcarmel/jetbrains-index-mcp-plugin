@@ -12,7 +12,7 @@ A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, 
 ### Features
 
 - **Semantic Code Navigation** - Find usages, find definition, type/call hierarchies, find implementations using the IDE's semantic index
-- **Safe IDE-Powered Refactoring** - Rename symbols, extract methods/variables, inline, move, and safely delete code with full reference updates
+- **Safe IDE-Powered Refactoring** - Rename symbols and safely delete code with full reference updates
 - **Code Diagnostics** - Analyze files for problems, warnings, and available code improvements
 - **Project Intelligence** - Query indexing status to check if code intelligence is available
 
@@ -148,7 +148,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ## Available Tools
 
-The plugin provides **13 MCP tools** organized into four categories:
+The plugin provides **9 MCP tools** organized into four categories:
 
 ### Navigation Tools
 
@@ -177,11 +177,7 @@ The plugin provides **13 MCP tools** organized into four categories:
 | Tool | Description |
 |------|-------------|
 | `ide_refactor_rename` | Rename a symbol and update all references |
-| `ide_refactor_extract_method` | Extract selected code into a new method |
-| `ide_refactor_extract_variable` | Extract an expression into a variable |
-| `ide_refactor_inline` | Inline a variable or method |
 | `ide_refactor_safe_delete` | Safely delete an element, checking for usages first |
-| `ide_refactor_move` | Move an element to a different file or package |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
 

@@ -16,9 +16,5 @@ object ToolNames {
 
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
-    const val REFACTOR_EXTRACT_METHOD = "ide_refactor_extract_method"
-    const val REFACTOR_EXTRACT_VARIABLE = "ide_refactor_extract_variable"
-    const val REFACTOR_INLINE = "ide_refactor_inline"
     const val REFACTOR_SAFE_DELETE = "ide_refactor_safe_delete"
-    const val REFACTOR_MOVE = "ide_refactor_move"
 }

@@ -137,53 +137,14 @@
 | REF-007 | The tool SHALL return the count of changes made |
 | REF-008 | The tool SHALL update all references to the renamed symbol |
 
-#### 3.2.2 ide_refactor_extract_method (formerly extract_method)
+#### 3.2.2 ide_refactor_safe_delete (formerly safe_delete)
 
 | ID | Requirement |
 |----|-------------|
 | REF-009 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| REF-010 | The tool SHALL accept input: `startLine` (integer, 1-based) |
-| REF-011 | The tool SHALL accept input: `endLine` (integer, 1-based) |
-| REF-012 | The tool SHALL accept input: `methodName` (string) |
-| REF-013 | The tool SHALL return the location of the new method |
-
-#### 3.2.3 ide_refactor_extract_variable (formerly extract_variable)
-
-| ID | Requirement |
-|----|-------------|
-| REF-014 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| REF-015 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| REF-016 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| REF-017 | The tool SHALL accept input: `variableName` (string) |
-| REF-018 | The tool SHALL return the variable declaration location |
-
-#### 3.2.4 ide_refactor_inline (formerly inline)
-
-| ID | Requirement |
-|----|-------------|
-| REF-019 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| REF-020 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| REF-021 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| REF-022 | The tool SHALL return success/failure status |
-
-#### 3.2.5 ide_refactor_safe_delete (formerly safe_delete)
-
-| ID | Requirement |
-|----|-------------|
-| REF-023 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| REF-024 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| REF-025 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| REF-026 | The tool SHALL return success status or list of usages blocking deletion |
-
-#### 3.2.6 ide_refactor_move (formerly move_element)
-
-| ID | Requirement |
-|----|-------------|
-| REF-027 | The tool SHALL accept input: `file` (string, path relative to project root) |
-| REF-028 | The tool SHALL accept input: `line` (integer, 1-based line number) |
-| REF-029 | The tool SHALL accept input: `column` (integer, 1-based column number) |
-| REF-030 | The tool SHALL accept input: `targetFile` (string, destination path) |
-| REF-031 | The tool SHALL return the new location |
+| REF-010 | The tool SHALL accept input: `line` (integer, 1-based line number) |
+| REF-011 | The tool SHALL accept input: `column` (integer, 1-based column number) |
+| REF-012 | The tool SHALL return success status or list of usages blocking deletion |
 
 ### 3.3 Code Intelligence Tools
 
@@ -387,15 +348,11 @@
 
 | ID | Requirement |
 |----|-------------|
-| PH3-001 | Phase 3 SHALL deliver: `ide_refactor_extract_method` tool |
-| PH3-002 | Phase 3 SHALL deliver: `ide_refactor_extract_variable` tool |
-| PH3-003 | Phase 3 SHALL deliver: `ide_refactor_inline` tool |
-| PH3-004 | Phase 3 SHALL deliver: `ide_refactor_safe_delete` tool |
-| PH3-005 | Phase 3 SHALL deliver: `ide_refactor_move` tool |
-| PH3-006 | Phase 3 SHALL deliver: `ide_refactor_rename` tool |
-| PH3-007 | Phase 3 SHALL deliver: User confirmation dialog for write operations |
-| PH3-008 | Phase 3 SHALL deliver: Undo/redo integration |
-| PH3-009 | Phase 3 SHALL deliver: Refactoring preview functionality |
+| PH3-001 | Phase 3 SHALL deliver: `ide_refactor_rename` tool |
+| PH3-002 | Phase 3 SHALL deliver: `ide_refactor_safe_delete` tool |
+| PH3-003 | Phase 3 SHALL deliver: User confirmation dialog for write operations |
+| PH3-004 | Phase 3 SHALL deliver: Undo/redo integration |
+| PH3-005 | Phase 3 SHALL deliver: Refactoring preview functionality |
 
 ### Phase 4: Polish & Release
 
@@ -425,3 +382,4 @@
 |---------|------|-------------|
 | 1.0 | 2025-01-25 | Initial requirements extraction from init.md |
 | 1.1 | 2025-11-27 | Reduced tool count from 20 to 13; removed 8 tools, added ide_diagnostics |
+| 1.2 | 2025-11-28 | Reduced tool count from 13 to 9; removed extract_method, extract_variable, inline, move tools |

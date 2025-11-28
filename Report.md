@@ -23,7 +23,7 @@
 ### Tools Added:
 - `ide_diagnostics` - **New merged tool** that combines problems analysis and available intentions in a single call
 
-### Current Tool Count: 13 tools (down from 20)
+### Current Tool Count: 9 tools (down from 20)
 
 ### Current Available Tools:
 | Category | Tools |
@@ -31,7 +31,13 @@
 | **Navigation** | `ide_find_references`, `ide_find_definition`, `ide_type_hierarchy`, `ide_call_hierarchy`, `ide_find_implementations` |
 | **Intelligence** | `ide_diagnostics` |
 | **Project** | `ide_index_status` |
-| **Refactoring** | `ide_refactor_rename`, `ide_refactor_extract_method`, `ide_refactor_extract_variable`, `ide_refactor_inline`, `ide_refactor_safe_delete`, `ide_refactor_move` |
+| **Refactoring** | `ide_refactor_rename`, `ide_refactor_safe_delete` |
+
+### Additional Tools Removed (v1.3.0):
+- `ide_refactor_extract_method` - Complex refactoring removed for reliability
+- `ide_refactor_extract_variable` - Complex refactoring removed for reliability
+- `ide_refactor_inline` - Complex refactoring removed for reliability
+- `ide_refactor_move` - Complex refactoring removed for reliability
 
 ---
 

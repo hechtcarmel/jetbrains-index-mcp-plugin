@@ -8,10 +8,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ExtractMethodTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ExtractVariableTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InlineTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveElementTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
 import com.intellij.openapi.diagnostic.logger
@@ -25,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## Built-in Tools
  *
- * The registry automatically registers 13 built-in tools in these categories:
+ * The registry automatically registers 9 built-in tools in these categories:
  *
  * **Navigation:**
  * - `ide_find_references` - Find all usages of a symbol
@@ -42,11 +38,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * **Refactoring:**
  * - `ide_refactor_rename` - Rename symbol
- * - `ide_refactor_extract_method` - Extract method from code
- * - `ide_refactor_extract_variable` - Extract expression to variable
- * - `ide_refactor_inline` - Inline variable or method
  * - `ide_refactor_safe_delete` - Safely delete element
- * - `ide_refactor_move` - Move element to new location
  *
  * ## Custom Tool Registration
  *
@@ -140,11 +132,7 @@ class ToolRegistry {
 
         // Refactoring tools
         register(RenameSymbolTool())
-        register(ExtractMethodTool())
-        register(ExtractVariableTool())
-        register(InlineTool())
         register(SafeDeleteTool())
-        register(MoveElementTool())
 
         LOG.info("Registered ${tools.size} built-in MCP tools")
     }

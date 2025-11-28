@@ -246,11 +246,7 @@ Tests are split into two categories to optimize execution time:
 
 **Refactoring:**
 - `ide_refactor_rename` - Rename a symbol across the project
-- `ide_refactor_extract_method` - Extract selection to new method
-- `ide_refactor_extract_variable` - Extract expression to variable
-- `ide_refactor_inline` - Inline variable/method
 - `ide_refactor_safe_delete` - Safely delete element
-- `ide_refactor_move` - Move element to new location
 
 ### Resources Exposed
 - `index://status` - Index status (dumb/smart mode)
