@@ -68,6 +68,13 @@ object PythonHandlers {
  */
 abstract class BasePythonHandler<T> : LanguageHandler<T> {
 
+    /**
+     * Checks if the element is from a Python language.
+     */
+    protected fun isPythonLanguage(element: PsiElement): Boolean {
+        return element.language.id == "Python"
+    }
+
     protected val pyClassClass: Class<*>? by lazy {
         try {
             Class.forName("com.jetbrains.python.psi.PyClass")
@@ -187,7 +194,7 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
     override val languageId = "Python"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isPyClass(element) || findContainingPyClass(element) != null)
+        return isAvailable() && isPythonLanguage(element)
     }
 
     override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyClassClass != null
@@ -285,8 +292,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
     override val languageId = "Python"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isPyClass(element) || isPyFunction(element) ||
-            findContainingPyClass(element) != null || findContainingPyFunction(element) != null)
+        return isAvailable() && isPythonLanguage(element)
     }
 
     override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyClassClass != null
@@ -369,12 +375,13 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
     companion object {
         private const val MAX_RESULTS_PER_LEVEL = 20
         private const val MAX_STACK_DEPTH = 50
+        private const val MAX_SUPER_METHODS = 10
     }
 
     override val languageId = "Python"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isPyFunction(element) || findContainingPyFunction(element) != null)
+        return isAvailable() && isPythonLanguage(element)
     }
 
     override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyFunctionClass != null
@@ -400,6 +407,52 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         )
     }
 
+    /**
+     * Finds all super methods that the given method overrides.
+     * This is used to also search for callers of base methods, since those
+     * calls could be dispatched to this method at runtime (polymorphism).
+     */
+    private fun findAllSuperMethods(project: Project, pyFunction: PsiElement): Set<PsiElement> {
+        val superMethods = mutableSetOf<PsiElement>()
+        val visited = mutableSetOf<String>()
+        findSuperMethodsRecursive(project, pyFunction, superMethods, visited)
+        return superMethods.take(MAX_SUPER_METHODS).toSet()
+    }
+
+    private fun findSuperMethodsRecursive(
+        project: Project,
+        pyFunction: PsiElement,
+        result: MutableSet<PsiElement>,
+        visited: MutableSet<String>
+    ) {
+        val containingClass = findContainingPyClass(pyFunction) ?: return
+        val methodName = getName(pyFunction) ?: return
+
+        val superClasses = getSuperClasses(containingClass)
+        superClasses?.filterIsInstance<PsiElement>()?.forEach { superClass ->
+            val superClassName = getQualifiedName(superClass) ?: getName(superClass)
+            val key = "$superClassName.$methodName"
+            if (key in visited) return@forEach
+            visited.add(key)
+
+            val superMethod = findMethodInClass(superClass, methodName)
+            if (superMethod != null) {
+                result.add(superMethod)
+                findSuperMethodsRecursive(project, superMethod, result, visited)
+            }
+        }
+    }
+
+    private fun findMethodInClass(pyClass: PsiElement, methodName: String): PsiElement? {
+        return try {
+            val getMethodsMethod = pyClass.javaClass.getMethod("getMethods")
+            val methods = getMethodsMethod.invoke(pyClass) as? Array<*> ?: return null
+            methods.filterIsInstance<PsiElement>().find { getName(it) == methodName }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun findCallersRecursive(
         project: Project,
         pyFunction: PsiElement,
@@ -414,21 +467,29 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         visited.add(functionKey)
 
         return try {
-            // Use ReferencesSearch to find callers
+            // Collect all methods to search: current method + all super methods it overrides
+            // This handles polymorphism - callers of base methods could dispatch to this method
+            val methodsToSearch = mutableSetOf(pyFunction)
+            methodsToSearch.addAll(findAllSuperMethods(project, pyFunction))
+
+            // Search for references to all methods in the hierarchy
             val referencesSearchClass = Class.forName("com.intellij.psi.search.searches.ReferencesSearch")
             val searchMethod = referencesSearchClass.getMethod("search", PsiElement::class.java, GlobalSearchScope::class.java)
             val scope = GlobalSearchScope.projectScope(project)
-            val query = searchMethod.invoke(null, pyFunction, scope)
 
-            val findAllMethod = query.javaClass.getMethod("findAll")
-            val references = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
+            val allReferences = mutableListOf<com.intellij.psi.PsiReference>()
+            for (methodToSearch in methodsToSearch) {
+                val query = searchMethod.invoke(null, methodToSearch, scope)
+                val findAllMethod = query.javaClass.getMethod("findAll")
+                val references = findAllMethod.invoke(query) as? Collection<*> ?: continue
+                references.filterIsInstance<com.intellij.psi.PsiReference>().forEach { allReferences.add(it) }
+            }
 
-            references.take(MAX_RESULTS_PER_LEVEL)
-                .mapNotNull { ref ->
-                    val reference = ref as? com.intellij.psi.PsiReference ?: return@mapNotNull null
+            allReferences.take(MAX_RESULTS_PER_LEVEL)
+                .mapNotNull { reference ->
                     val refElement = reference.element
                     val containingFunction = findContainingPyFunction(refElement)
-                    if (containingFunction != null && containingFunction != pyFunction) {
+                    if (containingFunction != null && containingFunction != pyFunction && !methodsToSearch.contains(containingFunction)) {
                         val children = if (depth > 1) {
                             findCallersRecursive(project, containingFunction, depth - 1, visited, stackDepth + 1)
                         } else null
@@ -684,7 +745,7 @@ class PythonSuperMethodsHandler : BasePythonHandler<SuperMethodsData>(), SuperMe
     override val languageId = "Python"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isPyFunction(element) || findContainingPyFunction(element) != null)
+        return isAvailable() && isPythonLanguage(element)
     }
 
     override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyFunctionClass != null

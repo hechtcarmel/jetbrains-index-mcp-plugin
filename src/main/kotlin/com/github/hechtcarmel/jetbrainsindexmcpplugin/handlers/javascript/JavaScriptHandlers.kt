@@ -80,6 +80,16 @@ object JavaScriptHandlers {
  */
 abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
 
+    /**
+     * Checks if the element is from a JavaScript/TypeScript language.
+     */
+    protected fun isJavaScriptLanguage(element: PsiElement): Boolean {
+        val langId = element.language.id
+        return langId == "JavaScript" || langId == "TypeScript" ||
+            langId == "ECMAScript 6" || langId == "JSX Harmony" ||
+            langId == "TypeScript JSX"
+    }
+
     protected val jsClassClass: Class<*>? by lazy {
         try {
             // Try ES6 class first
@@ -250,7 +260,7 @@ class JavaScriptTypeHierarchyHandler : BaseJavaScriptHandler<TypeHierarchyData>(
     override val languageId = "JavaScript"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isJSClass(element) || findContainingJSClass(element) != null)
+        return isAvailable() && isJavaScriptLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
@@ -401,8 +411,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
     override val languageId = "JavaScript"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isJSClass(element) || isJSFunction(element) ||
-            findContainingJSClass(element) != null || findContainingJSFunction(element) != null)
+        return isAvailable() && isJavaScriptLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
@@ -522,12 +531,13 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
     companion object {
         private const val MAX_RESULTS_PER_LEVEL = 20
         private const val MAX_STACK_DEPTH = 50
+        private const val MAX_SUPER_METHODS = 10
     }
 
     override val languageId = "JavaScript"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isJSFunction(element) || findContainingJSFunction(element) != null)
+        return isAvailable() && isJavaScriptLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
@@ -553,6 +563,72 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
         )
     }
 
+    /**
+     * Finds all super methods that the given method overrides.
+     * This is used to also search for callers of base methods, since those
+     * calls could be dispatched to this method at runtime (polymorphism).
+     */
+    private fun findAllSuperMethods(project: Project, jsFunction: PsiElement): Set<PsiElement> {
+        val superMethods = mutableSetOf<PsiElement>()
+        val visited = mutableSetOf<String>()
+        findSuperMethodsRecursive(project, jsFunction, superMethods, visited)
+        return superMethods.take(MAX_SUPER_METHODS).toSet()
+    }
+
+    private fun findSuperMethodsRecursive(
+        project: Project,
+        jsFunction: PsiElement,
+        result: MutableSet<PsiElement>,
+        visited: MutableSet<String>
+    ) {
+        val containingClass = findContainingJSClass(jsFunction) ?: return
+        val methodName = getName(jsFunction) ?: return
+
+        // Check superclasses
+        val superClasses = getSuperClasses(containingClass)
+        superClasses?.filterIsInstance<PsiElement>()?.forEach { superClass ->
+            val superClassName = getQualifiedName(superClass) ?: getName(superClass)
+            val key = "$superClassName.$methodName"
+            if (key in visited) return@forEach
+            visited.add(key)
+
+            val superMethod = findMethodInClass(superClass, methodName)
+            if (superMethod != null) {
+                result.add(superMethod)
+                findSuperMethodsRecursive(project, superMethod, result, visited)
+            }
+        }
+
+        // Also check implemented interfaces
+        val interfaces = getImplementedInterfaces(containingClass)
+        interfaces?.filterIsInstance<PsiElement>()?.forEach { iface ->
+            val ifaceName = getQualifiedName(iface) ?: getName(iface)
+            val key = "$ifaceName.$methodName"
+            if (key in visited) return@forEach
+            visited.add(key)
+
+            val superMethod = findMethodInClass(iface, methodName)
+            if (superMethod != null) {
+                result.add(superMethod)
+            }
+        }
+    }
+
+    private fun findMethodInClass(jsClass: PsiElement, methodName: String): PsiElement? {
+        return try {
+            val findFunctionMethod = jsClass.javaClass.getMethod("findFunctionByName", String::class.java)
+            findFunctionMethod.invoke(jsClass, methodName) as? PsiElement
+        } catch (e: Exception) {
+            try {
+                val getFunctionsMethod = jsClass.javaClass.getMethod("getFunctions")
+                val functions = getFunctionsMethod.invoke(jsClass) as? Array<*> ?: return null
+                functions.filterIsInstance<PsiElement>().find { getName(it) == methodName }
+            } catch (e2: Exception) {
+                null
+            }
+        }
+    }
+
     private fun findCallersRecursive(
         project: Project,
         jsFunction: PsiElement,
@@ -567,20 +643,29 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
         visited.add(functionKey)
 
         return try {
+            // Collect all methods to search: current method + all super methods it overrides
+            // This handles polymorphism - callers of base methods could dispatch to this method
+            val methodsToSearch = mutableSetOf(jsFunction)
+            methodsToSearch.addAll(findAllSuperMethods(project, jsFunction))
+
+            // Search for references to all methods in the hierarchy
             val referencesSearchClass = Class.forName("com.intellij.psi.search.searches.ReferencesSearch")
             val searchMethod = referencesSearchClass.getMethod("search", PsiElement::class.java, GlobalSearchScope::class.java)
             val scope = GlobalSearchScope.projectScope(project)
-            val query = searchMethod.invoke(null, jsFunction, scope)
 
-            val findAllMethod = query.javaClass.getMethod("findAll")
-            val references = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
+            val allReferences = mutableListOf<com.intellij.psi.PsiReference>()
+            for (methodToSearch in methodsToSearch) {
+                val query = searchMethod.invoke(null, methodToSearch, scope)
+                val findAllMethod = query.javaClass.getMethod("findAll")
+                val references = findAllMethod.invoke(query) as? Collection<*> ?: continue
+                references.filterIsInstance<com.intellij.psi.PsiReference>().forEach { allReferences.add(it) }
+            }
 
-            references.take(MAX_RESULTS_PER_LEVEL)
-                .mapNotNull { ref ->
-                    val reference = ref as? com.intellij.psi.PsiReference ?: return@mapNotNull null
+            allReferences.take(MAX_RESULTS_PER_LEVEL)
+                .mapNotNull { reference ->
                     val refElement = reference.element
                     val containingFunction = findContainingJSFunction(refElement)
-                    if (containingFunction != null && containingFunction != jsFunction) {
+                    if (containingFunction != null && containingFunction != jsFunction && !methodsToSearch.contains(containingFunction)) {
                         val children = if (depth > 1) {
                             findCallersRecursive(project, containingFunction, depth - 1, visited, stackDepth + 1)
                         } else null
@@ -830,7 +915,7 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
     override val languageId = "JavaScript"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (isJSFunction(element) || findContainingJSFunction(element) != null)
+        return isAvailable() && isJavaScriptLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
