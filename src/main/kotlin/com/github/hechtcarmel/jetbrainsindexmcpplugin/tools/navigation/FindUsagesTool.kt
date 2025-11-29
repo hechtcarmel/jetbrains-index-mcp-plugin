@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
@@ -84,36 +85,37 @@ class FindUsagesTool : AbstractMcpTool() {
             val targetElement = PsiUtils.findNamedElement(element)
                 ?: return@readAction createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
 
-            val usages = ReferencesSearch.search(targetElement)
-                .findAll()
-                .mapNotNull { reference ->
-                    val refElement = reference.element
-                    val refFile = refElement.containingFile?.virtualFile
-                        ?: return@mapNotNull null
+            val usages = mutableListOf<UsageLocation>()
 
-                    val document = PsiDocumentManager.getInstance(project)
-                        .getDocument(refElement.containingFile)
-                        ?: return@mapNotNull null
+            // Process references with cancellation support
+            ReferencesSearch.search(targetElement).forEach { reference ->
+                ProgressManager.checkCanceled() // Allow cancellation between iterations
 
-                    val lineNumber = document.getLineNumber(refElement.textOffset) + 1
-                    val columnNumber = refElement.textOffset -
-                        document.getLineStartOffset(lineNumber - 1) + 1
+                val refElement = reference.element
+                val refFile = refElement.containingFile?.virtualFile ?: return@forEach
 
-                    val lineText = document.getText(
-                        TextRange(
-                            document.getLineStartOffset(lineNumber - 1),
-                            document.getLineEndOffset(lineNumber - 1)
-                        )
-                    ).trim()
+                val document = PsiDocumentManager.getInstance(project)
+                    .getDocument(refElement.containingFile) ?: return@forEach
 
-                    UsageLocation(
-                        file = getRelativePath(project, refFile),
-                        line = lineNumber,
-                        column = columnNumber,
-                        context = lineText,
-                        type = classifyUsage(refElement)
+                val lineNumber = document.getLineNumber(refElement.textOffset) + 1
+                val columnNumber = refElement.textOffset -
+                    document.getLineStartOffset(lineNumber - 1) + 1
+
+                val lineText = document.getText(
+                    TextRange(
+                        document.getLineStartOffset(lineNumber - 1),
+                        document.getLineEndOffset(lineNumber - 1)
                     )
-                }
+                ).trim()
+
+                usages.add(UsageLocation(
+                    file = getRelativePath(project, refFile),
+                    line = lineNumber,
+                    column = columnNumber,
+                    context = lineText,
+                    type = classifyUsage(refElement)
+                ))
+            }
 
             createJsonResult(FindUsagesResult(
                 usages = usages,

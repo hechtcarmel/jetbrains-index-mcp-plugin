@@ -10,7 +10,7 @@ import com.intellij.openapi.diagnostic.logger
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.*
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jetbrains.ide.BuiltInServerManager
@@ -121,6 +121,10 @@ class McpRequestHandler : HttpRequestHandler() {
      *
      * Parses the JSON-RPC request, routes to the appropriate handler,
      * and returns the response as JSON.
+     *
+     * Uses non-blocking coroutine execution to avoid freezing the UI.
+     * Tool execution happens on background threads, responses are sent
+     * back on the Netty event loop thread.
      */
     private fun handlePostRequest(request: FullHttpRequest, context: ChannelHandlerContext) {
         val body = request.content().toString(StandardCharsets.UTF_8)
@@ -130,22 +134,34 @@ class McpRequestHandler : HttpRequestHandler() {
             return
         }
 
-        try {
-            val mcpService = ApplicationManager.getApplication().service<McpServerService>()
+        val mcpService = ApplicationManager.getApplication().service<McpServerService>()
 
-            val response = runBlocking {
-                mcpService.getJsonRpcHandler().handleRequest(body)
+        // Launch tool execution on background thread (non-blocking)
+        mcpService.coroutineScope.launch {
+            try {
+                val response = mcpService.getJsonRpcHandler().handleRequest(body)
+
+                // Send response back on Netty event loop thread
+                context.channel().eventLoop().execute {
+                    if (context.channel().isActive) {
+                        sendJsonResponse(context, HttpResponseStatus.OK, response)
+                    }
+                }
+            } catch (e: Exception) {
+                LOG.error("Error processing MCP request", e)
+
+                // Send error response back on Netty event loop thread
+                context.channel().eventLoop().execute {
+                    if (context.channel().isActive) {
+                        sendJsonRpcError(
+                            context,
+                            null,
+                            JsonRpcErrorCodes.INTERNAL_ERROR,
+                            e.message ?: "Internal error"
+                        )
+                    }
+                }
             }
-
-            sendJsonResponse(context, HttpResponseStatus.OK, response)
-        } catch (e: Exception) {
-            LOG.error("Error processing MCP request", e)
-            sendJsonRpcError(
-                context,
-                null,
-                JsonRpcErrorCodes.INTERNAL_ERROR,
-                e.message ?: "Internal error"
-            )
         }
     }
 

@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -108,6 +109,8 @@ class CallHierarchyTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return readAction {
+            ProgressManager.checkCanceled() // Allow cancellation
+
             val element = findPsiElement(project, file, line, column)
                 ?: return@readAction createErrorResult("No element found at position $file:$line:$column")
 
@@ -119,6 +122,8 @@ class CallHierarchyTool : AbstractMcpTool() {
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()}"
                 )
             }
+
+            ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
             val hierarchyData = handler.getCallHierarchy(element, project, direction, depth)
             if (hierarchyData == null) {

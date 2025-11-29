@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import kotlinx.serialization.json.JsonObject
@@ -80,6 +81,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
         val file = arguments["file"]?.jsonPrimitive?.content
 
         return readAction {
+            ProgressManager.checkCanceled() // Allow cancellation
+
             val element = resolveTargetElement(project, arguments)
             if (element == null) {
                 val errorMsg = when {
@@ -98,6 +101,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy()}"
                 )
             }
+
+            ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
             val hierarchyData = handler.getTypeHierarchy(element, project)
             if (hierarchyData == null) {

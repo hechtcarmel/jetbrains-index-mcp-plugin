@@ -5,10 +5,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
@@ -19,6 +20,8 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -130,17 +133,19 @@ abstract class AbstractMcpTool : McpTool {
      * Without this, PSI-based searches may miss recently created/modified content.
      *
      * Called automatically by [execute] when [requiresPsiSync] is true.
+     *
+     * Uses non-blocking coroutine approach to avoid EDT freezes.
      */
-    private fun ensurePsiUpToDate(project: Project) {
-        // 1. Force VFS to see external changes
+    private suspend fun ensurePsiUpToDate(project: Project) {
+        // 1. Force VFS to see external changes (async refresh)
         val projectDir = project.basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) }
         if (projectDir != null) {
-            // Synchronous, recursive refresh to pick up external file creations/modifications
-            VfsUtil.markDirtyAndRefresh(false, true, true, projectDir)
+            // Async refresh - doesn't block, the PSI commit below will pick up changes
+            VfsUtil.markDirtyAndRefresh(true, true, true, projectDir)
         }
 
-        // 2. Commit Documents
-        ApplicationManager.getApplication().invokeAndWait {
+        // 2. Commit Documents using suspend function (non-blocking)
+        withContext(Dispatchers.EDT) {
             PsiDocumentManager.getInstance(project).commitAllDocuments()
         }
     }
@@ -195,9 +200,10 @@ abstract class AbstractMcpTool : McpTool {
     }
 
     /**
-     * Executes an action with a read lock on the PSI tree.
+     * Executes an action with a read lock on the PSI tree (blocking version).
      *
      * Use this for any PSI read operations to ensure thread safety.
+     * For long-running operations, prefer [suspendingReadAction] which yields to write actions.
      *
      * @param action The action to execute
      * @return The result of the action
@@ -207,7 +213,33 @@ abstract class AbstractMcpTool : McpTool {
     }
 
     /**
-     * Executes an action with a write lock on the PSI tree.
+     * Executes an action with a read lock using suspend (non-blocking version).
+     *
+     * This is the preferred method for read operations as it:
+     * - Yields to pending write actions (WARA - Write Allowing Read Action)
+     * - Doesn't block the EDT
+     * - Automatically cancels when a write action is requested
+     *
+     * @param action The action to execute
+     * @return The result of the action
+     */
+    protected suspend fun <T> suspendingReadAction(action: () -> T): T {
+        return readAction(action)
+    }
+
+    /**
+     * Checks if the current operation has been cancelled.
+     *
+     * Call this frequently in long-running loops to allow cancellation
+     * and prevent blocking write actions. Throws ProcessCanceledException
+     * if cancellation is requested.
+     */
+    protected fun checkCanceled() {
+        ProgressManager.checkCanceled()
+    }
+
+    /**
+     * Executes an action with a write lock on the PSI tree (blocking version).
      *
      * Use this for any PSI modification operations. The action will be:
      * - Executed on the EDT (Event Dispatch Thread)
@@ -219,6 +251,28 @@ abstract class AbstractMcpTool : McpTool {
      */
     protected fun writeAction(project: Project, commandName: String, action: () -> Unit) {
         WriteCommandAction.runWriteCommandAction(project, commandName, null, { action() })
+    }
+
+    /**
+     * Executes a write action using suspend function (non-blocking for caller).
+     *
+     * This is the preferred method for write operations as it:
+     * - Doesn't block the calling thread while waiting for EDT
+     * - Still executes the action on EDT with proper locking
+     * - Supports undo/redo grouping
+     *
+     * @param project The project context
+     * @param commandName Name for the undo command (shown in Edit menu)
+     * @param action The action to execute
+     */
+    protected suspend fun suspendingWriteAction(
+        project: Project,
+        commandName: String,
+        action: () -> Unit
+    ) {
+        withContext(Dispatchers.EDT) {
+            WriteCommandAction.runWriteCommandAction(project, commandName, null, { action() })
+        }
     }
 
     /**

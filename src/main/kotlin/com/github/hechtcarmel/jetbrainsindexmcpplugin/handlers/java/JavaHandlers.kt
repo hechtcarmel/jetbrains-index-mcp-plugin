@@ -85,6 +85,11 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         if (element is PsiMethod) return element
         return PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
     }
+
+    protected fun isJavaOrKotlinLanguage(element: PsiElement): Boolean {
+        val langId = element.language.id
+        return langId == "JAVA" || langId == "kotlin"
+    }
 }
 
 /**
@@ -334,7 +339,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
     override val languageId = "JAVA"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (element is PsiMethod || findContainingMethod(element) != null)
+        return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
@@ -612,7 +617,7 @@ class JavaSuperMethodsHandler : BaseJavaHandler<SuperMethodsData>(), SuperMethod
     override val languageId = "JAVA"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (element is PsiMethod || findContainingMethod(element) != null)
+        return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable

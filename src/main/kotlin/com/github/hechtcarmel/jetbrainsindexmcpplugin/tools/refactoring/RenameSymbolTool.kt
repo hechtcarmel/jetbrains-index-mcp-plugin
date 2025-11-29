@@ -2,18 +2,24 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiField
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiParameter
+import com.intellij.psi.PsiReference
+import com.intellij.psi.search.searches.OverridingMethodsSearch
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -25,10 +31,13 @@ import kotlinx.serialization.json.putJsonObject
 
 /**
  * Headless rename tool that performs renaming without showing any dialogs.
- * This implementation:
- * 1. Uses direct PSI manipulation instead of RenameProcessor.run() to avoid dialogs
- * 2. Automatically renames related elements (constructor parameters, getters/setters) without prompting
- * 3. Supports all nameable elements: classes, methods, fields, parameters, variables
+ *
+ * This implementation uses a two-phase approach to avoid UI freezes:
+ * 1. **Background Phase**: Collect all references and prepare changes (in read action)
+ * 2. **EDT Phase**: Apply pre-computed changes quickly (in write action)
+ *
+ * This ensures the EDT is only blocked for the minimal time required to apply changes,
+ * not for the potentially slow reference search operations.
  */
 class RenameSymbolTool : AbstractRefactoringTool() {
 
@@ -76,6 +85,16 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         }
     }
 
+    /**
+     * Data class to hold all information collected in background for rename operation.
+     */
+    private data class RenamePreparation(
+        val elementsToRename: Map<PsiNamedElement, String>,
+        val allReferences: Map<PsiNamedElement, List<PsiReference>>,
+        val affectedFiles: Set<String>,
+        val oldName: String
+    )
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = arguments["file"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
@@ -92,113 +111,134 @@ class RenameSymbolTool : AbstractRefactoringTool() {
 
         requireSmartMode(project)
 
-        // Find the element to rename
-        val element = readAction {
-            findNamedElement(project, file, line, column)
+        // ═══════════════════════════════════════════════════════════════════════
+        // PHASE 1: BACKGROUND - Collect all data (read action, can be slow)
+        // ═══════════════════════════════════════════════════════════════════════
+        val preparation = readAction {
+            prepareRename(project, file, line, column, newName)
         } ?: return createErrorResult("No renameable symbol found at the specified position")
 
-        val oldName = readAction { element.name } ?: return createErrorResult("Cannot determine current symbol name")
-
-        if (oldName == newName) {
+        if (preparation.oldName == newName) {
             return createErrorResult("New name is the same as the current name")
         }
 
-        // Collect all elements to rename (main element + related elements like constructor params)
-        val elementsToRename = mutableMapOf<PsiNamedElement, String>()
-        val affectedFiles = mutableSetOf<String>()
+        // ═══════════════════════════════════════════════════════════════════════
+        // PHASE 2: EDT - Apply changes quickly (write action, must be fast)
+        // ═══════════════════════════════════════════════════════════════════════
+        var changesCount = 0
+        var errorMessage: String? = null
 
-        try {
-            readAction {
-                // Add the main element
-                elementsToRename[element] = newName
-
-                // Find related elements that should also be renamed
-                findRelatedElementsToRename(element, oldName, newName, elementsToRename)
-
-                // Collect all affected files for all elements
-                for ((elem, _) in elementsToRename) {
-                    elem.containingFile?.virtualFile?.let { vf ->
-                        trackAffectedFile(project, vf, affectedFiles)
-                    }
-
-                    val references = ReferencesSearch.search(elem).findAll()
-                    for (reference in references) {
-                        reference.element.containingFile?.virtualFile?.let { vf ->
-                            trackAffectedFile(project, vf, affectedFiles)
+        withContext(Dispatchers.EDT) {
+            WriteCommandAction.writeCommandAction(project)
+                .withName("Rename: ${preparation.oldName} to $newName")
+                .withGroupId("MCP Refactoring")
+                .run<Throwable> {
+                    try {
+                        // Rename all references first (using pre-collected data)
+                        for ((elem, targetName) in preparation.elementsToRename) {
+                            val refs = preparation.allReferences[elem] ?: continue
+                            for (reference in refs) {
+                                if (reference.element.isValid) {
+                                    try {
+                                        reference.handleElementRename(targetName)
+                                        changesCount++
+                                    } catch (e: Exception) {
+                                        // Some references may not support direct rename
+                                    }
+                                }
+                            }
                         }
+
+                        // Now rename the declarations themselves
+                        for ((elem, targetName) in preparation.elementsToRename) {
+                            if (elem.isValid) {
+                                val processor = RenamePsiElementProcessor.forElement(elem)
+                                val substitutor = processor.substituteElementToRename(elem, null)
+                                val elementToRename = substitutor ?: elem
+
+                                if (elementToRename is PsiNamedElement && elementToRename.isValid) {
+                                    elementToRename.setName(targetName)
+                                    changesCount++
+                                }
+                            }
+                        }
+
+                        // Commit and save
+                        PsiDocumentManager.getInstance(project).commitAllDocuments()
+                        FileDocumentManager.getInstance().saveAllDocuments()
+                    } catch (e: Exception) {
+                        errorMessage = e.message
                     }
                 }
-            }
-
-            // Perform the rename using headless PSI manipulation
-            var success = false
-            var errorMessage: String? = null
-            var changesCount = 0
-
-            ApplicationManager.getApplication().invokeAndWait {
-                WriteCommandAction.writeCommandAction(project)
-                    .withName("Rename: $oldName to $newName")
-                    .withGroupId("MCP Refactoring")
-                    .run<Throwable> {
-                        try {
-                            // Rename all references first (before changing declarations)
-                            for ((elem, targetName) in elementsToRename) {
-                                val references = ReferencesSearch.search(elem).findAll()
-                                for (reference in references) {
-                                    if (reference.element.isValid) {
-                                        try {
-                                            reference.handleElementRename(targetName)
-                                            changesCount++
-                                        } catch (e: Exception) {
-                                            // Some references may not support direct rename
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Now rename the declarations themselves
-                            for ((elem, targetName) in elementsToRename) {
-                                if (elem.isValid) {
-                                    // Use RenamePsiElementProcessor for proper rename handling
-                                    val processor = RenamePsiElementProcessor.forElement(elem)
-                                    val substitutor = processor.substituteElementToRename(elem, null)
-                                    val elementToRename = substitutor ?: elem
-
-                                    if (elementToRename is PsiNamedElement && elementToRename.isValid) {
-                                        elementToRename.setName(targetName)
-                                        changesCount++
-                                    }
-                                }
-                            }
-
-                            // Commit and save
-                            PsiDocumentManager.getInstance(project).commitAllDocuments()
-                            FileDocumentManager.getInstance().saveAllDocuments()
-
-                            success = true
-                        } catch (e: Exception) {
-                            errorMessage = e.message
-                        }
-                    }
-            }
-
-            return if (success) {
-                createJsonResult(
-                    RefactoringResult(
-                        success = true,
-                        affectedFiles = affectedFiles.toList(),
-                        changesCount = changesCount,
-                        message = "Successfully renamed '$oldName' to '$newName'" +
-                            if (elementsToRename.size > 1) " (including ${elementsToRename.size - 1} related element(s))" else ""
-                    )
-                )
-            } else {
-                createErrorResult("Rename failed: ${errorMessage ?: "Unknown error"}")
-            }
-
-        } catch (e: Exception) {
-            return createErrorResult("Rename failed: ${e.message}")
         }
+
+        return if (errorMessage != null) {
+            createErrorResult("Rename failed: $errorMessage")
+        } else {
+            createJsonResult(
+                RefactoringResult(
+                    success = true,
+                    affectedFiles = preparation.affectedFiles.toList(),
+                    changesCount = changesCount,
+                    message = "Successfully renamed '${preparation.oldName}' to '$newName'" +
+                        if (preparation.elementsToRename.size > 1)
+                            " (including ${preparation.elementsToRename.size - 1} related element(s))"
+                        else ""
+                )
+            )
+        }
+    }
+
+    /**
+     * Prepares all data needed for rename in a read action.
+     * This is the slow part that runs in background.
+     */
+    private fun prepareRename(
+        project: Project,
+        file: String,
+        line: Int,
+        column: Int,
+        newName: String
+    ): RenamePreparation? {
+        val element = findNamedElement(project, file, line, column) ?: return null
+
+        val oldName = element.name ?: return null
+
+        val elementsToRename = mutableMapOf<PsiNamedElement, String>()
+        val allReferences = mutableMapOf<PsiNamedElement, List<PsiReference>>()
+        val affectedFiles = mutableSetOf<String>()
+
+        // Add the main element
+        elementsToRename[element] = newName
+
+        // Find related elements that should also be renamed
+        findRelatedElementsToRename(element, oldName, newName, elementsToRename)
+
+        // Collect all references for all elements (HEAVY WORK - but in background!)
+        for ((elem, _) in elementsToRename) {
+            ProgressManager.checkCanceled() // Allow cancellation
+
+            elem.containingFile?.virtualFile?.let { vf ->
+                affectedFiles.add(getRelativePath(project, vf))
+            }
+
+            val refs = ReferencesSearch.search(elem).findAll().toList()
+            allReferences[elem] = refs
+
+            refs.forEach { ref ->
+                ProgressManager.checkCanceled() // Allow cancellation
+                ref.element.containingFile?.virtualFile?.let { vf ->
+                    affectedFiles.add(getRelativePath(project, vf))
+                }
+            }
+        }
+
+        return RenamePreparation(
+            elementsToRename = elementsToRename,
+            allReferences = allReferences,
+            affectedFiles = affectedFiles,
+            oldName = oldName
+        )
     }
 
     /**
@@ -214,30 +254,25 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         newName: String,
         elementsToRename: MutableMap<PsiNamedElement, String>
     ) {
+        ProgressManager.checkCanceled()
+
         when (element) {
             is PsiField -> {
-                // Find constructor parameters with the same name
                 findMatchingConstructorParameters(element, oldName, newName, elementsToRename)
-                // Find getter/setter methods
                 findMatchingAccessorMethods(element, oldName, newName, elementsToRename)
             }
             is PsiParameter -> {
-                // If this is a constructor parameter, check if there's a matching field
                 val method = element.declarationScope
                 if (method is PsiMethod && method.isConstructor) {
                     findMatchingField(method.containingClass, oldName, newName, elementsToRename)
                 }
             }
             is PsiMethod -> {
-                // Find overriding/implementing methods in subclasses
                 findOverridingMethods(element, newName, elementsToRename)
             }
         }
     }
 
-    /**
-     * Finds constructor parameters that match a field name.
-     */
     private fun findMatchingConstructorParameters(
         field: PsiField,
         oldName: String,
@@ -247,6 +282,7 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         val containingClass = field.containingClass ?: return
 
         for (constructor in containingClass.constructors) {
+            ProgressManager.checkCanceled()
             for (parameter in constructor.parameterList.parameters) {
                 if (parameter.name == oldName) {
                     elementsToRename[parameter] = newName
@@ -255,9 +291,6 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         }
     }
 
-    /**
-     * Finds getter/setter methods that match a field name.
-     */
     private fun findMatchingAccessorMethods(
         field: PsiField,
         oldName: String,
@@ -268,11 +301,11 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         val capitalizedOldName = oldName.replaceFirstChar { it.uppercase() }
         val capitalizedNewName = newName.replaceFirstChar { it.uppercase() }
 
-        // Look for getters: getFieldName(), isFieldName() (for booleans)
         val getterNames = listOf("get$capitalizedOldName", "is$capitalizedOldName")
         val setterName = "set$capitalizedOldName"
 
         for (method in containingClass.methods) {
+            ProgressManager.checkCanceled()
             val methodName = method.name
             when {
                 methodName in getterNames && method.parameterList.parametersCount == 0 -> {
@@ -286,9 +319,6 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         }
     }
 
-    /**
-     * Finds a field that matches a constructor parameter name.
-     */
     private fun findMatchingField(
         containingClass: PsiClass?,
         oldName: String,
@@ -298,25 +328,22 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         containingClass ?: return
 
         for (field in containingClass.fields) {
+            ProgressManager.checkCanceled()
             if (field.name == oldName) {
                 elementsToRename[field] = newName
-                // Also rename related accessor methods for the field
                 findMatchingAccessorMethods(field, oldName, newName, elementsToRename)
             }
         }
     }
 
-    /**
-     * Finds methods that override or implement the given method.
-     */
     private fun findOverridingMethods(
         method: PsiMethod,
         newName: String,
         elementsToRename: MutableMap<PsiNamedElement, String>
     ) {
-        // Find all methods that override this one
-        val overridingMethods = com.intellij.psi.search.searches.OverridingMethodsSearch.search(method).findAll()
+        val overridingMethods = OverridingMethodsSearch.search(method).findAll()
         for (overridingMethod in overridingMethods) {
+            ProgressManager.checkCanceled()
             elementsToRename[overridingMethod] = newName
         }
     }
