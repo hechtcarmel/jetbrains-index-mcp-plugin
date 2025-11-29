@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.ui
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryListener
@@ -7,7 +9,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryServ
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.intellij.icons.AllIcons
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.JBSplitter
@@ -20,8 +26,12 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
+import java.awt.Cursor
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.datatransfer.StringSelection
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.swing.*
@@ -39,19 +49,25 @@ class McpToolWindowPanel(
     private var currentFilter = CommandFilter()
 
     init {
-        // Header panel containing server status and filter toolbar
-        val headerPanel = JBPanel<JBPanel<*>>(BorderLayout())
+        // Header panel containing server status, agent rule tip, and filter toolbar
+        val headerPanel = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        }
 
         // Server status panel at top
         serverStatusPanel = ServerStatusPanel(project)
-        headerPanel.add(serverStatusPanel, BorderLayout.NORTH)
+        headerPanel.add(serverStatusPanel)
 
-        // Filter toolbar below status
+        // Agent rule tip panel
+        val agentRuleTipPanel = AgentRuleTipPanel(project)
+        headerPanel.add(agentRuleTipPanel)
+
+        // Filter toolbar below tip
         filterToolbar = FilterToolbar { filter ->
             currentFilter = filter
             refreshHistory()
         }
-        headerPanel.add(filterToolbar, BorderLayout.SOUTH)
+        headerPanel.add(filterToolbar)
 
         add(headerPanel, BorderLayout.NORTH)
 
@@ -343,5 +359,67 @@ class FilterToolbar(
             searchText = searchText
         )
         onFilterChanged(filter)
+    }
+}
+
+class AgentRuleTipPanel(private val project: Project) : JBPanel<AgentRuleTipPanel>(FlowLayout(FlowLayout.LEFT, 8, 4)) {
+
+    companion object {
+        const val AGENT_RULE_TEXT = "IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring."
+
+        val CONFIG_FILES_HINT = """
+            Add this rule to your AI agent's configuration file:
+            • Claude Code: CLAUDE.md (project root) or ~/.claude/CLAUDE.md (global)
+            • Cursor: .cursorrules or .cursor/rules/*.mdc
+            • Other agents: Check your agent's documentation
+        """.trimIndent()
+    }
+
+    init {
+        border = JBUI.Borders.empty(2, 8)
+        background = JBColor(0xFFFBE6, 0x3D3D00)
+
+        val iconLabel = JBLabel(AllIcons.General.BalloonInformation)
+
+        val tipLabel = JBLabel(McpBundle.message("tip.agentRule.text")).apply {
+            font = font.deriveFont(Font.PLAIN, 11f)
+        }
+
+        val copyLink = JBLabel(McpBundle.message("tip.agentRule.copyLink")).apply {
+            font = font.deriveFont(Font.PLAIN, 11f)
+            foreground = JBColor.BLUE
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    copyAgentRule()
+                }
+
+                override fun mouseEntered(e: MouseEvent) {
+                    text = "<html><u>${McpBundle.message("tip.agentRule.copyLink")}</u></html>"
+                }
+
+                override fun mouseExited(e: MouseEvent) {
+                    text = McpBundle.message("tip.agentRule.copyLink")
+                }
+            })
+        }
+
+        add(iconLabel)
+        add(tipLabel)
+        add(copyLink)
+    }
+
+    private fun copyAgentRule() {
+        CopyPasteManager.getInstance().setContents(StringSelection(AGENT_RULE_TEXT))
+
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+            .createNotification(
+                McpBundle.message("tip.agentRule.copiedTitle"),
+                "$AGENT_RULE_TEXT\n\n$CONFIG_FILES_HINT",
+                NotificationType.INFORMATION
+            )
+            .notify(project)
     }
 }

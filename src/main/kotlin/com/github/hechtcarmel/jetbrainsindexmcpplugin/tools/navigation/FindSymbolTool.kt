@@ -3,16 +3,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElement
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.PsiShortNamesCache
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -23,6 +19,13 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
+/**
+ * Tool for searching code symbols across multiple languages.
+ *
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ *
+ * Delegates to language-specific handlers via [LanguageHandlerRegistry].
+ */
 class FindSymbolTool : AbstractMcpTool() {
 
     companion object {
@@ -33,11 +36,13 @@ class FindSymbolTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_SYMBOL
 
     override val description = """
-        Searches for code symbols (classes, interfaces, methods, fields) by name using the IDE's semantic index.
+        Searches for code symbols (classes, interfaces, methods, fields, functions) by name using the IDE's semantic index.
+
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
 
         Use this tool when you need to:
         - Find a class or interface by name (e.g., find "UserService")
-        - Locate methods across the codebase (e.g., find all "findById" methods)
+        - Locate methods/functions across the codebase (e.g., find all "findById" methods)
         - Discover fields or constants by name
         - Navigate to code when you know the symbol name but not the file location
 
@@ -45,9 +50,9 @@ class FindSymbolTool : AbstractMcpTool() {
         - Substring: "Service" matches "UserService", "OrderService"
         - CamelCase: "USvc" matches "UserService", "US" matches "UserService"
 
-        EXAMPLE: {"query": "UserService"}
-        EXAMPLE: {"query": "findById"}
-        EXAMPLE: {"query": "USvc", "includeLibraries": true}
+        EXAMPLE Java/Kotlin: {"query": "UserService"}
+        EXAMPLE Python: {"query": "find_user"}
+        EXAMPLE TypeScript: {"query": "fetchData", "includeLibraries": true}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -88,121 +93,48 @@ class FindSymbolTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        val scope = if (includeLibraries) {
-            GlobalSearchScope.allScope(project)
-        } else {
-            GlobalSearchScope.projectScope(project)
-        }
-
         return readAction {
-            val matches = searchAllSymbols(project, query, scope, limit)
+            // Aggregate results from ALL available language handlers
+            val handlers = LanguageHandlerRegistry.getAllSymbolSearchHandlers()
+            if (handlers.isEmpty()) {
+                return@readAction createErrorResult(
+                    "No symbol search handlers available. " +
+                    "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForSymbolSearch()}"
+                )
+            }
+
+            val allMatches = mutableListOf<SymbolMatch>()
+
+            for (handler in handlers) {
+                val handlerResults = handler.searchSymbols(project, query, includeLibraries, limit)
+                allMatches.addAll(handlerResults.map { symbolData ->
+                    SymbolMatch(
+                        name = symbolData.name,
+                        qualifiedName = symbolData.qualifiedName,
+                        kind = symbolData.kind,
+                        file = symbolData.file,
+                        line = symbolData.line,
+                        containerName = symbolData.containerName,
+                        language = symbolData.language
+                    )
+                })
+            }
+
+            // Sort by relevance and deduplicate
+            val sortedMatches = allMatches
+                .distinctBy { "${it.file}:${it.line}:${it.name}" }
+                .sortedWith(compareBy(
+                    { !it.name.equals(query, ignoreCase = true) },
+                    { levenshteinDistance(it.name.lowercase(), query.lowercase()) }
+                ))
+                .take(limit)
 
             createJsonResult(FindSymbolResult(
-                symbols = matches,
-                totalCount = matches.size,
+                symbols = sortedMatches,
+                totalCount = sortedMatches.size,
                 query = query
             ))
         }
-    }
-
-    private fun searchAllSymbols(
-        project: Project,
-        query: String,
-        scope: GlobalSearchScope,
-        limit: Int
-    ): List<SymbolMatch> {
-        val cache = PsiShortNamesCache.getInstance(project)
-        val matches = mutableListOf<SymbolMatch>()
-
-        // Search classes (includes interfaces, enums, etc.)
-        val classNames = cache.allClassNames.filter { matchesQuery(it, query) }
-        for (className in classNames) {
-            if (matches.size >= limit) break
-            val classes = cache.getClassesByName(className, scope)
-            for (psiClass in classes) {
-                if (matches.size >= limit) break
-                val virtualFile = psiClass.containingFile?.virtualFile ?: continue
-                matches.add(SymbolMatch(
-                    name = psiClass.name ?: className,
-                    qualifiedName = psiClass.qualifiedName,
-                    kind = getClassKind(psiClass),
-                    file = getRelativePath(project, virtualFile),
-                    line = getLineNumber(project, psiClass) ?: 1,
-                    containerName = null
-                ))
-            }
-        }
-
-        // Search methods
-        if (matches.size < limit) {
-            val methodNames = cache.allMethodNames.filter { matchesQuery(it, query) }
-            for (methodName in methodNames) {
-                if (matches.size >= limit) break
-                val methods = cache.getMethodsByName(methodName, scope)
-                for (method in methods) {
-                    if (matches.size >= limit) break
-                    val virtualFile = method.containingFile?.virtualFile ?: continue
-                    val containingClass = method.containingClass
-                    matches.add(SymbolMatch(
-                        name = method.name,
-                        qualifiedName = "${containingClass?.qualifiedName}.${method.name}",
-                        kind = "METHOD",
-                        file = getRelativePath(project, virtualFile),
-                        line = getLineNumber(project, method) ?: 1,
-                        containerName = containingClass?.name
-                    ))
-                }
-            }
-        }
-
-        // Search fields
-        if (matches.size < limit) {
-            val fieldNames = cache.allFieldNames.filter { matchesQuery(it, query) }
-            for (fieldName in fieldNames) {
-                if (matches.size >= limit) break
-                val fields = cache.getFieldsByName(fieldName, scope)
-                for (field in fields) {
-                    if (matches.size >= limit) break
-                    val virtualFile = field.containingFile?.virtualFile ?: continue
-                    val containingClass = field.containingClass
-                    matches.add(SymbolMatch(
-                        name = field.name ?: fieldName,
-                        qualifiedName = "${containingClass?.qualifiedName}.${field.name}",
-                        kind = "FIELD",
-                        file = getRelativePath(project, virtualFile),
-                        line = getLineNumber(project, field) ?: 1,
-                        containerName = containingClass?.name
-                    ))
-                }
-            }
-        }
-
-        // Sort by relevance (exact matches first, then by edit distance)
-        return matches.sortedWith(compareBy(
-            { !it.name.equals(query, ignoreCase = true) },
-            { levenshteinDistance(it.name.lowercase(), query.lowercase()) }
-        ))
-    }
-
-    private fun matchesQuery(name: String, query: String): Boolean {
-        // Exact containment (case-insensitive)
-        if (name.contains(query, ignoreCase = true)) return true
-
-        // CamelCase matching: "USvc" matches "UserService"
-        if (matchesCamelCase(name, query)) return true
-
-        return false
-    }
-
-    internal fun matchesCamelCase(name: String, query: String): Boolean {
-        var queryIndex = 0
-        for (char in name) {
-            if (queryIndex >= query.length) return true
-            if (char.equals(query[queryIndex], ignoreCase = true)) {
-                queryIndex++
-            }
-        }
-        return queryIndex >= query.length
     }
 
     internal fun levenshteinDistance(s1: String, s2: String): Int {
@@ -221,20 +153,16 @@ class FindSymbolTool : AbstractMcpTool() {
         return dp[s1.length][s2.length]
     }
 
-    private fun getLineNumber(project: Project, element: PsiElement): Int? {
-        val psiFile = element.containingFile ?: return null
-        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return null
-        return document.getLineNumber(element.textOffset) + 1
-    }
-
-    private fun getClassKind(psiClass: PsiClass): String {
-        return when {
-            psiClass.isInterface -> "INTERFACE"
-            psiClass.isEnum -> "ENUM"
-            psiClass.isAnnotationType -> "ANNOTATION"
-            psiClass.isRecord -> "RECORD"
-            psiClass.hasModifierProperty("abstract") -> "ABSTRACT_CLASS"
-            else -> "CLASS"
+    /**
+     * Checks if a symbol name matches a camelCase query pattern.
+     * Used for fuzzy matching in symbol search.
+     */
+    internal fun matchesCamelCase(name: String, query: String): Boolean {
+        var queryIndex = 0
+        for (char in name) {
+            if (queryIndex >= query.length) return true
+            if (char.equals(query[queryIndex], ignoreCase = true)) queryIndex++
         }
+        return queryIndex >= query.length
     }
 }

@@ -6,6 +6,10 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.jetbrains.ide.BuiltInServerManager
 
 /**
@@ -14,6 +18,7 @@ import org.jetbrains.ide.BuiltInServerManager
  * This service manages:
  * - Tool registry for MCP tools
  * - JSON-RPC handler for message processing
+ * - Coroutine scope for non-blocking tool execution
  *
  * Uses HTTP+SSE transport for compatibility with MCP clients.
  */
@@ -22,6 +27,13 @@ class McpServerService : Disposable {
 
     private val toolRegistry: ToolRegistry = ToolRegistry()
     private val jsonRpcHandler: JsonRpcHandler
+
+    /**
+     * Coroutine scope for non-blocking tool execution.
+     * Uses SupervisorJob so failures in one tool don't cancel others.
+     * Uses Default dispatcher for CPU-bound PSI operations.
+     */
+    val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     companion object {
         private val LOG = logger<McpServerService>()
@@ -76,6 +88,7 @@ class McpServerService : Disposable {
 
     override fun dispose() {
         LOG.info("Disposing MCP Server Service")
+        coroutineScope.cancel("McpServerService disposed")
     }
 }
 

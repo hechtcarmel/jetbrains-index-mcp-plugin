@@ -1,17 +1,12 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
 import com.intellij.openapi.diagnostic.logger
 import java.util.concurrent.ConcurrentHashMap
 
@@ -23,24 +18,27 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## Built-in Tools
  *
- * The registry automatically registers 11 built-in tools in these categories:
+ * The registry automatically registers built-in tools based on IDE capabilities.
  *
- * **Navigation:**
+ * ### Universal Tools (All JetBrains IDEs)
+ *
+ * These tools work in all JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, etc.):
+ *
  * - `ide_find_references` - Find all usages of a symbol
  * - `ide_find_definition` - Find symbol definition location
+ * - `ide_diagnostics` - Analyze code for problems and available intentions
+ * - `ide_index_status` - Check indexing status
+ *
+ * ### Java-Specific Tools (IntelliJ IDEA & Android Studio Only)
+ *
+ * These tools require the Java plugin and are only available in IntelliJ IDEA
+ * and Android Studio:
+ *
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
  * - `ide_call_hierarchy` - Analyze method call relationships
  * - `ide_find_implementations` - Find interface/method implementations
  * - `ide_find_symbol` - Search for symbols by name
  * - `ide_find_super_methods` - Find methods that a method overrides
- *
- * **Intelligence:**
- * - `ide_diagnostics` - Analyze code for problems and available intentions
- *
- * **Project:**
- * - `ide_index_status` - Check indexing status
- *
- * **Refactoring:**
  * - `ide_refactor_rename` - Rename symbol
  * - `ide_refactor_safe_delete` - Safely delete element
  *
@@ -50,6 +48,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * @see McpTool
  * @see McpServerService
+ * @see JavaPluginDetector
  */
 class ToolRegistry {
 
@@ -119,16 +118,54 @@ class ToolRegistry {
      * Registers all built-in tools.
      *
      * This is called automatically during [McpServerService] initialization.
+     * Tools are registered conditionally based on IDE capabilities:
+     * - Universal tools are always registered
+     * - Language-specific navigation tools are registered when any language handler is available
+     * - Refactoring tools are only registered when the Java plugin is available
      */
     fun registerBuiltInTools() {
-        // Navigation tools
+        // Initialize language handlers first
+        LanguageHandlerRegistry.registerHandlers()
+
+        // Universal tools - work in all JetBrains IDEs
+        registerUniversalTools()
+
+        // Language-specific navigation tools - registered when handlers are available
+        registerLanguageNavigationTools()
+
+        // Java-specific refactoring tools - only available when Java plugin is present
+        if (JavaPluginDetector.isJavaPluginAvailable) {
+            registerJavaRefactoringTools()
+        }
+
+        LOG.info("Registered ${tools.size} built-in MCP tools")
+        logAvailableLanguages()
+    }
+
+    private fun logAvailableLanguages() {
+        val typeHierarchyLangs = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy()
+        val implementationLangs = LanguageHandlerRegistry.getSupportedLanguagesForImplementations()
+        val callHierarchyLangs = LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()
+        val symbolSearchLangs = LanguageHandlerRegistry.getSupportedLanguagesForSymbolSearch()
+        val superMethodsLangs = LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()
+
+        LOG.info("Language support - TypeHierarchy: $typeHierarchyLangs, " +
+            "Implementations: $implementationLangs, " +
+            "CallHierarchy: $callHierarchyLangs, " +
+            "SymbolSearch: $symbolSearchLangs, " +
+            "SuperMethods: $superMethodsLangs")
+    }
+
+    /**
+     * Registers universal tools that work in all JetBrains IDEs.
+     *
+     * These tools use only platform APIs (com.intellij.modules.platform)
+     * and do not depend on Java-specific PSI classes.
+     */
+    private fun registerUniversalTools() {
+        // Navigation tools (universal)
         register(FindUsagesTool())
         register(FindDefinitionTool())
-        register(TypeHierarchyTool())
-        register(CallHierarchyTool())
-        register(FindImplementationsTool())
-        register(FindSymbolTool())
-        register(FindSuperMethodsTool())
 
         // Intelligence tools
         register(GetDiagnosticsTool())
@@ -136,10 +173,80 @@ class ToolRegistry {
         // Project tools
         register(GetIndexStatusTool())
 
-        // Refactoring tools
-        register(RenameSymbolTool())
-        register(SafeDeleteTool())
+        LOG.info("Registered universal tools (available in all JetBrains IDEs)")
+    }
 
-        LOG.info("Registered ${tools.size} built-in MCP tools")
+    /**
+     * Registers language-specific navigation tools.
+     *
+     * These tools delegate to language handlers and support multiple languages
+     * (Java, Kotlin, Python, JavaScript/TypeScript).
+     *
+     * Tools are registered when at least one language handler is available
+     * for the tool's functionality.
+     */
+    private fun registerLanguageNavigationTools() {
+        try {
+            // Type hierarchy - requires at least one TypeHierarchyHandler
+            if (LanguageHandlerRegistry.hasTypeHierarchyHandlers()) {
+                val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool")
+                register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
+            }
+
+            // Find implementations - requires at least one ImplementationsHandler
+            if (LanguageHandlerRegistry.hasImplementationsHandlers()) {
+                val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool")
+                register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
+            }
+
+            // Call hierarchy - requires at least one CallHierarchyHandler
+            if (LanguageHandlerRegistry.hasCallHierarchyHandlers()) {
+                val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool")
+                register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
+            }
+
+            // Find symbol - requires at least one SymbolSearchHandler
+            if (LanguageHandlerRegistry.hasSymbolSearchHandlers()) {
+                val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool")
+                register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
+            }
+
+            // Find super methods - requires at least one SuperMethodsHandler
+            if (LanguageHandlerRegistry.hasSuperMethodsHandlers()) {
+                val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool")
+                register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
+            }
+
+            LOG.info("Registered language navigation tools")
+        } catch (e: Exception) {
+            LOG.warn("Failed to register language navigation tools: ${e.message}")
+        }
+    }
+
+    /**
+     * Registers Java-specific refactoring tools.
+     *
+     * These tools use Java-specific refactoring APIs and are only available
+     * when the Java plugin is present (IntelliJ IDEA, Android Studio).
+     *
+     * IMPORTANT: This method must only be called after checking [JavaPluginDetector.isJavaPluginAvailable]
+     */
+    private fun registerJavaRefactoringTools() {
+        try {
+            val refactoringToolClasses = listOf(
+                "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool",
+                "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool"
+            )
+
+            for (className in refactoringToolClasses) {
+                val toolClass = Class.forName(className)
+                val tool = toolClass.getDeclaredConstructor().newInstance() as McpTool
+                register(tool)
+            }
+
+            LOG.info("Registered Java-specific refactoring tools")
+        } catch (e: Exception) {
+            LOG.warn("Failed to register Java refactoring tools: ${e.message}")
+        }
     }
 }

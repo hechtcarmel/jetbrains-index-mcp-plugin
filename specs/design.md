@@ -1,8 +1,8 @@
 # IntelliJ Index MCP Plugin - Design Document
 
-**Document Version**: 1.1
+**Document Version**: 1.7
 **Status**: Draft
-**Based on**: requirements.md v1.0
+**Based on**: requirements.md v1.6
 
 ---
 
@@ -985,27 +985,116 @@ class FindUsagesTool : AbstractMcpTool() {
 
 ### 6.4 Tool Registration
 
+Tools are registered conditionally based on IDE capabilities and available language plugins:
+
 ```kotlin
 // In ToolRegistry.kt
-fun registerBuiltInTools(project: Project) {
-    // Navigation tools (ide_* prefix)
-    register(FindUsagesTool())        // ide_find_references
+fun registerBuiltInTools() {
+    // Initialize language handlers first
+    LanguageHandlerRegistry.registerHandlers()
+
+    // Universal tools - work in all JetBrains IDEs
+    registerUniversalTools()
+
+    // Language-aware navigation tools - when any language handler is available
+    registerLanguageNavigationTools()
+
+    // Java-specific refactoring tools
+    if (JavaPluginDetector.isJavaPluginAvailable) {
+        registerJavaRefactoringTools()
+    }
+}
+
+private fun registerUniversalTools() {
+    register(FindReferencesTool())    // ide_find_references
     register(FindDefinitionTool())    // ide_find_definition
-    register(TypeHierarchyTool())     // ide_type_hierarchy
-    register(CallHierarchyTool())     // ide_call_hierarchy
-    register(FindImplementationsTool()) // ide_find_implementations
-    register(FindSymbolTool())        // ide_find_symbol
-    register(FindSuperMethodsTool())  // ide_find_super_methods
-
-    // Intelligence tools (ide_* prefix)
-    register(GetDiagnosticsTool())    // ide_diagnostics (problems + intentions)
-
-    // Project tools (ide_* prefix)
+    register(GetDiagnosticsTool())    // ide_diagnostics
     register(GetIndexStatusTool())    // ide_index_status
+}
 
-    // Refactoring tools (ide_refactor_* prefix)
+private fun registerLanguageNavigationTools() {
+    // Only register if at least one language handler is available
+    if (!LanguageHandlerRegistry.hasAnyHandlers()) return
+
+    register(TypeHierarchyTool())         // ide_type_hierarchy
+    register(CallHierarchyTool())         // ide_call_hierarchy
+    register(FindImplementationsTool())   // ide_find_implementations
+    register(FindSymbolTool())            // ide_find_symbol
+    register(FindSuperMethodsTool())      // ide_find_super_methods
+}
+
+private fun registerJavaRefactoringTools() {
+    // Loaded via reflection to avoid class loading errors
     register(RenameSymbolTool())      // ide_refactor_rename
     register(SafeDeleteTool())        // ide_refactor_safe_delete
+}
+```
+
+### 6.5 Multi-Language Architecture
+
+The plugin uses a language handler pattern to support multiple languages:
+
+```kotlin
+// Handler interfaces (in handlers/LanguageHandler.kt)
+interface LanguageHandler<T> {
+    val languageName: String
+    fun canHandle(psiElement: PsiElement): Boolean
+}
+
+interface TypeHierarchyHandler : LanguageHandler<TypeHierarchyData>
+interface ImplementationsHandler : LanguageHandler<List<ImplementationData>>
+interface CallHierarchyHandler : LanguageHandler<CallHierarchyData>
+interface SymbolSearchHandler : LanguageHandler<List<SymbolData>>
+interface SuperMethodsHandler : LanguageHandler<List<SuperMethodData>>
+
+// Registry (in handlers/LanguageHandlerRegistry.kt)
+object LanguageHandlerRegistry {
+    private val typeHierarchyHandlers = mutableListOf<TypeHierarchyHandler>()
+    // ... other handler lists
+
+    fun registerHandlers() {
+        // Java handlers (direct PSI access)
+        if (JavaPluginDetector.isJavaPluginAvailable) {
+            JavaHandlers.register(this)
+        }
+        // Python handlers (reflection-based)
+        if (PythonPluginDetector.isPythonPluginAvailable) {
+            PythonHandlers.register(this)
+        }
+        // JavaScript/TypeScript handlers (reflection-based)
+        if (JavaScriptPluginDetector.isJavaScriptPluginAvailable) {
+            JavaScriptHandlers.register(this)
+        }
+    }
+
+    fun getTypeHierarchyHandler(element: PsiElement): TypeHierarchyHandler? =
+        typeHierarchyHandlers.firstOrNull { it.canHandle(element) }
+}
+```
+
+### 6.6 Language Plugin Detection
+
+```kotlin
+// In tools/utils/JavaPluginDetector.kt
+object JavaPluginDetector {
+    val isJavaPluginAvailable: Boolean by lazy {
+        PluginManagerCore.getPlugin(PluginId.getId("com.intellij.java")) != null
+    }
+}
+
+// In tools/utils/PythonPluginDetector.kt
+object PythonPluginDetector {
+    val isPythonPluginAvailable: Boolean by lazy {
+        PluginManagerCore.getPlugin(PluginId.getId("com.intellij.modules.python")) != null ||
+        PluginManagerCore.getPlugin(PluginId.getId("Pythonid")) != null
+    }
+}
+
+// In tools/utils/JavaScriptPluginDetector.kt
+object JavaScriptPluginDetector {
+    val isJavaScriptPluginAvailable: Boolean by lazy {
+        PluginManagerCore.getPlugin(PluginId.getId("JavaScript")) != null
+    }
 }
 ```
 
@@ -1547,3 +1636,5 @@ dependencies {
 | 1.3 | 2025-11-28 | Reduced tool count from 13 to 9; removed extract_method, extract_variable, inline, move tools |
 | 1.4 | 2025-11-28 | Added ide_find_symbol and ide_find_super_methods navigation tools (11 tools total) |
 | 1.5 | 2025-11-28 | Removed Resource Providers (Section 7); resources functionality deprecated |
+| 1.6 | 2025-11-29 | Added multi-IDE support architecture; tools categorized as Universal (4) and Extended (7); added JavaPluginDetector |
+| 1.7 | 2025-11-29 | Multi-language architecture: Added LanguageHandlerRegistry, language-specific handlers (Java, Python, JS/TS), and plugin detectors; Navigation tools now delegate to appropriate language handlers |

@@ -2,7 +2,18 @@
 
 # IDE Index MCP Server Changelog
 
-## [Unreleased]
+## [1.5.0] - 2025-11-29
+
+### Added
+- **Multi-IDE Support** - Works with all JetBrains IDEs: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, Rider, DataGrip, Android Studio
+- **Multi-Language Support** - Navigation tools now work with Java/Kotlin, Python, and JavaScript/TypeScript
+- Agent rule tip panel with copy-to-clipboard in tool window
+- Non-blocking operations for improved responsiveness
+
+### Changed
+- Tools reorganized: 4 universal tools (all IDEs), 5 navigation tools (language-dependent), 2 refactoring tools (Java only)
+
+---
 
 ## [1.4.0] - 2025-11-28
 

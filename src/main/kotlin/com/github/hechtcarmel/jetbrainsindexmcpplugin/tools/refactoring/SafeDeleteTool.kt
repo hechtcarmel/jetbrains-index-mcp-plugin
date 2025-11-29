@@ -2,14 +2,18 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.searches.ReferencesSearch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,6 +24,13 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
+/**
+ * Safe delete tool that checks for usages before deletion.
+ *
+ * This implementation uses a two-phase approach to avoid UI freezes:
+ * 1. **Background Phase**: Find element and check for usages (in read action)
+ * 2. **EDT Phase**: Apply deletion quickly (in write action)
+ */
 class SafeDeleteTool : AbstractRefactoringTool() {
 
     override val name = "ide_refactor_safe_delete"
@@ -67,6 +78,17 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         }
     }
 
+    /**
+     * Data class to hold all information collected in background for delete operation.
+     */
+    private data class DeletePreparation(
+        val element: PsiNamedElement,
+        val elementName: String,
+        val elementType: String,
+        val usages: List<UsageInfo>,
+        val affectedFile: String
+    )
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = arguments["file"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
@@ -78,102 +100,115 @@ class SafeDeleteTool : AbstractRefactoringTool() {
 
         requireSmartMode(project)
 
-        // Find the element to delete
-        val element = readAction {
-            findNamedElement(project, file, line, column)
+        // ═══════════════════════════════════════════════════════════════════════
+        // PHASE 1: BACKGROUND - Find element and check usages (read action)
+        // ═══════════════════════════════════════════════════════════════════════
+        val preparation = readAction {
+            prepareDelete(project, file, line, column)
         } ?: return createErrorResult("No deletable element found at the specified position")
 
-        val elementName = readAction { element.name } ?: "unnamed"
-        val elementType = readAction { getElementType(element) }
-
-        // First, check for usages
-        val usages = readAction {
-            findUsages(project, element)
-        }
-
-        // If there are usages and force is false, return them
-        if (usages.isNotEmpty() && !force) {
+        // If there are usages and force is false, return them without deleting
+        if (preparation.usages.isNotEmpty() && !force) {
             return createJsonResult(
                 SafeDeleteBlockedResult(
                     canDelete = false,
-                    elementName = elementName,
-                    elementType = elementType,
-                    usageCount = usages.size,
-                    blockingUsages = usages.take(20), // Limit to 20 usages
-                    message = "Cannot delete '$elementName': found ${usages.size} usage(s). Use force=true to delete anyway."
+                    elementName = preparation.elementName,
+                    elementType = preparation.elementType,
+                    usageCount = preparation.usages.size,
+                    blockingUsages = preparation.usages.take(20),
+                    message = "Cannot delete '${preparation.elementName}': found ${preparation.usages.size} usage(s). Use force=true to delete anyway."
                 )
             )
         }
 
-        // Proceed with deletion
-        val affectedFiles = mutableSetOf<String>()
+        // ═══════════════════════════════════════════════════════════════════════
+        // PHASE 2: EDT - Apply deletion quickly (write action)
+        // ═══════════════════════════════════════════════════════════════════════
         var success = false
         var errorMessage: String? = null
 
-        try {
-            // Track the file being modified
-            readAction {
-                element.containingFile?.virtualFile?.let { vf ->
-                    trackAffectedFile(project, vf, affectedFiles)
-                }
-            }
-
-            ApplicationManager.getApplication().invokeAndWait {
-                try {
-                    WriteCommandAction.writeCommandAction(project)
-                        .withName("Safe Delete: $elementName")
-                        .withGroupId("MCP Refactoring")
-                        .run<Throwable> {
-                            // Perform deletion
-                            if (element.isValid) {
-                                element.delete()
-                            }
-
-                            // Commit and save
-                            PsiDocumentManager.getInstance(project).commitAllDocuments()
-                            FileDocumentManager.getInstance().saveAllDocuments()
-
-                            success = true
+        withContext(Dispatchers.EDT) {
+            WriteCommandAction.writeCommandAction(project)
+                .withName("Safe Delete: ${preparation.elementName}")
+                .withGroupId("MCP Refactoring")
+                .run<Throwable> {
+                    try {
+                        if (preparation.element.isValid) {
+                            preparation.element.delete()
                         }
-                } catch (e: Exception) {
-                    errorMessage = e.message
-                }
-            }
 
-            return if (success) {
-                createJsonResult(
-                    RefactoringResult(
-                        success = true,
-                        affectedFiles = affectedFiles.toList(),
-                        changesCount = 1,
-                        message = if (force && usages.isNotEmpty()) {
-                            "Force-deleted '$elementName' (had ${usages.size} usage(s) that may now be broken)"
-                        } else {
-                            "Successfully deleted '$elementName'"
-                        }
-                    )
-                )
-            } else {
-                createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"}")
-            }
-        } catch (e: Exception) {
-            return createErrorResult("Safe delete failed: ${e.message}")
+                        PsiDocumentManager.getInstance(project).commitAllDocuments()
+                        FileDocumentManager.getInstance().saveAllDocuments()
+
+                        success = true
+                    } catch (e: Exception) {
+                        errorMessage = e.message
+                    }
+                }
         }
+
+        return if (success) {
+            createJsonResult(
+                RefactoringResult(
+                    success = true,
+                    affectedFiles = listOf(preparation.affectedFile),
+                    changesCount = 1,
+                    message = if (force && preparation.usages.isNotEmpty()) {
+                        "Force-deleted '${preparation.elementName}' (had ${preparation.usages.size} usage(s) that may now be broken)"
+                    } else {
+                        "Successfully deleted '${preparation.elementName}'"
+                    }
+                )
+            )
+        } else {
+            createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"}")
+        }
+    }
+
+    /**
+     * Prepares all data needed for delete in a read action.
+     * This is the potentially slow part that runs in background.
+     */
+    private fun prepareDelete(
+        project: Project,
+        file: String,
+        line: Int,
+        column: Int
+    ): DeletePreparation? {
+        val element = findNamedElement(project, file, line, column) ?: return null
+
+        val elementName = element.name ?: "unnamed"
+        val elementType = getElementType(element)
+        val affectedFile = element.containingFile?.virtualFile?.let {
+            getRelativePath(project, it)
+        } ?: file
+
+        // Find usages (POTENTIALLY SLOW - but in background!)
+        val usages = findUsages(project, element)
+
+        return DeletePreparation(
+            element = element,
+            elementName = elementName,
+            elementType = elementType,
+            usages = usages,
+            affectedFile = affectedFile
+        )
     }
 
     private fun findUsages(project: Project, element: PsiNamedElement): List<UsageInfo> {
         val usages = mutableListOf<UsageInfo>()
 
         try {
-            val references = ReferencesSearch.search(element).findAll()
-            for (reference in references) {
+            ReferencesSearch.search(element).forEach { reference ->
+                ProgressManager.checkCanceled() // Allow cancellation
+
                 val refElement = reference.element
                 val refFile = refElement.containingFile?.virtualFile
 
                 if (refFile != null) {
                     val document = PsiDocumentManager.getInstance(project).getDocument(refElement.containingFile)
                     val lineNumber = document?.getLineNumber(refElement.textOffset)?.plus(1) ?: 0
-                    val columnNumber = if (document != null) {
+                    val columnNumber = if (document != null && lineNumber > 0) {
                         val lineStart = document.getLineStartOffset(lineNumber - 1)
                         refElement.textOffset - lineStart + 1
                     } else {
@@ -202,7 +237,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         val lineIndex = line - 1
         val startOffset = document.getLineStartOffset(lineIndex)
         val endOffset = document.getLineEndOffset(lineIndex)
-        return document.getText(com.intellij.openapi.util.TextRange(startOffset, endOffset)).trim()
+        return document.getText(TextRange(startOffset, endOffset)).trim()
     }
 
     private fun getElementType(element: PsiElement): String {
