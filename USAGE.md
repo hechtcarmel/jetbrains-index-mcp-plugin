@@ -17,17 +17,22 @@ These tools work in **every** JetBrains IDE:
 | `ide_diagnostics` | Analyze code for problems and intentions |
 | `ide_index_status` | Check indexing status |
 
-### Extended Tools (IntelliJ IDEA & Android Studio Only)
+### Extended Tools (Language-Aware)
 
-These tools require the Java plugin:
+These tools activate based on available language plugins:
+
+| Tool | Description | Languages |
+|------|-------------|-----------|
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS |
+| `ide_find_symbol` | Search symbols by name | Java, Kotlin, Python, JS/TS |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS |
+
+### Refactoring Tools (Java/Kotlin Only)
 
 | Tool | Description |
 |------|-------------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy |
-| `ide_call_hierarchy` | Analyze method call relationships |
-| `ide_find_implementations` | Find interface implementations |
-| `ide_find_symbol` | Search symbols by name |
-| `ide_find_super_methods` | Find overridden methods |
 | `ide_refactor_rename` | Rename symbol with reference updates |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
@@ -41,12 +46,13 @@ These tools require the Java plugin:
   - [ide_find_definition](#ide_find_definition)
   - [ide_diagnostics](#ide_diagnostics)
   - [ide_index_status](#ide_index_status)
-- [Extended Tools (Java Plugin Required)](#extended-tools-java-plugin-required)
+- [Extended Tools (Language-Aware)](#extended-tools-language-aware)
   - [ide_type_hierarchy](#ide_type_hierarchy)
   - [ide_call_hierarchy](#ide_call_hierarchy)
   - [ide_find_implementations](#ide_find_implementations)
   - [ide_find_symbol](#ide_find_symbol)
   - [ide_find_super_methods](#ide_find_super_methods)
+- [Refactoring Tools (Java/Kotlin Only)](#refactoring-tools-javakotlin-only)
   - [ide_refactor_rename](#ide_refactor_rename)
   - [ide_refactor_safe_delete](#ide_refactor_safe_delete)
 - [Error Handling](#error-handling)
@@ -190,11 +196,14 @@ Finds the definition/declaration location of a symbol at a given source location
 
 ---
 
-## Extended Tools (Java Plugin Required)
+## Extended Tools (Language-Aware)
 
-These tools require the Java plugin and are only available in **IntelliJ IDEA** and **Android Studio**.
+These tools activate based on available language plugins:
+- **Java/Kotlin** - IntelliJ IDEA, Android Studio
+- **Python** - PyCharm (all editions), IntelliJ with Python plugin
+- **JavaScript/TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
 
-In other IDEs (PyCharm, WebStorm, GoLand, etc.), these tools are not registered and will not appear in the tools list.
+In IDEs without language-specific plugins (e.g., GoLand, CLion), these tools will not appear in the tools list.
 
 ### ide_type_hierarchy
 
@@ -716,9 +725,13 @@ Checks if the IDE is in dumb mode (indexing) or smart mode.
 
 ---
 
-### ide_refactor_rename
+## Refactoring Tools (Java/Kotlin Only)
+
+These tools require the Java plugin and are only available in **IntelliJ IDEA** and **Android Studio**.
 
 > **Note**: All refactoring tools modify source files. Changes can be undone with Ctrl/Cmd+Z.
+
+### ide_refactor_rename
 
 Renames a symbol and updates all references across the project.
 

@@ -7,8 +7,13 @@
 <p><b>Supercharge your AI coding assistant</b> with the IDE's powerful code intelligence through the
 <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a>.</p>
 
-<h3>Works with All JetBrains IDEs</h3>
-<p>Install once, use everywhere: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, Rider, DataGrip, and Android Studio.</p>
+<h3>Multi-Language Support</h3>
+<p>Advanced code intelligence tools work across multiple languages when their plugins are available:</p>
+<ul>
+    <li><b>Java & Kotlin</b> - IntelliJ IDEA, Android Studio</li>
+    <li><b>Python</b> - PyCharm (all editions), IntelliJ IDEA with Python plugin</li>
+    <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
+</ul>
 
 <h3>Universal Tools (All IDEs)</h3>
 <p>These tools work in every JetBrains IDE:</p>
@@ -19,14 +24,18 @@
     <li><b>Index Status</b> - Check if the IDE is ready for code intelligence</li>
 </ul>
 
-<h3>Extended Tools (IntelliJ IDEA & Android Studio)</h3>
-<p>Additional tools when the Java plugin is available:</p>
+<h3>Extended Tools (Language-Aware)</h3>
+<p>These tools activate based on available language plugins:</p>
 <ul>
-    <li><b>Type Hierarchy</b> - Explore class and interface inheritance chains</li>
-    <li><b>Call Hierarchy</b> - Trace method call relationships up and down</li>
+    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JavaScript, TypeScript)</li>
+    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JavaScript, TypeScript)</li>
     <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods</li>
-    <li><b>Symbol Search</b> - Find classes, methods, and fields by name with fuzzy/camelCase matching</li>
+    <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with fuzzy/camelCase matching</li>
     <li><b>Find Super Methods</b> - Navigate through method override hierarchies</li>
+</ul>
+
+<h3>Refactoring Tools (Java/Kotlin)</h3>
+<ul>
     <li><b>Rename Refactoring</b> - Safe symbol renaming with automatic reference updates</li>
     <li><b>Safe Delete</b> - Remove code safely with usage checking</li>
 </ul>
@@ -35,6 +44,7 @@
 <ul>
     <li><b>True semantic understanding</b> - Uses the IDE's AST and index, not text matching</li>
     <li><b>Cross-project awareness</b> - Works across modules, files, and library dependencies</li>
+    <li><b>Multi-language</b> - Automatically detects and uses language-specific handlers</li>
     <li><b>Safe refactoring</b> - All changes support undo (Ctrl/Cmd+Z)</li>
     <li><b>Zero external calls</b> - Everything runs locally in your IDE</li>
 </ul>
@@ -69,6 +79,12 @@ for detailed documentation and examples.</p>
 
     <!-- Optional Kotlin support -->
     <depends optional="true" config-file="kotlin-features.xml">org.jetbrains.kotlin</depends>
+
+    <!-- Optional Python support (PyCharm, IntelliJ Ultimate with Python plugin) -->
+    <depends optional="true" config-file="python-features.xml">com.intellij.modules.python</depends>
+
+    <!-- Optional JavaScript support (WebStorm, IntelliJ Ultimate with JS plugin) -->
+    <depends optional="true" config-file="javascript-features.xml">JavaScript</depends>
 
     <resource-bundle>messages.McpBundle</resource-bundle>
 

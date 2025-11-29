@@ -44,11 +44,26 @@ src/
 ├── main/
 │   ├── kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/
 │   │   ├── MyBundle.kt                 # Resource bundle accessor
+│   │   ├── handlers/                   # Language-specific handlers
+│   │   │   ├── LanguageHandler.kt      # Handler interfaces
+│   │   │   ├── LanguageHandlerRegistry.kt # Handler registry
+│   │   │   ├── java/JavaHandlers.kt    # Java/Kotlin handlers
+│   │   │   ├── python/PythonHandlers.kt # Python handlers (reflection)
+│   │   │   └── javascript/JavaScriptHandlers.kt # JS/TS handlers (reflection)
 │   │   ├── services/                   # Application/project services
 │   │   ├── startup/                    # Startup activities
+│   │   ├── tools/                      # MCP tool implementations
+│   │   │   ├── navigation/             # Navigation tools (multi-language)
+│   │   │   ├── refactoring/            # Refactoring tools (Java only)
+│   │   │   └── utils/                  # Plugin detectors
 │   │   └── toolWindow/                 # Tool window UI
 │   └── resources/
-│       ├── META-INF/plugin.xml         # Plugin configuration
+│       ├── META-INF/
+│       │   ├── plugin.xml              # Plugin configuration
+│       │   ├── java-features.xml       # Java-specific extensions
+│       │   ├── kotlin-features.xml     # Kotlin-specific extensions
+│       │   ├── python-features.xml     # Python-specific extensions
+│       │   └── javascript-features.xml # JS/TS-specific extensions
 │       └── messages/MyBundle.properties # i18n messages
 └── test/
     ├── kotlin/                         # Test sources
@@ -258,24 +273,46 @@ Tools are organized by IDE availability.
 - `ide_diagnostics` - Analyze file for problems and available intentions
 - `ide_index_status` - Check indexing status (dumb/smart mode)
 
-**Extended Tools (IntelliJ IDEA & Android Studio Only):**
+**Extended Navigation Tools (Language-Aware):**
 
-These require the Java plugin:
+These activate based on available language plugins (Java, Python, JavaScript/TypeScript):
 - `ide_type_hierarchy` - Get type hierarchy for a class
 - `ide_call_hierarchy` - Get call hierarchy for a method
 - `ide_find_implementations` - Find implementations of interface/method
 - `ide_find_symbol` - Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching
 - `ide_find_super_methods` - Find methods that a given method overrides/implements (full hierarchy chain)
+
+**Refactoring Tools (Java/Kotlin Only):**
 - `ide_refactor_rename` - Rename a symbol across the project
 - `ide_refactor_safe_delete` - Safely delete element
 
-### Multi-IDE Architecture
+### Multi-Language Architecture
 
-The plugin uses conditional tool registration based on Java plugin availability:
+The plugin uses a language handler pattern for multi-IDE support:
 
-- `JavaPluginDetector` - Cached check for Java plugin availability (runs once at startup)
-- `ToolRegistry.registerBuiltInTools()` - Registers universal tools always, Java tools conditionally
-- Java-specific tools are loaded via reflection to avoid class loading errors in non-Java IDEs
+**Core Components:**
+- `LanguageHandler<T>` - Base interface for language-specific handlers
+- `LanguageHandlerRegistry` - Central registry managing all language handlers
+- `*PluginDetector` - Cached checks for language plugin availability (runs once at startup)
+
+**Language Handlers (in `handlers/` package):**
+- `handlers/java/JavaHandlers.kt` - Direct PSI access for Java/Kotlin
+- `handlers/python/PythonHandlers.kt` - Reflection-based Python PSI access
+- `handlers/javascript/JavaScriptHandlers.kt` - Reflection-based JS/TS PSI access
+
+**Handler Types:**
+- `TypeHierarchyHandler` - Type hierarchy lookup
+- `ImplementationsHandler` - Find implementations
+- `CallHierarchyHandler` - Call hierarchy analysis
+- `SymbolSearchHandler` - Symbol search by name
+- `SuperMethodsHandler` - Method override hierarchy
+
+**Registration Flow:**
+1. `LanguageHandlerRegistry.registerHandlers()` - Registers handlers for available language plugins
+2. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
+3. `ToolRegistry.registerJavaRefactoringTools()` - Registers refactoring tools if Java plugin available
+
+**Reflection Pattern:** Python and JavaScript handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
 
 ## Useful IntelliJ Platform Classes
 

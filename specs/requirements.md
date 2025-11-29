@@ -17,22 +17,23 @@
 | PLAT-004 | The plugin SHALL be built with Gradle 9.0 |
 | PLAT-005 | The plugin SHALL support all JetBrains IDEs based on IntelliJ Platform |
 | PLAT-006 | Universal tools SHALL work in all JetBrains IDEs |
-| PLAT-007 | Extended tools SHALL only be available when Java plugin is present |
+| PLAT-007 | Navigation tools SHALL activate based on available language plugins (Java, Python, JavaScript/TypeScript) |
+| PLAT-008 | Refactoring tools SHALL only be available when Java plugin is present |
 
 ### 1.2 Supported IDEs
 
-| IDE | Universal Tools | Extended Tools |
-|-----|-----------------|----------------|
-| IntelliJ IDEA Community/Ultimate | Yes | Yes |
-| Android Studio | Yes | Yes |
-| PyCharm Community/Professional | Yes | No |
-| WebStorm | Yes | No |
-| GoLand | Yes | No |
-| PhpStorm | Yes | No |
-| RubyMine | Yes | No |
-| CLion | Yes | No |
-| Rider | Yes | No |
-| DataGrip | Yes | No |
+| IDE | Universal Tools | Navigation Tools | Refactoring Tools |
+|-----|-----------------|------------------|-------------------|
+| IntelliJ IDEA Community/Ultimate | Yes | Yes (Java/Kotlin) | Yes |
+| Android Studio | Yes | Yes (Java/Kotlin) | Yes |
+| PyCharm Community/Professional | Yes | Yes (Python) | No |
+| WebStorm | Yes | Yes (JS/TS) | No |
+| GoLand | Yes | No | No |
+| PhpStorm | Yes | No | No |
+| RubyMine | Yes | No | No |
+| CLion | Yes | No | No |
+| Rider | Yes | No | No |
+| DataGrip | Yes | No | No |
 
 ### 1.3 Protocol Compliance
 
@@ -85,22 +86,28 @@
 | ID | Requirement |
 |----|-------------|
 | TOOL-001 | Universal tools SHALL be registered in all JetBrains IDEs |
-| TOOL-002 | Extended tools SHALL only be registered when Java plugin is available |
-| TOOL-003 | Tool availability SHALL be determined at startup using cached detection |
-| TOOL-004 | Extended tools SHALL be loaded via reflection to prevent class loading errors |
+| TOOL-002 | Navigation tools SHALL be registered when any supported language plugin is available (Java, Python, JavaScript/TypeScript) |
+| TOOL-003 | Refactoring tools SHALL only be registered when Java plugin is available |
+| TOOL-004 | Tool availability SHALL be determined at startup using cached detection |
+| TOOL-005 | Language-specific handlers SHALL be loaded via reflection to prevent class loading errors |
+| TOOL-006 | Navigation tools SHALL delegate to appropriate language handlers based on the file type |
 
-**Universal Tools:**
+**Universal Tools (All IDEs):**
 - `ide_find_references`
 - `ide_find_definition`
 - `ide_diagnostics`
 - `ide_index_status`
 
-**Extended Tools (Java Plugin Required):**
+**Navigation Tools (Language-Aware):**
+
+Available when Java, Python, or JavaScript/TypeScript plugin is present:
 - `ide_type_hierarchy`
 - `ide_call_hierarchy`
 - `ide_find_implementations`
 - `ide_find_symbol`
 - `ide_find_super_methods`
+
+**Refactoring Tools (Java/Kotlin Only):**
 - `ide_refactor_rename`
 - `ide_refactor_safe_delete`
 
@@ -433,3 +440,4 @@
 | 1.3 | 2025-11-28 | Added ide_find_symbol and ide_find_super_methods navigation tools (11 tools total) |
 | 1.4 | 2025-11-28 | Removed MCP Resources (Section 4); resources functionality deprecated |
 | 1.5 | 2025-11-29 | Added multi-IDE support; tools now categorized as Universal (4) and Extended (7) |
+| 1.6 | 2025-11-29 | Multi-language support: Navigation tools now support Java, Python, and JavaScript/TypeScript via language handlers; Refactoring remains Java-only |

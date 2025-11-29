@@ -49,6 +49,7 @@ data class TypeElement(
     val name: String,
     val file: String?,
     val kind: String,
+    val language: String? = null,
     val supertypes: List<TypeElement>? = null
 )
 
@@ -64,6 +65,7 @@ data class CallElement(
     val name: String,
     val file: String,
     val line: Int,
+    val language: String? = null,
     val children: List<CallElement>? = null
 )
 
@@ -79,7 +81,8 @@ data class ImplementationLocation(
     val name: String,
     val file: String,
     val line: Int,
-    val kind: String
+    val kind: String,
+    val language: String? = null
 )
 
 
@@ -142,7 +145,8 @@ data class SymbolMatch(
     val kind: String,
     val file: String,
     val line: Int,
-    val containerName: String?
+    val containerName: String?,
+    val language: String? = null
 )
 
 // ide_find_super_methods output
@@ -159,7 +163,8 @@ data class MethodInfo(
     val signature: String,
     val containingClass: String,
     val file: String,
-    val line: Int
+    val line: Int,
+    val language: String? = null
 )
 
 @Serializable
@@ -171,5 +176,6 @@ data class SuperMethodInfo(
     val file: String?,
     val line: Int?,
     val isInterface: Boolean,
-    val depth: Int
+    val depth: Int,
+    val language: String? = null
 )
