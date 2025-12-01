@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2025-12-01
+
+### Added
+- `maxResults` parameter for `ide_find_references` tool (default: 100, max: 500) - enables efficient searches in large codebases
+
+### Changed
+- **Performance: Optimized symbol search** - Introduced `OptimizedSymbolSearch` using IntelliJ's built-in "Go to Symbol" infrastructure with caching, word index, and prefix matching
+- **Performance: Processor-based collection** - Replaced inefficient `.findAll()` calls with streaming `Processor` pattern for early termination and reduced memory usage
+- **Performance: Non-blocking coroutines** - Refactored IntelliJ actions to use `Dispatchers.EDT` and platform `readAction` for improved UI responsiveness
+- Symbol search handlers (Java, Python, JavaScript/TypeScript) now use the optimized platform-based search
+
+### Fixed
+- Language detection in Java handlers now correctly identifies Java/Kotlin elements
+- Improved handling of large search result sets with proper early termination
+
+---
+
 ## [1.5.0] - 2025-11-29
 
 ### Added

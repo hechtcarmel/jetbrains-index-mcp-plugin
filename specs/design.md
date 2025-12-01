@@ -1098,6 +1098,58 @@ object JavaScriptPluginDetector {
 }
 ```
 
+### 6.7 Optimized Symbol Search
+
+The plugin uses `OptimizedSymbolSearch` for efficient symbol lookup across all supported languages:
+
+```kotlin
+// In handlers/OptimizedSymbolSearch.kt
+object OptimizedSymbolSearch {
+    /**
+     * Search for symbols using the optimized platform infrastructure.
+     *
+     * Uses IntelliJ's built-in "Go to Symbol" APIs (ChooseByNameContributor)
+     * with caching, word index, and prefix matching.
+     *
+     * @param project The project to search in
+     * @param pattern The search pattern (supports CamelCase, substring matching)
+     * @param scope The search scope (project only or including libraries)
+     * @param limit Maximum number of results to return
+     * @param languageFilter Optional filter to restrict results to specific languages
+     * @return List of matching symbols
+     */
+    fun search(
+        project: Project,
+        pattern: String,
+        scope: GlobalSearchScope,
+        limit: Int,
+        languageFilter: Set<String>? = null
+    ): List<SymbolData>
+}
+```
+
+**Performance Characteristics:**
+- Leverages `ChooseByNameContributor` extension points used by IDE's "Go to Symbol" dialog
+- Uses `MinusculeMatcher` for CamelCase, substring, and typo-tolerant matching
+- Early termination when result limit is reached
+- Streaming via `Processor` pattern for memory efficiency
+
+**Search Collection Pattern:**
+
+All search operations use the `Processor` pattern for efficient streaming and early termination:
+
+```kotlin
+// Instead of:
+val results = SomeSearch.search(element).findAll().take(100)
+
+// Use:
+val results = mutableListOf<Result>()
+SomeSearch.search(element).forEach(Processor { item ->
+    results.add(convertToResult(item))
+    results.size < 100  // Return false to stop iteration
+})
+```
+
 ---
 
 ## 7. GUI Components
@@ -1638,3 +1690,4 @@ dependencies {
 | 1.5 | 2025-11-28 | Removed Resource Providers (Section 7); resources functionality deprecated |
 | 1.6 | 2025-11-29 | Added multi-IDE support architecture; tools categorized as Universal (4) and Extended (7); added JavaPluginDetector |
 | 1.7 | 2025-11-29 | Multi-language architecture: Added LanguageHandlerRegistry, language-specific handlers (Java, Python, JS/TS), and plugin detectors; Navigation tools now delegate to appropriate language handlers |
+| 1.8 | 2025-12-01 | Added OptimizedSymbolSearch with ChooseByNameContributor infrastructure; documented Processor pattern for efficient search collection |

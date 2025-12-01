@@ -99,6 +99,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `file` | string | Yes | Path to the file relative to project root |
 | `line` | integer | Yes | 1-based line number |
 | `column` | integer | Yes | 1-based column number |
+| `maxResults` | integer | No | Maximum number of references to return (default: 100, max: 500) |
 
 **Example Request:**
 

@@ -47,6 +47,7 @@ src/
 │   │   ├── handlers/                   # Language-specific handlers
 │   │   │   ├── LanguageHandler.kt      # Handler interfaces
 │   │   │   ├── LanguageHandlerRegistry.kt # Handler registry
+│   │   │   ├── OptimizedSymbolSearch.kt # Optimized symbol search using platform APIs
 │   │   │   ├── java/JavaHandlers.kt    # Java/Kotlin handlers
 │   │   │   ├── python/PythonHandlers.kt # Python handlers (reflection)
 │   │   │   └── javascript/JavaScriptHandlers.kt # JS/TS handlers (reflection)
@@ -313,6 +314,29 @@ The plugin uses a language handler pattern for multi-IDE support:
 3. `ToolRegistry.registerJavaRefactoringTools()` - Registers refactoring tools if Java plugin available
 
 **Reflection Pattern:** Python and JavaScript handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+
+### Optimized Symbol Search
+
+Symbol search across all languages uses `OptimizedSymbolSearch` (in `handlers/OptimizedSymbolSearch.kt`):
+- Leverages IntelliJ's "Go to Symbol" APIs (`ChooseByNameContributor`)
+- Uses `MinusculeMatcher` for CamelCase, substring, and typo-tolerant matching
+- Supports language filtering (e.g., `languageFilter = setOf("Java", "Kotlin")`)
+
+### Search Collection Pattern (Processor)
+
+All search operations use the `Processor` pattern for efficient streaming and early termination:
+
+```kotlin
+// ✗ Inefficient: loads all results into memory
+val results = SomeSearch.search(element).findAll().take(100)
+
+// ✓ Efficient: streams results with early termination
+val results = mutableListOf<Result>()
+SomeSearch.search(element).forEach(Processor { item ->
+    results.add(convertToResult(item))
+    results.size < 100  // Return false to stop iteration
+})
+```
 
 ## Useful IntelliJ Platform Classes
 
