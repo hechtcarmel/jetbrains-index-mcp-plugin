@@ -18,6 +18,7 @@ import com.intellij.psi.PsiReference
 import com.intellij.psi.search.searches.OverridingMethodsSearch
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
+import com.intellij.util.Processor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -222,15 +223,16 @@ class RenameSymbolTool : AbstractRefactoringTool() {
                 affectedFiles.add(getRelativePath(project, vf))
             }
 
-            val refs = ReferencesSearch.search(elem).findAll().toList()
-            allReferences[elem] = refs
-
-            refs.forEach { ref ->
-                ProgressManager.checkCanceled() // Allow cancellation
+            val refs = mutableListOf<PsiReference>()
+            ReferencesSearch.search(elem).forEach(Processor { ref ->
+                ProgressManager.checkCanceled()
+                refs.add(ref)
                 ref.element.containingFile?.virtualFile?.let { vf ->
                     affectedFiles.add(getRelativePath(project, vf))
                 }
-            }
+                true // Continue collecting all references for rename
+            })
+            allReferences[elem] = refs
         }
 
         return RenamePreparation(
@@ -341,10 +343,10 @@ class RenameSymbolTool : AbstractRefactoringTool() {
         newName: String,
         elementsToRename: MutableMap<PsiNamedElement, String>
     ) {
-        val overridingMethods = OverridingMethodsSearch.search(method).findAll()
-        for (overridingMethod in overridingMethods) {
+        OverridingMethodsSearch.search(method).forEach(Processor { overridingMethod ->
             ProgressManager.checkCanceled()
             elementsToRename[overridingMethod] = newName
-        }
+            true // Continue collecting all overriding methods
+        })
     }
 }

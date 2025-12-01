@@ -118,7 +118,7 @@ class CallHierarchyTool : AbstractMcpTool() {
             val handler = LanguageHandlerRegistry.getCallHierarchyHandler(element)
             if (handler == null) {
                 return@readAction createErrorResult(
-                    "No call hierarchy handler available for language: ${element.language.displayName}. " +
+                    "No call hierarchy handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()}"
                 )
             }

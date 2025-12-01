@@ -120,6 +120,7 @@ Available when Java, Python, or JavaScript/TypeScript plugin is present:
 | NAV-001 | The tool SHALL accept input: `file` (string, path relative to project root) |
 | NAV-002 | The tool SHALL accept input: `line` (integer, 1-based line number) |
 | NAV-003 | The tool SHALL accept input: `column` (integer, 1-based column number) |
+| NAV-003a | The tool MAY accept input: `maxResults` (integer, default: 100, max: 500) |
 | NAV-004 | The tool SHALL return a list of usage locations |
 | NAV-005 | Each usage location SHALL contain: `file` (string) |
 | NAV-006 | Each usage location SHALL contain: `line` (integer) |
@@ -441,3 +442,4 @@ Available when Java, Python, or JavaScript/TypeScript plugin is present:
 | 1.4 | 2025-11-28 | Removed MCP Resources (Section 4); resources functionality deprecated |
 | 1.5 | 2025-11-29 | Added multi-IDE support; tools now categorized as Universal (4) and Extended (7) |
 | 1.6 | 2025-11-29 | Multi-language support: Navigation tools now support Java, Python, and JavaScript/TypeScript via language handlers; Refactoring remains Java-only |
+| 1.7 | 2025-12-01 | Added optional `maxResults` parameter to ide_find_references (NAV-003a) |

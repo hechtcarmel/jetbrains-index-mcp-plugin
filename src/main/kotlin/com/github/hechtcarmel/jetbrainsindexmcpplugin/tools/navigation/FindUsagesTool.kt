@@ -16,6 +16,7 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.util.Processor
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -27,12 +28,18 @@ import kotlinx.serialization.json.putJsonObject
 
 class FindUsagesTool : AbstractMcpTool() {
 
+    companion object {
+        private const val DEFAULT_MAX_RESULTS = 100
+        private const val MAX_ALLOWED_RESULTS = 500
+    }
+
     override val name = ToolNames.FIND_REFERENCES
 
     override val description = """
         Finds all references to a symbol across the entire project using IntelliJ's semantic index.
 
         REQUIRED: file + line + column to identify the symbol to search for.
+        OPTIONAL: maxResults - maximum number of references to return (default: 100, max: 500).
 
         RETURNS: All locations where the symbol is referenced, with context snippets and reference types.
 
@@ -59,6 +66,10 @@ class FindUsagesTool : AbstractMcpTool() {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
                 put(SchemaConstants.DESCRIPTION, "1-based column number within the line. REQUIRED.")
             }
+            putJsonObject("maxResults") {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, "Maximum number of references to return. Default: $DEFAULT_MAX_RESULTS, max: $MAX_ALLOWED_RESULTS.")
+            }
         }
         putJsonArray(SchemaConstants.REQUIRED) {
             add(JsonPrimitive(ParamNames.FILE))
@@ -74,6 +85,8 @@ class FindUsagesTool : AbstractMcpTool() {
             ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
         val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
             ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
+        val maxResults = (arguments["maxResults"]?.jsonPrimitive?.int ?: DEFAULT_MAX_RESULTS)
+            .coerceIn(1, MAX_ALLOWED_RESULTS)
 
         requireSmartMode(project)
 
@@ -87,35 +100,38 @@ class FindUsagesTool : AbstractMcpTool() {
 
             val usages = mutableListOf<UsageLocation>()
 
-            // Process references with cancellation support
-            ReferencesSearch.search(targetElement).forEach { reference ->
+            // Process references with cancellation support and early termination
+            ReferencesSearch.search(targetElement).forEach(Processor { reference ->
                 ProgressManager.checkCanceled() // Allow cancellation between iterations
 
                 val refElement = reference.element
-                val refFile = refElement.containingFile?.virtualFile ?: return@forEach
+                val refFile = refElement.containingFile?.virtualFile
+                if (refFile != null) {
+                    val document = PsiDocumentManager.getInstance(project)
+                        .getDocument(refElement.containingFile)
+                    if (document != null) {
+                        val lineNumber = document.getLineNumber(refElement.textOffset) + 1
+                        val columnNumber = refElement.textOffset -
+                            document.getLineStartOffset(lineNumber - 1) + 1
 
-                val document = PsiDocumentManager.getInstance(project)
-                    .getDocument(refElement.containingFile) ?: return@forEach
+                        val lineText = document.getText(
+                            TextRange(
+                                document.getLineStartOffset(lineNumber - 1),
+                                document.getLineEndOffset(lineNumber - 1)
+                            )
+                        ).trim()
 
-                val lineNumber = document.getLineNumber(refElement.textOffset) + 1
-                val columnNumber = refElement.textOffset -
-                    document.getLineStartOffset(lineNumber - 1) + 1
-
-                val lineText = document.getText(
-                    TextRange(
-                        document.getLineStartOffset(lineNumber - 1),
-                        document.getLineEndOffset(lineNumber - 1)
-                    )
-                ).trim()
-
-                usages.add(UsageLocation(
-                    file = getRelativePath(project, refFile),
-                    line = lineNumber,
-                    column = columnNumber,
-                    context = lineText,
-                    type = classifyUsage(refElement)
-                ))
-            }
+                        usages.add(UsageLocation(
+                            file = getRelativePath(project, refFile),
+                            line = lineNumber,
+                            column = columnNumber,
+                            context = lineText,
+                            type = classifyUsage(refElement)
+                        ))
+                    }
+                }
+                usages.size < maxResults
+            })
 
             createJsonResult(FindUsagesResult(
                 usages = usages,

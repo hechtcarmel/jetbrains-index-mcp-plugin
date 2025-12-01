@@ -97,7 +97,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
             val handler = LanguageHandlerRegistry.getSuperMethodsHandler(element)
             if (handler == null) {
                 return@readAction createErrorResult(
-                    "No super methods handler available for language: ${element.language.displayName}. " +
+                    "No super methods handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()}"
                 )
             }

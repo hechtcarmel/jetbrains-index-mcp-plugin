@@ -580,6 +580,9 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
 
 /**
  * Python implementation of [SymbolSearchHandler].
+ *
+ * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
+ * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
  */
 class PythonSymbolSearchHandler : BasePythonHandler<List<SymbolData>>(), SymbolSearchHandler {
 
@@ -601,139 +604,14 @@ class PythonSymbolSearchHandler : BasePythonHandler<List<SymbolData>>(), SymbolS
             GlobalSearchScope.projectScope(project)
         }
 
-        val matches = mutableListOf<SymbolData>()
-
-        // Search classes
-        try {
-            val indexClass = Class.forName("com.jetbrains.python.psi.stubs.PyClassNameIndex")
-            val keyField = indexClass.getDeclaredField("KEY")
-            keyField.isAccessible = true
-            val key = keyField.get(null)
-
-            val stubIndexClass = Class.forName("com.intellij.psi.stubs.StubIndex")
-            val getInstanceMethod = stubIndexClass.getMethod("getInstance")
-            val stubIndex = getInstanceMethod.invoke(null)
-
-            val getAllKeysMethod = stubIndex.javaClass.getMethod("getAllKeys", Class.forName("com.intellij.psi.stubs.StubIndexKey"), Project::class.java)
-            val allClassNames = getAllKeysMethod.invoke(stubIndex, key, project) as? Collection<*> ?: emptyList<Any>()
-
-            val matchingNames = allClassNames.filterIsInstance<String>().filter { matchesQuery(it, pattern) }
-
-            for (className in matchingNames) {
-                if (matches.size >= limit) break
-
-                val getElementsMethod = stubIndex.javaClass.getMethod(
-                    "getElements",
-                    Class.forName("com.intellij.psi.stubs.StubIndexKey"),
-                    java.lang.Object::class.java,
-                    Project::class.java,
-                    GlobalSearchScope::class.java,
-                    java.lang.Class::class.java
-                )
-                val elements = getElementsMethod.invoke(stubIndex, key, className, project, scope, pyClassClass) as? Collection<*>
-
-                elements?.filterIsInstance<PsiElement>()?.forEach { pyClass ->
-                    if (matches.size >= limit) return@forEach
-                    val file = pyClass.containingFile?.virtualFile ?: return@forEach
-                    matches.add(SymbolData(
-                        name = getName(pyClass) ?: className,
-                        qualifiedName = getQualifiedName(pyClass),
-                        kind = "CLASS",
-                        file = getRelativePath(project, file),
-                        line = getLineNumber(project, pyClass) ?: 1,
-                        containerName = null,
-                        language = "Python"
-                    ))
-                }
-            }
-        } catch (e: Exception) {
-            // Class search failed, continue with functions
-        }
-
-        // Search functions
-        if (matches.size < limit) {
-            try {
-                val indexClass = Class.forName("com.jetbrains.python.psi.stubs.PyFunctionNameIndex")
-                val keyField = indexClass.getDeclaredField("KEY")
-                keyField.isAccessible = true
-                val key = keyField.get(null)
-
-                val stubIndexClass = Class.forName("com.intellij.psi.stubs.StubIndex")
-                val getInstanceMethod = stubIndexClass.getMethod("getInstance")
-                val stubIndex = getInstanceMethod.invoke(null)
-
-                val getAllKeysMethod = stubIndex.javaClass.getMethod("getAllKeys", Class.forName("com.intellij.psi.stubs.StubIndexKey"), Project::class.java)
-                val allFunctionNames = getAllKeysMethod.invoke(stubIndex, key, project) as? Collection<*> ?: emptyList<Any>()
-
-                val matchingNames = allFunctionNames.filterIsInstance<String>().filter { matchesQuery(it, pattern) }
-
-                for (functionName in matchingNames) {
-                    if (matches.size >= limit) break
-
-                    val getElementsMethod = stubIndex.javaClass.getMethod(
-                        "getElements",
-                        Class.forName("com.intellij.psi.stubs.StubIndexKey"),
-                        java.lang.Object::class.java,
-                        Project::class.java,
-                        GlobalSearchScope::class.java,
-                        java.lang.Class::class.java
-                    )
-                    val elements = getElementsMethod.invoke(stubIndex, key, functionName, project, scope, pyFunctionClass) as? Collection<*>
-
-                    elements?.filterIsInstance<PsiElement>()?.forEach { pyFunction ->
-                        if (matches.size >= limit) return@forEach
-                        val file = pyFunction.containingFile?.virtualFile ?: return@forEach
-                        val containingClass = findContainingPyClass(pyFunction)
-                        matches.add(SymbolData(
-                            name = getName(pyFunction) ?: functionName,
-                            qualifiedName = getQualifiedName(pyFunction),
-                            kind = if (containingClass != null) "METHOD" else "FUNCTION",
-                            file = getRelativePath(project, file),
-                            line = getLineNumber(project, pyFunction) ?: 1,
-                            containerName = containingClass?.let { getName(it) },
-                            language = "Python"
-                        ))
-                    }
-                }
-            } catch (e: Exception) {
-                // Function search failed
-            }
-        }
-
-        return matches.sortedWith(compareBy(
-            { !it.name.equals(pattern, ignoreCase = true) },
-            { levenshteinDistance(it.name.lowercase(), pattern.lowercase()) }
-        ))
-    }
-
-    private fun matchesQuery(name: String, query: String): Boolean {
-        if (name.contains(query, ignoreCase = true)) return true
-        return matchesCamelCase(name, query)
-    }
-
-    private fun matchesCamelCase(name: String, query: String): Boolean {
-        var queryIndex = 0
-        for (char in name) {
-            if (queryIndex >= query.length) return true
-            if (char.equals(query[queryIndex], ignoreCase = true)) queryIndex++
-        }
-        return queryIndex >= query.length
-    }
-
-    private fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + if (s1[i - 1] == s2[j - 1]) 0 else 1
-                )
-            }
-        }
-        return dp[s1.length][s2.length]
+        // Use the optimized platform-based search with language filter for Python
+        return OptimizedSymbolSearch.search(
+            project = project,
+            pattern = pattern,
+            scope = scope,
+            limit = limit,
+            languageFilter = setOf("Python")
+        )
     }
 }
 

@@ -85,7 +85,7 @@ class FindImplementationsTool : AbstractMcpTool() {
             val handler = LanguageHandlerRegistry.getImplementationsHandler(element)
             if (handler == null) {
                 return@readAction createErrorResult(
-                    "No implementations handler available for language: ${element.language.displayName}. " +
+                    "No implementations handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForImplementations()}"
                 )
             }

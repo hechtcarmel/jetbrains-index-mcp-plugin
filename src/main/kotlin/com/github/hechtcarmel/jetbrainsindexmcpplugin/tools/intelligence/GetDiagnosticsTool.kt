@@ -9,7 +9,7 @@ import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -20,7 +20,9 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -138,15 +140,15 @@ class GetDiagnosticsTool : AbstractMcpTool() {
     }
 
     private suspend fun openFileForAnalysis(fileEditorManager: FileEditorManager, virtualFile: VirtualFile) {
-        ApplicationManager.getApplication().invokeAndWait {
+        withContext(Dispatchers.EDT) {
             fileEditorManager.openFile(virtualFile, false)
         }
         // Wait for daemon to start analyzing
         delay(DAEMON_ANALYSIS_WAIT_MS)
     }
 
-    private fun closeFile(fileEditorManager: FileEditorManager, virtualFile: VirtualFile) {
-        ApplicationManager.getApplication().invokeAndWait {
+    private suspend fun closeFile(fileEditorManager: FileEditorManager, virtualFile: VirtualFile) {
+        withContext(Dispatchers.EDT) {
             fileEditorManager.closeFile(virtualFile)
         }
     }

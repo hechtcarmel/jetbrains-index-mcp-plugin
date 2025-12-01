@@ -6,11 +6,11 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.PsiShortNamesCache
 import com.intellij.psi.search.searches.ClassInheritorsSearch
 import com.intellij.psi.search.searches.MethodReferencesSearch
 import com.intellij.psi.search.searches.OverridingMethodsSearch
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.util.Processor
 
 /**
  * Registration entry point for Java language handlers.
@@ -104,7 +104,7 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
     override val languageId = "JAVA"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (element is PsiClass || findContainingClass(element) != null)
+        return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
@@ -237,23 +237,23 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
     }
 
     private fun getSubtypes(project: Project, psiClass: PsiClass): List<TypeElementData> {
-        return try {
-            ClassInheritorsSearch.search(psiClass, true)
-                .findAll()
-                .take(100)
-                .map { subClass ->
-                    TypeElementData(
-                        name = subClass.qualifiedName ?: subClass.name ?: "unknown",
-                        qualifiedName = subClass.qualifiedName,
-                        file = subClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
-                        line = getLineNumber(project, subClass),
-                        kind = getClassKind(subClass),
-                        language = if (subClass.language.id == "kotlin") "Kotlin" else "Java"
-                    )
-                }
-        } catch (e: Exception) {
-            emptyList()
+        val results = mutableListOf<TypeElementData>()
+        try {
+            ClassInheritorsSearch.search(psiClass, true).forEach(Processor { subClass ->
+                results.add(TypeElementData(
+                    name = subClass.qualifiedName ?: subClass.name ?: "unknown",
+                    qualifiedName = subClass.qualifiedName,
+                    file = subClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                    line = getLineNumber(project, subClass),
+                    kind = getClassKind(subClass),
+                    language = if (subClass.language.id == "kotlin") "Kotlin" else "Java"
+                ))
+                results.size < 100
+            })
+        } catch (_: Exception) {
+            // Handle gracefully
         }
+        return results
     }
 }
 
@@ -265,8 +265,7 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
     override val languageId = "JAVA"
 
     override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && (element is PsiClass || element is PsiMethod ||
-            findContainingClass(element) != null || findContainingMethod(element) != null)
+        return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
@@ -286,43 +285,47 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
     }
 
     private fun findMethodImplementations(project: Project, method: PsiMethod): List<ImplementationData> {
-        return try {
-            OverridingMethodsSearch.search(method)
-                .findAll()
-                .take(100)
-                .mapNotNull { overridingMethod ->
-                    val file = overridingMethod.containingFile?.virtualFile ?: return@mapNotNull null
-                    ImplementationData(
+        val results = mutableListOf<ImplementationData>()
+        try {
+            OverridingMethodsSearch.search(method).forEach(Processor { overridingMethod ->
+                val file = overridingMethod.containingFile?.virtualFile
+                if (file != null) {
+                    results.add(ImplementationData(
                         name = "${overridingMethod.containingClass?.name}.${overridingMethod.name}",
                         file = getRelativePath(project, file),
                         line = getLineNumber(project, overridingMethod) ?: 0,
                         kind = "METHOD",
                         language = if (overridingMethod.language.id == "kotlin") "Kotlin" else "Java"
-                    )
+                    ))
                 }
-        } catch (e: Exception) {
-            emptyList()
+                results.size < 100
+            })
+        } catch (_: Exception) {
+            // Handle gracefully
         }
+        return results
     }
 
     private fun findClassImplementations(project: Project, psiClass: PsiClass): List<ImplementationData> {
-        return try {
-            ClassInheritorsSearch.search(psiClass, true)
-                .findAll()
-                .take(100)
-                .mapNotNull { inheritor ->
-                    val file = inheritor.containingFile?.virtualFile ?: return@mapNotNull null
-                    ImplementationData(
+        val results = mutableListOf<ImplementationData>()
+        try {
+            ClassInheritorsSearch.search(psiClass, true).forEach(Processor { inheritor ->
+                val file = inheritor.containingFile?.virtualFile
+                if (file != null) {
+                    results.add(ImplementationData(
                         name = inheritor.qualifiedName ?: inheritor.name ?: "unknown",
                         file = getRelativePath(project, file),
                         line = getLineNumber(project, inheritor) ?: 0,
                         kind = getClassKind(inheritor),
                         language = if (inheritor.language.id == "kotlin") "Kotlin" else "Java"
-                    )
+                    ))
                 }
-        } catch (e: Exception) {
-            emptyList()
+                results.size < 100
+            })
+        } catch (_: Exception) {
+            // Handle gracefully
         }
+        return results
     }
 }
 
@@ -384,9 +387,12 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
 
             val allReferences = mutableListOf<PsiElement>()
             for (methodToSearch in methodsToSearch) {
+                if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
                 MethodReferencesSearch.search(methodToSearch, GlobalSearchScope.projectScope(project), true)
-                    .findAll()
-                    .forEach { reference -> allReferences.add(reference.element) }
+                    .forEach(Processor { reference ->
+                        allReferences.add(reference.element)
+                        allReferences.size < MAX_RESULTS_PER_LEVEL * 2
+                    })
             }
 
             allReferences
@@ -401,7 +407,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                     } else null
                 }
                 .distinctBy { it.name + it.file + it.line }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -487,6 +493,12 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
 
 /**
  * Java implementation of [SymbolSearchHandler].
+ *
+ * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
+ * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
+ *
+ * This replaces the manual iteration over PsiShortNamesCache which was O(n) for
+ * all symbols in large monorepos.
  */
 class JavaSymbolSearchHandler : BaseJavaHandler<List<SymbolData>>(), SymbolSearchHandler {
 
@@ -508,104 +520,14 @@ class JavaSymbolSearchHandler : BaseJavaHandler<List<SymbolData>>(), SymbolSearc
             GlobalSearchScope.projectScope(project)
         }
 
-        val cache = PsiShortNamesCache.getInstance(project)
-        val matches = mutableListOf<SymbolData>()
-
-        // Search classes
-        val classNames = cache.allClassNames.filter { matchesQuery(it, pattern) }
-        for (className in classNames) {
-            if (matches.size >= limit) break
-            for (psiClass in cache.getClassesByName(className, scope)) {
-                if (matches.size >= limit) break
-                val file = psiClass.containingFile?.virtualFile ?: continue
-                matches.add(SymbolData(
-                    name = psiClass.name ?: className,
-                    qualifiedName = psiClass.qualifiedName,
-                    kind = getClassKind(psiClass),
-                    file = getRelativePath(project, file),
-                    line = getLineNumber(project, psiClass) ?: 1,
-                    containerName = null,
-                    language = if (psiClass.language.id == "kotlin") "Kotlin" else "Java"
-                ))
-            }
-        }
-
-        // Search methods
-        if (matches.size < limit) {
-            val methodNames = cache.allMethodNames.filter { matchesQuery(it, pattern) }
-            for (methodName in methodNames) {
-                if (matches.size >= limit) break
-                for (method in cache.getMethodsByName(methodName, scope)) {
-                    if (matches.size >= limit) break
-                    val file = method.containingFile?.virtualFile ?: continue
-                    matches.add(SymbolData(
-                        name = method.name,
-                        qualifiedName = "${method.containingClass?.qualifiedName}.${method.name}",
-                        kind = "METHOD",
-                        file = getRelativePath(project, file),
-                        line = getLineNumber(project, method) ?: 1,
-                        containerName = method.containingClass?.name,
-                        language = if (method.language.id == "kotlin") "Kotlin" else "Java"
-                    ))
-                }
-            }
-        }
-
-        // Search fields
-        if (matches.size < limit) {
-            val fieldNames = cache.allFieldNames.filter { matchesQuery(it, pattern) }
-            for (fieldName in fieldNames) {
-                if (matches.size >= limit) break
-                for (field in cache.getFieldsByName(fieldName, scope)) {
-                    if (matches.size >= limit) break
-                    val file = field.containingFile?.virtualFile ?: continue
-                    matches.add(SymbolData(
-                        name = field.name ?: fieldName,
-                        qualifiedName = "${field.containingClass?.qualifiedName}.${field.name}",
-                        kind = "FIELD",
-                        file = getRelativePath(project, file),
-                        line = getLineNumber(project, field) ?: 1,
-                        containerName = field.containingClass?.name,
-                        language = if (field.language.id == "kotlin") "Kotlin" else "Java"
-                    ))
-                }
-            }
-        }
-
-        return matches.sortedWith(compareBy(
-            { !it.name.equals(pattern, ignoreCase = true) },
-            { levenshteinDistance(it.name.lowercase(), pattern.lowercase()) }
-        ))
-    }
-
-    private fun matchesQuery(name: String, query: String): Boolean {
-        if (name.contains(query, ignoreCase = true)) return true
-        return matchesCamelCase(name, query)
-    }
-
-    private fun matchesCamelCase(name: String, query: String): Boolean {
-        var queryIndex = 0
-        for (char in name) {
-            if (queryIndex >= query.length) return true
-            if (char.equals(query[queryIndex], ignoreCase = true)) queryIndex++
-        }
-        return queryIndex >= query.length
-    }
-
-    private fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + if (s1[i - 1] == s2[j - 1]) 0 else 1
-                )
-            }
-        }
-        return dp[s1.length][s2.length]
+        // Use the optimized platform-based search with language filter for Java/Kotlin
+        return OptimizedSymbolSearch.search(
+            project = project,
+            pattern = pattern,
+            scope = scope,
+            limit = limit,
+            languageFilter = setOf("Java", "Kotlin")
+        )
     }
 }
 

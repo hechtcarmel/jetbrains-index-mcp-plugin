@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.application.readAction as platformReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.progress.ProgressManager
@@ -217,14 +218,18 @@ abstract class AbstractMcpTool : McpTool {
      *
      * This is the preferred method for read operations as it:
      * - Yields to pending write actions (WARA - Write Allowing Read Action)
-     * - Doesn't block the EDT
-     * - Automatically cancels when a write action is requested
+     * - Doesn't block the calling thread
+     * - Automatically cancels and retries when a write action is requested
+     * - Integrates with coroutine cancellation
+     *
+     * Use this instead of [readAction] for long-running PSI operations to avoid
+     * blocking write actions and causing UI freezes.
      *
      * @param action The action to execute
      * @return The result of the action
      */
     protected suspend fun <T> suspendingReadAction(action: () -> T): T {
-        return readAction(action)
+        return platformReadAction { action() }
     }
 
     /**

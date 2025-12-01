@@ -97,7 +97,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
             val handler = LanguageHandlerRegistry.getTypeHierarchyHandler(element)
             if (handler == null) {
                 return@readAction createErrorResult(
-                    "No type hierarchy handler available for language: ${element.language.displayName}. " +
+                    "No type hierarchy handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy()}"
                 )
             }
