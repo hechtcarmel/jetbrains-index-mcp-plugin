@@ -34,7 +34,7 @@ These tools activate based on installed language plugins:
 - **Find Super Methods** - Navigate method override hierarchies
 
 **Refactoring Tools**
-- **Rename Refactoring** - Safe renaming with reference updates (works across ALL languages)
+- **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
 
 ### Why Use This Plugin?

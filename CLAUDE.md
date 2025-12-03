@@ -273,7 +273,7 @@ Tools are organized by IDE availability.
 - `ide_find_definition` - Find symbol definition location
 - `ide_diagnostics` - Analyze file for problems and available intentions
 - `ide_index_status` - Check indexing status (dumb/smart mode)
-- `ide_refactor_rename` - Rename a symbol across the project (uses platform RenameProcessor, works for ALL languages)
+- `ide_refactor_rename` - Rename a symbol across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages.
 
 **Extended Navigation Tools (Language-Aware):**
 

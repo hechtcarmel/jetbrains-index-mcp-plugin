@@ -118,22 +118,7 @@ data class RefactoringResult(
     val success: Boolean,
     val affectedFiles: List<String>,
     val changesCount: Int,
-    val message: String,
-    val suggestedRenames: List<SuggestedRename> = emptyList()
-)
-
-/**
- * Represents a related element that could also be renamed.
- * Returned when automatic renamers would have suggested renaming related elements.
- * The agent can use this to rename related elements in subsequent calls.
- */
-@Serializable
-data class SuggestedRename(
-    val category: String,        // e.g., "getter", "setter", "overriding_method", "test_class"
-    val currentName: String,     // Current name of the element
-    val suggestedName: String,   // What it would be renamed to
-    val file: String,           // File containing the element
-    val line: Int               // Line number (1-based)
+    val message: String
 )
 
 

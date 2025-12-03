@@ -738,9 +738,10 @@ Renames a symbol and updates all references across the project. This tool uses I
 
 **Features:**
 - Language-specific name validation (identifier rules, keyword detection)
-- Fully headless/autonomous operation (no popups or dialogs)
-- Returns `suggestedRenames` for related elements (getters/setters, overriding methods) that the agent can rename separately
-- Full undo support (Ctrl/Cmd+Z)
+- **Fully headless/autonomous operation** (no popups or dialogs)
+- **Automatic related element renaming** - getters/setters, overriding methods, test classes are renamed automatically
+- Conflict detection before rename execution (returns error instead of showing dialog)
+- Single atomic operation - all renames (primary + related) can be undone with one Ctrl/Cmd+Z
 
 **Use when:**
 - Renaming identifiers to improve code clarity
@@ -801,37 +802,20 @@ Renames a symbol and updates all references across the project. This tool uses I
     "src/test/java/com/example/UserServiceTest.java"
   ],
   "changesCount": 3,
-  "message": "Successfully renamed 'findUser' to 'findUserById' (2 related element(s) may also need renaming - see suggestedRenames)",
-  "suggestedRenames": [
-    {
-      "category": "overriding methods",
-      "currentName": "findUser",
-      "suggestedName": "findUserById",
-      "file": "src/main/java/com/example/UserServiceImpl.java",
-      "line": 25
-    },
-    {
-      "category": "tests",
-      "currentName": "UserServiceTest",
-      "suggestedName": "UserServiceByIdTest",
-      "file": "src/test/java/com/example/UserServiceTest.java",
-      "line": 8
-    }
-  ]
+  "message": "Successfully renamed 'findUser' to 'findUserById' (also renamed 2 related element(s))"
 }
 ```
 
-**Suggested Renames:**
+**Automatic Related Renames:**
 
-The `suggestedRenames` array contains related elements that IntelliJ would normally prompt you to rename together (e.g., getters/setters when renaming a field). For fully autonomous operation, no popup is shown - instead, these suggestions are returned so the agent can decide whether to rename them with subsequent calls.
+Related elements are automatically renamed without any prompts or dialogs:
 
-| Field | Description |
-|-------|-------------|
-| `category` | Type of related element (e.g., "getter", "setter", "overriding methods", "tests") |
-| `currentName` | Current name of the related element |
-| `suggestedName` | What the element would be renamed to |
-| `file` | File containing the element |
-| `line` | Line number (1-based) |
+| Language | What Gets Auto-Renamed |
+|----------|------------------------|
+| Java/Kotlin | Getters/setters for fields, constructor parameters ↔ matching fields, overriding methods in subclasses, test classes |
+| All Languages | Method implementations in subclasses, interface method implementations |
+
+All renames happen in a single atomic operation, so one undo (Ctrl/Cmd+Z) reverts everything.
 
 ---
 

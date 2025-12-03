@@ -3,7 +3,6 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuggestedRename
 import com.intellij.lang.LanguageNamesValidation
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -49,13 +48,13 @@ class RenameSymbolTool : AbstractMcpTool() {
     override val description = """
         Renames a symbol and updates all references across the project. Supports Ctrl+Z undo.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, Go, and more.
-
         REQUIRED: file + line + column to identify the symbol, plus newName.
 
-        WARNING: This modifies files. Returns affected files, change count, and suggestedRenames.
+        Returns affected files and change count.
 
-        RESPONSE includes `suggestedRenames` array with related elements (getters/setters, overriding methods, test classes) that you may want to rename separately for consistency.
+        AUTOMATIC RELATED RENAMES: Related elements are automatically renamed without prompts:
+        - Java/Kotlin: getters/setters, constructor parameters ↔ fields, overriding methods, test classes
+        - All languages: method implementations in subclasses, overrides
 
         EXAMPLE: {"file": "src/main/java/com/example/UserService.java", "line": 15, "column": 18, "newName": "CustomerService"}
     """.trimIndent()
@@ -98,8 +97,7 @@ class RenameSymbolTool : AbstractMcpTool() {
     private data class RenameValidation(
         val element: PsiNamedElement,
         val oldName: String,
-        val error: String? = null,
-        val suggestedRenames: List<SuggestedRename> = emptyList()
+        val error: String? = null
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -131,18 +129,20 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         val element = validation.element
         val oldName = validation.oldName
-        val suggestedRenames = validation.suggestedRenames
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 2: EDT - Execute rename using RenameProcessor
         // ═══════════════════════════════════════════════════════════════════════
         var changesCount = 0
         val affectedFiles = mutableSetOf<String>()
+        var relatedRenamesCount = 0
         var errorMessage: String? = null
 
         withContext(Dispatchers.EDT) {
             try {
-                changesCount = executeRename(project, element, newName, affectedFiles)
+                val result = executeRename(project, element, newName, affectedFiles)
+                changesCount = result.first
+                relatedRenamesCount = result.second
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Unknown error during rename"
             }
@@ -151,8 +151,8 @@ class RenameSymbolTool : AbstractMcpTool() {
         return if (errorMessage != null) {
             createErrorResult("Rename failed: $errorMessage")
         } else {
-            val suggestionsNote = if (suggestedRenames.isNotEmpty()) {
-                " (${suggestedRenames.size} related element(s) may also need renaming - see suggestedRenames)"
+            val relatedNote = if (relatedRenamesCount > 0) {
+                " (also renamed $relatedRenamesCount related element(s))"
             } else ""
 
             createJsonResult(
@@ -160,8 +160,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     success = true,
                     affectedFiles = affectedFiles.toList(),
                     changesCount = changesCount,
-                    message = "Successfully renamed '$oldName' to '$newName'$suggestionsNote",
-                    suggestedRenames = suggestedRenames
+                    message = "Successfully renamed '$oldName' to '$newName'$relatedNote"
                 )
             )
         }
@@ -227,69 +226,10 @@ class RenameSymbolTool : AbstractMcpTool() {
             )
         }
 
-        // Collect suggested renames from automatic renamers (what the popup would have shown)
-        val suggestedRenames = collectSuggestedRenames(project, namedElement, newName)
-
         return RenameValidation(
             element = namedElement,
-            oldName = oldName,
-            suggestedRenames = suggestedRenames
+            oldName = oldName
         )
-    }
-
-    /**
-     * Collects suggested renames from all applicable AutomaticRenamerFactory instances.
-     * This is what the popup dialog would have shown - getters/setters, overriding methods, etc.
-     */
-    private fun collectSuggestedRenames(
-        project: Project,
-        element: PsiNamedElement,
-        newName: String
-    ): List<SuggestedRename> {
-        val suggestions = mutableListOf<SuggestedRename>()
-
-        // Empty usage list - we're just collecting suggestions, not performing the rename
-        val emptyUsages = mutableListOf<com.intellij.usageView.UsageInfo>()
-
-        for (factory in AutomaticRenamerFactory.EP_NAME.extensionList) {
-            if (!factory.isApplicable(element)) continue
-
-            try {
-                val renamer = factory.createRenamer(element, newName, emptyUsages)
-                if (renamer == null) continue
-
-                // Get the category name from the factory
-                val category = factory.optionName?.replace("Rename ", "")?.lowercase() ?: "related"
-
-                // Iterate through elements the renamer would rename
-                for (suggestedElement in renamer.elements) {
-                    val suggestedNewName = renamer.getNewName(suggestedElement) ?: continue
-                    val currentName = suggestedElement.name ?: continue
-
-                    // Don't suggest if it's the same element or same name
-                    if (suggestedElement == element || currentName == suggestedNewName) continue
-
-                    val containingFile = suggestedElement.containingFile?.virtualFile ?: continue
-                    val document = PsiDocumentManager.getInstance(project)
-                        .getDocument(suggestedElement.containingFile) ?: continue
-                    val lineNumber = document.getLineNumber(suggestedElement.textOffset) + 1
-
-                    suggestions.add(
-                        SuggestedRename(
-                            category = category,
-                            currentName = currentName,
-                            suggestedName = suggestedNewName,
-                            file = getRelativePath(project, containingFile),
-                            line = lineNumber
-                        )
-                    )
-                }
-            } catch (e: Exception) {
-                // Some factories may fail for certain elements - skip them
-            }
-        }
-
-        return suggestions
     }
 
     /**
@@ -341,19 +281,19 @@ class RenameSymbolTool : AbstractMcpTool() {
      * Executes the rename using IntelliJ's RenameProcessor.
      * Must be called on EDT.
      *
-     * HEADLESS OPERATION:
-     * - AutomaticRenamerFactory is NOT used to avoid interactive dialogs
-     * - This means related elements (getters/setters, overriding methods) are NOT auto-renamed
-     * - The agent should rename related elements separately if needed
+     * HEADLESS OPERATION WITH AUTOMATIC RELATED RENAMES:
+     * - Related elements (getters/setters, overriding methods, etc.) are automatically renamed
+     * - No dialogs are shown because we add elements directly to the processor's rename map
+     *   instead of using the AutomaticRenamerFactory infrastructure (which shows dialogs)
      *
-     * @return The number of affected files
+     * @return Pair of (affected files count, related elements renamed count)
      */
     private fun executeRename(
         project: Project,
         element: PsiNamedElement,
         newName: String,
         affectedFiles: MutableSet<String>
-    ): Int {
+    ): Pair<Int, Int> {
         // Get the language-specific processor for this element
         val elementProcessor = RenamePsiElementProcessor.forElement(element)
 
@@ -377,27 +317,163 @@ class RenameSymbolTool : AbstractMcpTool() {
             false   // searchTextOccurrences = false (avoid dialogs)
         )
 
-        // IMPORTANT: Do NOT add AutomaticRenamerFactory instances!
-        // Adding them causes interactive dialogs asking which related elements to rename.
-        // For headless/autonomous operation, we skip automatic renaming of:
-        // - Getters/setters (Java)
-        // - Overriding methods
-        // - Test classes
-        // - Companion objects (Kotlin)
-        // The agent can rename these separately if needed.
+        // ═══════════════════════════════════════════════════════════════════════
+        // HEADLESS AUTOMATIC RENAMING OF RELATED ELEMENTS
+        // ═══════════════════════════════════════════════════════════════════════
+        // We manually detect and add related elements to avoid dialogs:
+        // 1. AutomaticRenamerFactory elements (getters/setters, overriding methods, etc.)
+        // 2. Constructor parameter ↔ field relationships (handled by prepareRenaming, shows dialog)
+        //
+        // By adding elements BEFORE run() is called, prepareRenaming() sees them
+        // already in the map and skips the dialog.
+        var relatedRenamesCount = 0
+
+        // Step 1: Add constructor parameter ↔ field related elements
+        // This MUST be done before AutomaticRenamerFactory to prevent prepareRenaming dialogs
+        relatedRenamesCount += addParameterFieldRelations(
+            project, targetElement, newName, renameProcessor, affectedFiles
+        )
+
+        // Step 2: Add elements from AutomaticRenamerFactory (getters/setters, overrides, etc.)
+        val emptyUsages = mutableListOf<com.intellij.usageView.UsageInfo>()
+        for (factory in AutomaticRenamerFactory.EP_NAME.extensionList) {
+            if (!factory.isApplicable(targetElement)) continue
+
+            try {
+                val renamer = factory.createRenamer(targetElement, newName, emptyUsages)
+                if (renamer == null) continue
+
+                for (relatedElement in renamer.elements) {
+                    val relatedNewName = renamer.getNewName(relatedElement) ?: continue
+
+                    // Skip the primary element and elements with unchanged names
+                    if (relatedElement == targetElement) continue
+                    if (relatedElement.name == relatedNewName) continue
+
+                    // Add to the processor's rename map - will be renamed in the same operation
+                    renameProcessor.addElement(relatedElement, relatedNewName)
+                    relatedRenamesCount++
+
+                    // Track affected file
+                    relatedElement.containingFile?.virtualFile?.let { vf ->
+                        affectedFiles.add(getRelativePath(project, vf))
+                    }
+                }
+            } catch (e: Exception) {
+                // Some factories may fail for certain elements - skip them silently
+            }
+        }
 
         // Disable preview dialog for headless operation
         renameProcessor.setPreviewUsages(false)
 
-        // Execute the rename - this modifies files in place
+        // Execute the rename - this modifies files in place (primary + all related elements)
         renameProcessor.run()
 
         // Commit documents and save
         PsiDocumentManager.getInstance(project).commitAllDocuments()
         FileDocumentManager.getInstance().saveAllDocuments()
 
-        // Return the count of affected files (usages are handled internally by RenameProcessor)
-        return affectedFiles.size
+        return Pair(affectedFiles.size, relatedRenamesCount)
+    }
+
+    /**
+     * Detects and adds constructor parameter ↔ field relationships to prevent dialogs.
+     *
+     * In Java/Kotlin, when renaming a constructor parameter that has a matching field
+     * (or vice versa), IntelliJ's prepareRenaming() shows a dialog asking if both should
+     * be renamed. By adding the related element to the processor BEFORE run() is called,
+     * prepareRenaming() sees it already in the map and skips the dialog.
+     *
+     * Uses reflection to access Java PSI classes to keep the tool language-agnostic.
+     *
+     * @return Number of related elements added
+     */
+    private fun addParameterFieldRelations(
+        project: Project,
+        element: PsiNamedElement,
+        newName: String,
+        renameProcessor: RenameProcessor,
+        affectedFiles: MutableSet<String>
+    ): Int {
+        var count = 0
+        val elementName = element.name ?: return 0
+
+        try {
+            // Check if this is a Java/Kotlin parameter
+            val psiParameterClass = try {
+                Class.forName("com.intellij.psi.PsiParameter")
+            } catch (e: ClassNotFoundException) {
+                return 0 // Java plugin not available
+            }
+
+            if (psiParameterClass.isInstance(element)) {
+                // It's a parameter - check if it's in a constructor and has a matching field
+                val declarationScope = element.javaClass.getMethod("getDeclarationScope").invoke(element)
+
+                val psiMethodClass = Class.forName("com.intellij.psi.PsiMethod")
+                if (psiMethodClass.isInstance(declarationScope)) {
+                    val isConstructor = psiMethodClass.getMethod("isConstructor").invoke(declarationScope) as Boolean
+
+                    if (isConstructor) {
+                        // Find matching field in the containing class
+                        val containingClass = psiMethodClass.getMethod("getContainingClass").invoke(declarationScope)
+                        if (containingClass != null) {
+                            val psiClassClass = Class.forName("com.intellij.psi.PsiClass")
+                            val field = psiClassClass.getMethod("findFieldByName", String::class.java, Boolean::class.java)
+                                .invoke(containingClass, elementName, false)
+
+                            if (field != null && field is PsiNamedElement) {
+                                renameProcessor.addElement(field, newName)
+                                count++
+                                field.containingFile?.virtualFile?.let { vf ->
+                                    affectedFiles.add(getRelativePath(project, vf))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if this is a Java/Kotlin field - find matching constructor parameters
+            val psiFieldClass = try {
+                Class.forName("com.intellij.psi.PsiField")
+            } catch (e: ClassNotFoundException) {
+                return count
+            }
+
+            if (psiFieldClass.isInstance(element)) {
+                // It's a field - check for matching constructor parameters
+                val containingClass = psiFieldClass.getMethod("getContainingClass").invoke(element)
+                if (containingClass != null) {
+                    val psiClassClass = Class.forName("com.intellij.psi.PsiClass")
+                    val constructors = psiClassClass.getMethod("getConstructors").invoke(containingClass) as Array<*>
+
+                    for (constructor in constructors) {
+                        if (constructor == null) continue
+                        val psiMethodClass = Class.forName("com.intellij.psi.PsiMethod")
+                        val parameterList = psiMethodClass.getMethod("getParameterList").invoke(constructor)
+                        val psiParameterListClass = Class.forName("com.intellij.psi.PsiParameterList")
+                        val parameters = psiParameterListClass.getMethod("getParameters").invoke(parameterList) as Array<*>
+
+                        for (param in parameters) {
+                            if (param is PsiNamedElement && param.name == elementName) {
+                                renameProcessor.addElement(param, newName)
+                                count++
+                                param.containingFile?.virtualFile?.let { vf ->
+                                    affectedFiles.add(getRelativePath(project, vf))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Reflection failed - likely not a Java/Kotlin project or different PSI structure
+            // This is expected for other languages, silently continue
+        }
+
+        return count
     }
 
     /**
