@@ -65,6 +65,9 @@ object LanguageHandlerRegistry {
         // Register JavaScript/TypeScript handlers
         registerJavaScriptHandlers()
 
+        // Register Go handlers
+        registerGoHandlers()
+
         LOG.info("Language handlers registered: " +
             "TypeHierarchy=${typeHierarchyHandlers.size}, " +
             "Implementations=${implementationsHandlers.size}, " +
@@ -264,6 +267,22 @@ object LanguageHandlerRegistry {
             LOG.info("JavaScript handlers not available (JavaScript plugin not installed)")
         } catch (e: Exception) {
             LOG.warn("Failed to register JavaScript handlers: ${e.message}")
+        }
+    }
+
+    private fun registerGoHandlers() {
+        try {
+            // Load Go handlers via reflection
+            val goHandlerClass = Class.forName(
+                "com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.go.GoHandlers"
+            )
+            val registerMethod = goHandlerClass.getMethod("register", LanguageHandlerRegistry::class.java)
+            registerMethod.invoke(null, this)
+            LOG.info("Go handlers registered")
+        } catch (e: ClassNotFoundException) {
+            LOG.info("Go handlers not available (Go plugin not installed)")
+        } catch (e: Exception) {
+            LOG.warn("Failed to register Go handlers: ${e.message}")
         }
     }
 }

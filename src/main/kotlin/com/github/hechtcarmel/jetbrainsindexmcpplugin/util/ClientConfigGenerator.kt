@@ -7,7 +7,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
  *
  * This utility generates ready-to-use configuration for:
  * - Claude Code (CLI)
- * - Claude Desktop
  * - Cursor
  * - VS Code (generic MCP)
  * - Windsurf
@@ -21,7 +20,6 @@ object ClientConfigGenerator {
      */
     enum class ClientType(val displayName: String) {
         CLAUDE_CODE("Claude Code (CLI)"),
-        CLAUDE_DESKTOP("Claude Desktop"),
         CURSOR("Cursor"),
         VSCODE("VS Code (Generic MCP)"),
         WINDSURF("Windsurf")
@@ -39,7 +37,6 @@ object ClientConfigGenerator {
 
         return when (clientType) {
             ClientType.CLAUDE_CODE -> generateClaudeCodeConfig(serverUrl, serverName)
-            ClientType.CLAUDE_DESKTOP -> generateClaudeDesktopConfig(serverUrl, serverName)
             ClientType.CURSOR -> generateCursorConfig(serverUrl, serverName)
             ClientType.VSCODE -> generateVSCodeConfig(serverUrl, serverName)
             ClientType.WINDSURF -> generateWindsurfConfig(serverUrl, serverName)
@@ -67,24 +64,6 @@ object ClientConfigGenerator {
 
     private fun generateClaudeCodeConfig(serverUrl: String, serverName: String): String {
         return buildClaudeCodeCommand(serverUrl, serverName)
-    }
-
-    /**
-     * Generates Claude Desktop configuration.
-     *
-     * Add this to ~/Library/Application Support/Claude/claude_desktop_config.json (macOS)
-     * or %APPDATA%\Claude\claude_desktop_config.json (Windows)
-     */
-    private fun generateClaudeDesktopConfig(serverUrl: String, serverName: String): String {
-        return """
-{
-  "mcpServers": {
-    "$serverName": {
-      "url": "$serverUrl"
-    }
-  }
-}
-        """.trimIndent()
     }
 
     /**
@@ -154,13 +133,6 @@ object ClientConfigGenerator {
                 • --scope project: Adds to current project only
 
                 To remove manually: claude mcp remove jetbrains-index
-            """.trimIndent()
-
-            ClientType.CLAUDE_DESKTOP -> """
-                Add to your Claude Desktop configuration file:
-                • macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
-                • Windows: %APPDATA%\Claude\claude_desktop_config.json
-                • Linux: ~/.config/Claude/claude_desktop_config.json
             """.trimIndent()
 
             ClientType.CURSOR -> """

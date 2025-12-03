@@ -252,6 +252,7 @@ object OptimizedSymbolSearch {
             "Python" -> "Python"
             "JavaScript", "ECMAScript 6", "JSX Harmony" -> "JavaScript"
             "TypeScript", "TypeScript JSX" -> "TypeScript"
+            "go" -> "Go"
             else -> element.language.displayName
         }
     }

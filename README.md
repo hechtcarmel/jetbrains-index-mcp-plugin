@@ -18,6 +18,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Java & Kotlin** - IntelliJ IDEA, Android Studio
 - **Python** - PyCharm (all editions), IntelliJ with Python plugin
 - **JavaScript & TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
+- **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 
 **Universal Tools (All JetBrains IDEs)**
 - **Find References** - Locate all usages of any symbol across the project
@@ -109,20 +110,6 @@ Options:
 
 To remove: `claude mcp remove jetbrains-index`
 
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "jetbrains-index": {
-      "url": "http://localhost:63342/index-mcp/sse"
-    }
-  }
-}
-```
-
 ### Cursor
 
 Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally:
@@ -187,11 +174,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS |
-| `ide_find_symbol` | Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching | Java, Kotlin, Python, JS/TS |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS |
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, Go |
+| `ide_find_symbol` | Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching | Java, Kotlin, Python, JS/TS, Go |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, Go |
 
 ### Refactoring Tools
 
@@ -210,14 +197,14 @@ These tools activate based on available language plugins:
 | Android Studio | ✓ 4 tools | ✓ 5 tools | ✓ 2 tools (rename + safe delete) |
 | PyCharm | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
 | WebStorm | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
-| GoLand | ✓ 4 tools | - | ✓ 1 tool (rename) |
+| GoLand | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
 | PhpStorm | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | RubyMine | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | CLion | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | Rider | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | DataGrip | ✓ 4 tools | - | ✓ 1 tool (rename) |
 
-> **Note**: Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) are available when language plugins are present. PyCharm has Python support, WebStorm has JavaScript/TypeScript support. The rename tool works across all languages in all IDEs.
+> **Note**: Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) are available when language plugins are present. PyCharm has Python support, WebStorm has JavaScript/TypeScript support, GoLand has Go support. The rename tool works across all languages in all IDEs.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
@@ -309,14 +296,14 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Android Studio | Yes | Yes (Java/Kotlin) | Yes (rename + safe delete) |
 | PyCharm Community/Professional | Yes | Yes (Python) | Yes (rename only) |
 | WebStorm | Yes | Yes (JS/TS) | Yes (rename only) |
-| GoLand | Yes | No | Yes (rename only) |
+| GoLand | Yes | Yes (Go) | Yes (rename only) |
 | PhpStorm | Yes | No | Yes (rename only) |
 | RubyMine | Yes | No | Yes (rename only) |
 | CLion | Yes | No | Yes (rename only) |
 | Rider | Yes | No | Yes (rename only) |
 | DataGrip | Yes | No | Yes (rename only) |
 
-> Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) activate based on available language plugins. The rename tool works across all languages; safe delete is Java/Kotlin only.
+> Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) activate based on available language plugins. GoLand has Go support. The rename tool works across all languages; safe delete is Java/Kotlin only.
 
 ## Architecture
 

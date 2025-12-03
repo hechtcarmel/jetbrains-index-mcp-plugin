@@ -18,7 +18,6 @@ class ClientConfigGeneratorUnitTest : TestCase() {
     fun testExpectedClientTypesExist() {
         val expectedTypes = listOf(
             "CLAUDE_CODE",
-            "CLAUDE_DESKTOP",
             "CURSOR",
             "VSCODE",
             "WINDSURF"
@@ -33,7 +32,6 @@ class ClientConfigGeneratorUnitTest : TestCase() {
 
     fun testClientTypeDisplayNames() {
         assertEquals("Claude Code (CLI)", ClientConfigGenerator.ClientType.CLAUDE_CODE.displayName)
-        assertEquals("Claude Desktop", ClientConfigGenerator.ClientType.CLAUDE_DESKTOP.displayName)
         assertEquals("Cursor", ClientConfigGenerator.ClientType.CURSOR.displayName)
         assertEquals("VS Code (Generic MCP)", ClientConfigGenerator.ClientType.VSCODE.displayName)
         assertEquals("Windsurf", ClientConfigGenerator.ClientType.WINDSURF.displayName)
@@ -72,15 +70,6 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         assertTrue("Should mention scope project", hint.contains("--scope project"))
         assertTrue("Should mention remove command", hint.contains("mcp remove"))
         assertTrue("Should mention automatic reinstall", hint.contains("reinstall") || hint.contains("Automatically"))
-    }
-
-    fun testClaudeDesktopHintContainsConfigPaths() {
-        val hint = ClientConfigGenerator.getConfigLocationHint(ClientConfigGenerator.ClientType.CLAUDE_DESKTOP)
-
-        assertTrue("Should mention macOS path", hint.contains("macOS"))
-        assertTrue("Should mention Windows path", hint.contains("Windows"))
-        assertTrue("Should mention Linux path", hint.contains("Linux"))
-        assertTrue("Should mention config file", hint.contains("claude_desktop_config.json"))
     }
 
     fun testCursorHintContainsConfigPaths() {
