@@ -81,16 +81,23 @@ class CopyClientConfigAction : AnAction() {
             border = JBUI.Borders.empty(4)
         }
 
-        // Section 1: Install Now (Claude Code only)
+        // Section 1: Install Now (clients with install commands)
         mainPanel.add(createSectionHeader("Install Now"))
         mainPanel.add(createInstallNowSection(project))
 
         // Separator
         mainPanel.add(createSeparator())
 
-        // Section 2: Copy Configurations (other clients)
+        // Section 2: Copy Configurations (specific clients)
         mainPanel.add(createSectionHeader("Copy Configuration"))
         mainPanel.add(createCopyConfigSection(project))
+
+        // Separator
+        mainPanel.add(createSeparator())
+
+        // Section 3: Generic MCP Config
+        mainPanel.add(createSectionHeader("Generic MCP Config"))
+        mainPanel.add(createGenericConfigSection(project))
 
         return mainPanel
     }
@@ -116,8 +123,11 @@ class CopyClientConfigAction : AnAction() {
     }
 
     private fun createInstallNowSection(project: Project?): JPanel {
+        val installableClients = ClientConfigGenerator.getInstallableClients()
         val listModel = DefaultListModel<InstallItem>().apply {
-            addElement(InstallItem(ClientType.CLAUDE_CODE, "Run installation command"))
+            installableClients.forEach { client ->
+                addElement(InstallItem(client, "Run installation command"))
+            }
         }
 
         val list = JBList(listModel).apply {
@@ -177,8 +187,38 @@ class CopyClientConfigAction : AnAction() {
         }
     }
 
+    private fun createGenericConfigSection(project: Project?): JPanel {
+        val listModel = DefaultListModel<GenericConfigItem>().apply {
+            addElement(GenericConfigItem("Standard SSE", "For clients with native SSE support", GenericConfigType.STANDARD_SSE))
+            addElement(GenericConfigItem("Via mcp-remote", "For clients without SSE support", GenericConfigType.MCP_REMOTE))
+        }
+
+        val list = JBList(listModel).apply {
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            cellRenderer = GenericConfigItemRenderer()
+            border = JBUI.Borders.empty(0, 4)
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    val index = locationToIndex(e.point)
+                    if (index >= 0) {
+                        val item = model.getElementAt(index)
+                        copyGenericConfig(item.type, project)
+                        JBPopupFactory.getInstance().getChildFocusedPopup(this@apply)?.cancel()
+                    }
+                }
+            })
+        }
+
+        return JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            add(list, BorderLayout.CENTER)
+        }
+    }
+
     private fun runInstallCommand(clientType: ClientType, project: Project?) {
-        val command = ClientConfigGenerator.generateConfig(clientType)
+        val command = ClientConfigGenerator.generateInstallCommand(clientType)
+            ?: return showNotification(project, "Error", "No install command for ${clientType.displayName}", NotificationType.ERROR)
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
@@ -244,6 +284,26 @@ class CopyClientConfigAction : AnAction() {
         )
     }
 
+    private fun copyGenericConfig(type: GenericConfigType, project: Project?) {
+        val (config, hint) = when (type) {
+            GenericConfigType.STANDARD_SSE -> {
+                ClientConfigGenerator.generateStandardSseConfig() to ClientConfigGenerator.getStandardSseHint()
+            }
+            GenericConfigType.MCP_REMOTE -> {
+                ClientConfigGenerator.generateMcpRemoteConfig() to ClientConfigGenerator.getMcpRemoteHint()
+            }
+        }
+
+        CopyPasteManager.getInstance().setContents(StringSelection(config))
+
+        showNotification(
+            project,
+            "Configuration Copied",
+            "${type.displayName} configuration copied to clipboard.\n\n$hint",
+            NotificationType.INFORMATION
+        )
+    }
+
     private fun showNotification(project: Project?, title: String, content: String, type: NotificationType) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
@@ -251,9 +311,16 @@ class CopyClientConfigAction : AnAction() {
             .notify(project)
     }
 
+    private enum class GenericConfigType(val displayName: String) {
+        STANDARD_SSE("Standard SSE"),
+        MCP_REMOTE("mcp-remote (stdio)")
+    }
+
     private data class InstallItem(val clientType: ClientType, val description: String)
 
     private data class CopyItem(val clientType: ClientType)
+
+    private data class GenericConfigItem(val name: String, val description: String, val type: GenericConfigType)
 
     private class InstallItemRenderer : DefaultListCellRenderer() {
         override fun getListCellRendererComponent(
@@ -329,6 +396,54 @@ class CopyClientConfigAction : AnAction() {
             }
 
             panel.add(nameLabel, BorderLayout.CENTER)
+
+            return panel
+        }
+    }
+
+    private class GenericConfigItemRenderer : DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>,
+            value: Any?,
+            index: Int,
+            isSelected: Boolean,
+            cellHasFocus: Boolean
+        ): Component {
+            val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+                border = JBUI.Borders.empty(6, 8)
+                isOpaque = true
+                background = if (isSelected) {
+                    list.selectionBackground
+                } else {
+                    list.background
+                }
+            }
+
+            val item = value as? GenericConfigItem ?: return panel
+
+            val nameLabel = JBLabel(item.name).apply {
+                font = font.deriveFont(Font.PLAIN, 13f)
+                foreground = if (isSelected) list.selectionForeground else list.foreground
+            }
+
+            val descLabel = JBLabel(item.description).apply {
+                font = font.deriveFont(Font.PLAIN, 11f)
+                foreground = JBColor.GRAY
+            }
+
+            val textPanel = JBPanel<JBPanel<*>>().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                isOpaque = false
+                add(nameLabel)
+                add(descLabel)
+            }
+
+            val iconLabel = JBLabel(AllIcons.Actions.Copy).apply {
+                border = JBUI.Borders.emptyRight(8)
+            }
+
+            panel.add(iconLabel, BorderLayout.WEST)
+            panel.add(textPanel, BorderLayout.CENTER)
 
             return panel
         }

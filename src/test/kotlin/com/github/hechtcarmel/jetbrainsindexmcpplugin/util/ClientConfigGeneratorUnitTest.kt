@@ -18,9 +18,8 @@ class ClientConfigGeneratorUnitTest : TestCase() {
     fun testExpectedClientTypesExist() {
         val expectedTypes = listOf(
             "CLAUDE_CODE",
-            "CURSOR",
-            "VSCODE",
-            "WINDSURF"
+            "GEMINI_CLI",
+            "CURSOR"
         )
 
         val actualTypes = ClientConfigGenerator.ClientType.entries.map { it.name }
@@ -30,11 +29,20 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         }
     }
 
+    fun testClientTypeCount() {
+        assertEquals(3, ClientConfigGenerator.ClientType.entries.size)
+    }
+
     fun testClientTypeDisplayNames() {
-        assertEquals("Claude Code (CLI)", ClientConfigGenerator.ClientType.CLAUDE_CODE.displayName)
+        assertEquals("Claude Code", ClientConfigGenerator.ClientType.CLAUDE_CODE.displayName)
+        assertEquals("Gemini CLI", ClientConfigGenerator.ClientType.GEMINI_CLI.displayName)
         assertEquals("Cursor", ClientConfigGenerator.ClientType.CURSOR.displayName)
-        assertEquals("VS Code (Generic MCP)", ClientConfigGenerator.ClientType.VSCODE.displayName)
-        assertEquals("Windsurf", ClientConfigGenerator.ClientType.WINDSURF.displayName)
+    }
+
+    fun testClientTypeSupportsInstallCommand() {
+        assertTrue(ClientConfigGenerator.ClientType.CLAUDE_CODE.supportsInstallCommand)
+        assertFalse(ClientConfigGenerator.ClientType.GEMINI_CLI.supportsInstallCommand)
+        assertFalse(ClientConfigGenerator.ClientType.CURSOR.supportsInstallCommand)
     }
 
     // getAvailableClients tests
@@ -60,6 +68,31 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         }
     }
 
+    fun testGetAvailableClientsFirstEntryIsClaudeCode() {
+        val clients = ClientConfigGenerator.getAvailableClients()
+        assertEquals(ClientConfigGenerator.ClientType.CLAUDE_CODE, clients[0])
+    }
+
+    // getInstallableClients tests
+
+    fun testGetInstallableClientsReturnsOnlyClientsWithInstallCommands() {
+        val clients = ClientConfigGenerator.getInstallableClients()
+
+        assertEquals(1, clients.size)
+        assertTrue(clients.contains(ClientConfigGenerator.ClientType.CLAUDE_CODE))
+        assertFalse(clients.contains(ClientConfigGenerator.ClientType.GEMINI_CLI))
+        assertFalse(clients.contains(ClientConfigGenerator.ClientType.CURSOR))
+    }
+
+    // getCopyableClients tests
+
+    fun testGetCopyableClientsReturnsAllClientTypes() {
+        val clients = ClientConfigGenerator.getCopyableClients()
+
+        assertEquals(3, clients.size)
+        assertEquals(ClientConfigGenerator.ClientType.entries.toList(), clients)
+    }
+
     // getConfigLocationHint tests
 
     fun testClaudeCodeHintContainsTerminalInstructions() {
@@ -72,26 +105,20 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         assertTrue("Should mention automatic reinstall", hint.contains("reinstall") || hint.contains("Automatically"))
     }
 
+    fun testGeminiCliHintContainsSettingsJson() {
+        val hint = ClientConfigGenerator.getConfigLocationHint(ClientConfigGenerator.ClientType.GEMINI_CLI)
+
+        assertTrue("Should mention settings.json", hint.contains("settings.json"))
+        assertTrue("Should mention gemini path", hint.contains(".gemini") || hint.contains("gemini"))
+        assertTrue("Should mention mcp-remote", hint.contains("mcp-remote"))
+    }
+
     fun testCursorHintContainsConfigPaths() {
         val hint = ClientConfigGenerator.getConfigLocationHint(ClientConfigGenerator.ClientType.CURSOR)
 
         assertTrue("Should mention mcp.json", hint.contains("mcp.json"))
         assertTrue("Should mention project-local", hint.contains(".cursor"))
         assertTrue("Should mention global", hint.contains("~/.cursor"))
-    }
-
-    fun testVSCodeHintContainsSettingsInfo() {
-        val hint = ClientConfigGenerator.getConfigLocationHint(ClientConfigGenerator.ClientType.VSCODE)
-
-        assertTrue("Should mention settings", hint.contains("settings"))
-        assertTrue("Should mention JSON", hint.contains("JSON") || hint.contains("json"))
-    }
-
-    fun testWindsurfHintContainsConfigPath() {
-        val hint = ClientConfigGenerator.getConfigLocationHint(ClientConfigGenerator.ClientType.WINDSURF)
-
-        assertTrue("Should mention config file", hint.contains("mcp_config.json"))
-        assertTrue("Should mention codeium path", hint.contains(".codeium"))
     }
 
     fun testAllHintsAreNonEmpty() {
@@ -102,6 +129,23 @@ class ClientConfigGeneratorUnitTest : TestCase() {
                 hint.isNotEmpty()
             )
         }
+    }
+
+    // Generic hint tests
+
+    fun testGetStandardSseHintMentionsSseTransport() {
+        val hint = ClientConfigGenerator.getStandardSseHint()
+
+        assertTrue("Should mention SSE", hint.contains("SSE"))
+        assertTrue("Should mention transport", hint.contains("transport"))
+    }
+
+    fun testGetMcpRemoteHintMentionsMcpRemoteAndStdio() {
+        val hint = ClientConfigGenerator.getMcpRemoteHint()
+
+        assertTrue("Should mention mcp-remote", hint.contains("mcp-remote"))
+        assertTrue("Should mention stdio", hint.contains("stdio"))
+        assertTrue("Should mention --allow-http", hint.contains("--allow-http"))
     }
 
     // General enum tests
@@ -226,5 +270,86 @@ class ClientConfigGeneratorUnitTest : TestCase() {
             expectedCommand,
             command
         )
+    }
+
+    // Config Format Tests (structure validation without actual server)
+
+    fun testCursorConfigFormatHasUrlKey() {
+        val expectedFormat = """
+{
+  "mcpServers": {
+    "SERVER_NAME": {
+      "url": "SERVER_URL"
+    }
+  }
+}
+        """.trimIndent()
+
+        assertTrue(expectedFormat.contains("mcpServers"))
+        assertTrue(expectedFormat.contains("url"))
+    }
+
+    fun testGeminiCliConfigFormatUsesMcpRemote() {
+        val expectedFormat = """
+{
+  "mcpServers": {
+    "SERVER_NAME": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "SERVER_URL",
+        "--allow-http"
+      ]
+    }
+  }
+}
+        """.trimIndent()
+
+        assertTrue(expectedFormat.contains("mcpServers"))
+        assertTrue(expectedFormat.contains("command"))
+        assertTrue(expectedFormat.contains("npx"))
+        assertTrue(expectedFormat.contains("mcp-remote"))
+        assertTrue(expectedFormat.contains("--allow-http"))
+    }
+
+    fun testStandardSseConfigFormatHasUrlKey() {
+        val expectedFormat = """
+{
+  "mcpServers": {
+    "SERVER_NAME": {
+      "url": "SERVER_URL"
+    }
+  }
+}
+        """.trimIndent()
+
+        assertTrue(expectedFormat.contains("mcpServers"))
+        assertTrue(expectedFormat.contains("url"))
+    }
+
+    fun testMcpRemoteConfigFormatHasCommandAndArgs() {
+        val expectedFormat = """
+{
+  "mcpServers": {
+    "SERVER_NAME": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "SERVER_URL",
+        "--allow-http"
+      ]
+    }
+  }
+}
+        """.trimIndent()
+
+        assertTrue(expectedFormat.contains("command"))
+        assertTrue(expectedFormat.contains("args"))
+        assertTrue(expectedFormat.contains("npx"))
+        assertTrue(expectedFormat.contains("mcp-remote"))
+        assertTrue(expectedFormat.contains("-y"))
+        assertTrue(expectedFormat.contains("--allow-http"))
     }
 }

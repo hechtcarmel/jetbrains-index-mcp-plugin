@@ -6,10 +6,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
  * Generates MCP client configuration snippets for various AI coding assistants.
  *
  * This utility generates ready-to-use configuration for:
- * - Claude Code (CLI)
+ * - Claude Code
+ * - Gemini CLI
  * - Cursor
- * - VS Code (generic MCP)
- * - Windsurf
+ *
+ * Also provides generic configurations:
+ * - Standard SSE (for clients with native SSE support)
+ * - mcp-remote (for clients without SSE support)
  *
  * All configurations use the HTTP+SSE transport to connect to the IDE's built-in web server.
  */
@@ -18,11 +21,10 @@ object ClientConfigGenerator {
     /**
      * Supported MCP client types.
      */
-    enum class ClientType(val displayName: String) {
-        CLAUDE_CODE("Claude Code (CLI)"),
-        CURSOR("Cursor"),
-        VSCODE("VS Code (Generic MCP)"),
-        WINDSURF("Windsurf")
+    enum class ClientType(val displayName: String, val supportsInstallCommand: Boolean = false) {
+        CLAUDE_CODE("Claude Code", true),
+        GEMINI_CLI("Gemini CLI"),
+        CURSOR("Cursor")
     }
 
     /**
@@ -37,9 +39,25 @@ object ClientConfigGenerator {
 
         return when (clientType) {
             ClientType.CLAUDE_CODE -> generateClaudeCodeConfig(serverUrl, serverName)
+            ClientType.GEMINI_CLI -> generateGeminiCliConfig(serverUrl, serverName)
             ClientType.CURSOR -> generateCursorConfig(serverUrl, serverName)
-            ClientType.VSCODE -> generateVSCodeConfig(serverUrl, serverName)
-            ClientType.WINDSURF -> generateWindsurfConfig(serverUrl, serverName)
+        }
+    }
+
+    /**
+     * Generates the install command for clients that support direct installation.
+     *
+     * @param clientType The type of MCP client
+     * @param serverName Optional custom name for the server
+     * @return The install command, or null if the client doesn't support install commands
+     */
+    fun generateInstallCommand(clientType: ClientType, serverName: String = "jetbrains-index"): String? {
+        if (!clientType.supportsInstallCommand) return null
+        val serverUrl = McpServerService.getInstance().getServerUrl()
+
+        return when (clientType) {
+            ClientType.CLAUDE_CODE -> buildClaudeCodeCommand(serverUrl, serverName)
+            else -> null
         }
     }
 
@@ -67,6 +85,30 @@ object ClientConfigGenerator {
     }
 
     /**
+     * Generates Gemini CLI MCP configuration.
+     *
+     * Uses mcp-remote to bridge SSE to stdio transport.
+     * Add this to ~/.gemini/settings.json
+     */
+    private fun generateGeminiCliConfig(serverUrl: String, serverName: String): String {
+        return """
+{
+  "mcpServers": {
+    "$serverName": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "$serverUrl",
+        "--allow-http"
+      ]
+    }
+  }
+}
+        """.trimIndent()
+    }
+
+    /**
      * Generates Cursor MCP configuration.
      *
      * Add this to .cursor/mcp.json in your project root or globally at
@@ -85,16 +127,14 @@ object ClientConfigGenerator {
     }
 
     /**
-     * Generates generic VS Code MCP configuration.
-     *
-     * Add to your VS Code settings.json or workspace configuration.
+     * Generates standard SSE configuration for MCP clients with native SSE support.
      */
-    private fun generateVSCodeConfig(serverUrl: String, serverName: String): String {
+    fun generateStandardSseConfig(serverName: String = "jetbrains-index"): String {
+        val serverUrl = McpServerService.getInstance().getServerUrl()
         return """
 {
-  "mcp.servers": {
+  "mcpServers": {
     "$serverName": {
-      "transport": "sse",
       "url": "$serverUrl"
     }
   }
@@ -103,16 +143,22 @@ object ClientConfigGenerator {
     }
 
     /**
-     * Generates Windsurf MCP configuration.
-     *
-     * Add this to ~/.codeium/windsurf/mcp_config.json
+     * Generates mcp-remote configuration for MCP clients without SSE support.
+     * Uses npx mcp-remote to bridge SSE to stdio transport.
      */
-    private fun generateWindsurfConfig(serverUrl: String, serverName: String): String {
+    fun generateMcpRemoteConfig(serverName: String = "jetbrains-index"): String {
+        val serverUrl = McpServerService.getInstance().getServerUrl()
         return """
 {
   "mcpServers": {
     "$serverName": {
-      "serverUrl": "$serverUrl"
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "$serverUrl",
+        "--allow-http"
+      ]
     }
   }
 }
@@ -135,27 +181,53 @@ object ClientConfigGenerator {
                 To remove manually: claude mcp remove jetbrains-index
             """.trimIndent()
 
+            ClientType.GEMINI_CLI -> """
+                Add to your Gemini CLI settings file:
+                • Config file: ~/.gemini/settings.json
+
+                Uses mcp-remote to bridge SSE to stdio transport.
+                Requires Node.js/npx to be available in your PATH.
+            """.trimIndent()
+
             ClientType.CURSOR -> """
                 Add to your Cursor MCP configuration:
                 • Project-local: .cursor/mcp.json in your project root
                 • Global: ~/.cursor/mcp.json
             """.trimIndent()
-
-            ClientType.VSCODE -> """
-                Add to your VS Code settings:
-                • Open Settings (JSON) and add the configuration
-                • Or add to .vscode/settings.json in your project
-            """.trimIndent()
-
-            ClientType.WINDSURF -> """
-                Add to your Windsurf MCP configuration:
-                • Config file: ~/.codeium/windsurf/mcp_config.json
-            """.trimIndent()
         }
     }
+
+    /**
+     * Returns hint text for standard SSE configuration.
+     */
+    fun getStandardSseHint(): String = """
+        Standard MCP configuration using SSE (Server-Sent Events) transport.
+        Use this for any MCP client that supports the SSE transport natively.
+    """.trimIndent()
+
+    /**
+     * Returns hint text for mcp-remote configuration.
+     */
+    fun getMcpRemoteHint(): String = """
+        For MCP clients that don't support SSE transport natively.
+        Uses mcp-remote to bridge SSE to stdio transport.
+
+        Requires Node.js and npx to be available in your PATH.
+        The --allow-http flag is needed for localhost connections.
+    """.trimIndent()
 
     /**
      * Returns all available client types for UI display.
      */
     fun getAvailableClients(): List<ClientType> = ClientType.entries
+
+    /**
+     * Returns client types that support direct installation commands.
+     */
+    fun getInstallableClients(): List<ClientType> = ClientType.entries.filter { it.supportsInstallCommand }
+
+    /**
+     * Returns client types that can be copied to clipboard.
+     */
+    fun getCopyableClients(): List<ClientType> = ClientType.entries
 }

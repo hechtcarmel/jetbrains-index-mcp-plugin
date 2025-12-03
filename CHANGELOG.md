@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2025-12-03
+
+### Added
+- **Gemini CLI Support** - Added configuration generator for Gemini CLI (uses mcp-remote bridge)
+- **Generic MCP Configurations** - New "Generic MCP Config" section in install popup
+  - **Standard SSE** - For MCP clients with native SSE transport support
+  - **Via mcp-remote** - For MCP clients without SSE support (uses npx mcp-remote bridge)
+- `generateInstallCommand()` method for clients that support direct CLI installation
+- `generateStandardSseConfig()` and `generateMcpRemoteConfig()` utility methods
+- `getInstallableClients()` and `getCopyableClients()` methods for flexible client categorization
+
+### Changed
+- Renamed "Claude Code (CLI)" to "Claude Code" for consistency
+- Install Now section now dynamically loads installable clients (only those with CLI support)
+- Client type enum now includes `supportsInstallCommand` flag for extensibility
+
+### Removed
+- **VS Code configuration** - Removed VS Code-specific MCP configuration (use Generic MCP Config instead)
+- **Windsurf configuration** - Removed Windsurf-specific configuration (use Generic MCP Config instead)
+
 ## [1.7.0] - 2025-12-03
 
 ### Added
