@@ -6,7 +6,8 @@
 
 A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, enabling AI coding assistants like Claude, Cursor, and Windsurf to leverage the IDE's powerful indexing and refactoring capabilities.
 
-**Works with all JetBrains IDEs**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, Rider, DataGrip, and Android Studio.
+**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, Android Studio
+**May work** (untested): PhpStorm, RubyMine, CLion, DataGrip
 
 <!-- Plugin description -->
 **IDE Index MCP Server** provides AI coding assistants with access to the IDE's powerful code intelligence features through the Model Context Protocol (MCP).
@@ -157,9 +158,9 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 The plugin provides MCP tools organized by availability:
 
-### Universal Tools (All JetBrains IDEs)
+### Universal Tools
 
-These tools work in **every** JetBrains IDE - IntelliJ, PyCharm, WebStorm, GoLand, CLion, Rider, etc.
+These tools work in all supported JetBrains IDEs.
 
 | Tool | Description |
 |------|-------------|
@@ -191,6 +192,8 @@ These tools activate based on available language plugins:
 
 ### Tool Availability by IDE
 
+**Fully Tested:**
+
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
 | IntelliJ IDEA | ✓ 4 tools | ✓ 5 tools | ✓ 2 tools (rename + safe delete) |
@@ -198,13 +201,17 @@ These tools activate based on available language plugins:
 | PyCharm | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
 | WebStorm | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
 | GoLand | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
+
+**May Work (Untested):**
+
+| IDE | Universal | Navigation | Refactoring |
+|-----|-----------|------------|-------------|
 | PhpStorm | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | RubyMine | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | CLion | ✓ 4 tools | - | ✓ 1 tool (rename) |
-| Rider | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | DataGrip | ✓ 4 tools | - | ✓ 1 tool (rename) |
 
-> **Note**: Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) are available when language plugins are present. PyCharm has Python support, WebStorm has JavaScript/TypeScript support, GoLand has Go support. The rename tool works across all languages in all IDEs.
+> **Note**: Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) are available when language plugins are present. The rename tool works across all languages.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
@@ -290,20 +297,20 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 
 ### Supported IDEs
 
-| IDE | Universal | Navigation | Refactoring |
-|-----|-----------|------------|-------------|
-| IntelliJ IDEA Community/Ultimate | Yes | Yes (Java/Kotlin) | Yes (rename + safe delete) |
-| Android Studio | Yes | Yes (Java/Kotlin) | Yes (rename + safe delete) |
-| PyCharm Community/Professional | Yes | Yes (Python) | Yes (rename only) |
-| WebStorm | Yes | Yes (JS/TS) | Yes (rename only) |
-| GoLand | Yes | Yes (Go) | Yes (rename only) |
-| PhpStorm | Yes | No | Yes (rename only) |
-| RubyMine | Yes | No | Yes (rename only) |
-| CLion | Yes | No | Yes (rename only) |
-| Rider | Yes | No | Yes (rename only) |
-| DataGrip | Yes | No | Yes (rename only) |
+**Fully Tested:**
+- IntelliJ IDEA (Community/Ultimate)
+- Android Studio
+- PyCharm (Community/Professional)
+- WebStorm
+- GoLand
 
-> Navigation tools (type hierarchy, call hierarchy, find implementations, symbol search, find super methods) activate based on available language plugins. GoLand has Go support. The rename tool works across all languages; safe delete is Java/Kotlin only.
+**May Work (Untested):**
+- PhpStorm
+- RubyMine
+- CLion
+- DataGrip
+
+> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE, but has only been tested on the IDEs listed above.
 
 ## Architecture
 
