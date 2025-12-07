@@ -16,8 +16,8 @@
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
 </ul>
 
-<h3>Universal Tools (All IDEs)</h3>
-<p>These tools work in every JetBrains IDE:</p>
+<h3>Universal Tools (All Supported IDEs)</h3>
+<p>These tools work in every supported JetBrains IDE:</p>
 <ul>
     <li><b>Find References</b> - Locate all usages of any symbol across your project</li>
     <li><b>Go to Definition</b> - Jump to symbol declarations instantly</li>
@@ -71,6 +71,9 @@
 <p>See the <a href="https://github.com/hechtcarmel/jetbrains-index-mcp-plugin">GitHub repository</a>
 for detailed documentation and examples.</p>
 ]]>    </description>
+
+    <!-- Rider exclusion - plugin uses IntelliJ PSI APIs not compatible with Rider's ReSharper backend -->
+    <incompatible-with>com.intellij.modules.rider</incompatible-with>
 
     <!-- Platform dependency (required) -->
     <depends>com.intellij.modules.platform</depends>

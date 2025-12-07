@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [1.9.1] - 2025-12-06
+
+### Changed
+- **Rider IDE excluded** - Plugin is now explicitly incompatible with Rider IDE (uses ReSharper backend which is incompatible with IntelliJ PSI APIs)
+- **Documentation updated** - Clarified IDE compatibility: fully tested (IntelliJ IDEA, PyCharm, WebStorm, GoLand, Android Studio) vs untested (PhpStorm, RubyMine, CLion, DataGrip)
+
 ## [1.9.0] - 2025-12-04
 
 ### Added
@@ -81,7 +87,7 @@
 ## [1.5.0] - 2025-11-29
 
 ### Added
-- **Multi-IDE Support** - Works with all JetBrains IDEs: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, Rider, DataGrip, Android Studio
+- **Multi-IDE Support** - Works with JetBrains IDEs: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, DataGrip, Android Studio
 - **Multi-Language Support** - Navigation tools now work with Java/Kotlin, Python, and JavaScript/TypeScript
 - Agent rule tip panel with copy-to-clipboard in tool window
 - Non-blocking operations for improved responsiveness
