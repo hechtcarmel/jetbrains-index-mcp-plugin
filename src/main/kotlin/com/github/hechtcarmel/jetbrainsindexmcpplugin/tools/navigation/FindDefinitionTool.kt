@@ -28,14 +28,13 @@ class FindDefinitionTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_DEFINITION
 
     override val description = """
-        Finds the definition/declaration of a symbol at a given source location (Go to Definition).
+        Navigate to where a symbol is defined (Go to Definition). Use when you see a symbol reference and need to find its declaration—works for classes, methods, variables, imports.
 
-        REQUIRED: file + line + column to identify the symbol reference.
+        Returns: file path, line/column of definition, code preview, and symbol name.
 
-        RETURNS: The file path, line number, and code preview where the symbol is defined.
+        Parameters: file + line + column (required).
 
-        EXAMPLE: {"file": "src/main/java/com/example/Main.java", "line": 15, "column": 10}
-        This navigates from a usage of a symbol to where it's declared.
+        Example: {"file": "src/Main.java", "line": 15, "column": 10}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

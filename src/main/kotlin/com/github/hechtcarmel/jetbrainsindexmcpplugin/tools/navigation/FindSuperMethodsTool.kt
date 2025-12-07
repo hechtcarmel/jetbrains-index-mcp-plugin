@@ -31,26 +31,15 @@ class FindSuperMethodsTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_SUPER_METHODS
 
     override val description = """
-        Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
+        Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
-        Use this tool when you need to:
-        - Find which interface method an implementation overrides
-        - Navigate to the original method declaration in a parent class
-        - Understand the full inheritance chain for a method with @Override
-        - See all levels of method overriding (not just immediate parent)
+        Returns: full hierarchy chain from immediate parent (depth=1) to root, with file locations and containing class info.
 
-        The position (line/column) can be anywhere within the method - on the name,
-        inside the body, or on the @Override annotation. The tool automatically
-        finds the enclosing method.
+        Parameters: file + line + column (required). Position can be anywhere within the method body.
 
-        Returns the full hierarchy chain ordered from immediate parent (depth=1) to root.
-
-        EXAMPLE Java: {"file": "src/main/java/com/example/UserServiceImpl.java", "line": 25, "column": 10}
-        EXAMPLE Python: {"file": "src/services/user_service.py", "line": 15, "column": 5}
-        EXAMPLE TypeScript: {"file": "src/services/UserService.ts", "line": 20, "column": 10}
-        EXAMPLE Rust: {"file": "src/services/user_impl.rs", "line": 15, "column": 5}
+        Example: {"file": "src/UserServiceImpl.java", "line": 25, "column": 10}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

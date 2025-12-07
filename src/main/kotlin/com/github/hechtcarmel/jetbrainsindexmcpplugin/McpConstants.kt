@@ -20,5 +20,5 @@ object McpConstants {
     // Server identification
     const val SERVER_NAME = "jetbrains-index-mcp"
     const val SERVER_VERSION = "1.0.0"
-    const val SERVER_DESCRIPTION = "JetBrains IDE code intelligence server supporting Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, and Rust. Provides semantic code navigation (find usages, find definition, type/call hierarchies, find implementations), safe IDE-powered refactoring (rename, safe delete), and code analysis (diagnostics, inspections). Use when you need accurate, token efficient project code understanding or want to refactor code safely with all references updated. Requires an open JetBrains IDE project. Refactoring operations modify source files."
+    const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
 }

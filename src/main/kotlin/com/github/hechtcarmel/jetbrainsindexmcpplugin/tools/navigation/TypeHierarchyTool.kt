@@ -29,22 +29,15 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val name = "ide_type_hierarchy"
 
     override val description = """
-        Retrieves the complete type hierarchy for a class or interface, showing all inheritance relationships.
+        Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
-        INPUT OPTIONS (use one):
-        - Option A: Provide className with the fully qualified class name (e.g., "com.example.MyClass" or "\App\Models\User")
-        - Option B: Provide file + line + column to identify a class by source location
+        Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
-        RETURNS: The target class with full supertype chain (recursive) and all subtypes in the project.
+        Parameters: Either className (e.g., "com.example.MyClass") OR file + line + column.
 
-        EXAMPLE with className: {"className": "com.example.service.UserService"}
-        EXAMPLE with location: {"file": "src/main/java/com/example/MyClass.java", "line": 10, "column": 14}
-        EXAMPLE Python: {"file": "src/services/user_service.py", "line": 5, "column": 7}
-        EXAMPLE TypeScript: {"file": "src/components/Button.tsx", "line": 10, "column": 14}
-        EXAMPLE PHP: {"className": "App\\Models\\User"} or {"file": "src/Models/User.php", "line": 10, "column": 7}
-        EXAMPLE Rust: {"file": "src/models/user.rs", "line": 10, "column": 7}
+        Example: {"className": "com.example.UserService"} or {"file": "src/MyClass.java", "line": 10, "column": 14}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

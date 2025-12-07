@@ -36,15 +36,13 @@ class FindUsagesTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_REFERENCES
 
     override val description = """
-        Finds all references to a symbol across the entire project using IntelliJ's semantic index.
+        Find all references to a symbol across the project. Use when you need to understand how a class, method, field, or variable is used before modifying or removing it.
 
-        REQUIRED: file + line + column to identify the symbol to search for.
-        OPTIONAL: maxResults - maximum number of references to return (default: 100, max: 500).
+        Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.).
 
-        RETURNS: All locations where the symbol is referenced, with context snippets and reference types.
+        Parameters: file + line + column (required), maxResults (optional, default: 100, max: 500).
 
-        EXAMPLE: {"file": "src/main/java/com/example/UserService.java", "line": 25, "column": 18}
-        This finds all places where the symbol at line 25, column 18 is used.
+        Example: {"file": "src/UserService.java", "line": 25, "column": 18}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

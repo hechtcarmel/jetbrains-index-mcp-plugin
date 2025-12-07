@@ -27,18 +27,15 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val name = "ide_find_implementations"
 
     override val description = """
-        Finds all implementations of an interface, abstract class, or abstract/interface method.
+        Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
-        REQUIRED: file + line + column to identify the interface/abstract class/method.
+        Returns: list of implementing classes/methods with file paths, line numbers, and kind (class/method).
 
-        RETURNS: All implementing classes or overriding methods with file locations and line numbers.
+        Parameters: file + line + column (required).
 
-        EXAMPLE Java: {"file": "src/main/java/com/example/Repository.java", "line": 8, "column": 18}
-        EXAMPLE Python: {"file": "src/services/base_service.py", "line": 5, "column": 7}
-        EXAMPLE TypeScript: {"file": "src/interfaces/IService.ts", "line": 3, "column": 18}
-        EXAMPLE Rust: {"file": "src/traits/service.rs", "line": 5, "column": 10}
+        Example: {"file": "src/Repository.java", "line": 8, "column": 18}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
