@@ -15,7 +15,6 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
 
     data class State(
         var maxHistorySize: Int = 100,
-        var autoScroll: Boolean = true,
         var syncExternalChanges: Boolean = false
     )
 
@@ -30,10 +29,6 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var maxHistorySize: Int
         get() = state.maxHistorySize
         set(value) { state.maxHistorySize = value }
-
-    var autoScroll: Boolean
-        get() = state.autoScroll
-        set(value) { state.autoScroll = value }
 
     var syncExternalChanges: Boolean
         get() = state.syncExternalChanges

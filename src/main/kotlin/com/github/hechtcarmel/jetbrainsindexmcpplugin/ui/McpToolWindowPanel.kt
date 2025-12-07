@@ -8,7 +8,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryList
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -161,9 +160,7 @@ class McpToolWindowPanel(
 
     override fun onCommandAdded(entry: CommandEntry) {
         historyListModel.add(0, entry)
-        if (McpSettings.getInstance().autoScroll) {
-            historyList.selectedIndex = 0
-        }
+        historyList.selectedIndex = 0
     }
 
     override fun onCommandUpdated(entry: CommandEntry) {

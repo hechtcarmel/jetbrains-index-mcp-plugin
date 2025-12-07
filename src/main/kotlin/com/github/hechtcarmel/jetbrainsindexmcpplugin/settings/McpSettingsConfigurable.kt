@@ -18,14 +18,12 @@ class McpSettingsConfigurable : Configurable {
 
     private var panel: JPanel? = null
     private var maxHistorySizeSpinner: JSpinner? = null
-    private var autoScrollCheckBox: JBCheckBox? = null
     private var syncExternalChangesCheckBox: JBCheckBox? = null
 
     override fun getDisplayName(): String = McpBundle.message("settings.title")
 
     override fun createComponent(): JComponent {
         maxHistorySizeSpinner = JSpinner(SpinnerNumberModel(100, 10, 10000, 10))
-        autoScrollCheckBox = JBCheckBox(McpBundle.message("settings.autoScroll"))
         syncExternalChangesCheckBox = JBCheckBox(McpBundle.message("settings.syncExternalChanges")).apply {
             toolTipText = McpBundle.message("settings.syncExternalChanges.tooltip")
         }
@@ -50,7 +48,6 @@ class McpSettingsConfigurable : Configurable {
 
         panel = FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
-            .addComponent(autoScrollCheckBox!!, 1)
             .addComponent(syncPanel, 1)
             .addComponentFillVertically(JPanel(), 0)
             .panel
@@ -61,28 +58,24 @@ class McpSettingsConfigurable : Configurable {
     override fun isModified(): Boolean {
         val settings = McpSettings.getInstance()
         return maxHistorySizeSpinner?.value != settings.maxHistorySize ||
-            autoScrollCheckBox?.isSelected != settings.autoScroll ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges
     }
 
     override fun apply() {
         val settings = McpSettings.getInstance()
         settings.maxHistorySize = maxHistorySizeSpinner?.value as? Int ?: 100
-        settings.autoScroll = autoScrollCheckBox?.isSelected ?: true
         settings.syncExternalChanges = syncExternalChangesCheckBox?.isSelected ?: false
     }
 
     override fun reset() {
         val settings = McpSettings.getInstance()
         maxHistorySizeSpinner?.value = settings.maxHistorySize
-        autoScrollCheckBox?.isSelected = settings.autoScroll
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
     }
 
     override fun disposeUIResources() {
         panel = null
         maxHistorySizeSpinner = null
-        autoScrollCheckBox = null
         syncExternalChangesCheckBox = null
     }
 }

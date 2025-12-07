@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.10.1] - 2025-12-07
+
+### Removed
+- **Auto-scroll setting** - Removed the "Auto-scroll to new commands" setting from plugin preferences
+
 ## [1.10.0] - 2025-12-07
 
 ### Added
@@ -238,7 +243,6 @@
 
 #### Settings
 - Maximum history size (default: 100)
-- Auto-scroll toggle (default: enabled)
 - Sync external file changes toggle (default: disabled)
 
 ### Technical Details

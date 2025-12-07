@@ -286,7 +286,6 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Max History Size | 100 | Maximum number of commands to keep in history |
-| Auto-scroll | true | Auto-scroll to new commands in history |
 | Sync External Changes | false | Sync external file changes before operations |
 
 ## Requirements
