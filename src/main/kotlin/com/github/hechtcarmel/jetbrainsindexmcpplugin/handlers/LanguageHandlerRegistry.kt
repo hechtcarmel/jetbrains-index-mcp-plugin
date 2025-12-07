@@ -68,6 +68,9 @@ object LanguageHandlerRegistry {
         // Register Go handlers
         registerGoHandlers()
 
+        // Register PHP handlers
+        registerPhpHandlers()
+
         LOG.info("Language handlers registered: " +
             "TypeHierarchy=${typeHierarchyHandlers.size}, " +
             "Implementations=${implementationsHandlers.size}, " +
@@ -283,6 +286,22 @@ object LanguageHandlerRegistry {
             LOG.info("Go handlers not available (Go plugin not installed)")
         } catch (e: Exception) {
             LOG.warn("Failed to register Go handlers: ${e.message}")
+        }
+    }
+
+    private fun registerPhpHandlers() {
+        try {
+            // Load PHP handlers via reflection
+            val phpHandlerClass = Class.forName(
+                "com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php.PhpHandlers"
+            )
+            val registerMethod = phpHandlerClass.getMethod("register", LanguageHandlerRegistry::class.java)
+            registerMethod.invoke(null, this)
+            LOG.info("PHP handlers registered")
+        } catch (e: ClassNotFoundException) {
+            LOG.info("PHP handlers not available (PHP plugin not installed)")
+        } catch (e: Exception) {
+            LOG.warn("Failed to register PHP handlers: ${e.message}")
         }
     }
 }

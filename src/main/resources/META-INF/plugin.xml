@@ -14,6 +14,7 @@
     <li><b>Python</b> - PyCharm (all editions), IntelliJ IDEA with Python plugin</li>
     <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
+    <li><b>PHP</b> - PhpStorm, IntelliJ IDEA Ultimate with PHP plugin</li>
 </ul>
 
 <h3>Universal Tools (All Supported IDEs)</h3>
@@ -28,8 +29,8 @@
 <h3>Extended Tools (Language-Aware)</h3>
 <p>These tools activate based on available language plugins:</p>
 <ul>
-    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JavaScript, TypeScript, Go)</li>
-    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JavaScript, TypeScript, Go)</li>
+    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP)</li>
+    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP)</li>
     <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods</li>
     <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with fuzzy/camelCase matching</li>
     <li><b>Find Super Methods</b> - Navigate through method override hierarchies</li>
@@ -92,6 +93,9 @@ for detailed documentation and examples.</p>
 
     <!-- Optional Go support (GoLand, IntelliJ Ultimate with Go plugin) -->
     <depends optional="true" config-file="go-features.xml">org.jetbrains.plugins.go</depends>
+
+    <!-- Optional PHP support (PhpStorm, IntelliJ Ultimate with PHP plugin) -->
+    <depends optional="true" config-file="php-features.xml">com.jetbrains.php</depends>
 
     <resource-bundle>messages.McpBundle</resource-bundle>
 
