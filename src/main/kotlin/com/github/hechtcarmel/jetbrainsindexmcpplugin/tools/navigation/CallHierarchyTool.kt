@@ -20,7 +20,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for analyzing method call relationships across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -31,7 +31,7 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val description = """
         Analyzes method/function call relationships recursively to build a call hierarchy tree.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
 
         REQUIRED: file + line + column to identify the method/function, plus direction.
 
@@ -44,6 +44,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         EXAMPLE Java: {"file": "src/main/java/com/example/Service.java", "line": 42, "column": 10, "direction": "callers"}
         EXAMPLE Python: {"file": "src/services/user_service.py", "line": 15, "column": 5, "direction": "callees"}
         EXAMPLE TypeScript: {"file": "src/services/api.ts", "line": 20, "column": 10, "direction": "callers", "depth": 2}
+        EXAMPLE Rust: {"file": "src/services/user.rs", "line": 15, "column": 5, "direction": "callers"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

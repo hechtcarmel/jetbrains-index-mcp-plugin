@@ -20,7 +20,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for retrieving type hierarchies across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -31,7 +31,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Retrieves the complete type hierarchy for a class or interface, showing all inheritance relationships.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
 
         INPUT OPTIONS (use one):
         - Option A: Provide className with the fully qualified class name (e.g., "com.example.MyClass" or "\App\Models\User")
@@ -44,6 +44,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         EXAMPLE Python: {"file": "src/services/user_service.py", "line": 5, "column": 7}
         EXAMPLE TypeScript: {"file": "src/components/Button.tsx", "line": 10, "column": 14}
         EXAMPLE PHP: {"className": "App\\Models\\User"} or {"file": "src/Models/User.php", "line": 10, "column": 7}
+        EXAMPLE Rust: {"file": "src/models/user.rs", "line": 10, "column": 7}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

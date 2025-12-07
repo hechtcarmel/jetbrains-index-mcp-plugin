@@ -22,7 +22,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for finding super methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -33,7 +33,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
     override val description = """
         Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
 
         Use this tool when you need to:
         - Find which interface method an implementation overrides
@@ -50,6 +50,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
         EXAMPLE Java: {"file": "src/main/java/com/example/UserServiceImpl.java", "line": 25, "column": 10}
         EXAMPLE Python: {"file": "src/services/user_service.py", "line": 15, "column": 5}
         EXAMPLE TypeScript: {"file": "src/services/UserService.ts", "line": 20, "column": 10}
+        EXAMPLE Rust: {"file": "src/services/user_impl.rs", "line": 15, "column": 5}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

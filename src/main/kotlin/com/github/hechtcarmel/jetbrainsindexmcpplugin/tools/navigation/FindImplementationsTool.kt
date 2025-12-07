@@ -18,7 +18,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for finding implementations of interfaces, abstract classes, or methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -29,7 +29,7 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val description = """
         Finds all implementations of an interface, abstract class, or abstract/interface method.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
 
         REQUIRED: file + line + column to identify the interface/abstract class/method.
 
@@ -38,6 +38,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         EXAMPLE Java: {"file": "src/main/java/com/example/Repository.java", "line": 8, "column": 18}
         EXAMPLE Python: {"file": "src/services/base_service.py", "line": 5, "column": 7}
         EXAMPLE TypeScript: {"file": "src/interfaces/IService.ts", "line": 3, "column": 18}
+        EXAMPLE Rust: {"file": "src/traits/service.rs", "line": 5, "column": 10}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

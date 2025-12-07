@@ -22,7 +22,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for searching code symbols across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -38,7 +38,7 @@ class FindSymbolTool : AbstractMcpTool() {
     override val description = """
         Searches for code symbols (classes, interfaces, methods, fields, functions) by name using the IDE's semantic index.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
 
         Use this tool when you need to:
         - Find a class or interface by name (e.g., find "UserService")
@@ -53,6 +53,7 @@ class FindSymbolTool : AbstractMcpTool() {
         EXAMPLE Java/Kotlin: {"query": "UserService"}
         EXAMPLE Python: {"query": "find_user"}
         EXAMPLE TypeScript: {"query": "fetchData", "includeLibraries": true}
+        EXAMPLE Rust: {"query": "UserService"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
