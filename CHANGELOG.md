@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2025-12-07
+
+### Added
+- **Rust Language Support** - Full support for RustRover, IntelliJ IDEA Ultimate with Rust plugin, and CLion
+
 ## [1.10.1] - 2025-12-07
 
 ### Removed
