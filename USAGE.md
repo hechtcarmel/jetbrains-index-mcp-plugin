@@ -24,11 +24,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS |
-| `ide_find_symbol` | Search symbols by name | Java, Kotlin, Python, JS/TS |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS |
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, PHP |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, PHP |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP |
+| `ide_find_symbol` | Search symbols by name | Java, Kotlin, Python, JS/TS, PHP |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
 
 ### Refactoring Tools (Java/Kotlin Only)
 
@@ -203,8 +203,9 @@ These tools activate based on available language plugins:
 - **Java/Kotlin** - IntelliJ IDEA, Android Studio
 - **Python** - PyCharm (all editions), IntelliJ with Python plugin
 - **JavaScript/TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
+- **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 
-In IDEs without language-specific plugins (e.g., GoLand, CLion), these tools will not appear in the tools list.
+In IDEs without language-specific plugins (e.g., CLion, DataGrip), these tools will not appear in the tools list.
 
 ### ide_type_hierarchy
 
@@ -243,7 +244,7 @@ Retrieves the complete type hierarchy for a class or interface.
 }
 ```
 
-**Example Request (by class name):**
+**Example Request (by class name - Java):**
 
 ```json
 {
@@ -252,6 +253,20 @@ Retrieves the complete type hierarchy for a class or interface.
     "name": "ide_type_hierarchy",
     "arguments": {
       "className": "java.util.ArrayList"
+    }
+  }
+}
+```
+
+**Example Request (by class name - PHP):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_type_hierarchy",
+    "arguments": {
+      "className": "App\\Models\\User"
     }
   }
 }
@@ -786,6 +801,23 @@ Renames a symbol and updates all references across the project. This tool uses I
       "line": 10,
       "column": 5,
       "newName": "fetch_user_data"
+    }
+  }
+}
+```
+
+**Example Request (PHP):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_rename",
+    "arguments": {
+      "file": "src/Models/User.php",
+      "line": 25,
+      "column": 21,
+      "newName": "getFullName"
     }
   }
 }

@@ -31,10 +31,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Retrieves the complete type hierarchy for a class or interface, showing all inheritance relationships.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript, PHP
 
         INPUT OPTIONS (use one):
-        - Option A: Provide className with the fully qualified class name (e.g., "com.example.MyClass")
+        - Option A: Provide className with the fully qualified class name (e.g., "com.example.MyClass" or "\App\Models\User")
         - Option B: Provide file + line + column to identify a class by source location
 
         RETURNS: The target class with full supertype chain (recursive) and all subtypes in the project.
@@ -43,6 +43,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         EXAMPLE with location: {"file": "src/main/java/com/example/MyClass.java", "line": 10, "column": 14}
         EXAMPLE Python: {"file": "src/services/user_service.py", "line": 5, "column": 7}
         EXAMPLE TypeScript: {"file": "src/components/Button.tsx", "line": 10, "column": 14}
+        EXAMPLE PHP: {"className": "App\\Models\\User"} or {"file": "src/Models/User.php", "line": 10, "column": 7}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -54,7 +55,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
             }
             putJsonObject("className") {
                 put("type", "string")
-                put("description", "Fully qualified class name (e.g., 'com.example.MyClass'). RECOMMENDED - use this if you know the class name.")
+                put("description", "Fully qualified class name (e.g., 'com.example.MyClass' for Java or 'App\\\\Models\\\\User' for PHP). RECOMMENDED - use this if you know the class name.")
             }
             putJsonObject("file") {
                 put("type", "string")

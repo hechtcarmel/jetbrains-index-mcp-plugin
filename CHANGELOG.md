@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.10.0] - 2025-12-07
+
+### Added
+- **PHP Language Support** - Full support for PhpStorm and IntelliJ IDEA with PHP plugin
+
 ## [1.9.1] - 2025-12-06
 
 ### Changed

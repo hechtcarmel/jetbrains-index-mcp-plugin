@@ -151,7 +151,57 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
         }
     }
 
+    /**
+     * PhpIndex class for accessing PHP symbols and their relationships.
+     * This is the central API for finding subclasses/implementations in PHP.
+     */
+    protected val phpIndexClass: Class<*>? by lazy {
+        try {
+            Class.forName("com.jetbrains.php.PhpIndex")
+        } catch (e: ClassNotFoundException) {
+            LOG.debug("PhpIndex not found")
+            null
+        }
+    }
+
     // Helper methods
+
+    /**
+     * Gets the PhpIndex instance for the given project.
+     * PhpIndex is the central API for accessing PHP symbols.
+     */
+    protected fun getPhpIndex(project: Project): Any? {
+        return try {
+            val phpIndexCls = phpIndexClass ?: return null
+            val getInstanceMethod = phpIndexCls.getMethod("getInstance", Project::class.java)
+            getInstanceMethod.invoke(null, project)
+        } catch (e: Exception) {
+            LOG.debug("Error getting PhpIndex instance: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Gets all subclasses/implementations of a PHP class or interface using PhpIndex.
+     *
+     * @param project The current project
+     * @param fqn The fully qualified name of the class/interface (e.g., "\App\Contracts\Describable")
+     * @return Collection of PhpClass elements that extend/implement the given class/interface
+     */
+    protected fun getAllSubclasses(project: Project, fqn: String): Collection<PsiElement> {
+        return try {
+            val phpIndex = getPhpIndex(project) ?: return emptyList()
+
+            val getAllSubclassesMethod = phpIndex.javaClass.getMethod("getAllSubclasses", String::class.java)
+            val result = getAllSubclassesMethod.invoke(phpIndex, fqn)
+
+            @Suppress("UNCHECKED_CAST")
+            (result as? Collection<*>)?.filterIsInstance<PsiElement>() ?: emptyList()
+        } catch (e: Exception) {
+            LOG.debug("Error getting subclasses for $fqn: ${e.message}")
+            emptyList()
+        }
+    }
 
     protected fun getRelativePath(project: Project, file: com.intellij.openapi.vfs.VirtualFile): String {
         val basePath = project.basePath ?: return file.path
@@ -362,6 +412,26 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
             else -> "SYMBOL"
         }
     }
+
+    /**
+     * Finds a method by name in a PhpClass using reflection.
+     * Uses `findMethodByName()` API, falling back to searching `getOwnMethods()`.
+     */
+    protected fun findMethodInClass(phpClass: PsiElement, methodName: String): PsiElement? {
+        return try {
+            val findMethodByNameMethod = phpClass.javaClass.getMethod("findMethodByName", String::class.java)
+            findMethodByNameMethod.invoke(phpClass, methodName) as? PsiElement
+        } catch (e: Exception) {
+            // Fallback to getOwnMethods and search manually
+            try {
+                val getMethodsMethod = phpClass.javaClass.getMethod("getOwnMethods")
+                val methods = getMethodsMethod.invoke(phpClass) as? Array<*> ?: return null
+                methods.filterIsInstance<PsiElement>().find { getName(it) == methodName }
+            } catch (e2: Exception) {
+                null
+            }
+        }
+    }
 }
 
 /**
@@ -484,65 +554,27 @@ class PhpTypeHierarchyHandler : BasePhpHandler<TypeHierarchyData>(), TypeHierarc
 
     private fun getSubtypes(project: Project, phpClass: PsiElement): List<TypeElementData> {
         return try {
-            // Use PhpInheritorsSearch if available, otherwise use ReferencesSearch
+            val fqn = getFQN(phpClass) ?: return emptyList()
             val results = mutableListOf<TypeElementData>()
 
-            try {
-                // Try PhpInheritorsSearch first (more accurate for PHP)
-                val searchClass = Class.forName("com.jetbrains.php.lang.psi.stubs.indexes.expectedArguments.PhpInheritorsSearch")
-                val searchMethod = searchClass.getMethod("search", phpClassClass, GlobalSearchScope::class.java, java.lang.Boolean.TYPE)
-                val scope = GlobalSearchScope.projectScope(project)
-                val query = searchMethod.invoke(null, phpClass, scope, true)
+            // Use PhpIndex.getAllSubclasses() - the correct API for finding PHP subclasses
+            val subclasses = getAllSubclasses(project, fqn)
 
-                val findAllMethod = query.javaClass.getMethod("findAll")
-                val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: emptyList<Any>()
-
-                inheritors.filterIsInstance<PsiElement>()
-                    .take(100)
-                    .forEach { inheritor ->
-                        results.add(TypeElementData(
-                            name = getFQN(inheritor) ?: getName(inheritor) ?: "unknown",
-                            qualifiedName = getFQN(inheritor),
-                            file = inheritor.containingFile?.virtualFile?.let { getRelativePath(project, it) },
-                            line = getLineNumber(project, inheritor),
-                            kind = determineClassKind(inheritor),
-                            language = "PHP"
-                        ))
-                    }
-            } catch (e: Exception) {
-                // Fallback to ClassInheritorsSearch (platform API)
-                LOG.debug("PhpInheritorsSearch not available, using ClassInheritorsSearch: ${e.message}")
-
-                try {
-                    val searchClass = Class.forName("com.intellij.psi.search.searches.ClassInheritorsSearch")
-                    val searchMethod = searchClass.getMethod("search", phpClassClass, GlobalSearchScope::class.java, java.lang.Boolean.TYPE)
-                    val scope = GlobalSearchScope.projectScope(project)
-                    val query = searchMethod.invoke(null, phpClass, scope, true)
-
-                    val findAllMethod = query.javaClass.getMethod("findAll")
-                    val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: emptyList<Any>()
-
-                    inheritors.filterIsInstance<PsiElement>()
-                        .filter { isPhpClass(it) }
-                        .take(100)
-                        .forEach { inheritor ->
-                            results.add(TypeElementData(
-                                name = getFQN(inheritor) ?: getName(inheritor) ?: "unknown",
-                                qualifiedName = getFQN(inheritor),
-                                file = inheritor.containingFile?.virtualFile?.let { getRelativePath(project, it) },
-                                line = getLineNumber(project, inheritor),
-                                kind = determineClassKind(inheritor),
-                                language = "PHP"
-                            ))
-                        }
-                } catch (e2: Exception) {
-                    LOG.debug("ClassInheritorsSearch failed: ${e2.message}")
-                }
+            subclasses.take(100).forEach { subclass ->
+                results.add(TypeElementData(
+                    name = getFQN(subclass) ?: getName(subclass) ?: "unknown",
+                    qualifiedName = getFQN(subclass),
+                    file = subclass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                    line = getLineNumber(project, subclass),
+                    kind = determineClassKind(subclass),
+                    language = "PHP"
+                ))
             }
 
+            LOG.debug("Found ${results.size} subtypes for $fqn using PhpIndex")
             results
         } catch (e: Exception) {
-            LOG.debug("Error getting subtypes: ${e.message}")
+            LOG.warn("Error getting subtypes: ${e.message}")
             emptyList()
         }
     }
@@ -588,139 +620,66 @@ class PhpImplementationsHandler : BasePhpHandler<List<ImplementationData>>(), Im
 
     private fun findMethodImplementations(project: Project, method: PsiElement): List<ImplementationData> {
         return try {
+            val methodName = getName(method) ?: return emptyList()
+            val containingClass = getContainingClass(method) ?: return emptyList()
+            val classFqn = getFQN(containingClass) ?: return emptyList()
+
             val results = mutableListOf<ImplementationData>()
 
-            // Try PhpOverridingMethodsSearch
-            try {
-                val searchClass = Class.forName("com.jetbrains.php.lang.psi.stubs.indexes.expectedArguments.PhpOverridingMethodsSearch")
-                val searchMethod = searchClass.getMethod("search", methodClass, java.lang.Boolean.TYPE)
-                val query = searchMethod.invoke(null, method, true)
+            // Use PhpIndex to get all subclasses, then find methods with the same name
+            val subclasses = getAllSubclasses(project, classFqn)
 
-                val findAllMethod = query.javaClass.getMethod("findAll")
-                val overridingMethods = findAllMethod.invoke(query) as? Collection<*> ?: emptyList<Any>()
-
-                overridingMethods.filterIsInstance<PsiElement>()
-                    .take(100)
-                    .forEach { overridingMethod ->
-                        val file = overridingMethod.containingFile?.virtualFile
-                        if (file != null) {
-                            val containingClass = getContainingClass(overridingMethod)
-                            val className = containingClass?.let { getName(it) } ?: ""
-                            val methodName = getName(overridingMethod) ?: "unknown"
-                            results.add(ImplementationData(
-                                name = if (className.isNotEmpty()) "$className::$methodName" else methodName,
-                                file = getRelativePath(project, file),
-                                line = getLineNumber(project, overridingMethod) ?: 0,
-                                kind = "METHOD",
-                                language = "PHP"
-                            ))
-                        }
+            subclasses.take(100).forEach { subclass ->
+                // Find method with same name in this subclass
+                val overridingMethod = findMethodInClass(subclass, methodName)
+                if (overridingMethod != null) {
+                    val file = overridingMethod.containingFile?.virtualFile
+                    if (file != null) {
+                        val className = getName(subclass) ?: ""
+                        results.add(ImplementationData(
+                            name = if (className.isNotEmpty()) "$className::$methodName" else methodName,
+                            file = getRelativePath(project, file),
+                            line = getLineNumber(project, overridingMethod) ?: 0,
+                            kind = "METHOD",
+                            language = "PHP"
+                        ))
                     }
-            } catch (e: Exception) {
-                // Fallback to DefinitionsScopedSearch (platform API)
-                LOG.debug("PhpOverridingMethodsSearch not available, using DefinitionsScopedSearch: ${e.message}")
-
-                try {
-                    val scope = GlobalSearchScope.projectScope(project)
-                    val searchClass = Class.forName("com.intellij.psi.search.searches.DefinitionsScopedSearch")
-                    val searchMethod = searchClass.getMethod("search", PsiElement::class.java, GlobalSearchScope::class.java)
-                    val query = searchMethod.invoke(null, method, scope)
-
-                    val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
-                    forEachMethod.invoke(query, Processor<PsiElement> { definition ->
-                        if (definition != method && isMethod(definition)) {
-                            val file = definition.containingFile?.virtualFile
-                            if (file != null) {
-                                val containingClass = getContainingClass(definition)
-                                val className = containingClass?.let { getName(it) } ?: ""
-                                val methodName = getName(definition) ?: "unknown"
-                                results.add(ImplementationData(
-                                    name = if (className.isNotEmpty()) "$className::$methodName" else methodName,
-                                    file = getRelativePath(project, file),
-                                    line = getLineNumber(project, definition) ?: 0,
-                                    kind = "METHOD",
-                                    language = "PHP"
-                                ))
-                            }
-                        }
-                        results.size < 100
-                    })
-                } catch (e2: Exception) {
-                    LOG.debug("DefinitionsScopedSearch failed: ${e2.message}")
                 }
             }
 
+            LOG.debug("Found ${results.size} method implementations for $methodName in $classFqn using PhpIndex")
             results
         } catch (e: Exception) {
-            LOG.debug("Error finding method implementations: ${e.message}")
+            LOG.warn("Error finding method implementations: ${e.message}")
             emptyList()
         }
     }
 
     private fun findClassImplementations(project: Project, phpClass: PsiElement): List<ImplementationData> {
         return try {
+            val fqn = getFQN(phpClass) ?: return emptyList()
             val results = mutableListOf<ImplementationData>()
 
-            // Try PhpInheritorsSearch
-            try {
-                val searchClass = Class.forName("com.jetbrains.php.lang.psi.stubs.indexes.expectedArguments.PhpInheritorsSearch")
-                val searchMethod = searchClass.getMethod("search", phpClassClass, GlobalSearchScope::class.java, java.lang.Boolean.TYPE)
-                val scope = GlobalSearchScope.projectScope(project)
-                val query = searchMethod.invoke(null, phpClass, scope, true)
+            // Use PhpIndex.getAllSubclasses() - the correct API for finding PHP implementations
+            val subclasses = getAllSubclasses(project, fqn)
 
-                val findAllMethod = query.javaClass.getMethod("findAll")
-                val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: emptyList<Any>()
-
-                inheritors.filterIsInstance<PsiElement>()
-                    .take(100)
-                    .forEach { inheritor ->
-                        val file = inheritor.containingFile?.virtualFile
-                        if (file != null) {
-                            results.add(ImplementationData(
-                                name = getFQN(inheritor) ?: getName(inheritor) ?: "unknown",
-                                file = getRelativePath(project, file),
-                                line = getLineNumber(project, inheritor) ?: 0,
-                                kind = determineClassKind(inheritor),
-                                language = "PHP"
-                            ))
-                        }
-                    }
-            } catch (e: Exception) {
-                // Fallback to ClassInheritorsSearch
-                LOG.debug("PhpInheritorsSearch not available: ${e.message}")
-
-                try {
-                    val searchClass = Class.forName("com.intellij.psi.search.searches.ClassInheritorsSearch")
-                    val searchMethod = searchClass.getMethod("search", phpClassClass, GlobalSearchScope::class.java, java.lang.Boolean.TYPE)
-                    val scope = GlobalSearchScope.projectScope(project)
-                    val query = searchMethod.invoke(null, phpClass, scope, true)
-
-                    val findAllMethod = query.javaClass.getMethod("findAll")
-                    val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: emptyList<Any>()
-
-                    inheritors.filterIsInstance<PsiElement>()
-                        .filter { isPhpClass(it) }
-                        .take(100)
-                        .forEach { inheritor ->
-                            val file = inheritor.containingFile?.virtualFile
-                            if (file != null) {
-                                results.add(ImplementationData(
-                                    name = getFQN(inheritor) ?: getName(inheritor) ?: "unknown",
-                                    file = getRelativePath(project, file),
-                                    line = getLineNumber(project, inheritor) ?: 0,
-                                    kind = determineClassKind(inheritor),
-                                    language = "PHP"
-                                ))
-                            }
-                        }
-                } catch (e2: Exception) {
-                    LOG.debug("ClassInheritorsSearch failed: ${e2.message}")
+            subclasses.take(100).forEach { subclass ->
+                val file = subclass.containingFile?.virtualFile
+                if (file != null) {
+                    results.add(ImplementationData(
+                        name = getFQN(subclass) ?: getName(subclass) ?: "unknown",
+                        file = getRelativePath(project, file),
+                        line = getLineNumber(project, subclass) ?: 0,
+                        kind = determineClassKind(subclass),
+                        language = "PHP"
+                    ))
                 }
             }
 
+            LOG.debug("Found ${results.size} implementations for $fqn using PhpIndex")
             results
         } catch (e: Exception) {
-            LOG.debug("Error finding class implementations: ${e.message}")
+            LOG.warn("Error finding class implementations: ${e.message}")
             emptyList()
         }
     }
@@ -817,22 +776,6 @@ class PhpCallHierarchyHandler : BasePhpHandler<CallHierarchyData>(), CallHierarc
                 if (ifaceMethod != null) {
                     result.add(ifaceMethod)
                 }
-            }
-        }
-    }
-
-    private fun findMethodInClass(phpClass: PsiElement, methodName: String): PsiElement? {
-        return try {
-            val findMethodByNameMethod = phpClass.javaClass.getMethod("findMethodByName", String::class.java)
-            findMethodByNameMethod.invoke(phpClass, methodName) as? PsiElement
-        } catch (e: Exception) {
-            // Try getOwnMethods and search manually
-            try {
-                val getMethodsMethod = phpClass.javaClass.getMethod("getOwnMethods")
-                val methods = getMethodsMethod.invoke(phpClass) as? Array<*> ?: return null
-                methods.filterIsInstance<PsiElement>().find { getName(it) == methodName }
-            } catch (e2: Exception) {
-                null
             }
         }
     }
@@ -1137,21 +1080,6 @@ class PhpSuperMethodsHandler : BasePhpHandler<SuperMethodsData>(), SuperMethodsH
         }
 
         return hierarchy
-    }
-
-    private fun findMethodInClass(phpClass: PsiElement, methodName: String): PsiElement? {
-        return try {
-            val findMethodByNameMethod = phpClass.javaClass.getMethod("findMethodByName", String::class.java)
-            findMethodByNameMethod.invoke(phpClass, methodName) as? PsiElement
-        } catch (e: Exception) {
-            try {
-                val getMethodsMethod = phpClass.javaClass.getMethod("getOwnMethods")
-                val methods = getMethodsMethod.invoke(phpClass) as? Array<*> ?: return null
-                methods.filterIsInstance<PsiElement>().find { getName(it) == methodName }
-            } catch (e2: Exception) {
-                null
-            }
-        }
     }
 
     private fun buildMethodSignature(method: PsiElement): String {
