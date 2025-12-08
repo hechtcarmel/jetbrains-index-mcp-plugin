@@ -67,9 +67,11 @@ object RustHandlers {
             registry.registerImplementationsHandler(RustImplementationsHandler())
             registry.registerCallHierarchyHandler(RustCallHierarchyHandler())
             registry.registerSymbolSearchHandler(RustSymbolSearchHandler())
-            registry.registerSuperMethodsHandler(RustSuperMethodsHandler())
+            // Note: SuperMethodsHandler is NOT registered for Rust because Rust uses trait
+            // implementations rather than classical inheritance. There are no "super methods"
+            // in the OOP sense. Users should use ide_find_definition or ide_type_hierarchy instead.
 
-            LOG.info("Registered Rust handlers")
+            LOG.info("Registered Rust handlers (4 handlers - SuperMethods not applicable for Rust)")
         } catch (e: ClassNotFoundException) {
             LOG.warn("Rust PSI classes not found, skipping registration: ${e.message}")
         } catch (e: Exception) {
