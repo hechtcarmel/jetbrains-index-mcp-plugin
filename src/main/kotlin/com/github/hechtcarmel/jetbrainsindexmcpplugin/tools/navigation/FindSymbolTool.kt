@@ -22,7 +22,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for searching code symbols across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,23 +36,17 @@ class FindSymbolTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_SYMBOL
 
     override val description = """
-        Searches for code symbols (classes, interfaces, methods, fields, functions) by name using the IDE's semantic index.
+        Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, functions. Faster and more accurate than grep for code navigation.
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
-        Use this tool when you need to:
-        - Find a class or interface by name (e.g., find "UserService")
-        - Locate methods/functions across the codebase (e.g., find all "findById" methods)
-        - Discover fields or constants by name
-        - Navigate to code when you know the symbol name but not the file location
+        Matching: substring ("Service" → "UserService") and camelCase ("USvc" → "UserService").
 
-        Supports fuzzy matching:
-        - Substring: "Service" matches "UserService", "OrderService"
-        - CamelCase: "USvc" matches "UserService", "US" matches "UserService"
+        Returns: matching symbols with qualified names, file paths, line numbers, and kind.
 
-        EXAMPLE Java/Kotlin: {"query": "UserService"}
-        EXAMPLE Python: {"query": "find_user"}
-        EXAMPLE TypeScript: {"query": "fetchData", "includeLibraries": true}
+        Parameters: query (required), includeLibraries (optional, default: false), limit (optional, default: 25, max: 100).
+
+        Example: {"query": "UserService"} or {"query": "find_user", "includeLibraries": true}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

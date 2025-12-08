@@ -36,15 +36,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     override val name = "ide_refactor_safe_delete"
 
     override val description = """
-        Safely deletes a symbol after checking for usages. Supports Ctrl+Z undo.
+        Delete a symbol safely by first checking for usages. Use when removing code to avoid breaking references.
 
-        REQUIRED: file + line + column to identify the element to delete.
-        OPTIONAL: force=true to delete even when usages exist (may break compilation).
+        Behavior: If usages exist and force=false, returns the usage list instead of deleting. Use force=true to delete anyway (may break compilation).
 
-        If usages exist and force=false, returns the usage list instead of deleting.
+        Returns: success status and affected files, OR blocking usages list. Modifies source files.
 
-        EXAMPLE: {"file": "src/main/java/com/example/OldClass.java", "line": 10, "column": 14}
-        EXAMPLE with force: {"file": "src/main/java/OldClass.java", "line": 10, "column": 14, "force": true}
+        Parameters: file + line + column (required), force (optional, default: false).
+
+        Example: {"file": "src/OldClass.java", "line": 10, "column": 14}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

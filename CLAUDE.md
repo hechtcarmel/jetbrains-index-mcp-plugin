@@ -2,7 +2,7 @@
 
 An IntelliJ Platform plugin that exposes an MCP (Model Context Protocol) server, enabling coding agents to leverage the IDE's powerful indexing and refactoring capabilities.
 
-**Works with JetBrains IDEs**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, DataGrip, and Android Studio.
+**Works with JetBrains IDEs**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, RustRover, DataGrip, and Android Studio.
 
 ## Project Overview
 
@@ -52,7 +52,8 @@ src/
 │   │   │   ├── python/PythonHandlers.kt # Python handlers (reflection)
 │   │   │   ├── javascript/JavaScriptHandlers.kt # JS/TS handlers (reflection)
 │   │   │   ├── go/GoHandlers.kt        # Go handlers (reflection)
-│   │   │   └── php/PhpHandlers.kt      # PHP handlers (reflection)
+│   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
+│   │   │   └── rust/RustHandlers.kt    # Rust handlers (reflection)
 │   │   ├── services/                   # Application/project services
 │   │   ├── startup/                    # Startup activities
 │   │   ├── tools/                      # MCP tool implementations
@@ -68,7 +69,8 @@ src/
 │       │   ├── python-features.xml     # Python-specific extensions
 │       │   ├── javascript-features.xml # JS/TS-specific extensions
 │       │   ├── go-features.xml         # Go-specific extensions
-│       │   └── php-features.xml        # PHP-specific extensions
+│       │   ├── php-features.xml        # PHP-specific extensions
+│       │   └── rust-features.xml       # Rust-specific extensions
 │       └── messages/MyBundle.properties # i18n messages
 └── test/
     ├── kotlin/                         # Test sources
@@ -281,7 +283,7 @@ Tools are organized by IDE availability.
 
 **Extended Navigation Tools (Language-Aware):**
 
-These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP):
+These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust):
 - `ide_type_hierarchy` - Get type hierarchy for a class
 - `ide_call_hierarchy` - Get call hierarchy for a method
 - `ide_find_implementations` - Find implementations of interface/method
@@ -306,6 +308,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/javascript/JavaScriptHandlers.kt` - Reflection-based JS/TS PSI access
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
+- `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
@@ -320,7 +323,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
 4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` if Java plugin available
 
-**Reflection Pattern:** Python, JavaScript, Go, and PHP handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
 
 ### Optimized Symbol Search
 

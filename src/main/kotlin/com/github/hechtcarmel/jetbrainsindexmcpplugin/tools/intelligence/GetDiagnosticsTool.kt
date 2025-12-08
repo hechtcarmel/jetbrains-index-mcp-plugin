@@ -54,16 +54,13 @@ class GetDiagnosticsTool : AbstractMcpTool() {
     override val name = "ide_diagnostics"
 
     override val description = """
-        Analyzes a file for code problems (errors, warnings) and available quick fixes/intentions.
+        Get code problems (errors, warnings) and available quick fixes for a file. Use to check code health, find compilation errors, or discover available IDE intentions/refactorings.
 
-        REQUIRED: file - the file to analyze.
-        OPTIONAL: line + column - position for intention lookup; startLine/endLine - filter problems to line range.
+        Returns: problems with severity (ERROR/WARNING), location, message, plus available intentions and quick fixes at the specified position.
 
-        RETURNS: List of problems with severity and available intentions/quick fixes.
+        Parameters: file (required), line + column (optional, for intention lookup), startLine/endLine (optional, filter problems to range).
 
-        EXAMPLE (whole file): {"file": "src/main/java/com/example/MyClass.java"}
-        EXAMPLE (specific position): {"file": "src/main/java/MyClass.java", "line": 25, "column": 10}
-        EXAMPLE (line range): {"file": "src/main/java/MyClass.java", "startLine": 10, "endLine": 50}
+        Example: {"file": "src/MyClass.java"} or {"file": "src/MyClass.java", "line": 25, "column": 10}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

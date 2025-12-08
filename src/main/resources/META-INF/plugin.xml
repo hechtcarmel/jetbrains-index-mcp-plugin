@@ -15,6 +15,7 @@
     <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
     <li><b>PHP</b> - PhpStorm, IntelliJ IDEA Ultimate with PHP plugin</li>
+    <li><b>Rust</b> - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion</li>
 </ul>
 
 <h3>Universal Tools (All Supported IDEs)</h3>
@@ -29,8 +30,8 @@
 <h3>Extended Tools (Language-Aware)</h3>
 <p>These tools activate based on available language plugins:</p>
 <ul>
-    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP)</li>
-    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP)</li>
+    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust)</li>
+    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust)</li>
     <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods</li>
     <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with fuzzy/camelCase matching</li>
     <li><b>Find Super Methods</b> - Navigate through method override hierarchies</li>
@@ -96,6 +97,12 @@ for detailed documentation and examples.</p>
 
     <!-- Optional PHP support (PhpStorm, IntelliJ Ultimate with PHP plugin) -->
     <depends optional="true" config-file="php-features.xml">com.jetbrains.php</depends>
+
+    <!-- Optional Rust support (RustRover, IntelliJ Ultimate with Rust plugin, CLion) -->
+    <!-- Supports RustRover bundled plugin, official JetBrains plugin, and deprecated community plugin -->
+    <depends optional="true" config-file="rust-features.xml">com.jetbrains.rust</depends>
+    <depends optional="true" config-file="rust-features-alt.xml">org.jetbrains.rust</depends>
+    <depends optional="true" config-file="rust-features-legacy.xml">org.rust.lang</depends>
 
     <resource-bundle>messages.McpBundle</resource-bundle>
 

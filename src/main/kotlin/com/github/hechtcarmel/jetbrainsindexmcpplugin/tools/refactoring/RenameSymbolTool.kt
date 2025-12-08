@@ -46,17 +46,15 @@ class RenameSymbolTool : AbstractMcpTool() {
     override val name = "ide_refactor_rename"
 
     override val description = """
-        Renames a symbol and updates all references across the project. Supports Ctrl+Z undo.
+        Rename a symbol and update all references across the project. Use instead of find-and-replace for safe, semantic renaming that handles all usages correctly. Supports undo (Ctrl+Z).
 
-        REQUIRED: file + line + column to identify the symbol, plus newName.
+        Automatically renames related elements: getters/setters, overriding methods, constructor parameters ↔ fields, test classes.
 
-        Returns affected files and change count.
+        Returns: affected files list and change count. Modifies source files.
 
-        AUTOMATIC RELATED RENAMES: Related elements are automatically renamed without prompts:
-        - Java/Kotlin: getters/setters, constructor parameters ↔ fields, overriding methods, test classes
-        - All languages: method implementations in subclasses, overrides
+        Parameters: file + line + column + newName (all required).
 
-        EXAMPLE: {"file": "src/main/java/com/example/UserService.java", "line": 15, "column": 18, "newName": "CustomerService"}
+        Example: {"file": "src/UserService.java", "line": 15, "column": 18, "newName": "CustomerService"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

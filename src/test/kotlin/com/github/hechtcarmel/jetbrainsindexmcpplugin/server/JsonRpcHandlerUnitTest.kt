@@ -61,7 +61,7 @@ class JsonRpcHandlerUnitTest : TestCase() {
         assertNotNull("serverInfo should contain description", serverInfo["description"])
         assertTrue(
             "description should mention code intelligence",
-            serverInfo["description"]?.jsonPrimitive?.content?.contains("code intelligence") == true
+            serverInfo["description"]?.jsonPrimitive?.content?.contains("code intelligence", ignoreCase = true) == true
         )
     }
 

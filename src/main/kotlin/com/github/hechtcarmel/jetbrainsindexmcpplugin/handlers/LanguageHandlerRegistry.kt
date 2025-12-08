@@ -71,6 +71,9 @@ object LanguageHandlerRegistry {
         // Register PHP handlers
         registerPhpHandlers()
 
+        // Register Rust handlers
+        registerRustHandlers()
+
         LOG.info("Language handlers registered: " +
             "TypeHierarchy=${typeHierarchyHandlers.size}, " +
             "Implementations=${implementationsHandlers.size}, " +
@@ -302,6 +305,22 @@ object LanguageHandlerRegistry {
             LOG.info("PHP handlers not available (PHP plugin not installed)")
         } catch (e: Exception) {
             LOG.warn("Failed to register PHP handlers: ${e.message}")
+        }
+    }
+
+    private fun registerRustHandlers() {
+        try {
+            // Load Rust handlers via reflection
+            val rustHandlerClass = Class.forName(
+                "com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.rust.RustHandlers"
+            )
+            val registerMethod = rustHandlerClass.getMethod("register", LanguageHandlerRegistry::class.java)
+            registerMethod.invoke(null, this)
+            LOG.info("Rust handlers registered")
+        } catch (e: ClassNotFoundException) {
+            LOG.info("Rust handlers not available (Rust plugin not installed)")
+        } catch (e: Exception) {
+            LOG.warn("Failed to register Rust handlers: ${e.message}")
         }
     }
 }

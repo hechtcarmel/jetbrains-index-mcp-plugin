@@ -6,8 +6,8 @@
 
 A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, enabling AI coding assistants like Claude, Cursor, and Windsurf to leverage the IDE's powerful indexing and refactoring capabilities.
 
-**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, Android Studio
-**May work** (untested): PhpStorm, RubyMine, CLion, DataGrip
+**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
+**May work** (untested): RubyMine, CLion, DataGrip
 
 <!-- Plugin description -->
 **IDE Index MCP Server** provides AI coding assistants with access to the IDE's powerful code intelligence features through the Model Context Protocol (MCP).
@@ -20,6 +20,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Python** - PyCharm (all editions), IntelliJ with Python plugin
 - **JavaScript & TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
+- **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
 
 **Universal Tools (All JetBrains IDEs)**
 - **Find References** - Locate all usages of any symbol across the project
@@ -175,11 +176,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, Go |
-| `ide_find_symbol` | Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching | Java, Kotlin, Python, JS/TS, Go |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, Go |
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, Rust |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, Rust |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, Go, Rust |
+| `ide_find_symbol` | Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching | Java, Kotlin, Python, JS/TS, Go, Rust |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, Go, Rust |
 
 ### Refactoring Tools
 
@@ -201,12 +202,13 @@ These tools activate based on available language plugins:
 | PyCharm | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
 | WebStorm | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
 | GoLand | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
+| RustRover | ✓ 4 tools | ✓ 5 tools | ✓ 1 tool (rename) |
+| PhpStorm | ✓ 4 tools | - | ✓ 1 tool (rename) |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| PhpStorm | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | RubyMine | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | CLion | ✓ 4 tools | - | ✓ 1 tool (rename) |
 | DataGrip | ✓ 4 tools | - | ✓ 1 tool (rename) |
@@ -302,9 +304,10 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 - PyCharm (Community/Professional)
 - WebStorm
 - GoLand
+- RustRover
+- PhpStorm
 
 **May Work (Untested):**
-- PhpStorm
 - RubyMine
 - CLion
 - DataGrip

@@ -20,7 +20,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Tool for analyzing method call relationships across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -29,21 +29,17 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val name = "ide_call_hierarchy"
 
     override val description = """
-        Analyzes method/function call relationships recursively to build a call hierarchy tree.
+        Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
 
-        SUPPORTED LANGUAGES: Java, Kotlin, Python, JavaScript, TypeScript
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
-        REQUIRED: file + line + column to identify the method/function, plus direction.
+        Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
 
-        PARAMETERS:
-        - direction: 'callers' = methods that call this method, 'callees' = methods this method calls
-        - depth: how many levels deep to traverse (default: 3, max: 5)
+        Returns: recursive tree with method signatures, file locations, and nested call relationships.
 
-        RETURNS: Tree structure with method signatures, file locations, and nested children.
+        Parameters: file + line + column + direction (required). direction: "callers" or "callees". depth (optional, default: 3, max: 5).
 
-        EXAMPLE Java: {"file": "src/main/java/com/example/Service.java", "line": 42, "column": 10, "direction": "callers"}
-        EXAMPLE Python: {"file": "src/services/user_service.py", "line": 15, "column": 5, "direction": "callees"}
-        EXAMPLE TypeScript: {"file": "src/services/api.ts", "line": 20, "column": 10, "direction": "callers", "depth": 2}
+        Example: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callers"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {

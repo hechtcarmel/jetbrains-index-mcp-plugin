@@ -24,11 +24,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_find_symbol` | Search symbols by name | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, PHP, Rust |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, PHP, Rust |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
+| `ide_find_symbol` | Search symbols by name | Java, Kotlin, Python, JS/TS, PHP, Rust |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, Rust |
 
 ### Refactoring Tools (Java/Kotlin Only)
 
@@ -204,8 +204,9 @@ These tools activate based on available language plugins:
 - **Python** - PyCharm (all editions), IntelliJ with Python plugin
 - **JavaScript/TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
+- **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
 
-In IDEs without language-specific plugins (e.g., CLion, DataGrip), these tools will not appear in the tools list.
+In IDEs without language-specific plugins (e.g., DataGrip), these tools will not appear in the tools list.
 
 ### ide_type_hierarchy
 
@@ -749,7 +750,7 @@ Checks if the IDE is in dumb mode (indexing) or smart mode.
 
 Renames a symbol and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
 
-**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Ruby, and any language with IntelliJ plugin support.
+**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Ruby, and any language with IntelliJ plugin support.
 
 **Features:**
 - Language-specific name validation (identifier rules, keyword detection)
