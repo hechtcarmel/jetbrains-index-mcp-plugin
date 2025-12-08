@@ -53,12 +53,20 @@ object RustPluginDetector {
 
     /**
      * Plugin IDs for Rust support, in order of preference.
-     * The new official plugin is checked first, with fallback to the deprecated community plugin.
+     * Includes both official JetBrains plugins and the deprecated community plugin.
      */
     private val RUST_PLUGIN_IDS = listOf(
-        "org.jetbrains.rust",  // New official JetBrains plugin
-        "org.rust.lang"        // Deprecated community plugin
+        "com.jetbrains.rust",       // RustRover bundled
+        "org.jetbrains.rust",       // Official JetBrains plugin (IDEA Ultimate, CLion)
+        "org.rust.lang",            // Deprecated community plugin
+        "com.intellij.rust"         // Alternative ID
     )
+
+    /**
+     * PSI class to check as fallback for Rust support detection.
+     * If this class can be loaded, Rust PSI is available regardless of plugin ID.
+     */
+    private const val RUST_PSI_CLASS = "org.rust.lang.core.psi.RsFile"
 
     /**
      * Cached result of Rust plugin availability check.
@@ -72,20 +80,37 @@ object RustPluginDetector {
 
     /**
      * Performs the actual check for Rust plugin availability.
-     * Checks both the new official plugin and the deprecated community plugin.
+     *
+     * Uses multiple detection strategies:
+     * 1. Check known plugin IDs (works for marketplace plugins)
+     * 2. Fallback: Try to load Rust PSI class directly (works for RustRover and bundled Rust)
      */
     private fun checkRustPluginAvailable(): Boolean {
+        // Strategy 1: Check plugin IDs
         for (pluginId in RUST_PLUGIN_IDS) {
             try {
                 val plugin = PluginManagerCore.getPlugin(PluginId.getId(pluginId))
                 if (plugin != null && plugin.isEnabled) {
-                    LOG.info("Rust plugin detected ($pluginId) - Rust-specific tools will be available")
+                    LOG.info("Rust plugin detected via plugin ID ($pluginId) - Rust-specific tools will be available")
                     return true
                 }
             } catch (e: Exception) {
                 LOG.debug("Failed to check Rust plugin $pluginId: ${e.message}")
             }
         }
+
+        // Strategy 2: Fallback - try loading Rust PSI class directly
+        // This handles RustRover and other cases where Rust is bundled without a standard plugin ID
+        try {
+            Class.forName(RUST_PSI_CLASS)
+            LOG.info("Rust support detected via PSI class ($RUST_PSI_CLASS) - Rust-specific tools will be available")
+            return true
+        } catch (e: ClassNotFoundException) {
+            LOG.debug("Rust PSI class not found: $RUST_PSI_CLASS")
+        } catch (e: Exception) {
+            LOG.debug("Failed to check Rust PSI class: ${e.message}")
+        }
+
         LOG.info("Rust plugin not available - Rust-specific features will be disabled")
         return false
     }
