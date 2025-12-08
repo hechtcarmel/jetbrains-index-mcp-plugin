@@ -33,6 +33,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
         Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
+        Rust note: className parameter not supported for Rust; use file + line + column instead.
+
         Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
         Parameters: Either className (e.g., "com.example.MyClass") OR file + line + column.

@@ -922,25 +922,69 @@ class RustCallHierarchyHandler : BaseRustHandler<CallHierarchyData>(), CallHiera
 
     private fun resolveCallExpression(callExpr: PsiElement): PsiElement? {
         return try {
-            // Try different methods to resolve the call
-            val methodNames = listOf("getPath", "getExpr", "getMethodName")
-            for (methodName in methodNames) {
-                try {
-                    val method = callExpr.javaClass.getMethod(methodName)
-                    val result = method.invoke(callExpr) as? PsiElement
-                    if (result != null) {
-                        val resolved = resolveReference(result)
+            // Strategy 1: For RsCallExpr, get expr (RsPathExpr) then resolve its path
+            try {
+                val exprMethod = callExpr.javaClass.getMethod("getExpr")
+                val expr = exprMethod.invoke(callExpr) as? PsiElement
+                if (expr != null) {
+                    // Try to get the path from RsPathExpr
+                    try {
+                        val pathMethod = expr.javaClass.getMethod("getPath")
+                        val path = pathMethod.invoke(expr) as? PsiElement
+                        if (path != null) {
+                            val resolved = resolveReference(path)
+                            if (resolved != null && isRsFunction(resolved)) {
+                                return resolved
+                            }
+                        }
+                    } catch (e: NoSuchMethodException) {
+                        // Not an RsPathExpr, try direct resolution
+                        val resolved = resolveReference(expr)
                         if (resolved != null && isRsFunction(resolved)) {
                             return resolved
                         }
                     }
-                } catch (e: NoSuchMethodException) {
-                    continue
                 }
+            } catch (e: NoSuchMethodException) {
+                // Not RsCallExpr, might be RsMethodCall
             }
-            // Fallback to reference resolution
-            resolveReference(callExpr)
+
+            // Strategy 2: For RsMethodCall, resolve via reference or identifier
+            try {
+                val identifierMethod = callExpr.javaClass.getMethod("getIdentifier")
+                val identifier = identifierMethod.invoke(callExpr) as? PsiElement
+                if (identifier != null) {
+                    val resolved = resolveReference(identifier)
+                    if (resolved != null && isRsFunction(resolved)) {
+                        return resolved
+                    }
+                }
+            } catch (e: NoSuchMethodException) {
+                // No identifier method
+            }
+
+            // Strategy 3: Try direct reference resolution on the call expression itself
+            val resolved = resolveReference(callExpr)
+            if (resolved != null && isRsFunction(resolved)) {
+                return resolved
+            }
+
+            // Strategy 4: Try getting references array
+            try {
+                val refs = callExpr.references
+                for (ref in refs) {
+                    val target = ref.resolve()
+                    if (target != null && isRsFunction(target)) {
+                        return target
+                    }
+                }
+            } catch (e: Exception) {
+                LOG.debug("References resolution failed: ${e.message}")
+            }
+
+            null
         } catch (e: Exception) {
+            LOG.debug("Error resolving call expression: ${e.message}")
             null
         }
     }

@@ -33,6 +33,8 @@ class CallHierarchyTool : AbstractMcpTool() {
 
         Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
 
+        Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
+
         Returns: recursive tree with method signatures, file locations, and nested call relationships.
 
         Parameters: file + line + column + direction (required). direction: "callers" or "callees". depth (optional, default: 3, max: 5).
