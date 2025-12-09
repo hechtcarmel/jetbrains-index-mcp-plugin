@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [1.12.0] - 2025-12-09
+
+### Added
+- **Tool enable/disable settings** - Disable individual MCP tools from Settings > Index MCP Server (disabled tools are not exposed via `tools/list`)
+- **Settings button in tool window** - Gear icon in toolbar opens plugin settings directly
+
 ## [1.11.0] - 2025-12-07
 
 ### Added
