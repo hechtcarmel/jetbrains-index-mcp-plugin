@@ -15,7 +15,8 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
 
     data class State(
         var maxHistorySize: Int = 100,
-        var syncExternalChanges: Boolean = false
+        var syncExternalChanges: Boolean = false,
+        var disabledTools: MutableSet<String> = mutableSetOf()
     )
 
     private var state = State()
@@ -33,6 +34,20 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var syncExternalChanges: Boolean
         get() = state.syncExternalChanges
         set(value) { state.syncExternalChanges = value }
+
+    var disabledTools: Set<String>
+        get() = state.disabledTools.toSet()
+        set(value) { state.disabledTools = value.toMutableSet() }
+
+    fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools
+
+    fun setToolEnabled(toolName: String, enabled: Boolean) {
+        if (enabled) {
+            state.disabledTools.remove(toolName)
+        } else {
+            state.disabledTools.add(toolName)
+        }
+    }
 
     companion object {
         fun getInstance(): McpSettings = service()

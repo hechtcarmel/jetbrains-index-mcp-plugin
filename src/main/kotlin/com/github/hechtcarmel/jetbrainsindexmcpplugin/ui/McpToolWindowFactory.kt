@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ClearHistoryAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyClientConfigAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyServerUrlAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ExportHistoryAction
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.OpenSettingsAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.RefreshAction
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
@@ -36,6 +37,8 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
             addSeparator()
             add(ClearHistoryAction())
             add(ExportHistoryAction())
+            addSeparator()
+            add(OpenSettingsAction())
         }
 
         val leftToolbar = ActionManager.getInstance().createActionToolbar(

@@ -146,6 +146,7 @@ for detailed documentation and examples.</p>
             <action id="McpServer.CopyConfig" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyClientConfigAction" text="Copy Client Config..." description="Copy MCP client configuration for AI assistants"/>
             <action id="McpServer.ClearHistory" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ClearHistoryAction" text="Clear History" description="Clear command history"/>
             <action id="McpServer.ExportHistory" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ExportHistoryAction" text="Export History..." description="Export command history to file"/>
+            <action id="McpServer.OpenSettings" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.OpenSettingsAction" text="Settings" description="Open MCP Server settings"/>
         </group>
     </actions>
 </idea-plugin>

@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
@@ -108,10 +109,30 @@ class ToolRegistry {
 
     /**
      * Gets tool definitions for the MCP `tools/list` response.
+     * Respects user settings for disabled tools.
      *
-     * @return List of tool definitions with name, description, and schema
+     * @return List of enabled tool definitions with name, description, and schema
      */
     fun getToolDefinitions(): List<ToolDefinition> {
+        val settings = McpSettings.getInstance()
+        return tools.values
+            .filter { settings.isToolEnabled(it.name) }
+            .map { tool ->
+                ToolDefinition(
+                    name = tool.name,
+                    description = tool.description,
+                    inputSchema = tool.inputSchema
+                )
+            }
+    }
+
+    /**
+     * Gets ALL tool definitions regardless of enabled/disabled state.
+     * Used by settings UI to display all available tools.
+     *
+     * @return List of all tool definitions
+     */
+    fun getAllToolDefinitions(): List<ToolDefinition> {
         return tools.values.map { tool ->
             ToolDefinition(
                 name = tool.name,
