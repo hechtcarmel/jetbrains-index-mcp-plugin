@@ -64,7 +64,7 @@ class McpServerService : Disposable {
      */
     fun getServerUrl(): String {
         val port = BuiltInServerManager.getInstance().port
-        return "http://localhost:$port${McpConstants.MCP_ENDPOINT_PATH}/sse"
+        return "http://127.0.0.1:$port${McpConstants.MCP_ENDPOINT_PATH}/sse"
     }
 
     /**
@@ -83,7 +83,7 @@ class McpServerService : Disposable {
             version = McpConstants.SERVER_VERSION,
             protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
             sseUrl = getServerUrl(),
-            postUrl = "http://localhost:${getServerPort()}${McpConstants.MCP_ENDPOINT_PATH}",
+            postUrl = "http://127.0.0.1:${getServerPort()}${McpConstants.MCP_ENDPOINT_PATH}",
             port = getServerPort(),
             registeredTools = toolRegistry.getAllTools().size
         )

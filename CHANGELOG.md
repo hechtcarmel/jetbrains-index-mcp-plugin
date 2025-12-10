@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.12.1] - 2025-12-10
+
+### Changed
+- Replace `localhost` with `127.0.0.1` in server URLs for improved connection reliability
+
 ## [1.12.0] - 2025-12-09
 
 ### Added

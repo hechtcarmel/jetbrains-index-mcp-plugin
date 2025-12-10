@@ -213,7 +213,7 @@ object ClientConfigGenerator {
         Uses mcp-remote to bridge SSE to stdio transport.
 
         Requires Node.js and npx to be available in your PATH.
-        The --allow-http flag is needed for localhost connections.
+        The --allow-http flag is needed for 127.0.0.1 connections.
     """.trimIndent()
 
     /**

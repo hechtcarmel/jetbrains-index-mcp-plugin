@@ -115,7 +115,7 @@ MCP servers expose:
 {
   "mcpServers": {
     "jetbrains-index": {
-      "url": "http://localhost:{IDE_PORT}/index-mcp/sse"
+      "url": "http://127.0.0.1:{IDE_PORT}/index-mcp/sse"
     }
   }
 }

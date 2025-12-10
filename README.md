@@ -83,7 +83,7 @@ Download the [latest release](https://github.com/hechtcarmel/jetbrains-index-mcp
 1. **Install the plugin** and restart IntelliJ IDEA
 2. **Open a project** - the MCP server starts automatically
 3. **Find your IDE port**: <kbd>Settings</kbd> > <kbd>Build, Execution, Deployment</kbd> > <kbd>Debugger</kbd> > <kbd>Built-in Server Port</kbd> (default: 63342)
-4. **Configure your AI assistant** with the server URL: `http://localhost:{PORT}/index-mcp/sse`
+4. **Configure your AI assistant** with the server URL: `http://127.0.0.1:{PORT}/index-mcp/sse`
 5. **Use the tool window** (bottom panel: "Index MCP Server") to copy configuration or monitor commands
 
 ### Using the "Install on Coding Agents" Button
@@ -103,7 +103,7 @@ The easiest way to configure your AI assistant:
 Run this command in your terminal:
 
 ```bash
-claude mcp add --transport http jetbrains-index http://localhost:63342/index-mcp/sse --scope user
+claude mcp add --transport http jetbrains-index http://127.0.0.1:63342/index-mcp/sse --scope user
 ```
 
 Options:
@@ -120,7 +120,7 @@ Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally:
 {
   "mcpServers": {
     "jetbrains-index": {
-      "url": "http://localhost:63342/index-mcp/sse"
+      "url": "http://127.0.0.1:63342/index-mcp/sse"
     }
   }
 }
@@ -134,7 +134,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "jetbrains-index": {
-      "serverUrl": "http://localhost:63342/index-mcp/sse"
+      "serverUrl": "http://127.0.0.1:63342/index-mcp/sse"
     }
   }
 }
@@ -147,7 +147,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
   "mcp.servers": {
     "jetbrains-index": {
       "transport": "sse",
-      "url": "http://localhost:63342/index-mcp/sse"
+      "url": "http://127.0.0.1:63342/index-mcp/sse"
     }
   }
 }
