@@ -81,10 +81,10 @@ Download the [latest release](https://github.com/hechtcarmel/jetbrains-index-mcp
 ## Quick Start
 
 1. **Install the plugin** and restart IntelliJ IDEA
-2. **Open a project** - the MCP server starts automatically
-3. **Find your IDE port**: <kbd>Settings</kbd> > <kbd>Build, Execution, Deployment</kbd> > <kbd>Debugger</kbd> > <kbd>Built-in Server Port</kbd> (default: 63342)
-4. **Configure your AI assistant** with the server URL: `http://127.0.0.1:{PORT}/index-mcp/sse`
-5. **Use the tool window** (bottom panel: "Index MCP Server") to copy configuration or monitor commands
+2. **Open a project** - the MCP server starts automatically on port **29277**
+3. **Configure your AI assistant** with the server URL: `http://127.0.0.1:29277/index-mcp/sse`
+4. **Use the tool window** (bottom panel: "Index MCP Server") to copy configuration or monitor commands
+5. **Change port** (optional): <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd> > <kbd>Server Port</kbd>
 
 ### Using the "Install on Coding Agents" Button
 
@@ -103,7 +103,7 @@ The easiest way to configure your AI assistant:
 Run this command in your terminal:
 
 ```bash
-claude mcp add --transport http jetbrains-index http://127.0.0.1:63342/index-mcp/sse --scope user
+claude mcp add --transport http jetbrains-index http://127.0.0.1:29277/index-mcp/sse --scope user
 ```
 
 Options:
@@ -120,7 +120,7 @@ Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally:
 {
   "mcpServers": {
     "jetbrains-index": {
-      "url": "http://127.0.0.1:63342/index-mcp/sse"
+      "url": "http://127.0.0.1:29277/index-mcp/sse"
     }
   }
 }
@@ -134,7 +134,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "jetbrains-index": {
-      "serverUrl": "http://127.0.0.1:63342/index-mcp/sse"
+      "serverUrl": "http://127.0.0.1:29277/index-mcp/sse"
     }
   }
 }
@@ -147,13 +147,13 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
   "mcp.servers": {
     "jetbrains-index": {
       "transport": "sse",
-      "url": "http://127.0.0.1:63342/index-mcp/sse"
+      "url": "http://127.0.0.1:29277/index-mcp/sse"
     }
   }
 }
 ```
 
-> **Note**: Replace `63342` with your actual IDE port if different. Check <kbd>Settings</kbd> > <kbd>Debugger</kbd> > <kbd>Built-in Server Port</kbd>.
+> **Note**: Replace `29277` with your custom port if you changed it in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd> > <kbd>Server Port</kbd>.
 
 ## Available Tools
 
@@ -287,6 +287,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| Server Port | 29277 | MCP server port (range: 1024-65535, auto-restart on change) |
 | Max History Size | 100 | Maximum number of commands to keep in history |
 | Sync External Changes | false | Sync external file changes before operations |
 
@@ -316,7 +317,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 
 ## Architecture
 
-The plugin supports **dual MCP transports** on the IDE's built-in web server:
+The plugin runs a **custom embedded Ktor CIO HTTP server** with **dual MCP transports**:
 
 ### SSE Transport (MCP Inspector, spec-compliant clients)
 
@@ -338,9 +339,9 @@ AI Assistant ──────► POST /index-mcp                 (JSON-RPC req
 This dual approach:
 - **MCP Inspector compatible** - Full SSE transport per MCP spec (2024-11-05)
 - **Claude Code compatible** - Streamable HTTP for simple request/response
-- Requires no additional ports or processes
+- **Configurable port** - Default 29277, changeable in settings
 - Works with any MCP-compatible client
-- Automatically adapts to the IDE's server port
+- Single server instance across all open projects
 
 ## Contributing
 

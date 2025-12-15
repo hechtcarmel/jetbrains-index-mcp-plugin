@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-12-15
+
+### Added
+- **Configurable Server Port** - MCP server now uses a custom embedded Ktor CIO server with a configurable port (default: 29277)
+  - Configure via Settings > Tools > Index MCP Server > Server Port
+  - Port range: 1024-65535
+  - Server auto-restarts when port is changed
+- **Port conflict detection** - Clear error notifications with direct link to settings when port is already in use
+- **Consistent server URL** - Server URL no longer depends on IDE's built-in server port (was 63342)
+
+### Changed
+- **Breaking: Server URL changed** - Default server URL is now `http://127.0.0.1:29277/index-mcp/sse` instead of using IDE's built-in server port
+  - **Action required**: Update your MCP client configurations with the new port
+- **Server architecture** - Migrated from IntelliJ's built-in HTTP server (`httpRequestHandler`) to custom Ktor CIO embedded server
+  - Improved reliability and connection handling
+  - Single server instance across all open projects (unchanged behavior)
+
+### Technical
+- Added Ktor Server dependencies (ktor-server-core, ktor-server-cio, ktor-server-cors)
+- New `KtorMcpServer` class for embedded HTTP server management
+- New `KtorSseSessionManager` for SSE session handling with Kotlin channels
+- Server binds to 127.0.0.1 only (localhost) for security
+
 ## [1.12.1] - 2025-12-10
 
 ### Changed
