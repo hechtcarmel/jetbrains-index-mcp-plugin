@@ -23,7 +23,8 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var maxHistorySize: Int = 100,
         var syncExternalChanges: Boolean = false,
         var disabledTools: MutableSet<String> = mutableSetOf(),
-        var serverPort: Int = -1 // -1 means use IDE-specific default
+        var serverPort: Int = -1, // -1 means use IDE-specific default
+        var migratedToVersion: Int = 0 // Track migration status (2 = v2.0.0 migration done)
     )
 
     private var state = State()
@@ -58,6 +59,31 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         } else {
             state.disabledTools.add(toolName)
         }
+    }
+
+    /**
+     * Checks if migration to v2.0.0 is needed (user upgrading from v1.x).
+     * Returns true if user had the plugin installed before v2.0.0.
+     */
+    fun needsV2Migration(): Boolean {
+        // If already migrated to v2, no need
+        if (state.migratedToVersion >= 2) return false
+
+        // If this is a fresh install (all defaults), no migration needed
+        // A fresh install would have: serverPort=-1, maxHistorySize=100, no disabled tools
+        val isFreshInstall = state.serverPort == -1 &&
+            state.maxHistorySize == 100 &&
+            state.disabledTools.isEmpty() &&
+            !state.syncExternalChanges
+
+        return !isFreshInstall
+    }
+
+    /**
+     * Marks the v2.0.0 migration as complete.
+     */
+    fun markV2MigrationComplete() {
+        state.migratedToVersion = 2
     }
 
     companion object {
