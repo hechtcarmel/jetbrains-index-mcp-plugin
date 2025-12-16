@@ -81,19 +81,17 @@ class McpServerStartupActivity : ProjectActivity {
         NotificationGroupManager.getInstance()
             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
             .createNotification(
-                "MCP Server v2.0 - Reconfiguration Required",
+                "MCP Server v2.0 - Reinstall Required",
                 """
-                    The server URL has changed. Please reconfigure your AI assistant:
+                    The server URL has changed. Please reinstall using the <b>"Install on Coding Agents"</b> button in the Index MCP Server tool window.
                     <br><br>
-                    <b>Server:</b> <code>$serverName</code><br>
-                    <b>Port:</b> <code>$port</code><br>
-                    <b>URL:</b> <code>http://127.0.0.1:$port/index-mcp/sse</code>
+                    <b>New server name:</b> <code>$serverName</code><br>
+                    <b>New port:</b> <code>$port</code>
                 """.trimIndent(),
                 NotificationType.WARNING
             )
-            .addAction(object : NotificationAction("Reconfigure Now") {
+            .addAction(object : NotificationAction("Open Tool Window") {
                 override fun actionPerformed(e: AnActionEvent, notification: Notification) {
-                    // Open the tool window with the install button
                     ToolWindowManager.getInstance(project)
                         .getToolWindow(McpConstants.TOOL_WINDOW_ID)
                         ?.show()

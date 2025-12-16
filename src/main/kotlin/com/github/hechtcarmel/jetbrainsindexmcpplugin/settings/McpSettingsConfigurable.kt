@@ -8,12 +8,15 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.options.ConfigurationException
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import java.awt.FlowLayout
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -108,10 +111,19 @@ class McpSettingsConfigurable : Configurable {
         return false
     }
 
+    @Throws(ConfigurationException::class)
     override fun apply() {
         val settings = McpSettings.getInstance()
         val oldPort = settings.serverPort
         val newPort = serverPortSpinner?.value as? Int ?: McpConstants.getDefaultServerPort()
+
+        // Validate port availability before applying (only if port changed)
+        if (newPort != oldPort && !isPortAvailable(newPort)) {
+            throw ConfigurationException(
+                "Port $newPort is already in use. Please choose a different port.",
+                "Port Unavailable"
+            )
+        }
 
         settings.serverPort = newPort
         settings.maxHistorySize = maxHistorySizeSpinner?.value as? Int ?: 100
@@ -141,7 +153,7 @@ class McpSettingsConfigurable : Configurable {
                             .notify(null)
                     }
                     is KtorMcpServer.StartResult.PortInUse -> {
-                        // Notification is already shown by McpServerService
+                        // This shouldn't happen since we validated above, but handle it anyway
                     }
                     is KtorMcpServer.StartResult.Error -> {
                         NotificationGroupManager.getInstance()
@@ -155,6 +167,28 @@ class McpSettingsConfigurable : Configurable {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Checks if a port is available for binding.
+     * Returns true if we can bind to the port, false if it's in use.
+     */
+    private fun isPortAvailable(port: Int): Boolean {
+        // If it's the current server port, it's "available" (we'll restart the server)
+        val currentPort = McpSettings.getInstance().serverPort
+        if (port == currentPort && McpServerService.getInstance().isServerRunning()) {
+            return true
+        }
+
+        return try {
+            ServerSocket().use { socket ->
+                socket.reuseAddress = true
+                socket.bind(InetSocketAddress(McpConstants.DEFAULT_SERVER_HOST, port))
+                true
+            }
+        } catch (e: Exception) {
+            false
         }
     }
 
