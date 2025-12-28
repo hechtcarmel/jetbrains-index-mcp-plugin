@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.ui
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ServerStatusListener
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeProductInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryListener
@@ -417,7 +418,13 @@ class FilterToolbar(
 class AgentRuleTipPanel(private val project: Project) : JBPanel<AgentRuleTipPanel>(FlowLayout(FlowLayout.LEFT, 8, 4)) {
 
     companion object {
-        const val AGENT_RULE_TEXT = "IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring."
+        /**
+         * Returns the agent rule text with the IDE-specific server name.
+         */
+        fun getAgentRuleText(): String {
+            val serverName = IdeProductInfo.getServerName()
+            return "IMPORTANT: When applicable, prefer using $serverName MCP tools for code navigation and refactoring."
+        }
 
         val CONFIG_FILES_HINT = """
             Add this rule to your AI agent's configuration file:
@@ -463,13 +470,14 @@ class AgentRuleTipPanel(private val project: Project) : JBPanel<AgentRuleTipPane
     }
 
     private fun copyAgentRule() {
-        CopyPasteManager.getInstance().setContents(StringSelection(AGENT_RULE_TEXT))
+        val agentRuleText = getAgentRuleText()
+        CopyPasteManager.getInstance().setContents(StringSelection(agentRuleText))
 
         NotificationGroupManager.getInstance()
             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
             .createNotification(
                 McpBundle.message("tip.agentRule.copiedTitle"),
-                "$AGENT_RULE_TEXT\n\n$CONFIG_FILES_HINT",
+                "$agentRuleText\n\n$CONFIG_FILES_HINT",
                 NotificationType.INFORMATION
             )
             .notify(project)
