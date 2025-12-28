@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [3.0.1] - 2025-12-28
+
+### Fixed
+- **Claude Code install removes legacy server name** - Install command now also removes `jetbrains-index-mcp` (v1.x name) to clean up after upgrades
+- **Agent rule uses IDE-specific name** - "Copy rule" now uses the correct IDE-specific server name (e.g., `intellij-index`, `pycharm-index`) instead of hardcoded `jetbrains-index`
+
 ## [3.0.0] - 2025-12-23
 
 ### Fixed

@@ -218,12 +218,12 @@ class ClientConfigGeneratorUnitTest : TestCase() {
             serverName = "test-server"
         )
 
-        val removeIndex = command.indexOf("remove")
+        val lastRemoveIndex = command.lastIndexOf("remove")
         val addIndex = command.indexOf("add")
 
         assertTrue(
-            "Remove command should come before add command",
-            removeIndex < addIndex
+            "All remove commands should come before add command",
+            lastRemoveIndex < addIndex
         )
     }
 
@@ -259,16 +259,29 @@ class ClientConfigGeneratorUnitTest : TestCase() {
     fun testBuildClaudeCodeCommandFormat() {
         val command = ClientConfigGenerator.buildClaudeCodeCommand(
             serverUrl = "http://127.0.0.1:63342/index-mcp/sse",
-            serverName = "jetbrains-index"
+            serverName = "intellij-index"
         )
 
-        val expectedCommand = "claude mcp remove jetbrains-index 2>/dev/null ; " +
-            "claude mcp add --transport sse jetbrains-index http://127.0.0.1:63342/index-mcp/sse --scope user"
+        val expectedCommand = "claude mcp remove jetbrains-index-mcp 2>/dev/null ; " +
+            "claude mcp remove intellij-index 2>/dev/null ; " +
+            "claude mcp add --transport sse intellij-index http://127.0.0.1:63342/index-mcp/sse --scope user"
 
         assertEquals(
-            "Command format should match expected reinstall pattern",
+            "Command format should match expected reinstall pattern with legacy cleanup",
             expectedCommand,
             command
+        )
+    }
+
+    fun testBuildClaudeCodeCommandRemovesLegacyServerName() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://127.0.0.1:29170/index-mcp/sse",
+            serverName = "pycharm-index"
+        )
+
+        assertTrue(
+            "Command should remove legacy v1.x server name jetbrains-index-mcp",
+            command.contains("claude mcp remove jetbrains-index-mcp")
         )
     }
 

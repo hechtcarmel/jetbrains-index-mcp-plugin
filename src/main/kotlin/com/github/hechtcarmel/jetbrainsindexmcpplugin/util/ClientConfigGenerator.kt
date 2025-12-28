@@ -81,22 +81,29 @@ object ClientConfigGenerator {
     }
 
     /**
+     * Legacy server name from v1.x that should be uninstalled during upgrade.
+     */
+    private const val LEGACY_SERVER_NAME = "jetbrains-index-mcp"
+
+    /**
      * Builds the Claude Code CLI command for reinstalling the MCP server.
      *
      * Removes any existing installation first (to handle port changes), then adds the server.
-     * The remove command uses 2>/dev/null to suppress errors if the server wasn't installed.
+     * Also removes legacy server names from v1.x (jetbrains-index-mcp) to clean up after upgrade.
+     * The remove commands use 2>/dev/null to suppress errors if the server wasn't installed.
      * Uses `;` between commands so add runs regardless of remove's exit status.
      *
      * This method is internal for testing purposes.
      *
      * @param serverUrl The URL of the MCP server
      * @param serverName The name to register the server as
-     * @return A shell command that removes and reinstalls the MCP server
+     * @return A shell command that removes legacy names, removes current name, and reinstalls the MCP server
      */
     internal fun buildClaudeCodeCommand(serverUrl: String, serverName: String): String {
+        val removeLegacyCmd = "claude mcp remove $LEGACY_SERVER_NAME 2>/dev/null"
         val removeCmd = "claude mcp remove $serverName 2>/dev/null"
         val addCmd = "claude mcp add --transport sse $serverName $serverUrl --scope user"
-        return "$removeCmd ; $addCmd"
+        return "$removeLegacyCmd ; $removeCmd ; $addCmd"
     }
 
     private fun generateClaudeCodeConfig(serverUrl: String, serverName: String): String {
