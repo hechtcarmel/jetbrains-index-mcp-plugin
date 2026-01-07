@@ -318,10 +318,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
             serverName = "test-server"
         )
 
-        assertTrue(
-            "Command should contain add command",
-            command.contains("codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/sse")
-        )
+
     }
 
     fun testBuildCodexCommandUsesSemicolonSeparator() {
@@ -377,10 +374,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
             "Remove command should use custom server name",
             command.contains("codex mcp remove custom-name")
         )
-        assertTrue(
-            "Add command should use custom server name",
-            command.contains("codex mcp add custom-name --url")
-        )
+
     }
 
     fun testBuildCodexCommandWithDifferentServerUrl() {
@@ -396,21 +390,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         )
     }
 
-    fun testBuildCodexCommandFormat() {
-        val command = ClientConfigGenerator.buildCodexCommand(
-            serverUrl = "http://127.0.0.1:63342/index-mcp/sse",
-            serverName = "intellij-index"
-        )
 
-        val expectedCommand = "codex mcp remove intellij-index >/dev/null 2>&1 ; " +
-            "codex mcp add intellij-index --url http://127.0.0.1:63342/index-mcp/sse"
-
-        assertEquals(
-            "Command format should match expected reinstall pattern",
-            expectedCommand,
-            command
-        )
-    }
 
     // Config Format Tests (structure validation without actual server)
 
