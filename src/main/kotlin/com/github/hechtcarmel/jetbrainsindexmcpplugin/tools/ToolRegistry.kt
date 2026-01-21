@@ -168,7 +168,6 @@ class ToolRegistry {
 
         LOG.info("Registered ${tools.size} built-in MCP tools")
         logAvailableLanguages()
-        logRegisteredTools()
     }
 
     private fun logAvailableLanguages() {
@@ -185,31 +184,6 @@ class ToolRegistry {
             "SymbolSearch: $symbolSearchLangs, " +
             "SuperMethods: $superMethodsLangs, " +
             "Structure: $structureLangs")
-    }
-
-    private fun logRegisteredTools() {
-        val toolNames = tools.keys.sorted()
-        LOG.info("All registered tools: $toolNames")
-
-        // Highlight language-specific tools
-        val languageSpecificTools = toolNames.filter {
-            it.startsWith("ide_type_hierarchy") ||
-                it.startsWith("ide_call_hierarchy") ||
-                it.startsWith("ide_find_implementations") ||
-                it.startsWith("ide_find_symbol") ||
-                it.startsWith("ide_find_super_methods") ||
-                it.startsWith("ide_file_structure")
-        }
-        if (languageSpecificTools.isNotEmpty()) {
-            LOG.info("Language-specific tools: $languageSpecificTools")
-        }
-
-        // Check for file_structure specifically
-        if (toolNames.contains("ide_file_structure")) {
-            LOG.info("✓ FileStructureTool is registered")
-        } else {
-            LOG.warn("✗ FileStructureTool is NOT registered")
-        }
     }
 
     /**
@@ -277,16 +251,9 @@ class ToolRegistry {
             }
 
             // File structure - requires at least one StructureHandler
-            val hasStructure = LanguageHandlerRegistry.hasStructureHandlers()
-            val structureLangs = LanguageHandlerRegistry.getSupportedLanguagesForStructure()
-            LOG.info("Structure handlers available: $hasStructure, languages: $structureLangs")
-
-            if (hasStructure) {
+            if (LanguageHandlerRegistry.hasStructureHandlers()) {
                 val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool")
                 register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
-                LOG.info("Successfully registered FileStructureTool")
-            } else {
-                LOG.warn("FileStructureTool not registered: no structure handlers available")
             }
 
             LOG.info("Registered language navigation tools")

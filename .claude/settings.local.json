@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__intellij-index__ide_find_symbol",
+      "mcp__jetbrains__get_file_text_by_path",
+      "Bash(git worktree add:*)",
+      "Bash(git worktree:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(./gradlew:*)",
+      "Bash(git merge:*)",
+      "Bash(git rm:*)",
+      "Bash(git reset:*)",
+      "mcp__jetbrains__find_files_by_name_keyword",
+      "Bash(find:*)",
+      "mcp__jetbrains__search_in_files_by_text"
+    ]
+  }
+}
