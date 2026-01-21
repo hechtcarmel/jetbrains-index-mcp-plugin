@@ -763,33 +763,58 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
 
         try {
             val pyFileClass = Class.forName("com.jetbrains.python.psi.PyFile")
-            if (!pyFileClass.isInstance(file)) return emptyList()
+            if (!pyFileClass.isInstance(file)) {
+                LOG.debug("File is not a PyFile: ${file.javaClass.name}, language: ${file.language.id}")
+                return emptyList()
+            }
 
-            // Get top-level classes
-            val getClassesMethod = pyFileClass.getMethod("getClasses")
-            val classes = getClassesMethod.invoke(file) as? List<*> ?: emptyList<Any?>()
+            // Use PsiTreeUtil to find all top-level classes and functions
+            // This is more reliable than calling getClasses()/getFunctions() which may not exist
 
-            for (pyClass in classes) {
-                if (pyClass is PsiElement) {
+            @Suppress("UNCHECKED_CAST")
+            val classes = PsiTreeUtil.findChildrenOfType(file, pyClassClass as Class<PsiElement>)
+            LOG.debug("Found ${classes?.size ?: 0} classes in Python file")
+
+            classes?.forEach { pyClass ->
+                // Only include top-level classes (not nested ones initially)
+                if (isTopLevel(pyClass, file)) {
                     structure.add(extractClassStructure(pyClass, project))
                 }
             }
 
-            // Get top-level functions
-            val getFunctionsMethod = pyFileClass.getMethod("getFunctions")
-            val functions = getFunctionsMethod.invoke(file) as? List<*> ?: emptyList<Any?>()
+            @Suppress("UNCHECKED_CAST")
+            val functions = PsiTreeUtil.findChildrenOfType(file, pyFunctionClass as Class<PsiElement>)
+            LOG.debug("Found ${functions?.size ?: 0} functions in Python file")
 
-            for (pyFunction in functions) {
-                if (pyFunction is PsiElement) {
+            functions?.forEach { pyFunction ->
+                // Only include top-level functions (not class methods)
+                if (isTopLevel(pyFunction, file)) {
                     structure.add(extractFunctionStructure(pyFunction, project))
                 }
             }
 
+        } catch (e: ClassNotFoundException) {
+            LOG.warn("Python PSI class not found: ${e.message}")
         } catch (e: Exception) {
-            // Ignore - return empty structure
+            LOG.warn("Failed to extract Python file structure: ${e.message}, ${e.javaClass.simpleName}")
         }
 
         return structure.sortedBy { it.line }
+    }
+
+    /**
+     * Check if an element is a top-level element (not nested inside a class).
+     */
+    private fun isTopLevel(element: PsiElement, file: PsiFile): Boolean {
+        // Walk up the tree from element to file, checking if we pass through a PyClass
+        var current: PsiElement? = element.parent
+        while (current != null && current != file) {
+            if (isPyClass(current)) {
+                return false // Nested inside a class
+            }
+            current = current.parent
+        }
+        return true
     }
 
     private fun extractClassStructure(pyClass: PsiElement, project: Project): StructureNode {

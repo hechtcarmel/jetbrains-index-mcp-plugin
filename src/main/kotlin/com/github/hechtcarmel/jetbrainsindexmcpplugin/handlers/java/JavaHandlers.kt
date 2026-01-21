@@ -787,19 +787,281 @@ class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHa
 /**
  * Kotlin implementation of [StructureHandler].
  *
- * Delegates to Java implementation since Kotlin uses Java PSI under the hood.
+ * Uses reflection to access Kotlin PSI classes since Kotlin files use a different
+ * PSI structure than Java files (KtFile vs PsiJavaFile).
  */
 class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHandler {
+
+    companion object {
+        private val LOG = logger<KotlinStructureHandler>()
+
+        // Kotlin PSI classes (loaded via reflection)
+        private val ktFileClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtFile")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtFile class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktNamedDeclarationClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNamedDeclaration")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtNamedDeclaration class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktClassClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtClass")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtClass class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktNamedFunctionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNamedFunction")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtNamedFunction class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktPropertyClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtProperty")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtProperty class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktObjectDeclarationClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtObjectDeclaration")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtObjectDeclaration class not found: ${e.message}")
+                null
+            }
+        }
+    }
+
     override val languageId = "kotlin"
 
     override fun canHandle(element: PsiElement): Boolean {
         return isAvailable() && element.language.id == "kotlin"
     }
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean =
+        JavaPluginDetector.isJavaPluginAvailable && ktFileClass != null
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
-        // Delegate to Java handler implementation
-        return JavaStructureHandler().getFileStructure(file, project)
+        val structure = mutableListOf<StructureNode>()
+
+        // Check if this is a Kotlin file
+        if (ktFileClass?.isInstance(file) != true) {
+            LOG.debug("File is not a KtFile, delegating to Java handler")
+            return JavaStructureHandler().getFileStructure(file, project)
+        }
+
+        try {
+            // Get all declarations from the Kotlin file
+            val getDeclarationsMethod = file.javaClass.getMethod("getDeclarations")
+            val declarations = getDeclarationsMethod.invoke(file) as? List<*> ?: emptyList<Any?>()
+
+            for (declaration in declarations) {
+                if (declaration is PsiElement) {
+                    val node = extractDeclarationStructure(declaration, project)
+                    if (node != null) {
+                        structure.add(node)
+                    }
+                }
+            }
+
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract Kotlin file structure: ${e.message}")
+            // Fallback: try Java handler
+            return JavaStructureHandler().getFileStructure(file, project)
+        }
+
+        return structure.sortedBy { it.line }
+    }
+
+    private fun extractDeclarationStructure(
+        declaration: PsiElement,
+        project: Project
+    ): StructureNode? {
+        return when {
+            ktClassClass?.isInstance(declaration) == true ->
+                extractClassStructure(declaration, project)
+            ktNamedFunctionClass?.isInstance(declaration) == true ->
+                extractFunctionStructure(declaration, project)
+            ktPropertyClass?.isInstance(declaration) == true ->
+                extractPropertyStructure(declaration, project)
+            ktObjectDeclarationClass?.isInstance(declaration) == true ->
+                extractObjectStructure(declaration, project)
+            else -> null
+        }
+    }
+
+    private fun extractClassStructure(ktClass: PsiElement, project: Project): StructureNode {
+        val children = mutableListOf<StructureNode>()
+
+        try {
+            // Get class body and extract declarations
+            val getBodyMethod = ktClass.javaClass.getMethod("getBody")
+            val body = getBodyMethod.invoke(ktClass) as? PsiElement
+
+            body?.let {
+                val getChildrenMethod = it.javaClass.getMethod("getChildren")
+                val bodyChildren = getChildrenMethod.invoke(it) as? Array<*> ?: emptyArray<Any?>()
+
+                for (child in bodyChildren) {
+                    if (child is PsiElement) {
+                        val node = extractDeclarationStructure(child, project)
+                        if (node != null) {
+                            children.add(node)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract Kotlin class structure: ${e.message}")
+        }
+
+        return StructureNode(
+            name = getName(ktClass) ?: "unknown",
+            kind = getClassKind(ktClass),
+            modifiers = getKotlinModifiers(ktClass),
+            signature = buildKotlinClassSignature(ktClass),
+            line = getLineNumber(project, ktClass) ?: 0,
+            children = children.sortedBy { it.line }
+        )
+    }
+
+    private fun extractFunctionStructure(function: PsiElement, project: Project): StructureNode {
+        return StructureNode(
+            name = getName(function) ?: "unknown",
+            kind = StructureKind.FUNCTION,
+            modifiers = getKotlinModifiers(function),
+            signature = buildKotlinFunctionSignature(function),
+            line = getLineNumber(project, function) ?: 0
+        )
+    }
+
+    private fun extractPropertyStructure(property: PsiElement, project: Project): StructureNode {
+        return StructureNode(
+            name = getName(property) ?: "unknown",
+            kind = StructureKind.PROPERTY,
+            modifiers = getKotlinModifiers(property),
+            signature = buildKotlinPropertySignature(property),
+            line = getLineNumber(project, property) ?: 0
+        )
+    }
+
+    private fun extractObjectStructure(obj: PsiElement, project: Project): StructureNode {
+        return StructureNode(
+            name = getName(obj) ?: "unknown",
+            kind = StructureKind.OBJECT,
+            modifiers = getKotlinModifiers(obj),
+            signature = "",
+            line = getLineNumber(project, obj) ?: 0
+        )
+    }
+
+    private fun getName(element: PsiElement): String? {
+        return try {
+            if (ktNamedDeclarationClass?.isInstance(element) == true) {
+                val getNameMethod = element.javaClass.getMethod("getName")
+                getNameMethod.invoke(element) as? String
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getClassKind(ktClass: PsiElement): StructureKind {
+        return try {
+            val isInterfaceMethod = ktClass.javaClass.getMethod("isInterface")
+            val isInterface = isInterfaceMethod.invoke(ktClass) as? Boolean == true
+            val isEnumMethod = ktClass.javaClass.getMethod("isEnum")
+            val isEnum = isEnumMethod.invoke(ktClass) as? Boolean == true
+            val isDataMethod = ktClass.javaClass.getMethod("isData")
+            val isData = isDataMethod.invoke(ktClass) as? Boolean == true
+
+            when {
+                isInterface -> StructureKind.INTERFACE
+                isEnum -> StructureKind.ENUM
+                isData -> StructureKind.CLASS
+                else -> StructureKind.CLASS
+            }
+        } catch (e: Exception) {
+            StructureKind.CLASS
+        }
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun getKotlinModifiers(element: PsiElement): List<String> {
+        // TODO: Extract Kotlin modifiers (public, private, suspend, etc.)
+        // Currently returns empty list as Kotlin modifier API is complex
+        return emptyList()
+    }
+
+    private fun buildKotlinClassSignature(ktClass: PsiElement): String {
+        return try {
+            val getSuperTypeListMethod = ktClass.javaClass.getMethod("getSuperTypeList")
+            val superTypeList = getSuperTypeListMethod.invoke(ktClass) as? PsiElement
+
+            if (superTypeList != null) {
+                val getEntriesMethod = superTypeList.javaClass.getMethod("getEntries")
+                val entries = getEntriesMethod.invoke(superTypeList) as? List<*> ?: emptyList<Any?>()
+
+                if (entries.isNotEmpty()) {
+                    val names = entries.mapNotNull {
+                        (it as? PsiElement)?.text
+                    }
+                    return ": ${names.joinToString(", ")}"
+                }
+            }
+            ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun buildKotlinFunctionSignature(function: PsiElement): String {
+        return try {
+            val getValueParameterListMethod = function.javaClass.getMethod("getValueParameterList")
+            val parameterList = getValueParameterListMethod.invoke(function) as? PsiElement
+
+            if (parameterList != null) {
+                val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
+                val parameters = getParametersMethod.invoke(parameterList) as? List<*> ?: emptyList<Any?>()
+
+                val params = parameters.filterIsInstance<PsiElement>().joinToString(", ") { param ->
+                    param.text
+                }
+                "($params)"
+            } else {
+                "()"
+            }
+        } catch (_: Exception) {
+            "()"
+        }
+    }
+
+    private fun buildKotlinPropertySignature(property: PsiElement): String {
+        return try {
+            val getReturnTypeReferenceMethod = property.javaClass.getMethod("getTypeReference")
+            val typeRef = getReturnTypeReferenceMethod.invoke(property) as? PsiElement
+            typeRef?.text ?: ""
+        } catch (_: Exception) {
+            ""
+        }
     }
 }
