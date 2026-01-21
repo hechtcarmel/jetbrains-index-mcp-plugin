@@ -39,4 +39,7 @@ object ParamNames {
     const val QUERY = "query"
     const val INCLUDE_LIBRARIES = "includeLibraries"
     const val LIMIT = "limit"
+
+    // Preview parameters
+    const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
 }

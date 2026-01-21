@@ -56,6 +56,10 @@ class FindDefinitionTool : AbstractMcpTool() {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
                 put(SchemaConstants.DESCRIPTION, "1-based column number within the line. REQUIRED.")
             }
+            putJsonObject(ParamNames.FULL_ELEMENT_PREVIEW) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
+                put(SchemaConstants.DESCRIPTION, "If true, returns the complete element code instead of a preview snippet. Optional, defaults to false.")
+            }
         }
         putJsonArray(SchemaConstants.REQUIRED) {
             add(JsonPrimitive(ParamNames.FILE))
@@ -71,6 +75,7 @@ class FindDefinitionTool : AbstractMcpTool() {
             ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
         val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
             ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
+        val fullElementPreview = arguments[ParamNames.FULL_ELEMENT_PREVIEW]?.jsonPrimitive?.content?.toBoolean() ?: false
 
         requireSmartMode(project)
 
@@ -103,14 +108,20 @@ class FindDefinitionTool : AbstractMcpTool() {
             val targetColumn = targetElement.textOffset -
                 document.getLineStartOffset(targetLine - 1) + 1
 
-            // Get preview - a few lines around the definition
-            val previewStartLine = maxOf(0, targetLine - 2)
-            val previewEndLine = minOf(document.lineCount - 1, targetLine + 2)
+            // Get preview - either full element code or a few lines around the definition
+            val preview = if (fullElementPreview) {
+                // Extract the complete element code
+                targetElement.text
+            } else {
+                // Original behavior: a few lines around the definition
+                val previewStartLine = maxOf(0, targetLine - 2)
+                val previewEndLine = minOf(document.lineCount - 1, targetLine + 2)
 
-            val preview = (previewStartLine until previewEndLine).joinToString("\n") { lineIndex ->
-                val startOffset = document.getLineStartOffset(lineIndex)
-                val endOffset = document.getLineEndOffset(lineIndex)
-                "${lineIndex + 1}: ${document.getText(TextRange(startOffset, endOffset))}"
+                (previewStartLine until previewEndLine).joinToString("\n") { lineIndex ->
+                    val startOffset = document.getLineStartOffset(lineIndex)
+                    val endOffset = document.getLineEndOffset(lineIndex)
+                    "${lineIndex + 1}: ${document.getText(TextRange(startOffset, endOffset))}"
+                }
             }
 
             val symbolName = if (targetElement is PsiNamedElement) {
