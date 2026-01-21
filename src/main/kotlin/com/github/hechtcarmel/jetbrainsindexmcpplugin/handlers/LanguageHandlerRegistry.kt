@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers
 import com.intellij.lang.Language
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -39,6 +40,7 @@ object LanguageHandlerRegistry {
     private val callHierarchyHandlers = ConcurrentHashMap<String, CallHierarchyHandler>()
     private val symbolSearchHandlers = ConcurrentHashMap<String, SymbolSearchHandler>()
     private val superMethodsHandlers = ConcurrentHashMap<String, SuperMethodsHandler>()
+    private val structureHandlers = ConcurrentHashMap<String, StructureHandler>()
 
     // Track if handlers have been registered
     private var initialized = false
@@ -79,7 +81,8 @@ object LanguageHandlerRegistry {
             "Implementations=${implementationsHandlers.size}, " +
             "CallHierarchy=${callHierarchyHandlers.size}, " +
             "SymbolSearch=${symbolSearchHandlers.size}, " +
-            "SuperMethods=${superMethodsHandlers.size}")
+            "SuperMethods=${superMethodsHandlers.size}, " +
+            "Structure=${structureHandlers.size}")
     }
 
     /**
@@ -92,6 +95,7 @@ object LanguageHandlerRegistry {
         callHierarchyHandlers.clear()
         symbolSearchHandlers.clear()
         superMethodsHandlers.clear()
+        structureHandlers.clear()
         initialized = false
     }
 
@@ -120,6 +124,11 @@ object LanguageHandlerRegistry {
     fun registerSuperMethodsHandler(handler: SuperMethodsHandler) {
         superMethodsHandlers[handler.languageId] = handler
         LOG.info("Registered SuperMethodsHandler for ${handler.languageId}")
+    }
+
+    fun registerStructureHandler(handler: StructureHandler) {
+        structureHandlers[handler.languageId] = handler
+        LOG.info("Registered StructureHandler for ${handler.languageId}")
     }
 
     // Handler lookup methods
@@ -153,6 +162,27 @@ object LanguageHandlerRegistry {
     }
 
     /**
+     * Gets a structure handler for the given file.
+     */
+    fun getStructureHandler(file: PsiFile): StructureHandler? {
+        val language = file.language
+
+        // Try exact language match first
+        structureHandlers[language.id]?.let { handler ->
+            if (handler.isAvailable()) return handler
+        }
+
+        // Try base language
+        language.baseLanguage?.let { baseLanguage ->
+            structureHandlers[baseLanguage.id]?.let { handler ->
+                if (handler.isAvailable()) return handler
+            }
+        }
+
+        return null
+    }
+
+    /**
      * Gets all available symbol search handlers.
      *
      * Unlike other handlers, symbol search aggregates results from all languages,
@@ -170,6 +200,7 @@ object LanguageHandlerRegistry {
     fun hasCallHierarchyHandlers(): Boolean = callHierarchyHandlers.values.any { it.isAvailable() }
     fun hasSymbolSearchHandlers(): Boolean = symbolSearchHandlers.values.any { it.isAvailable() }
     fun hasSuperMethodsHandlers(): Boolean = superMethodsHandlers.values.any { it.isAvailable() }
+    fun hasStructureHandlers(): Boolean = structureHandlers.values.any { it.isAvailable() }
 
     /**
      * Gets a list of languages that have handlers for the given handler type.
@@ -188,6 +219,9 @@ object LanguageHandlerRegistry {
 
     fun getSupportedLanguagesForSuperMethods(): List<String> =
         superMethodsHandlers.filter { it.value.isAvailable() }.keys.toList()
+
+    fun getSupportedLanguagesForStructure(): List<String> =
+        structureHandlers.filter { it.value.isAvailable() }.keys.toList()
 
     // Private helper methods
 

@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -39,6 +41,7 @@ object JavaHandlers {
         registry.registerCallHierarchyHandler(JavaCallHierarchyHandler())
         registry.registerSymbolSearchHandler(JavaSymbolSearchHandler())
         registry.registerSuperMethodsHandler(JavaSuperMethodsHandler())
+        registry.registerStructureHandler(JavaStructureHandler())
 
         // Also register for Kotlin (uses same Java PSI under the hood)
         registry.registerTypeHierarchyHandler(KotlinTypeHierarchyHandler())
@@ -46,6 +49,7 @@ object JavaHandlers {
         registry.registerCallHierarchyHandler(KotlinCallHierarchyHandler())
         registry.registerSymbolSearchHandler(KotlinSymbolSearchHandler())
         registry.registerSuperMethodsHandler(KotlinSuperMethodsHandler())
+        registry.registerStructureHandler(KotlinStructureHandler())
 
         LOG.info("Registered Java and Kotlin handlers")
     }
@@ -629,4 +633,173 @@ class KotlinSymbolSearchHandler : SymbolSearchHandler by JavaSymbolSearchHandler
 
 class KotlinSuperMethodsHandler : SuperMethodsHandler by JavaSuperMethodsHandler() {
     override val languageId = "kotlin"
+}
+
+/**
+ * Java implementation of [StructureHandler].
+ *
+ * Extracts the hierarchical structure of Java source files including classes,
+ * interfaces, enums, methods, fields, and their nesting relationships.
+ */
+class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHandler {
+
+    override val languageId = "JAVA"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+
+    override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
+        val structure = mutableListOf<StructureNode>()
+
+        // Get all top-level classes, interfaces, enums
+        val classes: List<PsiClass> = when (file) {
+            is PsiJavaFile -> file.classes.toList()
+            else -> emptyList()
+        }
+
+        for (psiClass in classes) {
+            structure.add(extractClassStructure(psiClass, project))
+        }
+
+        return structure
+    }
+
+    private fun extractClassStructure(psiClass: PsiClass, project: Project): StructureNode {
+        val children = mutableListOf<StructureNode>()
+
+        // Fields
+        for (field in psiClass.fields) {
+            children.add(extractFieldStructure(field, project))
+        }
+
+        // Constructors
+        for (constructor in psiClass.constructors) {
+            children.add(extractMethodStructure(constructor, project))
+        }
+
+        // Methods
+        for (method in psiClass.methods) {
+            children.add(extractMethodStructure(method, project))
+        }
+
+        // Inner classes
+        for (innerClass in psiClass.innerClasses) {
+            children.add(extractClassStructure(innerClass, project))
+        }
+
+        return StructureNode(
+            name = psiClass.name ?: "anonymous",
+            kind = when {
+                psiClass.isInterface -> StructureKind.INTERFACE
+                psiClass.isEnum -> StructureKind.ENUM
+                psiClass.isAnnotationType -> StructureKind.ANNOTATION
+                psiClass.isRecord -> StructureKind.RECORD
+                psiClass.hasModifierProperty("abstract") -> StructureKind.CLASS
+                else -> StructureKind.CLASS
+            },
+            modifiers = extractModifiers(psiClass.modifierList),
+            signature = buildClassSignature(psiClass),
+            line = getLineNumber(project, psiClass) ?: 0,
+            children = children.sortedBy { it.line }
+        )
+    }
+
+    private fun extractFieldStructure(field: PsiField, project: Project): StructureNode {
+        return StructureNode(
+            name = field.name,
+            kind = StructureKind.FIELD,
+            modifiers = extractModifiers(field.modifierList),
+            signature = field.type.presentableText,
+            line = getLineNumber(project, field) ?: 0
+        )
+    }
+
+    private fun extractMethodStructure(method: PsiMethod, project: Project): StructureNode {
+        return StructureNode(
+            name = method.name,
+            kind = if (method.isConstructor) StructureKind.CONSTRUCTOR else StructureKind.METHOD,
+            modifiers = extractModifiers(method.modifierList),
+            signature = buildMethodSignature(method),
+            line = getLineNumber(project, method) ?: 0
+        )
+    }
+
+    private fun extractModifiers(modifierList: PsiModifierList?): List<String> {
+        if (modifierList == null) return emptyList()
+
+        val modifiers = mutableListOf<String>()
+
+        // Access modifiers
+        when {
+            modifierList.hasExplicitModifier("public") -> modifiers.add("public")
+            modifierList.hasExplicitModifier("private") -> modifiers.add("private")
+            modifierList.hasExplicitModifier("protected") -> modifiers.add("protected")
+        }
+
+        // Other modifiers
+        if (modifierList.hasExplicitModifier("static")) modifiers.add("static")
+        if (modifierList.hasExplicitModifier("final")) modifiers.add("final")
+        if (modifierList.hasExplicitModifier("abstract")) modifiers.add("abstract")
+        if (modifierList.hasExplicitModifier("synchronized")) modifiers.add("synchronized")
+        if (modifierList.hasExplicitModifier("native")) modifiers.add("native")
+        if (modifierList.hasModifierProperty("default")) modifiers.add("default")
+
+        return modifiers
+    }
+
+    private fun buildClassSignature(psiClass: PsiClass): String {
+        val typeParams = psiClass.typeParameters
+        val extends = psiClass.superClass
+        val implements = psiClass.interfaces
+
+        val parts = mutableListOf<String>()
+
+        // Type parameters
+        if (typeParams.isNotEmpty()) {
+            parts.add(typeParams.joinToString(", ", "<", ">") { it.name ?: "?" })
+        }
+
+        // Extends
+        if (extends != null && extends.qualifiedName != "java.lang.Object") {
+            parts.add("extends ${extends.name ?: "?"}")
+        }
+
+        // Implements
+        if (implements.isNotEmpty()) {
+            parts.add("implements ${implements.joinToString(", ") { it.name ?: "?" }}")
+        }
+
+        return if (parts.isNotEmpty()) parts.joinToString(" ") else ""
+    }
+
+    private fun buildMethodSignature(method: PsiMethod): String {
+        val returnType = if (method.isConstructor) "" else "${method.returnType?.presentableText} "
+        val params = method.parameterList.parameters.joinToString(", ") {
+            "${it.type.presentableText} ${it.name}"
+        }
+        return "$returnType${method.name}($params)"
+    }
+}
+
+/**
+ * Kotlin implementation of [StructureHandler].
+ *
+ * Delegates to Java implementation since Kotlin uses Java PSI under the hood.
+ */
+class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHandler {
+    override val languageId = "kotlin"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && element.language.id == "kotlin"
+    }
+
+    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+
+    override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
+        // Delegate to Java handler implementation
+        return JavaStructureHandler().getFileStructure(file, project)
+    }
 }
