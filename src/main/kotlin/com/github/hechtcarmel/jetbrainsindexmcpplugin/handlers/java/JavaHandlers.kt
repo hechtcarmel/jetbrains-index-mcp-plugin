@@ -780,7 +780,7 @@ class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHa
         val params = method.parameterList.parameters.joinToString(", ") {
             "${it.type.presentableText} ${it.name}"
         }
-        return "$returnType${method.name}($params)"
+        return "$returnType($params)"
     }
 }
 

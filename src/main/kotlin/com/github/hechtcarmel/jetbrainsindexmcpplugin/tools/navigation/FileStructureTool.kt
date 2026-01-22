@@ -19,7 +19,7 @@ import kotlinx.serialization.json.putJsonObject
  * Provides a tree-formatted view of file structure similar to IDE's Structure view,
  * showing classes, methods, fields, and their nesting relationships.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Go, Rust
+ * Supports: Java, Kotlin, Python
  */
 class FileStructureTool : AbstractMcpTool() {
 
@@ -30,7 +30,7 @@ class FileStructureTool : AbstractMcpTool() {
 
         Shows classes, methods, fields, functions, and their nesting relationships in a tree format.
 
-        Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Go, Rust
+        Supports: Java, Kotlin, Python
 
         Returns: Formatted tree string with element types, modifiers, signatures, and line numbers.
 
@@ -83,7 +83,7 @@ class FileStructureTool : AbstractMcpTool() {
             }
 
             // Format as tree
-            val treeString = TreeFormatter.format(nodes, psiFile.name)
+            val treeString = TreeFormatter.format(nodes, psiFile.name, psiFile.language.id)
 
             createJsonResult(FileStructureResult(
                 file = file,
