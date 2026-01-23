@@ -176,12 +176,14 @@ class ToolRegistry {
         val callHierarchyLangs = LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()
         val symbolSearchLangs = LanguageHandlerRegistry.getSupportedLanguagesForSymbolSearch()
         val superMethodsLangs = LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()
+        val structureLangs = LanguageHandlerRegistry.getSupportedLanguagesForStructure()
 
         LOG.info("Language support - TypeHierarchy: $typeHierarchyLangs, " +
             "Implementations: $implementationLangs, " +
             "CallHierarchy: $callHierarchyLangs, " +
             "SymbolSearch: $symbolSearchLangs, " +
-            "SuperMethods: $superMethodsLangs")
+            "SuperMethods: $superMethodsLangs, " +
+            "Structure: $structureLangs")
     }
 
     /**
@@ -245,6 +247,12 @@ class ToolRegistry {
             // Find super methods - requires at least one SuperMethodsHandler
             if (LanguageHandlerRegistry.hasSuperMethodsHandlers()) {
                 val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool")
+                register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
+            }
+
+            // File structure - requires at least one StructureHandler
+            if (LanguageHandlerRegistry.hasStructureHandlers()) {
+                val toolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool")
                 register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
             }
 

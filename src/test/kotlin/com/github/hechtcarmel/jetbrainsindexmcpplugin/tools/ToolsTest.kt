@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
@@ -15,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -197,6 +199,25 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", "nonexistent/file.kt")
             put("line", 1)
             put("column", 1)
+        })
+
+        assertTrue("Should error with invalid file", result.isError)
+    }
+
+    // File Structure Tool Tests
+
+    fun testFileStructureToolMissingParams() = runBlocking {
+        val tool = FileStructureTool()
+
+        val result = tool.execute(project, buildJsonObject { })
+        assertTrue("Should error with missing params", result.isError)
+    }
+
+    fun testFileStructureToolInvalidFile() = runBlocking {
+        val tool = FileStructureTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "nonexistent/file.java")
         })
 
         assertTrue("Should error with invalid file", result.isError)

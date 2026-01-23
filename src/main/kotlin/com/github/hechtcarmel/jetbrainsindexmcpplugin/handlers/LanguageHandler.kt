@@ -1,7 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 
 /**
  * Base interface for language-specific handlers.
@@ -254,3 +256,20 @@ data class SuperMethodData(
     val depth: Int,
     val language: String
 )
+
+/**
+ * Handler for file structure operations.
+ *
+ * Extracts the hierarchical structure of a source file including
+ * classes, methods, fields, and their nesting relationships.
+ */
+interface StructureHandler : LanguageHandler<List<StructureNode>> {
+    /**
+     * Extracts the structure from a PSI file.
+     *
+     * @param file The PSI file to analyze
+     * @param project The project context
+     * @return List of top-level structure nodes (classes, functions, etc.)
+     */
+    fun getFileStructure(file: PsiFile, project: Project): List<StructureNode>
+}

@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-01-23
+
+### Added
+- **New tool: `ide_file_structure`** - Get hierarchical structure of source files (classes, methods, fields)
+  - Supports: Java, Kotlin, Python
+  - **Note**: Disabled by default - enable in Settings > Index MCP Server when needed
+
+### Changed
+- **Enhanced: `ide_find_definition`** - Added `fullElementPreview` parameter for complete PSI element preview
+
 ## [3.1.0] - 2026-01-07
 
 ### Added

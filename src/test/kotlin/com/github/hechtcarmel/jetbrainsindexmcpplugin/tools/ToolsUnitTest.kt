@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
@@ -186,7 +187,8 @@ class ToolsUnitTest : TestCase() {
             ToolNames.CALL_HIERARCHY,
             ToolNames.FIND_IMPLEMENTATIONS,
             ToolNames.FIND_SYMBOL,
-            ToolNames.FIND_SUPER_METHODS
+            ToolNames.FIND_SUPER_METHODS,
+            ToolNames.FILE_STRUCTURE
         )
 
         // Java-specific refactoring tools
@@ -199,18 +201,25 @@ class ToolsUnitTest : TestCase() {
         val registeredNavTools = navigationTools.count { registry.getTool(it) != null }
         val registeredRefTools = refactoringTools.count { registry.getTool(it) != null }
 
+        // Check if SafeDeleteTool is specifically registered (indicates Java plugin is available)
+        val safeDeleteRegistered = registry.getTool(ToolNames.REFACTOR_SAFE_DELETE) != null
+
         // In IntelliJ platform tests with Java plugin, all navigation and refactoring tools should be available
         // In unit tests without platform, these may not be available (which is expected)
         if (registeredNavTools > 0) {
             // If any navigation tools are registered, all should be registered (Java handlers provide all)
-            assertEquals("When language handlers available, all 5 navigation tools should be registered",
-                5, registeredNavTools)
+            assertEquals("When language handlers available, all 6 navigation tools should be registered",
+                6, registeredNavTools)
         }
 
-        if (registeredRefTools > 0) {
-            // If any refactoring tools are registered, all should be registered
+        if (safeDeleteRegistered) {
+            // If SafeDeleteTool is registered, Java plugin is available and both refactoring tools should be registered
             assertEquals("When Java plugin available, both refactoring tools should be registered",
                 2, registeredRefTools)
+        } else {
+            // SafeDeleteTool requires Java plugin, but RenameSymbolTool is universal and should always be registered
+            assertTrue("RenameSymbolTool should always be registered (universal tool)",
+                registry.getTool(ToolNames.REFACTOR_RENAME) != null)
         }
 
         // Log the actual tool count for debugging
@@ -355,5 +364,24 @@ class ToolsUnitTest : TestCase() {
             val projectPathProp = properties?.get(ParamNames.PROJECT_PATH)?.jsonObject
             assertNotNull("${tool.name} schema should include project_path property", projectPathProp)
         }
+    }
+
+    fun testFileStructureToolSchema() {
+        val tool = FileStructureTool()
+
+        assertEquals(ToolNames.FILE_STRUCTURE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
     }
 }

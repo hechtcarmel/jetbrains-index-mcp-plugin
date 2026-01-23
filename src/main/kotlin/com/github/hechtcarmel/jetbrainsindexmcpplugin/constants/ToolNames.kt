@@ -9,6 +9,7 @@ object ToolNames {
     const val FIND_IMPLEMENTATIONS = "ide_find_implementations"
     const val FIND_SYMBOL = "ide_find_symbol"
     const val FIND_SUPER_METHODS = "ide_find_super_methods"
+    const val FILE_STRUCTURE = "ide_file_structure"
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"
