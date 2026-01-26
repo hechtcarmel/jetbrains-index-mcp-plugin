@@ -14,6 +14,8 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.PsiSearchHelper
 import com.intellij.psi.search.TextOccurenceProcessor
 import com.intellij.psi.search.UsageSearchContext
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -138,6 +140,9 @@ class SearchTextTool : AbstractMcpTool() {
 
     /**
      * Search for text using PsiSearchHelper's word index.
+     *
+     * Uses lock-free CAS pattern for thread-safety since processElementsWithWord
+     * invokes the processor concurrently from multiple threads.
      */
     private fun searchText(
         project: Project,
@@ -147,23 +152,31 @@ class SearchTextTool : AbstractMcpTool() {
         caseSensitive: Boolean,
         limit: Int
     ): List<TextMatch> {
-        val results = mutableListOf<TextMatch>()
+        // Lock-free concurrent collection - processElementsWithWord calls processor from multiple threads
+        val results = ConcurrentLinkedQueue<TextMatch>()
+        val count = AtomicInteger(0)
         val helper = PsiSearchHelper.getInstance(project)
 
         val processor = TextOccurenceProcessor { element, _ ->
-            if (results.size >= limit) {
-                return@TextOccurenceProcessor false // Stop processing
+            // Fast path: already at limit
+            if (count.get() >= limit) {
+                return@TextOccurenceProcessor false
             }
 
             val match = convertToTextMatch(project, element, searchContext)
             if (match != null) {
-                results.add(match)
+                // Optimistically claim a slot via CAS increment
+                val slot = count.incrementAndGet()
+                if (slot <= limit) {
+                    results.add(match)
+                }
+                // Continue only if under limit
+                slot < limit
+            } else {
+                true
             }
-
-            true // Continue processing
         }
 
-        // Use processElementsWithWord with word index
         helper.processElementsWithWord(
             processor,
             scope,
@@ -172,7 +185,7 @@ class SearchTextTool : AbstractMcpTool() {
             caseSensitive
         )
 
-        return results
+        return results.toList()
     }
 
     /**

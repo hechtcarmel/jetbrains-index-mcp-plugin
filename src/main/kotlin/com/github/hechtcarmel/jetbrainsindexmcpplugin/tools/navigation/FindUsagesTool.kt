@@ -17,6 +17,8 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.util.Processor
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -96,11 +98,18 @@ class FindUsagesTool : AbstractMcpTool() {
             val targetElement = PsiUtils.findNamedElement(element)
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
 
-            val usages = mutableListOf<UsageLocation>()
+            // Lock-free concurrent collection - ReferencesSearch may invoke processor from multiple threads
+            val usages = ConcurrentLinkedQueue<UsageLocation>()
+            val count = AtomicInteger(0)
 
             // Process references with cancellation support and early termination
             ReferencesSearch.search(targetElement).forEach(Processor { reference ->
                 ProgressManager.checkCanceled() // Allow cancellation between iterations
+
+                // Fast path: already at limit
+                if (count.get() >= maxResults) {
+                    return@Processor false
+                }
 
                 val refElement = reference.element
                 val refFile = refElement.containingFile?.virtualFile
@@ -119,21 +128,27 @@ class FindUsagesTool : AbstractMcpTool() {
                             )
                         ).trim()
 
-                        usages.add(UsageLocation(
-                            file = getRelativePath(project, refFile),
-                            line = lineNumber,
-                            column = columnNumber,
-                            context = lineText,
-                            type = classifyUsage(refElement)
-                        ))
+                        // Optimistically claim a slot via CAS increment
+                        val slot = count.incrementAndGet()
+                        if (slot <= maxResults) {
+                            usages.add(UsageLocation(
+                                file = getRelativePath(project, refFile),
+                                line = lineNumber,
+                                column = columnNumber,
+                                context = lineText,
+                                type = classifyUsage(refElement)
+                            ))
+                        }
+                        return@Processor slot < maxResults
                     }
                 }
-                usages.size < maxResults
+                true
             })
 
+            val usagesList = usages.toList()
             createJsonResult(FindUsagesResult(
-                usages = usages,
-                totalCount = usages.size
+                usages = usagesList,
+                totalCount = usagesList.size
             ))
         }
     }
