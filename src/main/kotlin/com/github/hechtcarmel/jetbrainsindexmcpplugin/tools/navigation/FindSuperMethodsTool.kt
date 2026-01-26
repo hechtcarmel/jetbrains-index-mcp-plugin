@@ -81,14 +81,14 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        return readAction {
+        return suspendingReadAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult("No element found at $file:$line:$column")
+                ?: return@suspendingReadAction createErrorResult("No element found at $file:$line:$column")
 
             // Find appropriate handler for this element's language
             val handler = LanguageHandlerRegistry.getSuperMethodsHandler(element)
             if (handler == null) {
-                return@readAction createErrorResult(
+                return@suspendingReadAction createErrorResult(
                     "No super methods handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()}"
                 )
@@ -96,7 +96,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
             val superMethodsData = handler.findSuperMethods(element, project)
             if (superMethodsData == null) {
-                return@readAction createErrorResult(
+                return@suspendingReadAction createErrorResult(
                     "No method found at position. Ensure the position is within a method declaration or body."
                 )
             }

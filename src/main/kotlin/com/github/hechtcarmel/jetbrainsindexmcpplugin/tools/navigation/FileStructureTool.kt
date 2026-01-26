@@ -60,13 +60,13 @@ class FileStructureTool : AbstractMcpTool() {
         val file = arguments["file"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
 
-        return readAction {
+        return suspendingReadAction {
             val psiFile = getPsiFile(project, file)
-                ?: return@readAction createErrorResult("File not found: $file")
+                ?: return@suspendingReadAction createErrorResult("File not found: $file")
 
             // Get structure handler for this file's language
             val handler = LanguageHandlerRegistry.getStructureHandler(psiFile)
-                ?: return@readAction createErrorResult(
+                ?: return@suspendingReadAction createErrorResult(
                     "Language not supported for file structure. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForStructure().joinToString(", ")}"
                 )
@@ -75,7 +75,7 @@ class FileStructureTool : AbstractMcpTool() {
             val nodes = handler.getFileStructure(psiFile, project)
 
             if (nodes.isEmpty()) {
-                return@readAction createSuccessResult(
+                return@suspendingReadAction createSuccessResult(
                     "File is empty or has no parseable structure.\n\n" +
                     "File: ${psiFile.name}\n" +
                     "Language: ${psiFile.language.id}"

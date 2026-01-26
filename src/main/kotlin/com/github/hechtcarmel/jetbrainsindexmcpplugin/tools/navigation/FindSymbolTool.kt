@@ -87,11 +87,11 @@ class FindSymbolTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        return readAction {
+        return suspendingReadAction {
             // Aggregate results from ALL available language handlers
             val handlers = LanguageHandlerRegistry.getAllSymbolSearchHandlers()
             if (handlers.isEmpty()) {
-                return@readAction createErrorResult(
+                return@suspendingReadAction createErrorResult(
                     "No symbol search handlers available. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForSymbolSearch()}"
                 )

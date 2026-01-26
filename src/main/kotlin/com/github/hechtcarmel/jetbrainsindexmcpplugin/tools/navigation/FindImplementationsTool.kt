@@ -75,14 +75,14 @@ class FindImplementationsTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        return readAction {
+        return suspendingReadAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult("No element found at position $file:$line:$column")
+                ?: return@suspendingReadAction createErrorResult("No element found at position $file:$line:$column")
 
             // Find appropriate handler for this element's language
             val handler = LanguageHandlerRegistry.getImplementationsHandler(element)
             if (handler == null) {
-                return@readAction createErrorResult(
+                return@suspendingReadAction createErrorResult(
                     "No implementations handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForImplementations()}"
                 )
@@ -90,7 +90,7 @@ class FindImplementationsTool : AbstractMcpTool() {
 
             val implementations = handler.findImplementations(element, project)
             if (implementations == null) {
-                return@readAction createErrorResult("No method or class found at position")
+                return@suspendingReadAction createErrorResult("No method or class found at position")
             }
 
             // Convert handler results to tool results

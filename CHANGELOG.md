@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-01-26
+
+### Fixed
+- **Performance: Prevent IDE freezes during rapid tool calls** - Switched from blocking `readAction` to yielding `suspendingReadAction` in all tools. This prevents write lock starvation that caused IDE freezes when Claude Code's Explore agent fired many tool calls in succession.
+
 ## [3.2.0] - 2026-01-23
 
 ### Added

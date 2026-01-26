@@ -101,9 +101,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         requireSmartMode(project)
 
         // ═══════════════════════════════════════════════════════════════════════
-        // PHASE 1: BACKGROUND - Find element and check usages (read action)
+        // PHASE 1: BACKGROUND - Find element and check usages (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════
-        val preparation = readAction {
+        val preparation = suspendingReadAction {
             prepareDelete(project, file, line, column)
         } ?: return createErrorResult("No deletable element found at the specified position")
 

@@ -79,9 +79,9 @@ class FindDefinitionTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        return readAction {
+        return suspendingReadAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
+                ?: return@suspendingReadAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
             // Try to find a reference at this position
             val reference = element.reference ?: findReferenceInParent(element)
@@ -94,15 +94,15 @@ class FindDefinitionTool : AbstractMcpTool() {
             }
 
             if (targetElement == null) {
-                return@readAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
+                return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
             }
 
             val targetFile = targetElement.containingFile?.virtualFile
-                ?: return@readAction createErrorResult(ErrorMessages.DEFINITION_FILE_NOT_FOUND)
+                ?: return@suspendingReadAction createErrorResult(ErrorMessages.DEFINITION_FILE_NOT_FOUND)
 
             val document = PsiDocumentManager.getInstance(project)
                 .getDocument(targetElement.containingFile)
-                ?: return@readAction createErrorResult(ErrorMessages.DEFINITION_DOCUMENT_NOT_FOUND)
+                ?: return@suspendingReadAction createErrorResult(ErrorMessages.DEFINITION_DOCUMENT_NOT_FOUND)
 
             val targetLine = document.getLineNumber(targetElement.textOffset) + 1
             val targetColumn = targetElement.textOffset -

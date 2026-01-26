@@ -77,7 +77,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         val className = arguments["className"]?.jsonPrimitive?.content
         val file = arguments["file"]?.jsonPrimitive?.content
 
-        return readAction {
+        return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
             val element = resolveTargetElement(project, arguments)
@@ -87,13 +87,13 @@ class TypeHierarchyTool : AbstractMcpTool() {
                     file != null -> "No class found at the specified file/line/column position."
                     else -> "Provide either 'className' (e.g., 'com.example.MyClass') or 'file' + 'line' + 'column'."
                 }
-                return@readAction createErrorResult(errorMsg)
+                return@suspendingReadAction createErrorResult(errorMsg)
             }
 
             // Find appropriate handler for this element's language
             val handler = LanguageHandlerRegistry.getTypeHierarchyHandler(element)
             if (handler == null) {
-                return@readAction createErrorResult(
+                return@suspendingReadAction createErrorResult(
                     "No type hierarchy handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy()}"
                 )
@@ -103,7 +103,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
             val hierarchyData = handler.getTypeHierarchy(element, project)
             if (hierarchyData == null) {
-                return@readAction createErrorResult("No class/type found at the specified position.")
+                return@suspendingReadAction createErrorResult("No class/type found at the specified position.")
             }
 
             // Convert handler result to tool result

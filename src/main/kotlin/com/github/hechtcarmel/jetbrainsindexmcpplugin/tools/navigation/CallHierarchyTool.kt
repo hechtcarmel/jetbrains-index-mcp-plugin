@@ -104,16 +104,16 @@ class CallHierarchyTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        return readAction {
+        return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult("No element found at position $file:$line:$column")
+                ?: return@suspendingReadAction createErrorResult("No element found at position $file:$line:$column")
 
             // Find appropriate handler for this element's language
             val handler = LanguageHandlerRegistry.getCallHierarchyHandler(element)
             if (handler == null) {
-                return@readAction createErrorResult(
+                return@suspendingReadAction createErrorResult(
                     "No call hierarchy handler available for language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()}"
                 )
@@ -123,7 +123,7 @@ class CallHierarchyTool : AbstractMcpTool() {
 
             val hierarchyData = handler.getCallHierarchy(element, project, direction, depth)
             if (hierarchyData == null) {
-                return@readAction createErrorResult("No method/function found at position")
+                return@suspendingReadAction createErrorResult("No method/function found at position")
             }
 
             // Convert handler result to tool result

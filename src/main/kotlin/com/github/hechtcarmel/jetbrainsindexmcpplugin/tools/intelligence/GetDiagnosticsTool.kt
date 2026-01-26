@@ -161,12 +161,12 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         column: Int,
         startLine: Int?,
         endLine: Int?
-    ): ToolCallResult = readAction {
+    ): ToolCallResult = suspendingReadAction {
         val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-            ?: return@readAction createErrorResult("Could not parse file: $filePath")
+            ?: return@suspendingReadAction createErrorResult("Could not parse file: $filePath")
 
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
-            ?: return@readAction createErrorResult("Could not get document for file")
+            ?: return@suspendingReadAction createErrorResult("Could not get document for file")
 
         val editor = fileEditorManager.getEditors(virtualFile)
             .filterIsInstance<TextEditor>()

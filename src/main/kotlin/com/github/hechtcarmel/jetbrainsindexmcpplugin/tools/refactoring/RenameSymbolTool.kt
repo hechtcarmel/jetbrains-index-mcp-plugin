@@ -115,9 +115,9 @@ class RenameSymbolTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         // ═══════════════════════════════════════════════════════════════════════
-        // PHASE 1: BACKGROUND - Find element and validate (read action)
+        // PHASE 1: BACKGROUND - Find element and validate (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════
-        val validation = readAction {
+        val validation = suspendingReadAction {
             validateAndPrepare(project, file, line, column, newName)
         }
 

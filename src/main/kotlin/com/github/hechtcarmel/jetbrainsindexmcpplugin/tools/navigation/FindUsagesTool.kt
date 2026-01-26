@@ -88,13 +88,13 @@ class FindUsagesTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        return readAction {
+        return suspendingReadAction {
             val element = findPsiElement(project, file, line, column)
-                ?: return@readAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
+                ?: return@suspendingReadAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
             // Find the named element (go up the tree if needed)
             val targetElement = PsiUtils.findNamedElement(element)
-                ?: return@readAction createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
+                ?: return@suspendingReadAction createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
 
             val usages = mutableListOf<UsageLocation>()
 
