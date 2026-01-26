@@ -44,9 +44,9 @@ class SearchTextTool : AbstractMcpTool() {
     override val name = ToolNames.SEARCH_TEXT
 
     override val description = """
-        Search for text using IDE's word index. Much faster than grep for exact word matches because it uses a pre-built index.
+        Search for text using IDE's word index. Significantly faster than file scanning for exact word matches.
 
-        Unlike grep which scans all files (O(n)), this uses the IDE's word index for instant O(1) lookups.
+        Uses a pre-built word index for O(1) lookups instead of scanning all files.
 
         Context filtering: search only in code, comments, or string literals.
 

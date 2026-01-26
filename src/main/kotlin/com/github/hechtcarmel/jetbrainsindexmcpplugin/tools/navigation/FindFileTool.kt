@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.StringUtils
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
@@ -19,6 +20,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -50,9 +52,9 @@ class FindFileTool : AbstractMcpTool() {
 
         Returns: matching files with name, path, and containing directory.
 
-        Parameters: query (required), limit (optional, default: 25, max: 100).
+        Parameters: query (required), includeLibraries (optional, default: false), limit (optional, default: 25, max: 100).
 
-        Example: {"query": "UserService.java"} or {"query": "build.gradle"}
+        Example: {"query": "UserService.java"} or {"query": "build.gradle", "includeLibraries": true}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -65,6 +67,10 @@ class FindFileTool : AbstractMcpTool() {
             putJsonObject(ParamNames.QUERY) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
                 put(SchemaConstants.DESCRIPTION, "File name pattern. Supports substring and fuzzy matching.")
+            }
+            putJsonObject(ParamNames.INCLUDE_LIBRARIES) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
+                put(SchemaConstants.DESCRIPTION, "Include files from library dependencies. Default: false.")
             }
             putJsonObject(ParamNames.LIMIT) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
@@ -79,6 +85,7 @@ class FindFileTool : AbstractMcpTool() {
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val query = arguments[ParamNames.QUERY]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: ${ParamNames.QUERY}")
+        val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: false
         val limit = (arguments[ParamNames.LIMIT]?.jsonPrimitive?.int ?: DEFAULT_LIMIT)
             .coerceIn(1, MAX_LIMIT)
 
@@ -89,7 +96,11 @@ class FindFileTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val scope = GlobalSearchScope.projectScope(project)
+            val scope = if (includeLibraries) {
+                GlobalSearchScope.allScope(project)
+            } else {
+                GlobalSearchScope.projectScope(project)
+            }
             val files = searchFiles(project, query, scope, limit)
 
             // Sort by relevance
@@ -98,7 +109,7 @@ class FindFileTool : AbstractMcpTool() {
                 .sortedWith(compareBy(
                     { !it.name.equals(query, ignoreCase = true) },
                     { !it.name.contains(query, ignoreCase = true) },
-                    { levenshteinDistance(it.name.lowercase(), query.lowercase()) }
+                    { StringUtils.levenshteinDistance(it.name.lowercase(), query.lowercase()) }
                 ))
                 .take(limit)
 
@@ -242,21 +253,5 @@ class FindFileTool : AbstractMcpTool() {
 
     private fun createMatcher(pattern: String): MinusculeMatcher {
         return NameUtil.buildMatcher("*$pattern", NameUtil.MatchingCaseSensitivity.NONE)
-    }
-
-    private fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + if (s1[i - 1] == s2[j - 1]) 0 else 1
-                )
-            }
-        }
-        return dp[s1.length][s2.length]
     }
 }

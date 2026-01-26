@@ -423,6 +423,7 @@ class ToolsUnitTest : TestCase() {
 
         assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
         assertNotNull("Should have query property", properties?.get(ParamNames.QUERY))
+        assertNotNull("Should have includeLibraries property", properties?.get(ParamNames.INCLUDE_LIBRARIES))
         assertNotNull("Should have limit property", properties?.get(ParamNames.LIMIT))
 
         val required = schema[SchemaConstants.REQUIRED]

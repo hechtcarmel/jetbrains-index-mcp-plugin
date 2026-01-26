@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.StringUtils
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
@@ -109,7 +110,7 @@ class FindClassTool : AbstractMcpTool() {
                 .distinctBy { "${it.file}:${it.line}:${it.name}" }
                 .sortedWith(compareBy(
                     { !it.name.equals(query, ignoreCase = true) },
-                    { levenshteinDistance(it.name.lowercase(), query.lowercase()) }
+                    { StringUtils.levenshteinDistance(it.name.lowercase(), query.lowercase()) }
                 ))
                 .take(limit)
 
@@ -307,21 +308,5 @@ class FindClassTool : AbstractMcpTool() {
 
     private fun createMatcher(pattern: String): MinusculeMatcher {
         return NameUtil.buildMatcher("*$pattern", NameUtil.MatchingCaseSensitivity.NONE)
-    }
-
-    private fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + if (s1[i - 1] == s2[j - 1]) 0 else 1
-                )
-            }
-        }
-        return dp[s1.length][s2.length]
     }
 }
