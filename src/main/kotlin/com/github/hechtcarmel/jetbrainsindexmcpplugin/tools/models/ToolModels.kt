@@ -179,3 +179,43 @@ data class SuperMethodInfo(
     val depth: Int,
     val language: String? = null
 )
+
+// ide_find_class output (reuses SymbolMatch)
+@Serializable
+data class FindClassResult(
+    val classes: List<SymbolMatch>,
+    val totalCount: Int,
+    val query: String
+)
+
+// ide_find_file output
+@Serializable
+data class FindFileResult(
+    val files: List<FileMatch>,
+    val totalCount: Int,
+    val query: String
+)
+
+@Serializable
+data class FileMatch(
+    val name: String,
+    val path: String,
+    val directory: String
+)
+
+// ide_search_text output
+@Serializable
+data class SearchTextResult(
+    val matches: List<TextMatch>,
+    val totalCount: Int,
+    val query: String
+)
+
+@Serializable
+data class TextMatch(
+    val file: String,
+    val line: Int,
+    val column: Int,
+    val context: String,       // line content
+    val contextType: String    // "CODE", "COMMENT", "STRING_LITERAL"
+)

@@ -615,4 +615,162 @@ class ToolModelsUnitTest : TestCase() {
         assertFalse(deserialized.hierarchy[0].isInterface)
         assertTrue(deserialized.hierarchy[2].isInterface)
     }
+
+    // FindClassResult tests
+
+    fun testFindClassResultSerialization() {
+        val result = FindClassResult(
+            classes = listOf(
+                SymbolMatch("UserService", "com.example.UserService", "CLASS", "src/UserService.kt", 10, null, "Kotlin"),
+                SymbolMatch("UserRepository", "com.example.UserRepository", "INTERFACE", "src/UserRepository.kt", 15, null, "Kotlin")
+            ),
+            totalCount = 2,
+            query = "User"
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<FindClassResult>(serialized)
+
+        assertEquals(2, deserialized.classes.size)
+        assertEquals(2, deserialized.totalCount)
+        assertEquals("User", deserialized.query)
+        assertEquals("UserService", deserialized.classes[0].name)
+    }
+
+    fun testFindClassResultEmpty() {
+        val result = FindClassResult(classes = emptyList(), totalCount = 0, query = "NonExistent")
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<FindClassResult>(serialized)
+
+        assertTrue(deserialized.classes.isEmpty())
+        assertEquals(0, deserialized.totalCount)
+        assertEquals("NonExistent", deserialized.query)
+    }
+
+    // FindFileResult tests
+
+    fun testFindFileResultSerialization() {
+        val result = FindFileResult(
+            files = listOf(
+                FileMatch("UserService.kt", "src/main/kotlin/UserService.kt", "src/main/kotlin"),
+                FileMatch("build.gradle", "build.gradle", "")
+            ),
+            totalCount = 2,
+            query = "User"
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<FindFileResult>(serialized)
+
+        assertEquals(2, deserialized.files.size)
+        assertEquals(2, deserialized.totalCount)
+        assertEquals("User", deserialized.query)
+        assertEquals("UserService.kt", deserialized.files[0].name)
+    }
+
+    fun testFindFileResultEmpty() {
+        val result = FindFileResult(files = emptyList(), totalCount = 0, query = "NonExistent.txt")
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<FindFileResult>(serialized)
+
+        assertTrue(deserialized.files.isEmpty())
+        assertEquals(0, deserialized.totalCount)
+    }
+
+    // FileMatch tests
+
+    fun testFileMatchSerialization() {
+        val match = FileMatch(
+            name = "Main.kt",
+            path = "src/main/kotlin/Main.kt",
+            directory = "src/main/kotlin"
+        )
+
+        val serialized = json.encodeToString(match)
+        val deserialized = json.decodeFromString<FileMatch>(serialized)
+
+        assertEquals("Main.kt", deserialized.name)
+        assertEquals("src/main/kotlin/Main.kt", deserialized.path)
+        assertEquals("src/main/kotlin", deserialized.directory)
+    }
+
+    fun testFileMatchRootDirectory() {
+        val match = FileMatch(
+            name = "README.md",
+            path = "README.md",
+            directory = ""
+        )
+
+        val serialized = json.encodeToString(match)
+        val deserialized = json.decodeFromString<FileMatch>(serialized)
+
+        assertEquals("README.md", deserialized.name)
+        assertEquals("README.md", deserialized.path)
+        assertEquals("", deserialized.directory)
+    }
+
+    // SearchTextResult tests
+
+    fun testSearchTextResultSerialization() {
+        val result = SearchTextResult(
+            matches = listOf(
+                TextMatch("src/Main.kt", 10, 5, "val config = ConfigManager()", "CODE"),
+                TextMatch("src/Service.kt", 25, 12, "// TODO: refactor this", "COMMENT")
+            ),
+            totalCount = 2,
+            query = "config"
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<SearchTextResult>(serialized)
+
+        assertEquals(2, deserialized.matches.size)
+        assertEquals(2, deserialized.totalCount)
+        assertEquals("config", deserialized.query)
+        assertEquals("src/Main.kt", deserialized.matches[0].file)
+    }
+
+    fun testSearchTextResultEmpty() {
+        val result = SearchTextResult(matches = emptyList(), totalCount = 0, query = "NonExistentTerm")
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<SearchTextResult>(serialized)
+
+        assertTrue(deserialized.matches.isEmpty())
+        assertEquals(0, deserialized.totalCount)
+    }
+
+    // TextMatch tests
+
+    fun testTextMatchSerialization() {
+        val match = TextMatch(
+            file = "src/Processor.kt",
+            line = 50,
+            column = 15,
+            context = "val result = processor.process(data)",
+            contextType = "CODE"
+        )
+
+        val serialized = json.encodeToString(match)
+        val deserialized = json.decodeFromString<TextMatch>(serialized)
+
+        assertEquals("src/Processor.kt", deserialized.file)
+        assertEquals(50, deserialized.line)
+        assertEquals(15, deserialized.column)
+        assertEquals("val result = processor.process(data)", deserialized.context)
+        assertEquals("CODE", deserialized.contextType)
+    }
+
+    fun testTextMatchAllContextTypes() {
+        val contextTypes = listOf("CODE", "COMMENT", "STRING_LITERAL")
+
+        contextTypes.forEach { contextType ->
+            val match = TextMatch("file.kt", 1, 1, "test context", contextType)
+            val serialized = json.encodeToString(match)
+            val deserialized = json.decodeFromString<TextMatch>(serialized)
+            assertEquals(contextType, deserialized.contextType)
+        }
+    }
 }

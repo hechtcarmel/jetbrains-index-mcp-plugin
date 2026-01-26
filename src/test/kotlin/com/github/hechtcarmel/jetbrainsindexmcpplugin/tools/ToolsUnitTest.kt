@@ -6,11 +6,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
@@ -383,5 +386,86 @@ class ToolsUnitTest : TestCase() {
 
         val required = schema[SchemaConstants.REQUIRED]
         assertNotNull("Should have required array", required)
+    }
+
+    fun testFindClassToolSchema() {
+        val tool = FindClassTool()
+
+        assertEquals(ToolNames.FIND_CLASS, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have query property", properties?.get(ParamNames.QUERY))
+        assertNotNull("Should have includeLibraries property", properties?.get(ParamNames.INCLUDE_LIBRARIES))
+        assertNotNull("Should have limit property", properties?.get(ParamNames.LIMIT))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+    }
+
+    fun testFindFileToolSchema() {
+        val tool = FindFileTool()
+
+        assertEquals(ToolNames.FIND_FILE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have query property", properties?.get(ParamNames.QUERY))
+        assertNotNull("Should have limit property", properties?.get(ParamNames.LIMIT))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+    }
+
+    fun testSearchTextToolSchema() {
+        val tool = SearchTextTool()
+
+        assertEquals(ToolNames.SEARCH_TEXT, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have query property", properties?.get(ParamNames.QUERY))
+        assertNotNull("Should have context property", properties?.get(ParamNames.CONTEXT))
+        assertNotNull("Should have caseSensitive property", properties?.get(ParamNames.CASE_SENSITIVE))
+        assertNotNull("Should have limit property", properties?.get(ParamNames.LIMIT))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+    }
+
+    fun testNewSearchToolsAreRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        // Verify new fast search tools are registered
+        val findClassTool = registry.getTool(ToolNames.FIND_CLASS)
+        assertNotNull("ide_find_class should be registered", findClassTool)
+        assertEquals(ToolNames.FIND_CLASS, findClassTool?.name)
+
+        val findFileTool = registry.getTool(ToolNames.FIND_FILE)
+        assertNotNull("ide_find_file should be registered", findFileTool)
+        assertEquals(ToolNames.FIND_FILE, findFileTool?.name)
+
+        val searchTextTool = registry.getTool(ToolNames.SEARCH_TEXT)
+        assertNotNull("ide_search_text should be registered", searchTextTool)
+        assertEquals(ToolNames.SEARCH_TEXT, searchTextTool?.name)
     }
 }

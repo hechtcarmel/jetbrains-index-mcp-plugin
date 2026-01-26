@@ -39,6 +39,8 @@ object ParamNames {
     const val QUERY = "query"
     const val INCLUDE_LIBRARIES = "includeLibraries"
     const val LIMIT = "limit"
+    const val CONTEXT = "context"
+    const val CASE_SENSITIVE = "caseSensitive"
 
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
