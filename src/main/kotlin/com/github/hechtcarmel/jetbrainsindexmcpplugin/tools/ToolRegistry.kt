@@ -5,8 +5,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
@@ -211,20 +214,9 @@ class ToolRegistry {
         register(RenameSymbolTool())
 
         // Fast search tools (universal)
-        try {
-            val findClassToolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool")
-            register(findClassToolClass.getDeclaredConstructor().newInstance() as McpTool)
-
-            val findFileToolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool")
-            register(findFileToolClass.getDeclaredConstructor().newInstance() as McpTool)
-
-            val searchTextToolClass = Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool")
-            register(searchTextToolClass.getDeclaredConstructor().newInstance() as McpTool)
-
-            LOG.info("Registered fast search tools (ide_find_class, ide_find_file, ide_search_text)")
-        } catch (e: Exception) {
-            LOG.warn("Failed to register fast search tools: ${e.message}")
-        }
+        register(FindClassTool())
+        register(FindFileTool())
+        register(SearchTextTool())
 
         LOG.info("Registered universal tools (available in all JetBrains IDEs)")
     }
