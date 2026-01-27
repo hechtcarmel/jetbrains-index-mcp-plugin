@@ -114,13 +114,8 @@ class FindSymbolTool : AbstractMcpTool() {
                 })
             }
 
-            // Sort by relevance and deduplicate
             val sortedMatches = allMatches
                 .distinctBy { "${it.file}:${it.line}:${it.name}" }
-                .sortedWith(compareBy(
-                    { !it.name.equals(query, ignoreCase = true) },
-                    { levenshteinDistance(it.name.lowercase(), query.lowercase()) }
-                ))
                 .take(limit)
 
             createJsonResult(FindSymbolResult(
@@ -131,32 +126,4 @@ class FindSymbolTool : AbstractMcpTool() {
         }
     }
 
-    internal fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + if (s1[i - 1] == s2[j - 1]) 0 else 1
-                )
-            }
-        }
-        return dp[s1.length][s2.length]
-    }
-
-    /**
-     * Checks if a symbol name matches a camelCase query pattern.
-     * Used for fuzzy matching in symbol search.
-     */
-    internal fun matchesCamelCase(name: String, query: String): Boolean {
-        var queryIndex = 0
-        for (char in name) {
-            if (queryIndex >= query.length) return true
-            if (char.equals(query[queryIndex], ignoreCase = true)) queryIndex++
-        }
-        return queryIndex >= query.length
-    }
 }

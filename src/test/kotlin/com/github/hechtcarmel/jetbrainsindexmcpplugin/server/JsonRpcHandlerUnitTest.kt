@@ -65,9 +65,6 @@ class JsonRpcHandlerUnitTest : TestCase() {
         )
     }
 
-    // Note: testToolsListRequest moved to JsonRpcHandlerTest (platform test)
-    // because it requires McpSettings which needs IntelliJ Application context
-
     fun testPingRequest() = runBlocking {
         val request = JsonRpcRequest(
             id = JsonPrimitive(4),

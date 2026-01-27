@@ -7,7 +7,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.StringUtils
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
@@ -48,13 +47,13 @@ class FindFileTool : AbstractMcpTool() {
     override val description = """
         Search for files by name. Very fast file lookup using IDE's file index.
 
-        Matching: substring ("User" → "UserService.java") and fuzzy matching.
+        Matching: camelCase ("USJ" → "UserService.java"), substring ("User" → "UserService.java"), and wildcard ("*Test.kt").
 
         Returns: matching files with name, path, and containing directory.
 
         Parameters: query (required), includeLibraries (optional, default: false), limit (optional, default: 25, max: 100).
 
-        Example: {"query": "UserService.java"} or {"query": "build.gradle", "includeLibraries": true}
+        Example: {"query": "UserService.java"} or {"query": "*Test.kt"} or {"query": "BG"} (matches build.gradle)
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -101,16 +100,12 @@ class FindFileTool : AbstractMcpTool() {
             } else {
                 GlobalSearchScope.projectScope(project)
             }
-            val files = searchFiles(project, query, scope, limit)
+            val matcher = createMatcher(query)
+            val files = searchFiles(project, query, scope, limit, matcher)
 
-            // Sort by relevance
             val sortedFiles = files
                 .distinctBy { it.path }
-                .sortedWith(compareBy(
-                    { !it.name.equals(query, ignoreCase = true) },
-                    { !it.name.contains(query, ignoreCase = true) },
-                    { StringUtils.levenshteinDistance(it.name.lowercase(), query.lowercase()) }
-                ))
+                .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 
             createJsonResult(FindFileResult(
@@ -128,11 +123,11 @@ class FindFileTool : AbstractMcpTool() {
         project: Project,
         pattern: String,
         scope: GlobalSearchScope,
-        limit: Int
+        limit: Int,
+        matcher: MinusculeMatcher
     ): List<FileMatch> {
         val results = mutableListOf<FileMatch>()
         val seen = mutableSetOf<String>()
-        val matcher = createMatcher(pattern)
 
         // Use FILE_EP_NAME for file search
         val contributors = ChooseByNameContributor.FILE_EP_NAME.extensionList

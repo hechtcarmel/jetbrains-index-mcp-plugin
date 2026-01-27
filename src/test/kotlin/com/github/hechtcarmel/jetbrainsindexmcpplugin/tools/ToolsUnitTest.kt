@@ -293,26 +293,6 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have required array", required)
     }
 
-    fun testFindSymbolToolCamelCaseMatching() {
-        val tool = FindSymbolTool()
-
-        assertTrue("USvc should match UserService", tool.matchesCamelCase("UserService", "USvc"))
-        assertTrue("US should match UserService", tool.matchesCamelCase("UserService", "US"))
-        assertTrue("usvc should match UserService (case insensitive)", tool.matchesCamelCase("UserService", "usvc"))
-        assertTrue("full name should match", tool.matchesCamelCase("UserService", "UserService"))
-        assertFalse("XY should not match UserService", tool.matchesCamelCase("UserService", "XY"))
-    }
-
-    fun testFindSymbolToolLevenshteinDistance() {
-        val tool = FindSymbolTool()
-
-        assertEquals(0, tool.levenshteinDistance("test", "test"))
-        assertEquals(1, tool.levenshteinDistance("test", "tests"))
-        assertEquals(1, tool.levenshteinDistance("test", "tast"))
-        assertEquals(4, tool.levenshteinDistance("test", ""))
-        assertEquals(3, tool.levenshteinDistance("kitten", "sitting"))
-    }
-
     fun testFindSuperMethodsToolSchema() {
         val tool = FindSuperMethodsTool()
 
@@ -333,9 +313,6 @@ class ToolsUnitTest : TestCase() {
         val required = schema[SchemaConstants.REQUIRED]
         assertNotNull("Should have required array", required)
     }
-
-    // Note: testToolDefinitionsHaveRequiredFields moved to ToolsTest (platform test)
-    // because it requires McpSettings which needs IntelliJ Application context
 
     fun testAllToolsHaveProjectPathInSchema() {
         val registry = ToolRegistry()

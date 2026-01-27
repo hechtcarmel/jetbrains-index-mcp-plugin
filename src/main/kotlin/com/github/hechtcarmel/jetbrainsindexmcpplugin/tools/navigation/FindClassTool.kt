@@ -7,7 +7,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.StringUtils
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
@@ -49,13 +48,13 @@ class FindClassTool : AbstractMcpTool() {
     override val description = """
         Search for classes and interfaces by name. Faster than ide_find_symbol when you only need classes.
 
-        Matching: substring ("Service" → "UserService") and camelCase ("USvc" → "UserService").
+        Matching: camelCase ("USvc" → "UserService"), substring ("Service" → "UserService"), and wildcard ("User*Impl" → "UserServiceImpl").
 
         Returns: matching classes with qualified names, file paths, line numbers, and kind (class/interface/enum).
 
         Parameters: query (required), includeLibraries (optional, default: false), limit (optional, default: 25, max: 100).
 
-        Example: {"query": "UserService"} or {"query": "USvc", "includeLibraries": true}
+        Example: {"query": "UserService"} or {"query": "U*Impl"} or {"query": "USvc", "includeLibraries": true}
     """.trimIndent()
 
     override val inputSchema: JsonObject = buildJsonObject {
@@ -103,15 +102,12 @@ class FindClassTool : AbstractMcpTool() {
                 GlobalSearchScope.projectScope(project)
             }
 
-            val classes = searchClasses(project, query, scope, limit)
+            val matcher = createMatcher(query)
+            val classes = searchClasses(project, query, scope, limit, matcher)
 
-            // Sort by relevance
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.name}" }
-                .sortedWith(compareBy(
-                    { !it.name.equals(query, ignoreCase = true) },
-                    { StringUtils.levenshteinDistance(it.name.lowercase(), query.lowercase()) }
-                ))
+                .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 
             createJsonResult(FindClassResult(
@@ -129,11 +125,11 @@ class FindClassTool : AbstractMcpTool() {
         project: Project,
         pattern: String,
         scope: GlobalSearchScope,
-        limit: Int
+        limit: Int,
+        matcher: MinusculeMatcher
     ): List<SymbolMatch> {
         val results = mutableListOf<SymbolMatch>()
         val seen = mutableSetOf<String>()
-        val matcher = createMatcher(pattern)
 
         // Use CLASS_EP_NAME for class-only search
         val contributors = ChooseByNameContributor.CLASS_EP_NAME.extensionList
