@@ -11,6 +11,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHiera
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -39,9 +40,9 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should have content", result.content.isNotEmpty())
 
         val content = result.content.first()
-        assertTrue("Content should be text", content is com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock.Text)
+        assertTrue("Content should be text", content is ContentBlock.Text)
 
-        val textContent = (content as com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock.Text).text
+        val textContent = (content as ContentBlock.Text).text
         val resultJson = json.parseToJsonElement(textContent).jsonObject
 
         assertNotNull("Result should have isDumbMode", resultJson["isDumbMode"])
@@ -221,5 +222,25 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    // Registry tests that require platform services (McpSettings)
+
+    fun testToolDefinitionsHaveRequiredFields() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val definitions = registry.getToolDefinitions()
+
+        for (definition in definitions) {
+            assertNotNull("Definition should have name", definition.name)
+            assertTrue("Name should not be empty", definition.name.isNotEmpty())
+
+            assertNotNull("Definition should have description", definition.description)
+            assertTrue("Description should not be empty", definition.description.isNotEmpty())
+
+            assertNotNull("Definition should have inputSchema", definition.inputSchema)
+            assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+        }
     }
 }

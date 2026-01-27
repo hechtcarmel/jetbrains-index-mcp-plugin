@@ -65,21 +65,8 @@ class JsonRpcHandlerUnitTest : TestCase() {
         )
     }
 
-    fun testToolsListRequest() = runBlocking {
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(2),
-            method = JsonRpcMethods.TOOLS_LIST
-        )
-
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
-
-        assertNull("${JsonRpcMethods.TOOLS_LIST} should not return error", response.error)
-        assertNotNull("${JsonRpcMethods.TOOLS_LIST} should return result", response.result)
-
-        val result = response.result!!.jsonObject
-        assertNotNull("Result should contain tools array", result["tools"])
-    }
+    // Note: testToolsListRequest moved to JsonRpcHandlerTest (platform test)
+    // because it requires McpSettings which needs IntelliJ Application context
 
     fun testPingRequest() = runBlocking {
         val request = JsonRpcRequest(

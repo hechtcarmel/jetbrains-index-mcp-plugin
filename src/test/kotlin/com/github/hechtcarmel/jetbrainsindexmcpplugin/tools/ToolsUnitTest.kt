@@ -334,23 +334,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have required array", required)
     }
 
-    fun testToolDefinitionsHaveRequiredFields() {
-        val registry = ToolRegistry()
-        registry.registerBuiltInTools()
-
-        val definitions = registry.getToolDefinitions()
-
-        for (definition in definitions) {
-            assertNotNull("Definition should have name", definition.name)
-            assertTrue("Name should not be empty", definition.name.isNotEmpty())
-
-            assertNotNull("Definition should have description", definition.description)
-            assertTrue("Description should not be empty", definition.description.isNotEmpty())
-
-            assertNotNull("Definition should have inputSchema", definition.inputSchema)
-            assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
-        }
-    }
+    // Note: testToolDefinitionsHaveRequiredFields moved to ToolsTest (platform test)
+    // because it requires McpSettings which needs IntelliJ Application context
 
     fun testAllToolsHaveProjectPathInSchema() {
         val registry = ToolRegistry()
