@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResul
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -38,6 +39,7 @@ import kotlinx.serialization.json.putJsonObject
 class FindFileTool : AbstractMcpTool() {
 
     companion object {
+        private val LOG = logger<FindFileTool>()
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
     }
@@ -137,8 +139,8 @@ class FindFileTool : AbstractMcpTool() {
 
             try {
                 processContributor(contributor, project, pattern, scope, limit, matcher, results, seen)
-            } catch (_: Exception) {
-                // Continue to next contributor
+            } catch (e: Exception) {
+                LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }
         }
 
