@@ -6,6 +6,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefiniti
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.CurrentFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.CursorPositionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.SelectionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
@@ -217,6 +220,11 @@ class ToolRegistry {
         register(FindClassTool())
         register(FindFileTool())
         register(SearchTextTool())
+
+        // Editor context tools (universal)
+        register(CurrentFileTool())
+        register(SelectionTool())
+        register(CursorPositionTool())
 
         LOG.info("Registered universal tools (available in all JetBrains IDEs)")
     }

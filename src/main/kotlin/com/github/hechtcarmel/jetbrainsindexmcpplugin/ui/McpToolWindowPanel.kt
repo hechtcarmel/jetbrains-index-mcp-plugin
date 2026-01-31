@@ -362,20 +362,23 @@ class FilterToolbar(
         add(JBLabel("Tool:"))
         toolNameComboBox = JComboBox(arrayOf(
             "All",
-            "find_usages",
-            "find_definition",
-            "type_hierarchy",
-            "call_hierarchy",
-            "find_implementations",
-            "get_symbol_info",
-            "get_completions",
-            "get_inspections",
-            "get_quick_fixes",
-            "apply_quick_fix",
-            "get_index_status",
-            "get_file_structure",
-            "get_project_structure",
-            "get_dependencies"
+            "ide_find_references",
+            "ide_find_definition",
+            "ide_type_hierarchy",
+            "ide_call_hierarchy",
+            "ide_find_implementations",
+            "ide_find_symbol",
+            "ide_find_super_methods",
+            "ide_find_class",
+            "ide_find_file",
+            "ide_search_text",
+            "ide_diagnostics",
+            "ide_index_status",
+            "ide_refactor_rename",
+            "ide_refactor_safe_delete",
+            "ide_get_current_file",
+            "ide_get_selection",
+            "ide_get_cursor_position"
         )).apply {
             addActionListener { notifyFilterChanged() }
         }

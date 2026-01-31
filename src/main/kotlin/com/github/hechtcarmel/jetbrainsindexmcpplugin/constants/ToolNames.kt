@@ -20,6 +20,11 @@ object ToolNames {
     // Project tools
     const val INDEX_STATUS = "ide_index_status"
 
+    // Editor context tools
+    const val GET_CURRENT_FILE = "ide_get_current_file"
+    const val GET_SELECTION = "ide_get_selection"
+    const val GET_CURSOR_POSITION = "ide_get_cursor_position"
+
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
     const val REFACTOR_SAFE_DELETE = "ide_refactor_safe_delete"

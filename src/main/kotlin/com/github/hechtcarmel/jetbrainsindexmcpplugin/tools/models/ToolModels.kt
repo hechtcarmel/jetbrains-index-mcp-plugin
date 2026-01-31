@@ -219,3 +219,33 @@ data class TextMatch(
     val context: String,       // line content
     val contextType: String    // "CODE", "COMMENT", "STRING_LITERAL"
 )
+
+// ide_get_current_file output
+@Serializable
+data class CurrentFileResult(
+    val file: String?,              // absolute path to current file
+    val relativePath: String?,      // path relative to project root
+    val language: String?,          // language ID (e.g., "JAVA", "PHP", "Kotlin")
+    val isModified: Boolean         // true if file has unsaved changes
+)
+
+// ide_get_selection output
+@Serializable
+data class SelectionResult(
+    val hasSelection: Boolean,      // true if text is selected
+    val text: String?,              // the selected text (null if no selection)
+    val startLine: Int?,            // 1-based start line
+    val startColumn: Int?,          // 1-based start column
+    val endLine: Int?,              // 1-based end line
+    val endColumn: Int?,            // 1-based end column
+    val file: String?               // file path where selection is
+)
+
+// ide_get_cursor_position output
+@Serializable
+data class CursorPositionResult(
+    val line: Int,                  // 1-based line number
+    val column: Int,                // 1-based column number
+    val offset: Int,                // character offset from start of file
+    val file: String?               // file path where cursor is
+)
