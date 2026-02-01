@@ -276,13 +276,15 @@ class ToolsUnitTest : TestCase() {
         assertEquals("target_type default should be 'symbol'", "symbol", targetTypeProp?.get("default")?.jsonPrimitive?.content)
     }
 
-    fun testSafeDeleteToolSchemaHasConditionalRequired() {
+    fun testSafeDeleteToolSchemaHasRequiredFile() {
         val tool = SafeDeleteTool()
         val schema = tool.inputSchema
 
-        // Verify oneOf pattern for conditional required fields
-        val oneOf = schema["oneOf"]
-        assertNotNull("Schema should have oneOf for conditional required fields", oneOf)
+        // Verify required array includes "file" (conditional line/column requirements are validated at runtime)
+        // Note: We don't use oneOf/allOf/anyOf because Anthropic's API doesn't support them
+        val required = schema["required"]
+        assertNotNull("Schema should have required array", required)
+        assertTrue("Required should include 'file'", required.toString().contains("file"))
     }
 
     fun testSafeDeleteToolDescriptionIncludesTargetTypes() {

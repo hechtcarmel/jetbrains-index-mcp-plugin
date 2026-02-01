@@ -62,45 +62,10 @@ class SafeDeleteTool : AbstractRefactoringTool() {
 
     override val inputSchema: JsonObject = buildJsonObject {
         put("type", "object")
-        // Use oneOf to define different required fields based on target_type
-        putJsonArray("oneOf") {
-            // Schema for symbol deletion (default) - requires file, line, column
-            add(buildJsonObject {
-                putJsonObject("properties") {
-                    putJsonObject("target_type") {
-                        put("const", "symbol")
-                    }
-                }
-                putJsonArray("required") {
-                    add(JsonPrimitive("file"))
-                    add(JsonPrimitive("line"))
-                    add(JsonPrimitive("column"))
-                }
-            })
-            // Schema for symbol deletion when target_type is omitted (default behavior)
-            add(buildJsonObject {
-                putJsonObject("properties") {
-                    putJsonObject("target_type") {
-                        put("type", "null")  // target_type not present
-                    }
-                }
-                putJsonArray("required") {
-                    add(JsonPrimitive("file"))
-                    add(JsonPrimitive("line"))
-                    add(JsonPrimitive("column"))
-                }
-            })
-            // Schema for file deletion - requires only file
-            add(buildJsonObject {
-                putJsonObject("properties") {
-                    putJsonObject("target_type") {
-                        put("const", "file")
-                    }
-                }
-                putJsonArray("required") {
-                    add(JsonPrimitive("file"))
-                }
-            })
+        // Note: Conditional requirements (line/column required for symbol mode) are validated at runtime.
+        // We use a simple schema here because Anthropic's API doesn't support oneOf/allOf/anyOf.
+        putJsonArray("required") {
+            add(JsonPrimitive("file"))
         }
         putJsonObject("properties") {
             putJsonObject("project_path") {
