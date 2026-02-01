@@ -11,9 +11,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
-import com.intellij.psi.PsiReference
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -83,19 +81,11 @@ class FindDefinitionTool : AbstractMcpTool() {
             val element = findPsiElement(project, file, line, column)
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
-            // Try to find a reference at this position
-            val reference = element.reference ?: findReferenceInParent(element)
-
-            val targetElement = if (reference != null) {
-                reference.resolve()
-            } else {
-                // If the element itself is a declaration, return it
-                PsiUtils.findNamedElement(element)
-            }
-
-            if (targetElement == null) {
-                return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
-            }
+            // Use semantic reference resolution to find what this position refers to.
+            // This correctly handles method calls (resolves to the called method)
+            // vs declarations (returns the declaration itself).
+            val targetElement = PsiUtils.resolveTargetElement(element)
+                ?: return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
 
             val targetFile = targetElement.containingFile?.virtualFile
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.DEFINITION_FILE_NOT_FOUND)
@@ -138,14 +128,5 @@ class FindDefinitionTool : AbstractMcpTool() {
                 symbolName = symbolName
             ))
         }
-    }
-
-    private fun findReferenceInParent(element: PsiElement): PsiReference? {
-        var current: PsiElement? = element
-        repeat(3) {
-            current = current?.parent ?: return null
-            current?.reference?.let { return it }
-        }
-        return null
     }
 }

@@ -58,6 +58,51 @@ object JavaHandlers {
 // Base class for Java handlers with common utilities
 abstract class BaseJavaHandler<T> : LanguageHandler<T> {
 
+    companion object {
+        private val LOG = logger<BaseJavaHandler<*>>()
+
+        /**
+         * Maximum depth for traversing parent chain when searching for Kotlin PSI elements.
+         * 50 levels is sufficient for even deeply nested code structures.
+         */
+        private const val MAX_PARENT_TRAVERSAL_DEPTH = 50
+
+        /**
+         * Maximum depth for searching parent chain for references.
+         * 3 levels covers common cases: identifier -> expression -> call expression.
+         */
+        private const val MAX_REFERENCE_SEARCH_DEPTH = 3
+
+        // Kotlin PSI classes (loaded via reflection to avoid compile-time dependency)
+        private val ktClassOrObjectClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtClassOrObject")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtClassOrObject class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktNamedFunctionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNamedFunction")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtNamedFunction class not found: ${e.message}")
+                null
+            }
+        }
+
+        // toLightClass extension function location
+        private val lightClassExtensionsClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.asJava.LightClassUtilsKt")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin LightClassUtilsKt class not found: ${e.message}")
+                null
+            }
+        }
+    }
+
     protected fun getRelativePath(project: Project, file: com.intellij.openapi.vfs.VirtualFile): String {
         val basePath = project.basePath ?: return file.path
         return file.path.removePrefix(basePath).removePrefix("/")
@@ -96,6 +141,7 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
      * This correctly handles:
      * - Method calls: `obj.doWork()` → resolves to the `doWork` method declaration
      * - Method declarations: cursor ON a method → returns that method
+     * - Kotlin functions: finds KtNamedFunction and converts to light method
      *
      * @param element The leaf PSI element at a position
      * @return The resolved PsiMethod, or null if not found
@@ -108,8 +154,40 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         val resolved = resolveReference(element)
         if (resolved is PsiMethod) return resolved
 
-        // Fallback: find containing method (when cursor is inside a method body)
-        return PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+        // Fallback based on language
+        return if (element.language.id == "kotlin") {
+            resolveKotlinMethod(element)
+        } else {
+            PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+        }
+    }
+
+    /**
+     * Resolves a Kotlin function to its light method (PsiMethod).
+     */
+    private fun resolveKotlinMethod(element: PsiElement): PsiMethod? {
+        val ktFunctionClass = ktNamedFunctionClass ?: return null
+        val lightClassExtensions = lightClassExtensionsClass ?: return null
+
+        // Find KtNamedFunction in parent chain
+        var current: PsiElement? = element
+        var depth = 0
+        while (current != null && depth < MAX_PARENT_TRAVERSAL_DEPTH) {
+            if (ktFunctionClass.isInstance(current)) {
+                // Convert to light method via toLightMethods() extension function
+                return try {
+                    val toLightMethodsMethod = lightClassExtensions.getMethod("toLightMethods", PsiElement::class.java)
+                    val lightMethods = toLightMethodsMethod.invoke(null, current) as? List<*>
+                    lightMethods?.firstOrNull() as? PsiMethod
+                } catch (e: ReflectiveOperationException) {
+                    LOG.debug("Failed to get light method for Kotlin function: ${e.javaClass.simpleName}: ${e.message}")
+                    null
+                }
+            }
+            current = current.parent
+            depth++
+        }
+        return null
     }
 
     /**
@@ -118,6 +196,7 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
      * This correctly handles:
      * - Type references: `MyClass obj` → resolves to `MyClass` declaration
      * - Class declarations: cursor ON a class → returns that class
+     * - Kotlin classes: finds KtClassOrObject and converts to light class
      *
      * @param element The leaf PSI element at a position
      * @return The resolved PsiClass, or null if not found
@@ -130,12 +209,47 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         val resolved = resolveReference(element)
         if (resolved is PsiClass) return resolved
 
-        // Fallback: find containing class (when cursor is inside a class)
-        return PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
+        // Fallback based on language
+        return if (element.language.id == "kotlin") {
+            resolveKotlinClass(element)
+        } else {
+            PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
+        }
+    }
+
+    /**
+     * Resolves a Kotlin class/object to its light class (PsiClass).
+     */
+    private fun resolveKotlinClass(element: PsiElement): PsiClass? {
+        val ktClassOrObject = ktClassOrObjectClass ?: return null
+        val lightClassExtensions = lightClassExtensionsClass ?: return null
+
+        // Find KtClassOrObject in parent chain
+        var current: PsiElement? = element
+        var depth = 0
+        while (current != null && depth < MAX_PARENT_TRAVERSAL_DEPTH) {
+            if (ktClassOrObject.isInstance(current)) {
+                // Convert to light class via toLightClass extension function
+                return try {
+                    val toLightClassMethod = lightClassExtensions.getMethod("toLightClass", ktClassOrObject)
+                    toLightClassMethod.invoke(null, current) as? PsiClass
+                } catch (e: ReflectiveOperationException) {
+                    LOG.debug("Failed to get light class for Kotlin class: ${e.javaClass.simpleName}: ${e.message}")
+                    null
+                }
+            }
+            current = current.parent
+            depth++
+        }
+        return null
     }
 
     /**
      * Resolves a reference from an element or its parents.
+     *
+     * Similar to [com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils.findReferenceInParent]
+     * but intentionally kept separate because this class adds Kotlin light class resolution
+     * via [resolveMethod] and [resolveClass].
      *
      * @param element The starting element
      * @return The resolved element, or null
@@ -146,7 +260,7 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
 
         // Try parent references (some PSI structures have reference on parent)
         var current: PsiElement? = element
-        repeat(3) {
+        repeat(MAX_REFERENCE_SEARCH_DEPTH) {
             current = current?.parent ?: return null
             current?.reference?.resolve()?.let { return it }
         }

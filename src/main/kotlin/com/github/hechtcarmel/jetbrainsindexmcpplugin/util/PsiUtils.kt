@@ -16,6 +16,12 @@ import com.intellij.psi.util.PsiTreeUtil
 object PsiUtils {
 
     /**
+     * Default depth for searching parent chain for references.
+     * 3 levels covers common cases: identifier -> expression -> call expression.
+     */
+    private const val DEFAULT_PARENT_SEARCH_DEPTH = 3
+
+    /**
      * Resolves the target element from a position, using semantic reference resolution.
      *
      * This is the correct way to find what a position "refers to":
@@ -59,10 +65,11 @@ object PsiUtils {
      * the leaf identifier. This walks up a few levels to find it.
      *
      * @param element Starting element
-     * @param maxDepth Maximum parent levels to check (default: 3)
+     * @param maxDepth Maximum parent levels to check (default: [DEFAULT_PARENT_SEARCH_DEPTH])
      * @return The first reference found, or null
+     * @see resolveTargetElement
      */
-    fun findReferenceInParent(element: PsiElement, maxDepth: Int = 3): PsiReference? {
+    fun findReferenceInParent(element: PsiElement, maxDepth: Int = DEFAULT_PARENT_SEARCH_DEPTH): PsiReference? {
         var current: PsiElement? = element
         repeat(maxDepth) {
             current = current?.parent ?: return null
