@@ -94,8 +94,10 @@ class FindUsagesTool : AbstractMcpTool() {
             val element = findPsiElement(project, file, line, column)
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
 
-            // Find the named element (go up the tree if needed)
-            val targetElement = PsiUtils.findNamedElement(element)
+            // Resolve the target element using semantic reference resolution.
+            // This correctly handles method calls (resolves to the called method)
+            // vs declarations (returns the declaration itself).
+            val targetElement = PsiUtils.resolveTargetElement(element)
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
 
             // Lock-free concurrent collection - ReferencesSearch may invoke processor from multiple threads
