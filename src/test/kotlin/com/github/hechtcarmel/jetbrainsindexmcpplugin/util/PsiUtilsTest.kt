@@ -161,11 +161,10 @@ class PsiUtilsTest : BasePlatformTestCase() {
         val element = file.findElementAt(myFixture.caretOffset)
         assertNotNull("Should find element at caret", element)
 
-        // Walk to the root - no references should be found
-        val ref = PsiUtils.findReferenceInParent(element!!, 100)
-        // At the class name, there's no reference to find
+        // Walk up parent chain - at a class declaration, there's no reference to find
         // (The element IS the declaration, not a reference to one)
-        // This is expected behavior - findReferenceInParent looks for references, not declarations
+        val ref = PsiUtils.findReferenceInParent(element!!, 100)
+        assertNull("Declaration should not have a reference in parent chain", ref)
     }
 
     fun testResolveTargetElement_UnresolvableReturnsNamedElement() {

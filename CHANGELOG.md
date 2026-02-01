@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-02-01
+
+### Fixed
+- **Kotlin position resolution** - Position-based tools now correctly resolve Kotlin classes and methods when cursor is on a declaration (not just references)
+  - Affected tools: `ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, `ide_find_super_methods`
+  - Root cause: `PsiTreeUtil.getParentOfType` doesn't match Kotlin PSI types (`KtClass`, `KtNamedFunction`)
+  - Solution: Use reflection to find Kotlin PSI elements and convert to light classes
+
 ## [3.3.0] - 2026-01-27
 
 ### Added
