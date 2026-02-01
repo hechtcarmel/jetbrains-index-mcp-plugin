@@ -23,6 +23,7 @@ object ParamNames {
     const val TARGET_DIRECTORY = "targetDirectory"
     const val REPLACE_ALL = "replaceAll"
     const val FORCE = "force"
+    const val TARGET_TYPE = "target_type"
 
     // Type hierarchy parameters
     const val CLASS_NAME = "className"

@@ -124,7 +124,9 @@ object PsiUtils {
     fun findNamedElement(element: PsiElement): PsiNamedElement? {
         var current: PsiElement? = element
         while (current != null) {
-            if (current is PsiNamedElement && current.name != null) {
+            // Exclude PsiFile - it's too high-level to be a useful "named element" target
+            // and would cause accidental file deletion when targeting whitespace/comments
+            if (current is PsiNamedElement && current !is PsiFile && current.name != null) {
                 return current
             }
             current = current.parent
