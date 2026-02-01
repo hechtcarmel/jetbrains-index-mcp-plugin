@@ -90,6 +90,69 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         return PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
     }
 
+    /**
+     * Resolves a method from a position, using semantic reference resolution first.
+     *
+     * This correctly handles:
+     * - Method calls: `obj.doWork()` → resolves to the `doWork` method declaration
+     * - Method declarations: cursor ON a method → returns that method
+     *
+     * @param element The leaf PSI element at a position
+     * @return The resolved PsiMethod, or null if not found
+     */
+    protected fun resolveMethod(element: PsiElement): PsiMethod? {
+        // If element is already a method, return it
+        if (element is PsiMethod) return element
+
+        // Try reference resolution first (for method calls/references)
+        val resolved = resolveReference(element)
+        if (resolved is PsiMethod) return resolved
+
+        // Fallback: find containing method (when cursor is inside a method body)
+        return PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+    }
+
+    /**
+     * Resolves a class from a position, using semantic reference resolution first.
+     *
+     * This correctly handles:
+     * - Type references: `MyClass obj` → resolves to `MyClass` declaration
+     * - Class declarations: cursor ON a class → returns that class
+     *
+     * @param element The leaf PSI element at a position
+     * @return The resolved PsiClass, or null if not found
+     */
+    protected fun resolveClass(element: PsiElement): PsiClass? {
+        // If element is already a class, return it
+        if (element is PsiClass) return element
+
+        // Try reference resolution first (for type references)
+        val resolved = resolveReference(element)
+        if (resolved is PsiClass) return resolved
+
+        // Fallback: find containing class (when cursor is inside a class)
+        return PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
+    }
+
+    /**
+     * Resolves a reference from an element or its parents.
+     *
+     * @param element The starting element
+     * @return The resolved element, or null
+     */
+    private fun resolveReference(element: PsiElement): PsiElement? {
+        // Try direct reference
+        element.reference?.resolve()?.let { return it }
+
+        // Try parent references (some PSI structures have reference on parent)
+        var current: PsiElement? = element
+        repeat(3) {
+            current = current?.parent ?: return null
+            current?.reference?.resolve()?.let { return it }
+        }
+        return null
+    }
+
     protected fun isJavaOrKotlinLanguage(element: PsiElement): Boolean {
         val langId = element.language.id
         return langId == "JAVA" || langId == "kotlin"
@@ -114,7 +177,9 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
-        val psiClass = findContainingClass(element) ?: return null
+        // Use reference-aware resolution: if cursor is on a type reference,
+        // resolve to the actual class being referenced
+        val psiClass = resolveClass(element) ?: return null
 
         val supertypes = getSupertypes(project, psiClass)
         val subtypes = getSubtypes(project, psiClass)
@@ -275,12 +340,15 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
-        val method = findContainingMethod(element)
+        // Use reference-aware resolution: if cursor is on a method call/reference,
+        // resolve to the actual method being referenced, not the containing method
+        val method = resolveMethod(element)
         if (method != null) {
             return findMethodImplementations(project, method)
         }
 
-        val psiClass = findContainingClass(element)
+        // Use reference-aware resolution for classes too
+        val psiClass = resolveClass(element)
         if (psiClass != null) {
             return findClassImplementations(project, psiClass)
         }
@@ -357,7 +425,9 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
         direction: String,
         depth: Int
     ): CallHierarchyData? {
-        val method = findContainingMethod(element) ?: return null
+        // Use reference-aware resolution: if cursor is on a method call,
+        // resolve to the actual method being called
+        val method = resolveMethod(element) ?: return null
         val visited = mutableSetOf<String>()
 
         val calls = if (direction == "callers") {
@@ -549,7 +619,9 @@ class JavaSuperMethodsHandler : BaseJavaHandler<SuperMethodsData>(), SuperMethod
     override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
-        val method = findContainingMethod(element) ?: return null
+        // Use reference-aware resolution: if cursor is on a method call,
+        // resolve to the actual method being referenced
+        val method = resolveMethod(element) ?: return null
         val containingClass = method.containingClass ?: return null
 
         val file = method.containingFile?.virtualFile
