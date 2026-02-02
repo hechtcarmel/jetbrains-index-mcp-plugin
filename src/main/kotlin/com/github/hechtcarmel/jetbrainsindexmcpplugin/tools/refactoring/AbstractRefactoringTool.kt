@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 
@@ -57,12 +58,15 @@ abstract class AbstractRefactoringTool : AbstractMcpTool() {
 
     /**
      * Finds the named element from the given PSI element (traverses up if needed).
+     * Excludes PsiFile to prevent accidental file deletion when targeting whitespace/comments.
      */
     protected fun findNamedElement(element: PsiElement): PsiNamedElement? {
-        if (element is PsiNamedElement) {
+        if (element is PsiNamedElement && element !is PsiFile && element.name != null) {
             return element
         }
-        return PsiTreeUtil.getParentOfType(element, PsiNamedElement::class.java)
+        val parent = PsiTreeUtil.getParentOfType(element, PsiNamedElement::class.java)
+        // Don't return PsiFile as a deletable element, and ensure it has a name
+        return if (parent is PsiFile || parent?.name == null) null else parent
     }
 
     /**

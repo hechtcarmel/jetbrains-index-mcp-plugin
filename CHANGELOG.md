@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-02-02
+
+### Fixed
+- **Safe delete file protection** - `ide_refactor_safe_delete` no longer accidentally deletes files when positioned on whitespace/comments. Now returns nearby symbol suggestions instead of deleting the file.
+- **File deletion mode** - Added explicit `target_type='file'` parameter to safely delete entire files (only succeeds if no external usages exist)
+
 ## [3.3.1] - 2026-02-01
 
 ### Fixed

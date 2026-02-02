@@ -268,6 +268,34 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
         assertNotNull("Should have force property", properties?.get(ParamNames.FORCE))
+        assertNotNull("Should have target_type property", properties?.get(ParamNames.TARGET_TYPE))
+
+        // Verify target_type has enum values and default
+        val targetTypeProp = properties?.get(ParamNames.TARGET_TYPE)?.jsonObject
+        assertNotNull("target_type should have enum", targetTypeProp?.get("enum"))
+        assertEquals("target_type default should be 'symbol'", "symbol", targetTypeProp?.get("default")?.jsonPrimitive?.content)
+    }
+
+    fun testSafeDeleteToolSchemaHasRequiredFile() {
+        val tool = SafeDeleteTool()
+        val schema = tool.inputSchema
+
+        // Verify required array includes "file" (conditional line/column requirements are validated at runtime)
+        // Note: We don't use oneOf/allOf/anyOf because Anthropic's API doesn't support them
+        val required = schema["required"]
+        assertNotNull("Schema should have required array", required)
+        assertTrue("Required should include 'file'", required.toString().contains("file"))
+    }
+
+    fun testSafeDeleteToolDescriptionIncludesTargetTypes() {
+        val tool = SafeDeleteTool()
+        val description = tool.description
+
+        assertTrue("Description should mention target_type='symbol'", description.contains("target_type='symbol'"))
+        assertTrue("Description should mention target_type='file'", description.contains("target_type='file'"))
+        assertTrue("Description should mention external usages", description.contains("external usages"))
+        assertTrue("Description should mention line/column required for symbol", description.contains("REQUIRED: file, line, column"))
+        assertTrue("Description should mention only file required for file mode", description.contains("REQUIRED: file only"))
     }
 
     // New navigation tools
