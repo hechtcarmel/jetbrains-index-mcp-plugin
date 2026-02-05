@@ -84,8 +84,11 @@ class FindDefinitionTool : AbstractMcpTool() {
             // Use semantic reference resolution to find what this position refers to.
             // This correctly handles method calls (resolves to the called method)
             // vs declarations (returns the declaration itself).
-            val targetElement = PsiUtils.resolveTargetElement(element)
+            val resolvedElement = PsiUtils.resolveTargetElement(element)
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
+
+            // Prefer source files (.java) over compiled files (.class) for library classes
+            val targetElement = PsiUtils.getNavigationElement(resolvedElement)
 
             val targetFile = targetElement.containingFile?.virtualFile
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.DEFINITION_FILE_NOT_FOUND)

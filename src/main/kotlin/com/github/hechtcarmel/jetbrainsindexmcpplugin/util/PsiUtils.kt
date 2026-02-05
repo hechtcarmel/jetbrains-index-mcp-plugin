@@ -2,7 +2,9 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
@@ -113,6 +115,82 @@ object PsiUtils {
         return LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath)
     }
 
+    fun resolveVirtualFileAnywhere(project: Project, path: String): VirtualFile? {
+        val virtualFileManager = VirtualFileManager.getInstance()
+        
+        // Handle already-formatted jar:// URLs
+        if (path.startsWith("jar://")) {
+            return virtualFileManager.findFileByUrl(path)
+        }
+
+        // Handle jar path format: /path/to/file.jar!/internal/path
+        if (path.contains("jar!/")) {
+            val parts = path.split("!/", limit = 2)
+            if (parts.size == 2) {
+                val jarPath = parts[0]
+                val internalPath = parts[1]
+                
+                // Normalize the jar file path to absolute path
+                val absoluteJarPath = when {
+                    jarPath.startsWith("/") -> jarPath
+                    jarPath.startsWith("~") -> {
+                        val homeDir = System.getProperty("user.home")
+                        jarPath.replaceFirst("~", homeDir)
+                    }
+                    else -> {
+                        // Try as relative to project first
+                        val basePath = project.basePath
+                        if (basePath != null) {
+                            "$basePath/$jarPath"
+                        } else {
+                            // Try as absolute path without leading /
+                            "/$jarPath"
+                        }
+                    }
+                }
+                
+                // Construct the jar URL: jar://absolute/path/to/file.jar!/internal/path
+                val jarUrl = "jar://$absoluteJarPath!/$internalPath"
+                val findFileByUrl = virtualFileManager.findFileByUrl(jarUrl)
+                return findFileByUrl
+            }
+        }
+
+        return getVirtualFile(project, path)
+    }
+
+    fun getFileContent(project: Project, virtualFile: VirtualFile): String? {
+        val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
+        val document = psiFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
+        return document?.text ?: runCatching { VfsUtil.loadText(virtualFile) }.getOrNull()
+    }
+
+    fun getFileContentByLines(
+        project: Project,
+        virtualFile: VirtualFile,
+        startLine: Int,
+        endLine: Int
+    ): String? {
+        val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
+        val document = psiFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
+
+        if (document != null) {
+            val clampedStart = (startLine - 1).coerceAtLeast(0)
+            val clampedEnd = (endLine - 1).coerceAtMost(document.lineCount - 1)
+            if (clampedStart > clampedEnd) return ""
+            val startOffset = document.getLineStartOffset(clampedStart)
+            val endOffset = document.getLineEndOffset(clampedEnd)
+            return document.getText(com.intellij.openapi.util.TextRange(startOffset, endOffset))
+        }
+
+        val text = runCatching { VfsUtil.loadText(virtualFile) }.getOrNull() ?: return null
+        val lines = text.split("\n")
+        val clampedStart = (startLine - 1).coerceAtLeast(0)
+        val clampedEnd = (endLine - 1).coerceAtMost(lines.size - 1)
+        if (clampedStart > clampedEnd) return ""
+        return lines.subList(clampedStart, clampedEnd + 1).joinToString("\n")
+    }
+
     fun getContainingClass(element: PsiElement): PsiClass? {
         return PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
     }
@@ -151,5 +229,24 @@ object PsiUtils {
                     line.removePrefix("*").trim()
                 }
         }
+    }
+
+    /**
+     * Gets the navigation element for a PSI element, preferring source files over compiled files.
+     *
+     * This is crucial for library classes where we want to navigate to `.java` source files
+     * instead of `.class` bytecode files when sources are available.
+     *
+     * **Why this matters:**
+     * When you have a library with attached sources (e.g., via Maven or Gradle), IntelliJ
+     * stores both the compiled `.class` files and the source `.java` files. By default,
+     * PSI elements may point to the `.class` file, but `navigationElement` provides the
+     * source file if available, which is much more useful for reading code.
+     *
+     * @param element The PSI element to get the navigation target for
+     * @return The navigation element (preferably source), or the original element if no navigation target exists
+     */
+    fun getNavigationElement(element: PsiElement): PsiElement {
+        return element.navigationElement ?: element
     }
 }
