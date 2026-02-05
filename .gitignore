@@ -7,3 +7,4 @@
 build
 tmp
 .claude
+local.properties

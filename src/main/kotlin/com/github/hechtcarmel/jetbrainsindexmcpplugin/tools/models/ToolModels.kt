@@ -35,6 +35,18 @@ data class DefinitionResult(
     val symbolName: String
 )
 
+// ide_read_file output
+@Serializable
+data class ReadFileResult(
+    val file: String,
+    val content: String,
+    val language: String?,
+    val lineCount: Int,
+    val startLine: Int?,
+    val endLine: Int?,
+    val isLibraryFile: Boolean
+)
+
 
 // type_hierarchy output
 @Serializable

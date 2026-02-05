@@ -35,6 +35,7 @@ object ParamNames {
     const val INCLUDE_TESTS = "includeTests"
     const val PATH = "path"
     const val FQN = "fqn"
+    const val QUALIFIED_NAME = "qualifiedName"
 
     // Symbol search parameters
     const val QUERY = "query"
