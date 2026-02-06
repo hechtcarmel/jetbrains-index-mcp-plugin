@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [3.3.4] - 2026-02-05
+
+### Added
+- **New tool: `ide_read_file`** - Read source file contents from project or library dependencies
+  - Supports multiple file path formats: relative, absolute, jar paths (`path/to/lib.jar!/com/example/Class.java`), and jar URLs
+  - Can read files by qualified class name (e.g., `java.util.ArrayList`)
+  - Supports optional line range extraction with `startLine` and `endLine` parameters (1-based, inclusive)
+  - Automatically detects library files and resolves jar file paths
+  - Returns file metadata: language ID, line count, and whether it's a library file
+
+### Changed
+- **Enhanced library source navigation** - `ide_find_definition` and symbol resolution now prefer source files (`.java`) over compiled files (`.class`) when library sources are attached
+  - Added `PsiUtils.getNavigationElement()` utility for consistent navigation element resolution
+  - Improves readability when navigating to library code with attached sources
+
 ## [3.3.3] - 2026-02-03
 
 ### Fixed

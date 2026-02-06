@@ -1,9 +1,14 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiField
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
 
 /**
  * Platform tests for [PsiUtils] reference resolution functionality.
@@ -186,5 +191,59 @@ class PsiUtilsTest : BasePlatformTestCase() {
         // When on a declaration (not a reference), should return the named element
         val resolved = PsiUtils.resolveTargetElement(element!!)
         assertNotNull("Should return named element for declaration", resolved)
+    }
+
+    fun testGetFileContentByLines_ClampsToDocumentRange() {
+        val psiFile = myFixture.configureByText(
+            "Lines.java",
+            """
+            public class Lines {
+                public void a() {}
+                public void b() {}
+                public void c() {}
+            }
+            """.trimIndent()
+        )
+
+        val virtualFile = psiFile.virtualFile
+        val content = PsiUtils.getFileContentByLines(project, virtualFile, 2, 3)
+        assertNotNull("Content should be returned", content)
+        assertEquals("    public void a() {}\n    public void b() {}", content)
+
+        val outOfRange = PsiUtils.getFileContentByLines(project, virtualFile, 10, 12)
+        assertEquals("Out-of-range lines should return empty string", "", outOfRange)
+    }
+
+    fun testResolveVirtualFileAnywhere_ResolvesJarEntry() {
+        val tempDir = Files.createTempDirectory("jetbrains-index-mcp").toFile()
+        val jarFile = Files.createTempFile(tempDir.toPath(), "sample", ".jar").toFile()
+        val entryPath = "com/example/Sample.txt"
+
+        JarOutputStream(FileOutputStream(jarFile)).use { jarStream ->
+            jarStream.putNextEntry(JarEntry(entryPath))
+            jarStream.write("hello".toByteArray())
+            jarStream.closeEntry()
+        }
+
+        // Ensure VFS sees the jar
+        LocalFileSystem.getInstance().refreshAndFindFileByPath(jarFile.absolutePath)
+
+        val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "${jarFile.absolutePath}!/$entryPath")
+        assertNotNull("Jar entry should resolve to a VirtualFile", resolved)
+        assertEquals("Sample.txt", resolved?.name)
+
+        val resolvedByUrl = PsiUtils.resolveVirtualFileAnywhere(project, "jar://${jarFile.absolutePath}!/$entryPath")
+        assertNotNull("Jar URL should resolve to a VirtualFile", resolvedByUrl)
+        assertEquals("Sample.txt", resolvedByUrl?.name)
+    }
+
+    fun testResolveVirtualFileAnywhere_ResolvesProjectFile() {
+        val tempDir = Files.createTempDirectory("jetbrains-index-mcp")
+        val file = Files.createTempFile(tempDir, "ProjectFile", ".java")
+        Files.writeString(file, "public class ProjectFile {}")
+
+        val resolvedAbsolute = PsiUtils.resolveVirtualFileAnywhere(project, file.toFile().absolutePath)
+        assertNotNull("Absolute path should resolve", resolvedAbsolute)
+        assertEquals(file.toFile().absolutePath, resolvedAbsolute?.path)
     }
 }

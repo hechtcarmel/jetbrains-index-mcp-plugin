@@ -22,7 +22,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     data class State(
         var maxHistorySize: Int = 100,
         var syncExternalChanges: Boolean = false,
-        var disabledTools: MutableSet<String> = mutableSetOf("ide_file_structure", "ide_find_symbol"),
+        var disabledTools: MutableSet<String> = mutableSetOf("ide_file_structure", "ide_find_symbol", "ide_read_file"),
         var serverPort: Int = -1, // -1 means use IDE-specific default
         var migratedToVersion: Int = 0 // Track migration status (2 = v2.0.0 migration done)
     )
