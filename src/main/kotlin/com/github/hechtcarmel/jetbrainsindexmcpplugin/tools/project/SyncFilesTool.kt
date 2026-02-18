@@ -54,25 +54,25 @@ class SyncFilesTool : AbstractMcpTool() {
         val basePath = project.basePath
             ?: return createErrorResult("Project base path is not available.")
 
-        val paths = arguments["paths"]?.jsonArray?.map { it.jsonPrimitive.content }
+        val requestedPaths = arguments["paths"]?.jsonArray?.map { it.jsonPrimitive.content }
 
         val syncedPaths: List<String>
         val syncedAll: Boolean
 
-        if (paths != null && paths.isNotEmpty()) {
-            val files = paths.mapNotNull { relativePath ->
+        if (requestedPaths != null && requestedPaths.isNotEmpty()) {
+            val resolvedFiles = requestedPaths.mapNotNull { relativePath ->
                 val fullPath = if (relativePath.startsWith("/")) relativePath else "$basePath/$relativePath"
-                LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath)
+                LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath)?.let { relativePath to it }
             }
-            if (files.isNotEmpty()) {
-                VfsUtil.markDirtyAndRefresh(true, true, true, *files.toTypedArray())
+            if (resolvedFiles.isNotEmpty()) {
+                VfsUtil.markDirtyAndRefresh(false, true, true, *resolvedFiles.map { it.second }.toTypedArray())
             }
-            syncedPaths = paths
+            syncedPaths = resolvedFiles.map { it.first }
             syncedAll = false
         } else {
             val projectDir = LocalFileSystem.getInstance().findFileByPath(basePath)
             if (projectDir != null) {
-                VfsUtil.markDirtyAndRefresh(true, true, true, projectDir)
+                VfsUtil.markDirtyAndRefresh(false, true, true, projectDir)
             }
             syncedPaths = listOf(basePath)
             syncedAll = true
@@ -84,6 +84,8 @@ class SyncFilesTool : AbstractMcpTool() {
 
         val message = if (syncedAll) {
             "Synchronized entire project."
+        } else if (requestedPaths != null && syncedPaths.size < requestedPaths.size) {
+            "Synchronized ${syncedPaths.size} of ${requestedPaths.size} requested path(s). Not found: ${(requestedPaths - syncedPaths.toSet()).joinToString(", ")}."
         } else {
             "Synchronized ${syncedPaths.size} path(s)."
         }
