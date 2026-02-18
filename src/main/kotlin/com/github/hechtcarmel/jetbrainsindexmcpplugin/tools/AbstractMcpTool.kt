@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PhpPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.readAction as platformReadAction
@@ -18,10 +19,12 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -491,6 +494,7 @@ abstract class AbstractMcpTool : McpTool {
      * This method should only be called when Java plugin is available.
      */
     private fun findClassByNameWithJavaPlugin(project: Project, qualifiedName: String): PsiElement? {
+
         // These classes are only available when Java plugin is installed
         val javaPsiFacadeClass = Class.forName("com.intellij.psi.JavaPsiFacade")
         val globalSearchScopeClass = Class.forName("com.intellij.psi.search.GlobalSearchScope")
@@ -513,11 +517,11 @@ abstract class AbstractMcpTool : McpTool {
         // Try indexed lookup first (fastest)
         val findClassMethod = javaPsiFacadeClass.getMethod("findClass", String::class.java, globalSearchScopeClass)
 
-        val classInProject = findClassMethod.invoke(javaPsiFacade, qualifiedName, projectScope)
-        if (classInProject != null) return classInProject as PsiElement
-
-        val classInAll = findClassMethod.invoke(javaPsiFacade, qualifiedName, allScope)
-        if (classInAll != null) return classInAll as PsiElement
+        val classInProject = findClassMethod.invoke(javaPsiFacade, qualifiedName, projectScope) as PsiElement?
+        if (classInProject != null) return PsiUtils.getNavigationElement(classInProject)
+        // JavaPsiFace
+        val classInAll = findClassMethod.invoke(javaPsiFacade, qualifiedName, allScope) as PsiElement?
+        if (classInAll != null) return PsiUtils.getNavigationElement(classInAll)
 
         // Fallback: search by filename if index lookup fails
         val simpleClassName = qualifiedName.substringAfterLast('.')
