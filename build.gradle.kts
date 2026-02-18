@@ -38,6 +38,7 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-bom")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
+        exclude(group = "org.slf4j")
     }
 
     // Kotlinx Serialization
@@ -47,14 +48,17 @@ dependencies {
     implementation(libs.ktor.server.core) {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+        exclude(group = "org.slf4j")
     }
     implementation(libs.ktor.server.cio) {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+        exclude(group = "org.slf4j")
     }
     implementation(libs.ktor.server.cors) {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+        exclude(group = "org.slf4j")
     }
 
     // Testing
