@@ -287,6 +287,16 @@ If `project_path` is omitted:
 - **Single project open**: That project is used automatically
 - **Multiple projects open**: An error is returned with the list of available projects
 
+### Workspace Projects
+
+The plugin supports **workspace projects** where a single IDE window contains multiple sub-projects as modules with separate content roots. The `project_path` parameter accepts:
+
+- The **workspace root** path
+- A **sub-project path** (module content root)
+- A **subdirectory** of any open project
+
+When an error occurs, the response includes all available sub-projects so AI agents can discover the correct paths to use.
+
 ## Tool Window
 
 The plugin adds an "Index MCP Server" tool window (bottom panel) that shows:

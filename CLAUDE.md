@@ -101,6 +101,19 @@ src/
    - Application-level services (singleton across IDE)
    - Project-level services (one per open project)
 
+### Workspace / Multi-Module Project Support
+
+The plugin supports workspace projects where a single IDE window contains multiple sub-projects
+represented as modules with separate content roots:
+
+- **Project resolution** (`JsonRpcHandler.resolveProject`): Checks exact basePath → module content roots → subdirectory match
+- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath, then module content roots
+- **Relative path computation** (`ProjectUtils.getRelativePath`): Strips the matching content root prefix
+- **VFS/PSI sync** (`AbstractMcpTool.ensurePsiUpToDate`): Refreshes all content roots, not just basePath
+- **Error responses**: `available_projects` array includes workspace sub-projects with their `workspace` parent name
+
+Key utility: `ProjectUtils.getModuleContentRoots(project)` returns all module content root paths.
+
 ### MCP Server Architecture
 
 MCP servers expose:

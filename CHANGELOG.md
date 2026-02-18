@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-02-18
+
+### Added
+- **Workspace project support** - All tools now correctly resolve paths when a JetBrains IDE opens a workspace with multiple sub-projects (modules with separate content roots)
+
+### Fixed
+- **SLF4J dependency conflict** - Excluded `org.slf4j` from Ktor dependencies to avoid classloader conflicts with the IDE's bundled SLF4J
+
 ## [3.4.0] - 2026-02-18
 
 ### Added

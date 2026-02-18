@@ -65,7 +65,7 @@ All tools accept an optional `project_path` parameter:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `project_path` | string | No | Absolute path to the project root. Required when multiple projects are open in the IDE. |
+| `project_path` | string | No | Absolute path to the project root. Required when multiple projects are open in the IDE. For workspace projects, use the sub-project path. |
 
 ### Position Parameters
 
