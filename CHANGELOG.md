@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-02-19
+
+### Added
+- **Tool window footer links** - GitHub, Debugger MCP Server, and Buy Me a Coffee links in the toolbar for quick access
+  - "Star/Report Issues" link to the GitHub repository
+  - "Try Debugger MCP Server" link to the companion plugin on JetBrains Marketplace
+  - "Buy Me a Coffee" link to support the developer
+
 ## [3.7.0] - 2026-02-19
 
 ### Added

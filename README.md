@@ -435,4 +435,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ---
 
+If this plugin saves you time, consider [buying me a coffee](https://buymeacoffee.com/hechtcarmel)! ☕
+
 Plugin based on the [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
