@@ -4,6 +4,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
@@ -39,6 +41,8 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_search_text` - Text search using word index
  * - `ide_diagnostics` - Analyze code for problems and available intentions
  * - `ide_index_status` - Check indexing status
+ * - `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
+ * - `ide_open_file` - Open a file in the editor (disabled by default)
  *
  * ### Language-Specific Navigation Tools
  *
@@ -221,6 +225,10 @@ class ToolRegistry {
         register(FindFileTool())
         register(SearchTextTool())
         register(ReadFileTool())
+
+        // Editor tools (universal, disabled by default)
+        register(GetActiveFileTool())
+        register(OpenFileTool())
 
         LOG.info("Registered universal tools (available in all JetBrains IDEs)")
     }

@@ -787,4 +787,88 @@ class ToolModelsUnitTest : TestCase() {
             assertEquals(contextType, deserialized.contextType)
         }
     }
+
+    // ActiveFileInfo tests
+
+    fun testActiveFileInfoSerialization() {
+        val info = ActiveFileInfo(
+            file = "src/Main.kt",
+            line = 42,
+            column = 10,
+            selectedText = "val x = 1",
+            hasSelection = true,
+            language = "Kotlin"
+        )
+
+        val serialized = json.encodeToString(info)
+        val deserialized = json.decodeFromString<ActiveFileInfo>(serialized)
+
+        assertEquals("src/Main.kt", deserialized.file)
+        assertEquals(42, deserialized.line)
+        assertEquals(10, deserialized.column)
+        assertEquals("val x = 1", deserialized.selectedText)
+        assertTrue(deserialized.hasSelection)
+        assertEquals("Kotlin", deserialized.language)
+    }
+
+    fun testActiveFileInfoNoSelection() {
+        val info = ActiveFileInfo(
+            file = "src/App.java",
+            line = 10,
+            column = 1,
+            selectedText = null,
+            hasSelection = false,
+            language = "JAVA"
+        )
+
+        val serialized = json.encodeToString(info)
+        val deserialized = json.decodeFromString<ActiveFileInfo>(serialized)
+
+        assertNull(deserialized.selectedText)
+        assertFalse(deserialized.hasSelection)
+    }
+
+    // GetActiveFileResult tests
+
+    fun testGetActiveFileResultSerialization() {
+        val result = GetActiveFileResult(
+            activeFiles = listOf(
+                ActiveFileInfo("src/Main.kt", 1, 1, null, false, "Kotlin"),
+                ActiveFileInfo("src/App.java", 25, 8, "code", true, "JAVA")
+            )
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<GetActiveFileResult>(serialized)
+
+        assertEquals(2, deserialized.activeFiles.size)
+        assertEquals("src/Main.kt", deserialized.activeFiles[0].file)
+        assertEquals("src/App.java", deserialized.activeFiles[1].file)
+    }
+
+    fun testGetActiveFileResultEmpty() {
+        val result = GetActiveFileResult(activeFiles = emptyList())
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<GetActiveFileResult>(serialized)
+
+        assertTrue(deserialized.activeFiles.isEmpty())
+    }
+
+    // OpenFileResult tests
+
+    fun testOpenFileResultSerialization() {
+        val result = OpenFileResult(
+            file = "src/Main.kt",
+            opened = true,
+            message = "Opened src/Main.kt at line 42, column 10."
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<OpenFileResult>(serialized)
+
+        assertEquals("src/Main.kt", deserialized.file)
+        assertTrue(deserialized.opened)
+        assertTrue(deserialized.message.contains("line 42"))
+    }
 }

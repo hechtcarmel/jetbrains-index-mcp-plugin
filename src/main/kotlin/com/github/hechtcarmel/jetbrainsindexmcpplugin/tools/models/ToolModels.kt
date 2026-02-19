@@ -228,6 +228,30 @@ data class FileMatch(
     val directory: String
 )
 
+// ide_get_active_file output
+@Serializable
+data class ActiveFileInfo(
+    val file: String,
+    val line: Int?,
+    val column: Int?,
+    val selectedText: String?,
+    val hasSelection: Boolean,
+    val language: String?
+)
+
+@Serializable
+data class GetActiveFileResult(
+    val activeFiles: List<ActiveFileInfo>
+)
+
+// ide_open_file output
+@Serializable
+data class OpenFileResult(
+    val file: String,
+    val opened: Boolean,
+    val message: String
+)
+
 // ide_search_text output
 @Serializable
 data class SearchTextResult(

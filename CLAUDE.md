@@ -58,6 +58,7 @@ src/
 │   │   ├── services/                   # Application/project services
 │   │   ├── startup/                    # Startup activities
 │   │   ├── tools/                      # MCP tool implementations
+│   │   │   ├── editor/                 # Editor interaction tools
 │   │   │   ├── navigation/             # Navigation tools (multi-language)
 │   │   │   ├── refactoring/            # Refactoring tools (Java only)
 │   │   │   └── utils/                  # Plugin detectors
@@ -326,6 +327,8 @@ Tools are organized by IDE availability.
 - `ide_index_status` - Check indexing status (dumb/smart mode)
 - `ide_sync_files` - Force sync IDE's virtual file system and PSI cache with external file changes
 - `ide_refactor_rename` - Rename a symbol across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages.
+- `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
+- `ide_open_file` - Open a file in the editor with optional line/column navigation (disabled by default)
 
 **Extended Navigation Tools (Language-Aware):**
 

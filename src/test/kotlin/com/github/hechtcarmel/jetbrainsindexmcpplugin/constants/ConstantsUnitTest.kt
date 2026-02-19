@@ -29,6 +29,11 @@ class ConstantsUnitTest : TestCase() {
         assertEquals("ide_refactor_safe_delete", ToolNames.REFACTOR_SAFE_DELETE)
     }
 
+    fun testToolNamesEditorTools() {
+        assertEquals("ide_get_active_file", ToolNames.GET_ACTIVE_FILE)
+        assertEquals("ide_open_file", ToolNames.OPEN_FILE)
+    }
+
     fun testToolNamesHaveIdePrefix() {
         val toolNames = listOf(
             ToolNames.FIND_REFERENCES,
@@ -41,7 +46,9 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.DIAGNOSTICS,
             ToolNames.INDEX_STATUS,
             ToolNames.REFACTOR_RENAME,
-            ToolNames.REFACTOR_SAFE_DELETE
+            ToolNames.REFACTOR_SAFE_DELETE,
+            ToolNames.GET_ACTIVE_FILE,
+            ToolNames.OPEN_FILE
         )
 
         toolNames.forEach { name ->

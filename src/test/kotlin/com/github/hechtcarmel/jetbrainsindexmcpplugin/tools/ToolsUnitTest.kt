@@ -3,6 +3,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
@@ -198,7 +200,17 @@ class ToolsUnitTest : TestCase() {
             assertNotNull("Universal tool $toolName should be registered", tool)
         }
 
-        assertTrue("Should have at least 5 universal tools", registry.getAllTools().size >= 5)
+        // Editor tools (universal, disabled by default)
+        val editorTools = listOf(
+            ToolNames.GET_ACTIVE_FILE,
+            ToolNames.OPEN_FILE
+        )
+        for (toolName in editorTools) {
+            val tool = registry.getTool(toolName)
+            assertNotNull("Editor tool $toolName should be registered", tool)
+        }
+
+        assertTrue("Should have at least 7 universal tools", registry.getAllTools().size >= 7)
     }
 
     /**
@@ -470,6 +482,59 @@ class ToolsUnitTest : TestCase() {
 
         val required = schema[SchemaConstants.REQUIRED]
         assertNotNull("Should have required array", required)
+    }
+
+    fun testGetActiveFileToolSchema() {
+        val tool = GetActiveFileTool()
+
+        assertEquals(ToolNames.GET_ACTIVE_FILE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+    }
+
+    fun testOpenFileToolSchema() {
+        val tool = OpenFileTool()
+
+        assertEquals(ToolNames.OPEN_FILE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
+        assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+        assertTrue("Required should include 'file'", required.toString().contains("file"))
+    }
+
+    fun testEditorToolsAreRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val getActiveFileTool = registry.getTool(ToolNames.GET_ACTIVE_FILE)
+        assertNotNull("ide_get_active_file should be registered", getActiveFileTool)
+        assertEquals(ToolNames.GET_ACTIVE_FILE, getActiveFileTool?.name)
+
+        val openFileTool = registry.getTool(ToolNames.OPEN_FILE)
+        assertNotNull("ide_open_file should be registered", openFileTool)
+        assertEquals(ToolNames.OPEN_FILE, openFileTool?.name)
     }
 
     fun testNewSearchToolsAreRegistered() {

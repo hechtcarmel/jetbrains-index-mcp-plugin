@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
@@ -222,6 +224,64 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    // Editor Tools Tests
+
+    fun testGetActiveFileTool() = runBlocking {
+        val tool = GetActiveFileTool()
+
+        val result = tool.execute(project, buildJsonObject { })
+
+        assertFalse("get_active_file should succeed", result.isError)
+        assertTrue("Should have content", result.content.isNotEmpty())
+
+        val content = result.content.first()
+        assertTrue("Content should be text", content is ContentBlock.Text)
+
+        val textContent = (content as ContentBlock.Text).text
+        val resultJson = json.parseToJsonElement(textContent).jsonObject
+
+        assertNotNull("Result should have activeFiles", resultJson["activeFiles"])
+    }
+
+    fun testOpenFileToolMissingParams() = runBlocking {
+        val tool = OpenFileTool()
+
+        val result = tool.execute(project, buildJsonObject { })
+        assertTrue("Should error with missing params", result.isError)
+    }
+
+    fun testOpenFileToolInvalidFile() = runBlocking {
+        val tool = OpenFileTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "nonexistent/file.kt")
+        })
+
+        assertTrue("Should error with invalid file", result.isError)
+    }
+
+    fun testOpenFileToolColumnWithoutLine() = runBlocking {
+        val tool = OpenFileTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.kt")
+            put("column", 5)
+        })
+
+        assertTrue("Should error with column without line", result.isError)
+    }
+
+    fun testOpenFileToolInvalidLine() = runBlocking {
+        val tool = OpenFileTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.kt")
+            put("line", 0)
+        })
+
+        assertTrue("Should error with line < 1", result.isError)
     }
 
     // Registry tests that require platform services (McpSettings)

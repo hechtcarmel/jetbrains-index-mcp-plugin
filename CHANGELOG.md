@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-02-19
+
+### Added
+- **New tool: `ide_get_active_file`** - Get the currently active file(s) open in the IDE editor
+  - Returns cursor position (line, column), selected text, and language for all visible editors
+  - Supports split panes (returns all visible editors)
+  - Returns empty list (not error) when no editors are open
+- **New tool: `ide_open_file`** - Open a file in the IDE editor with optional navigation
+  - Navigate to specific line and column positions
+  - Validates parameters (column requires line, line >= 1, column >= 1)
+
+### Disabled by default
+- `ide_get_active_file` and `ide_open_file` are disabled by default - enable in Settings > Index MCP Server
+
 ## [3.6.0] - 2026-02-18
 
 ### Added
