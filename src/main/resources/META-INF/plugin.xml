@@ -7,6 +7,8 @@
 <p><b>Supercharge your AI coding assistant</b> with the IDE's powerful code intelligence through the
 <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a>.</p>
 
+<p>If this plugin saves you time, consider <a href="https://buymeacoffee.com/hechtcarmel">buying me a coffee</a>! ☕</p>
+
 <h3>Multi-Language Support</h3>
 <p>Advanced code intelligence tools work across multiple languages when their plugins are available:</p>
 <ul>
@@ -73,8 +75,6 @@
 
 <p>See the <a href="https://github.com/hechtcarmel/jetbrains-index-mcp-plugin">GitHub repository</a>
 for detailed documentation and examples.</p>
-
-<p>If this plugin saves you time, consider <a href="https://buymeacoffee.com/hechtcarmel">buying me a coffee</a>! ☕</p>
 ]]>    </description>
 
     <!-- Rider exclusion - plugin uses IntelliJ PSI APIs not compatible with Rider's ReSharper backend -->
