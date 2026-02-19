@@ -97,6 +97,12 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
                 McpBundle.message("footer.debugger.tooltip"),
                 "https://plugins.jetbrains.com/plugin/29233-debugger-mcp-server"
             ))
+            add(createExternalLink(
+                McpIcons.BuyMeACoffee,
+                McpBundle.message("footer.buymeacoffee"),
+                McpBundle.message("footer.buymeacoffee.tooltip"),
+                "https://buymeacoffee.com/hechtcarmel"
+            ))
             add(createToolbarSeparator())
             add(installButton)
         }

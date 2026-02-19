@@ -18,4 +18,7 @@ object McpIcons {
 
     @JvmField
     val DebuggerMcp: Icon = IconLoader.getIcon("/icons/debugger-mcp.svg", McpIcons::class.java)
+
+    @JvmField
+    val BuyMeACoffee: Icon = IconLoader.getIcon("/icons/buy-me-a-coffee.svg", McpIcons::class.java)
 }
