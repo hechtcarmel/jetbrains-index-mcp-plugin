@@ -78,7 +78,15 @@ class McpSettingsConfigurable : Configurable {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
         }
 
-        val toolRegistry = McpServerService.getInstance().getToolRegistry()
+        val mcpService = McpServerService.getInstance()
+        if (!mcpService.isInitialized) {
+            toolsContainer.add(JBLabel("Server is initializing...").apply {
+                foreground = JBColor(0xD9A343, 0xD9A343)
+            })
+            return toolsContainer
+        }
+
+        val toolRegistry = mcpService.getToolRegistry()
         val allTools = toolRegistry.getAllToolDefinitions().sortedBy { it.name }
         val settings = McpSettings.getInstance()
 
@@ -140,7 +148,9 @@ class McpSettingsConfigurable : Configurable {
         // Auto-restart server if port changed
         if (newPort != oldPort) {
             ApplicationManager.getApplication().invokeLater {
-                val result = McpServerService.getInstance().restartServer(newPort)
+                val mcpService = McpServerService.getInstance()
+                if (!mcpService.isInitialized) return@invokeLater
+                val result = mcpService.restartServer(newPort)
                 when (result) {
                     is KtorMcpServer.StartResult.Success -> {
                         NotificationGroupManager.getInstance()
@@ -175,9 +185,10 @@ class McpSettingsConfigurable : Configurable {
      * Returns true if we can bind to the port, false if it's in use.
      */
     private fun isPortAvailable(port: Int): Boolean {
+        val mcpService = McpServerService.getInstance()
         // If it's the current server port, it's "available" (we'll restart the server)
         val currentPort = McpSettings.getInstance().serverPort
-        if (port == currentPort && McpServerService.getInstance().isServerRunning()) {
+        if (port == currentPort && mcpService.isInitialized && mcpService.isServerRunning()) {
             return true
         }
 

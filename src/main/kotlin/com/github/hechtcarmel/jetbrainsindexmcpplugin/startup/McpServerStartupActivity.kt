@@ -19,8 +19,9 @@ class McpServerStartupActivity : ProjectActivity {
         LOG.info("MCP Server startup activity executing for project: ${project.name}")
 
         try {
-            // Initialize the MCP server service (this triggers tool registration)
+            // Initialize the MCP server service (heavy work deferred from init{})
             val mcpService = McpServerService.getInstance()
+            mcpService.initialize()
             val serverUrl = mcpService.getServerUrl()
             val serverError = mcpService.getServerError()
 

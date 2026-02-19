@@ -252,6 +252,16 @@ class ServerStatusPanel(private val project: Project) : JBPanel<ServerStatusPane
     fun refresh() {
         try {
             val mcpService = McpServerService.getInstance()
+
+            if (!mcpService.isInitialized) {
+                statusLabel.text = "MCP Server Initializing..."
+                statusLabel.foreground = JBColor(0xD9A343, 0xD9A343)
+                urlLabel.text = ""
+                settingsLink.isVisible = false
+                projectLabel.text = ""
+                return
+            }
+
             val error = mcpService.getServerError()
 
             if (error != null) {

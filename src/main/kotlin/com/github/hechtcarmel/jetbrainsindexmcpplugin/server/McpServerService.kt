@@ -57,6 +57,10 @@ class McpServerService : Disposable {
         val port: Int? = null
     )
 
+    @Volatile
+    var isInitialized: Boolean = false
+        private set
+
     companion object {
         private val LOG = logger<McpServerService>()
 
@@ -66,14 +70,20 @@ class McpServerService : Disposable {
     init {
         LOG.info("Initializing MCP Server Service (Protocol: ${McpConstants.MCP_PROTOCOL_VERSION})")
         jsonRpcHandler = JsonRpcHandler(toolRegistry)
+    }
 
-        // Register built-in tools
+    @Synchronized
+    fun initialize() {
+        if (isInitialized) return
+
+        LOG.info("Performing deferred MCP Server initialization")
+
         toolRegistry.registerBuiltInTools()
 
-        // Start the Ktor server with configured port
         val port = McpSettings.getInstance().serverPort
         startServer(port)
 
+        isInitialized = true
         LOG.info("MCP Server Service initialized with Ktor CIO server")
     }
 
