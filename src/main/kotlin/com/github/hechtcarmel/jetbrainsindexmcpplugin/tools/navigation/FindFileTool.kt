@@ -42,6 +42,13 @@ class FindFileTool : AbstractMcpTool() {
         private val LOG = logger<FindFileTool>()
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
+
+        /** Common build output directories that duplicate source files. */
+        private val BUILD_OUTPUT_PREFIXES = listOf("bin/", "build/", "out/", ".gradle/")
+
+        private fun isBuildOutputPath(path: String): Boolean {
+            return BUILD_OUTPUT_PREFIXES.any { path.startsWith(it) }
+        }
     }
 
     override val name = ToolNames.FIND_FILE
@@ -107,6 +114,7 @@ class FindFileTool : AbstractMcpTool() {
 
             val sortedFiles = files
                 .distinctBy { it.path }
+                .filterNot { isBuildOutputPath(it.path) }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 

@@ -14,6 +14,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.PsiSearchHelper
 import com.intellij.psi.search.TextOccurenceProcessor
 import com.intellij.psi.search.UsageSearchContext
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
@@ -143,6 +144,11 @@ class SearchTextTool : AbstractMcpTool() {
      *
      * Uses lock-free CAS pattern for thread-safety since processElementsWithWord
      * invokes the processor concurrently from multiple threads.
+     *
+     * Deduplicates results by (file, line) to avoid returning multiple matches
+     * from nested PSI elements on the same line. Validates that the search word
+     * actually appears in the matched line to eliminate false positives from
+     * the word index.
      */
     private fun searchText(
         project: Project,
@@ -154,6 +160,8 @@ class SearchTextTool : AbstractMcpTool() {
     ): List<TextMatch> {
         // Lock-free concurrent collection - processElementsWithWord calls processor from multiple threads
         val results = ConcurrentLinkedQueue<TextMatch>()
+        // Track seen (file, line) pairs to deduplicate matches from nested PSI elements
+        val seenLines = ConcurrentHashMap.newKeySet<String>()
         val count = AtomicInteger(0)
         val helper = PsiSearchHelper.getInstance(project)
 
@@ -165,13 +173,29 @@ class SearchTextTool : AbstractMcpTool() {
 
             val match = convertToTextMatch(project, element, searchContext)
             if (match != null) {
-                // Optimistically claim a slot via CAS increment
-                val slot = count.incrementAndGet()
-                if (slot <= limit) {
-                    results.add(match)
+                // Validate: search word must actually appear in the line text
+                val lineContainsWord = if (caseSensitive) {
+                    match.context.contains(word)
+                } else {
+                    match.context.contains(word, ignoreCase = true)
                 }
-                // Continue only if under limit
-                slot < limit
+                if (!lineContainsWord) {
+                    return@TextOccurenceProcessor true // skip false positive
+                }
+
+                // Deduplicate by (file, line) - keep first occurrence per line
+                val lineKey = "${match.file}:${match.line}"
+                if (seenLines.add(lineKey)) {
+                    // Optimistically claim a slot via CAS increment
+                    val slot = count.incrementAndGet()
+                    if (slot <= limit) {
+                        results.add(match)
+                    }
+                    // Continue only if under limit
+                    slot < limit
+                } else {
+                    true // duplicate line, skip but continue searching
+                }
             } else {
                 true
             }

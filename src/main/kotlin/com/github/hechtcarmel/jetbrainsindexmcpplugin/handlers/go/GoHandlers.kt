@@ -849,7 +849,8 @@ class GoSymbolSearchHandler : BaseGoHandler<List<SymbolData>>(), SymbolSearchHan
         project: Project,
         pattern: String,
         includeLibraries: Boolean,
-        limit: Int
+        limit: Int,
+        matchMode: String
     ): List<SymbolData> {
         val scope = if (includeLibraries) {
             GlobalSearchScope.allScope(project)
@@ -863,7 +864,8 @@ class GoSymbolSearchHandler : BaseGoHandler<List<SymbolData>>(), SymbolSearchHan
             pattern = pattern,
             scope = scope,
             limit = limit,
-            languageFilter = setOf("go", "Go")
+            languageFilter = setOf("go", "Go"),
+            matchMode = matchMode
         )
     }
 }

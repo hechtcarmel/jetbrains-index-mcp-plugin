@@ -23,6 +23,11 @@ import kotlinx.serialization.json.putJsonObject
 
 class FindDefinitionTool : AbstractMcpTool() {
 
+    companion object {
+        private const val DEFAULT_MAX_PREVIEW_LINES = 50
+        private const val MAX_ALLOWED_PREVIEW_LINES = 500
+    }
+
     override val name = ToolNames.FIND_DEFINITION
 
     override val description = """
@@ -58,6 +63,10 @@ class FindDefinitionTool : AbstractMcpTool() {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
                 put(SchemaConstants.DESCRIPTION, "If true, returns the complete element code instead of a preview snippet. Optional, defaults to false.")
             }
+            putJsonObject(ParamNames.MAX_PREVIEW_LINES) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                put(SchemaConstants.DESCRIPTION, "Maximum lines for fullElementPreview. Truncates large classes/functions. Default: 50, Max: 500. Only used when fullElementPreview=true.")
+            }
         }
         putJsonArray(SchemaConstants.REQUIRED) {
             add(JsonPrimitive(ParamNames.FILE))
@@ -74,6 +83,8 @@ class FindDefinitionTool : AbstractMcpTool() {
         val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
             ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
         val fullElementPreview = arguments[ParamNames.FULL_ELEMENT_PREVIEW]?.jsonPrimitive?.content?.toBoolean() ?: false
+        val maxPreviewLines = (arguments[ParamNames.MAX_PREVIEW_LINES]?.jsonPrimitive?.int ?: DEFAULT_MAX_PREVIEW_LINES)
+            .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
 
         requireSmartMode(project)
 
@@ -90,21 +101,41 @@ class FindDefinitionTool : AbstractMcpTool() {
             // Prefer source files (.java) over compiled files (.class) for library classes
             val targetElement = PsiUtils.getNavigationElement(resolvedElement)
 
-            val targetFile = targetElement.containingFile?.virtualFile
+            // Try the target element first, then its navigationElement (for Kotlin light classes
+            // and import directives where the resolved element may be a compiled class without a virtual file)
+            val effectiveTarget = if (targetElement.containingFile?.virtualFile != null) {
+                targetElement
+            } else {
+                val navElement = targetElement.navigationElement
+                if (navElement != targetElement && navElement.containingFile?.virtualFile != null) {
+                    navElement
+                } else {
+                    targetElement
+                }
+            }
+
+            val targetFile = effectiveTarget.containingFile?.virtualFile
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.DEFINITION_FILE_NOT_FOUND)
 
             val document = PsiDocumentManager.getInstance(project)
-                .getDocument(targetElement.containingFile)
+                .getDocument(effectiveTarget.containingFile)
                 ?: return@suspendingReadAction createErrorResult(ErrorMessages.DEFINITION_DOCUMENT_NOT_FOUND)
 
-            val targetLine = document.getLineNumber(targetElement.textOffset) + 1
-            val targetColumn = targetElement.textOffset -
+            val targetLine = document.getLineNumber(effectiveTarget.textOffset) + 1
+            val targetColumn = effectiveTarget.textOffset -
                 document.getLineStartOffset(targetLine - 1) + 1
 
             // Get preview - either full element code or a few lines around the definition
             val preview = if (fullElementPreview) {
-                // Extract the complete element code
-                targetElement.text
+                // Extract the complete element code, truncated to maxPreviewLines
+                val fullText = effectiveTarget.text
+                val lines = fullText.lines()
+                if (lines.size > maxPreviewLines) {
+                    lines.take(maxPreviewLines).joinToString("\n") +
+                        "\n// ... truncated (${lines.size} total lines, showing $maxPreviewLines)"
+                } else {
+                    fullText
+                }
             } else {
                 // Original behavior: a few lines around the definition
                 val previewStartLine = maxOf(0, targetLine - 2)
@@ -117,10 +148,10 @@ class FindDefinitionTool : AbstractMcpTool() {
                 }
             }
 
-            val symbolName = if (targetElement is PsiNamedElement) {
-                targetElement.name ?: "unknown"
+            val symbolName = if (effectiveTarget is PsiNamedElement) {
+                effectiveTarget.name ?: "unknown"
             } else {
-                targetElement.text.take(50)
+                effectiveTarget.text.take(50)
             }
 
             createJsonResult(DefinitionResult(

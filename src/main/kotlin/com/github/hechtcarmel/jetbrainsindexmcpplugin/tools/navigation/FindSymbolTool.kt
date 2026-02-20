@@ -64,6 +64,14 @@ class FindSymbolTool : AbstractMcpTool() {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
                 put(SchemaConstants.DESCRIPTION, "Include symbols from library dependencies. Default: false.")
             }
+            putJsonObject(ParamNames.LANGUAGE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
+            }
+            putJsonObject(ParamNames.MATCH_MODE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, "How to match the query: \"substring\" (default, matches anywhere in name), \"prefix\" (camelCase-aware prefix matching), or \"exact\" (case-insensitive exact match).")
+            }
             putJsonObject(ParamNames.LIMIT) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
                 put(SchemaConstants.DESCRIPTION, "Maximum results to return. Default: 25, Max: 100.")
@@ -78,6 +86,8 @@ class FindSymbolTool : AbstractMcpTool() {
         val query = arguments[ParamNames.QUERY]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: ${ParamNames.QUERY}")
         val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: false
+        val languageFilter = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
+        val matchMode = arguments[ParamNames.MATCH_MODE]?.jsonPrimitive?.content ?: "substring"
         val limit = (arguments[ParamNames.LIMIT]?.jsonPrimitive?.int ?: DEFAULT_LIMIT)
             .coerceIn(1, MAX_LIMIT)
 
@@ -100,7 +110,7 @@ class FindSymbolTool : AbstractMcpTool() {
             val allMatches = mutableListOf<SymbolMatch>()
 
             for (handler in handlers) {
-                val handlerResults = handler.searchSymbols(project, query, includeLibraries, limit)
+                val handlerResults = handler.searchSymbols(project, query, includeLibraries, limit, matchMode)
                 allMatches.addAll(handlerResults.map { symbolData ->
                     SymbolMatch(
                         name = symbolData.name,
@@ -117,6 +127,11 @@ class FindSymbolTool : AbstractMcpTool() {
 
             val sortedMatches = allMatches
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+                .let { results ->
+                    if (languageFilter != null) {
+                        results.filter { it.language.equals(languageFilter, ignoreCase = true) }
+                    } else results
+                }
                 .take(limit)
 
             createJsonResult(FindSymbolResult(

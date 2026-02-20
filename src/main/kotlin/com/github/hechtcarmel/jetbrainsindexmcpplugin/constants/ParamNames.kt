@@ -46,4 +46,9 @@ object ParamNames {
 
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
+    const val MAX_PREVIEW_LINES = "maxPreviewLines"
+
+    // Filter parameters
+    const val LANGUAGE = "language"
+    const val MATCH_MODE = "matchMode"
 }

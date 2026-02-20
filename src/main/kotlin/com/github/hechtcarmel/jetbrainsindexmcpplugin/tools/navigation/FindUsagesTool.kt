@@ -102,55 +102,62 @@ class FindUsagesTool : AbstractMcpTool() {
 
             // Lock-free concurrent collection - ReferencesSearch may invoke processor from multiple threads
             val usages = ConcurrentLinkedQueue<UsageLocation>()
-            val count = AtomicInteger(0)
+            val collected = AtomicInteger(0)
+            val totalFound = AtomicInteger(0)
+            // Cap total counting to avoid scanning unbounded references
+            val totalCountLimit = maxResults * 10
 
             // Process references with cancellation support and early termination
             ReferencesSearch.search(targetElement).forEach(Processor { reference ->
                 ProgressManager.checkCanceled() // Allow cancellation between iterations
 
-                // Fast path: already at limit
-                if (count.get() >= maxResults) {
-                    return@Processor false
-                }
-
                 val refElement = reference.element
                 val refFile = refElement.containingFile?.virtualFile
                 if (refFile != null) {
-                    val document = PsiDocumentManager.getInstance(project)
-                        .getDocument(refElement.containingFile)
-                    if (document != null) {
-                        val lineNumber = document.getLineNumber(refElement.textOffset) + 1
-                        val columnNumber = refElement.textOffset -
-                            document.getLineStartOffset(lineNumber - 1) + 1
+                    val total = totalFound.incrementAndGet()
 
-                        val lineText = document.getText(
-                            TextRange(
-                                document.getLineStartOffset(lineNumber - 1),
-                                document.getLineEndOffset(lineNumber - 1)
-                            )
-                        ).trim()
+                    // Collect details only up to maxResults
+                    if (collected.get() < maxResults) {
+                        val document = PsiDocumentManager.getInstance(project)
+                            .getDocument(refElement.containingFile)
+                        if (document != null) {
+                            val lineNumber = document.getLineNumber(refElement.textOffset) + 1
+                            val columnNumber = refElement.textOffset -
+                                document.getLineStartOffset(lineNumber - 1) + 1
 
-                        // Optimistically claim a slot via CAS increment
-                        val slot = count.incrementAndGet()
-                        if (slot <= maxResults) {
-                            usages.add(UsageLocation(
-                                file = getRelativePath(project, refFile),
-                                line = lineNumber,
-                                column = columnNumber,
-                                context = lineText,
-                                type = classifyUsage(refElement)
-                            ))
+                            val lineText = document.getText(
+                                TextRange(
+                                    document.getLineStartOffset(lineNumber - 1),
+                                    document.getLineEndOffset(lineNumber - 1)
+                                )
+                            ).trim()
+
+                            val slot = collected.incrementAndGet()
+                            if (slot <= maxResults) {
+                                usages.add(UsageLocation(
+                                    file = getRelativePath(project, refFile),
+                                    line = lineNumber,
+                                    column = columnNumber,
+                                    context = lineText,
+                                    type = classifyUsage(refElement)
+                                ))
+                            }
                         }
-                        return@Processor slot < maxResults
                     }
+
+                    // Stop iteration once we've counted enough to know there are more
+                    total < totalCountLimit
+                } else {
+                    true
                 }
-                true
             })
 
             val usagesList = usages.toList()
+            val total = totalFound.get()
             createJsonResult(FindUsagesResult(
                 usages = usagesList,
-                totalCount = usagesList.size
+                totalCount = total,
+                truncated = total > usagesList.size
             ))
         }
     }

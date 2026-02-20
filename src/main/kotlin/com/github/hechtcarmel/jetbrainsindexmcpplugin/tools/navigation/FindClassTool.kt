@@ -43,6 +43,12 @@ class FindClassTool : AbstractMcpTool() {
         private val LOG = logger<FindClassTool>()
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
+
+        private val BUILD_OUTPUT_PREFIXES = listOf("bin/", "build/", "out/", ".gradle/")
+
+        private fun isBuildOutputPath(path: String): Boolean {
+            return BUILD_OUTPUT_PREFIXES.any { path.startsWith(it) }
+        }
     }
 
     override val name = ToolNames.FIND_CLASS
@@ -74,6 +80,14 @@ class FindClassTool : AbstractMcpTool() {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
                 put(SchemaConstants.DESCRIPTION, "Include classes from library dependencies. Default: false.")
             }
+            putJsonObject(ParamNames.LANGUAGE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
+            }
+            putJsonObject(ParamNames.MATCH_MODE) {
+                put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                put(SchemaConstants.DESCRIPTION, "How to match the query: \"substring\" (default, matches anywhere in name), \"prefix\" (camelCase-aware prefix matching), or \"exact\" (case-insensitive exact match).")
+            }
             putJsonObject(ParamNames.LIMIT) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
                 put(SchemaConstants.DESCRIPTION, "Maximum results to return. Default: 25, Max: 100.")
@@ -88,6 +102,8 @@ class FindClassTool : AbstractMcpTool() {
         val query = arguments[ParamNames.QUERY]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: ${ParamNames.QUERY}")
         val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: false
+        val languageFilter = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
+        val matchMode = arguments[ParamNames.MATCH_MODE]?.jsonPrimitive?.content ?: "substring"
         val limit = (arguments[ParamNames.LIMIT]?.jsonPrimitive?.int ?: DEFAULT_LIMIT)
             .coerceIn(1, MAX_LIMIT)
 
@@ -104,11 +120,20 @@ class FindClassTool : AbstractMcpTool() {
                 GlobalSearchScope.projectScope(project)
             }
 
-            val matcher = createMatcher(query)
-            val classes = searchClasses(project, query, scope, limit, matcher)
+            val matcher = createMatcher(query, matchMode)
+            val nameFilter = createNameFilter(query, matchMode, matcher)
+            // Collect more results than needed to account for filtering
+            val searchLimit = if (languageFilter != null) limit * 4 else limit
+            val classes = searchClasses(project, query, scope, searchLimit, nameFilter, matcher)
 
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+                .filterNot { isBuildOutputPath(it.file) }
+                .let { results ->
+                    if (languageFilter != null) {
+                        results.filter { it.language.equals(languageFilter, ignoreCase = true) }
+                    } else results
+                }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 
@@ -128,6 +153,7 @@ class FindClassTool : AbstractMcpTool() {
         pattern: String,
         scope: GlobalSearchScope,
         limit: Int,
+        nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher
     ): List<SymbolMatch> {
         val results = mutableListOf<SymbolMatch>()
@@ -140,7 +166,7 @@ class FindClassTool : AbstractMcpTool() {
             if (results.size >= limit) break
 
             try {
-                processContributor(contributor, project, pattern, scope, limit, matcher, results, seen)
+                processContributor(contributor, project, pattern, scope, limit, nameFilter, matcher, results, seen)
             } catch (e: Exception) {
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }
@@ -155,6 +181,7 @@ class FindClassTool : AbstractMcpTool() {
         pattern: String,
         scope: GlobalSearchScope,
         limit: Int,
+        nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolMatch>,
         seen: MutableSet<String>
@@ -165,7 +192,7 @@ class FindClassTool : AbstractMcpTool() {
 
             contributor.processNames(
                 { name ->
-                    if (matcher.matches(name)) {
+                    if (nameFilter(name)) {
                         matchingNames.add(name)
                     }
                     matchingNames.size < limit * 3
@@ -199,7 +226,7 @@ class FindClassTool : AbstractMcpTool() {
         } else {
             // Legacy API
             val names = contributor.getNames(project, true)
-            val matchingNames = names.filter { matcher.matches(it) }
+            val matchingNames = names.filter { nameFilter(it) }
 
             for (name in matchingNames) {
                 if (results.size >= limit) break
@@ -313,7 +340,18 @@ class FindClassTool : AbstractMcpTool() {
         }
     }
 
-    private fun createMatcher(pattern: String): MinusculeMatcher {
-        return NameUtil.buildMatcher("*$pattern", NameUtil.MatchingCaseSensitivity.NONE)
+    private fun createMatcher(pattern: String, matchMode: String = "substring"): MinusculeMatcher {
+        val matcherPattern = when (matchMode) {
+            "prefix" -> pattern        // prefix/camelCase matching only
+            else -> "*$pattern"         // substring (default) and exact (used for sorting)
+        }
+        return NameUtil.buildMatcher(matcherPattern, NameUtil.MatchingCaseSensitivity.NONE)
+    }
+
+    private fun createNameFilter(pattern: String, matchMode: String, matcher: MinusculeMatcher): (String) -> Boolean {
+        return when (matchMode) {
+            "exact" -> { name -> name.equals(pattern, ignoreCase = true) }
+            else -> { name -> matcher.matches(name) }
+        }
     }
 }

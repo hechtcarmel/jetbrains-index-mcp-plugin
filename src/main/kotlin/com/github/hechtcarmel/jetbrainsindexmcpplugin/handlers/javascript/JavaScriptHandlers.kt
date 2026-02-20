@@ -909,7 +909,8 @@ class JavaScriptSymbolSearchHandler : BaseJavaScriptHandler<List<SymbolData>>(),
         project: Project,
         pattern: String,
         includeLibraries: Boolean,
-        limit: Int
+        limit: Int,
+        matchMode: String
     ): List<SymbolData> {
         val scope = if (includeLibraries) {
             GlobalSearchScope.allScope(project)
@@ -923,7 +924,8 @@ class JavaScriptSymbolSearchHandler : BaseJavaScriptHandler<List<SymbolData>>(),
             pattern = pattern,
             scope = scope,
             limit = limit,
-            languageFilter = setOf("JavaScript", "TypeScript")
+            languageFilter = setOf("JavaScript", "TypeScript"),
+            matchMode = matchMode
         )
     }
 }

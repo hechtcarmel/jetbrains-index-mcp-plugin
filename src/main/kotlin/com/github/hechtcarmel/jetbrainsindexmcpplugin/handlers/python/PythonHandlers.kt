@@ -610,7 +610,8 @@ class PythonSymbolSearchHandler : BasePythonHandler<List<SymbolData>>(), SymbolS
         project: Project,
         pattern: String,
         includeLibraries: Boolean,
-        limit: Int
+        limit: Int,
+        matchMode: String
     ): List<SymbolData> {
         val scope = if (includeLibraries) {
             GlobalSearchScope.allScope(project)
@@ -624,7 +625,8 @@ class PythonSymbolSearchHandler : BasePythonHandler<List<SymbolData>>(), SymbolS
             pattern = pattern,
             scope = scope,
             limit = limit,
-            languageFilter = setOf("Python")
+            languageFilter = setOf("Python"),
+            matchMode = matchMode
         )
     }
 }

@@ -129,13 +129,16 @@ interface SymbolSearchHandler : LanguageHandler<List<SymbolData>> {
      * @param pattern The search pattern (supports substring and camelCase matching)
      * @param includeLibraries Whether to search in library dependencies
      * @param limit Maximum number of results
+     * @param matchMode How to match the pattern: "substring" (default, matches anywhere),
+     *                  "prefix" (camelCase-aware prefix matching), or "exact" (case-insensitive exact match)
      * @return List of matching symbols
      */
     fun searchSymbols(
         project: Project,
         pattern: String,
         includeLibraries: Boolean,
-        limit: Int
+        limit: Int,
+        matchMode: String = "substring"
     ): List<SymbolData>
 }
 

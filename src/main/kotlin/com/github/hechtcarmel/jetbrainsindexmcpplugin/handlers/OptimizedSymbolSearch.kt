@@ -51,19 +51,21 @@ object OptimizedSymbolSearch {
         pattern: String,
         scope: GlobalSearchScope,
         limit: Int,
-        languageFilter: Set<String>? = null
+        languageFilter: Set<String>? = null,
+        matchMode: String = "substring"
     ): List<SymbolData> {
         if (pattern.isBlank()) return emptyList()
 
-        LOG.debug("Searching for symbols matching '$pattern' (limit=$limit, filter=$languageFilter)")
+        LOG.debug("Searching for symbols matching '$pattern' (limit=$limit, filter=$languageFilter, matchMode=$matchMode)")
 
         val results = mutableListOf<SymbolData>()
         val seen = mutableSetOf<String>() // Deduplication key: file:line:column:name
-        val matcher = createMatcher(pattern)
+        val matcher = createMatcher(pattern, matchMode)
+        val nameFilter = createNameFilter(pattern, matchMode, matcher)
 
         // Strategy 1: Use ChooseByNameContributor extension points (most reliable)
         try {
-            searchUsingContributors(project, pattern, scope, limit, languageFilter, matcher, results, seen)
+            searchUsingContributors(project, pattern, scope, limit, languageFilter, nameFilter, matcher, results, seen)
         } catch (e: Exception) {
             LOG.debug("Contributor-based search failed: ${e.message}")
         }
@@ -89,6 +91,7 @@ object OptimizedSymbolSearch {
         scope: GlobalSearchScope,
         limit: Int,
         languageFilter: Set<String>?,
+        nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolData>,
         seen: MutableSet<String>
@@ -99,7 +102,7 @@ object OptimizedSymbolSearch {
             if (results.size >= limit) break
 
             try {
-                processContributor(contributor, project, pattern, scope, limit, languageFilter, matcher, results, seen)
+                processContributor(contributor, project, pattern, scope, limit, languageFilter, nameFilter, matcher, results, seen)
             } catch (e: Exception) {
                 LOG.debug("Error processing contributor ${contributor.javaClass.simpleName}: ${e.message}")
             }
@@ -113,6 +116,7 @@ object OptimizedSymbolSearch {
         scope: GlobalSearchScope,
         limit: Int,
         languageFilter: Set<String>?,
+        nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolData>,
         seen: MutableSet<String>
@@ -123,7 +127,7 @@ object OptimizedSymbolSearch {
 
             contributor.processNames(
                 { name ->
-                    if (matcher.matches(name)) {
+                    if (nameFilter(name)) {
                         matchingNames.add(name)
                     }
                     matchingNames.size < limit * 3 // Collect extra for filtering
@@ -157,7 +161,7 @@ object OptimizedSymbolSearch {
         } else {
             // Legacy API - load all names then filter
             val names = contributor.getNames(project, true)
-            val matchingNames = names.filter { matcher.matches(it) }
+            val matchingNames = names.filter { nameFilter(it) }
 
             for (name in matchingNames) {
                 if (results.size >= limit) break
@@ -317,7 +321,18 @@ object OptimizedSymbolSearch {
         }
     }
 
-    private fun createMatcher(pattern: String): MinusculeMatcher {
-        return NameUtil.buildMatcher("*$pattern", NameUtil.MatchingCaseSensitivity.NONE)
+    private fun createMatcher(pattern: String, matchMode: String = "substring"): MinusculeMatcher {
+        val matcherPattern = when (matchMode) {
+            "prefix" -> pattern        // prefix/camelCase matching only
+            else -> "*$pattern"         // substring (default) and exact (used for sorting)
+        }
+        return NameUtil.buildMatcher(matcherPattern, NameUtil.MatchingCaseSensitivity.NONE)
+    }
+
+    private fun createNameFilter(pattern: String, matchMode: String, matcher: MinusculeMatcher): (String) -> Boolean {
+        return when (matchMode) {
+            "exact" -> { name -> name.equals(pattern, ignoreCase = true) }
+            else -> { name -> matcher.matches(name) }
+        }
     }
 }

@@ -1058,7 +1058,8 @@ class RustSymbolSearchHandler : BaseRustHandler<List<SymbolData>>(), SymbolSearc
         project: Project,
         pattern: String,
         includeLibraries: Boolean,
-        limit: Int
+        limit: Int,
+        matchMode: String
     ): List<SymbolData> {
         val scope = if (includeLibraries) {
             GlobalSearchScope.allScope(project)
@@ -1072,7 +1073,8 @@ class RustSymbolSearchHandler : BaseRustHandler<List<SymbolData>>(), SymbolSearc
             pattern = pattern,
             scope = scope,
             limit = limit,
-            languageFilter = setOf("Rust")
+            languageFilter = setOf("Rust"),
+            matchMode = matchMode
         )
     }
 }

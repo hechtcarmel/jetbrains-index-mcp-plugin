@@ -954,7 +954,8 @@ class PhpSymbolSearchHandler : BasePhpHandler<List<SymbolData>>(), SymbolSearchH
         project: Project,
         pattern: String,
         includeLibraries: Boolean,
-        limit: Int
+        limit: Int,
+        matchMode: String
     ): List<SymbolData> {
         val scope = if (includeLibraries) {
             GlobalSearchScope.allScope(project)
@@ -968,7 +969,8 @@ class PhpSymbolSearchHandler : BasePhpHandler<List<SymbolData>>(), SymbolSearchH
             pattern = pattern,
             scope = scope,
             limit = limit,
-            languageFilter = setOf("PHP")
+            languageFilter = setOf("PHP"),
+            matchMode = matchMode
         )
     }
 }

@@ -22,7 +22,8 @@ data class UsageLocation(
 @Serializable
 data class FindUsagesResult(
     val usages: List<UsageLocation>,
-    val totalCount: Int
+    val totalCount: Int,
+    val truncated: Boolean = false
 )
 
 // find_definition output
