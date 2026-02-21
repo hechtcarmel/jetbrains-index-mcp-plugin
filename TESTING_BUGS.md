@@ -152,6 +152,109 @@ JSX component `<AuthProvider>...</AuthProvider>` generated two identical entries
 
 ---
 
+---
+
+## BUG 7: `ide_search_text` does not filter `.worktrees/`, `node_modules/`, etc. — FIXED
+
+**Severity**: High
+**Affects**: Any project with worktrees, backup dirs, or node_modules
+**Tool**: `ide_search_text`
+**Fixed in**: current branch (this session)
+
+### Reproduction
+
+```json
+{"query": "useAuth", "project_path": "/home/marius/work/mirela/eduplanner-ui"}
+```
+
+Returned 100 results including:
+- `.worktrees/cleanup/src/...` — worktree duplicates
+- `python-scripts/backups/src/...` — backup files
+- `.claude/skills/...`, `.claude-memory/...` — internal metadata
+- `agents/`, `docs/` — documentation files from worktrees
+
+`ide_find_symbol` and `ide_find_class` had been fixed (BUGs 1 & 2) to exclude these paths,
+but `ide_search_text` never received the same treatment.
+
+### Root Cause
+
+`SearchTextTool.doExecute` called `searchText()` and used results directly without
+`filterNot { isExcludedPath(it.file) }`. The `isExcludedPath` function in `SearchMatchUtils.kt`
+already has `.worktrees/` in `DEEP_EXCLUDED_SEGMENTS` — it just wasn't being called.
+
+### Fix
+
+- Added `import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath`
+- Added `OVER_FETCH_FACTOR = 3` constant (matches `FindClassTool` pattern)
+- Changed `doExecute` to pass `limit * OVER_FETCH_FACTOR` to `searchText()`, then chain
+  `.filterNot { isExcludedPath(it.file) }.take(limit)`
+
+---
+
+## BUG 8: `ide_file_structure` Java — duplicate constructor entries — FIXED
+
+**Severity**: Medium
+**Affects**: Java files with constructors (all Java projects)
+**Tool**: `ide_file_structure`
+**Fixed in**: current branch (this session)
+
+### Reproduction
+
+```json
+{"file": "src/main/java/.../ConfigurationCache.java",
+ "project_path": "/home/marius/work/stefanini/extenda/sdd/hiiretail-payment-client-adyen"}
+```
+
+Output showed:
+```
+constructor public ConfigurationCache () (line 46)
+constructor public ConfigurationCache () (line 46)   ← DUPLICATE
+```
+
+`ConfigurationCache` has exactly ONE constructor. The Java record `CachedConfiguration`
+also showed its constructor twice.
+
+### Root Cause
+
+In `JavaHandlers.extractClassStructure()`, both `psiClass.constructors` AND
+`psiClass.methods` are iterated. In IntelliJ's PSI API, `PsiClass.getMethods()` returns
+ALL methods **including constructors**. So each constructor was added twice — once from
+the `constructors` loop and once from the `methods` loop.
+
+### Fix
+
+In `extractClassStructure`, the `methods` loop now skips constructors:
+```kotlin
+// Methods (excluding constructors, which are already listed above via psiClass.constructors)
+for (method in psiClass.methods) {
+    if (!method.isConstructor) {
+        children.add(extractMethodStructure(method, project))
+    }
+}
+```
+
+---
+
+## Regression Verification — Round 2 (2026-02-21)
+
+BUGs 1–6 verified by re-running same test cases from round 1:
+
+| Tool | Test | Result |
+|------|------|--------|
+| `ide_find_class("*")` | backend-kotlin wildcard | ✓ Returns Kotlin/Python source, no venv |
+| `ide_find_class("*")` | eduplanner-ui wildcard | ✓ Returns TS source, no `.worktrees/` |
+| `ide_find_class("*")` | hiiretail wildcard | ✓ Returns Java source only |
+| `ide_find_symbol` exact | All 3 projects | ✓ Case-sensitive, correct single result |
+| `ide_call_hierarchy` callers | Kotlin suspend fun (val result = pattern) | ✓ `Stage1ToStage2Converter.getWeekDatesFiltered` returned |
+| `ide_find_references` | CalendarService (23), useAuth (19), getConfiguration (1) | ✓ All match grep ground truth |
+| `ide_file_structure` | Kotlin, TypeScript, Java | ✓ (after BUG 8 fix) |
+
+New fix (`0e3f38e`) also verified:
+- `ide_call_hierarchy` callers for `getAvailableTeachingDays` returns all 3 actual callers,
+  including `Stage1ToStage2Converter.getWeekDatesFiltered` which uses `val validTeachingDays = calendarService.getAvailableTeachingDays(...)` (the val-assignment pattern that was broken).
+
+---
+
 ## Summary
 
 | Bug | Tool | Severity | Status | Fixed in |
@@ -159,11 +262,13 @@ JSX component `<AuthProvider>...</AuthProvider>` generated two identical entries
 | BUG 1 | `ide_find_class` (wildcard) | High | FIXED | `a8fd60b`, `ce08ef9` |
 | BUG 2 | `ide_find_symbol` / `ide_find_class` | Medium | FIXED | `a8fd60b` |
 | BUG 3 | `ide_find_symbol` (exact mode) | Low | FIXED | `bca24ad` |
-| BUG 4 | `ide_file_structure` | Medium | FIXED | `a8fd60b` |
-| BUG 5 | `ide_call_hierarchy` | Low | FIXED | `bca24ad`, `ce08ef9` |
-| BUG 6 | `ide_find_references` | Low | FIXED | `bca24ad`, `ce08ef9` |
+| BUG 4 | `ide_file_structure` (JS/TS missing) | Medium | FIXED | `a8fd60b` |
+| BUG 5 | `ide_call_hierarchy` (JSX callers) | Low | FIXED | `bca24ad`, `ce08ef9` |
+| BUG 6 | `ide_find_references` (JSX duplicates) | Low | FIXED | `bca24ad`, `ce08ef9` |
+| BUG 7 | `ide_search_text` (no path filtering) | High | FIXED | this session |
+| BUG 8 | `ide_file_structure` Java (dup constructors) | Medium | FIXED | this session |
 
-All 6 bugs discovered during systematic testing have been fixed.
+8 bugs total, all fixed.
 
 ### Cross-Validation Methodology
 

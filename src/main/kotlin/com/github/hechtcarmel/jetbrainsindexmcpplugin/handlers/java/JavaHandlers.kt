@@ -1046,9 +1046,11 @@ class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHa
             children.add(extractMethodStructure(constructor, project))
         }
 
-        // Methods
+        // Methods (excluding constructors, which are already listed above via psiClass.constructors)
         for (method in psiClass.methods) {
-            children.add(extractMethodStructure(method, project))
+            if (!method.isConstructor) {
+                children.add(extractMethodStructure(method, project))
+            }
         }
 
         // Inner classes
