@@ -192,6 +192,11 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
      * Resolves a Kotlin function to its light method (PsiMethod).
      * Walks up the parent chain to find a KtNamedFunction, KtPropertyAccessor, or KtProperty
      * and converts via toLightMethods().
+     *
+     * Important: local `val`/`var` declarations are also KtProperty nodes, but toLightMethods()
+     * returns empty for them (no JVM method). In that case we continue walking up the parent chain
+     * instead of returning null, so that we can find the enclosing KtNamedFunction (e.g. a test
+     * method containing `val result = service.publishSchedule(...)`).
      */
     protected fun resolveKotlinMethod(element: PsiElement): PsiMethod? {
         val lightClassExtensions = lightClassExtensionsClass ?: return null
@@ -206,14 +211,19 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
                 (ktPropertyClass?.isInstance(current) == true)
 
             if (isKotlinDeclaration) {
-                // Convert to light method via toLightMethods() extension function
-                return try {
+                // Convert to light method via toLightMethods() extension function.
+                // For local val/var (KtProperty without a backing JVM method), toLightMethods()
+                // returns empty. In that case we continue walking up to find the enclosing function
+                // rather than returning null and losing the reference.
+                try {
                     val toLightMethodsMethod = lightClassExtensions.getMethod("toLightMethods", PsiElement::class.java)
                     val lightMethods = toLightMethodsMethod.invoke(null, current) as? List<*>
-                    lightMethods?.firstOrNull() as? PsiMethod
+                    val lightMethod = lightMethods?.firstOrNull() as? PsiMethod
+                    if (lightMethod != null) return lightMethod
+                    // Empty result (e.g. local val/var) — continue walking up the parent chain
                 } catch (e: ReflectiveOperationException) {
                     LOG.debug("Failed to get light method for Kotlin element: ${e.javaClass.simpleName}: ${e.message}")
-                    null
+                    // Continue walking up on reflection failure
                 }
             }
             current = current.parent
