@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionRes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
+import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiNamedElement
 import kotlinx.serialization.json.JsonObject
@@ -112,6 +113,18 @@ class FindDefinitionTool : AbstractMcpTool() {
                 } else {
                     targetElement
                 }
+            }
+
+            // Handle package/directory references (e.g., cursor on package segment in import statement)
+            if (effectiveTarget is PsiDirectory) {
+                val dirPath = getRelativePath(project, effectiveTarget.virtualFile)
+                return@suspendingReadAction createJsonResult(DefinitionResult(
+                    file = dirPath,
+                    line = 1,
+                    column = 1,
+                    preview = "Package directory: $dirPath",
+                    symbolName = effectiveTarget.name
+                ))
             }
 
             val targetFile = effectiveTarget.containingFile?.virtualFile

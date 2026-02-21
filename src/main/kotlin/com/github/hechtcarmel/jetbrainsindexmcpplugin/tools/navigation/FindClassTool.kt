@@ -43,6 +43,11 @@ class FindClassTool : AbstractMcpTool() {
         private val LOG = logger<FindClassTool>()
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
+        // processNames may emit names from broader scope (including libraries/JDK) even when
+        // we search in project scope. Short/common patterns like "Tool" would fill a small buffer
+        // with library class names (e.g., "Toolkit", "ToolProvider") before reaching project classes.
+        // Use a generous limit so project classes are always collected.
+        private const val MAX_NAME_COLLECTION_LIMIT = 5000
 
         private val BUILD_OUTPUT_PREFIXES = listOf("bin/", "build/", "out/", ".gradle/")
 
@@ -190,7 +195,7 @@ class FindClassTool : AbstractMcpTool() {
                     if (nameFilter(name)) {
                         matchingNames.add(name)
                     }
-                    matchingNames.size < limit * 3
+                    matchingNames.size < MAX_NAME_COLLECTION_LIMIT
                 },
                 scope,
                 null
