@@ -804,7 +804,7 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
             allReferences.take(MAX_RESULTS_PER_LEVEL)
                 .mapNotNull { reference ->
                     val refElement = reference.element
-                    val containingFunction = findContainingJSFunction(refElement)
+                    val containingFunction = findContainingCallable(refElement)
                     if (containingFunction != null && containingFunction != jsFunction && !methodsToSearch.contains(containingFunction)) {
                         val children = if (depth > 1) {
                             findCallersRecursive(project, containingFunction, depth - 1, visited, stackDepth + 1)
@@ -817,6 +817,18 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
             LOG.warn("Error finding callers: ${e.message}")
             emptyList()
         }
+    }
+
+    /**
+     * Find the containing callable for a reference element.
+     * Tries JSFunction first, then falls back to JSVariable (for arrow functions assigned to variables).
+     */
+    private fun findContainingCallable(element: PsiElement): PsiElement? {
+        val containingFunction = findContainingJSFunction(element)
+        if (containingFunction != null) return containingFunction
+        val jsVar = jsVariableClass ?: return null
+        @Suppress("UNCHECKED_CAST")
+        return PsiTreeUtil.getParentOfType(element, jsVar as Class<out PsiElement>)
     }
 
     private fun findCalleesRecursive(

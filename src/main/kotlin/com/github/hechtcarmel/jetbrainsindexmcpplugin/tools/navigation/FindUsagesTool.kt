@@ -152,6 +152,7 @@ class FindUsagesTool : AbstractMcpTool() {
             })
 
             val usagesList = usages.toList()
+                .distinctBy { "${it.file}:${it.line}:${it.column}" }
             val total = totalFound.get()
             createJsonResult(FindUsagesResult(
                 usages = usagesList,

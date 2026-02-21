@@ -40,7 +40,7 @@ internal fun createMatcher(pattern: String, matchMode: String = "substring"): Mi
 /**
  * Return a predicate that decides whether a candidate [name] matches [pattern] under [matchMode].
  *
- * - `"exact"` — case-insensitive full-string equality
+ * - `"exact"` — case-sensitive full-string equality
  * - Everything else — delegate to the pre-built [matcher]
  */
 internal fun createNameFilter(
@@ -48,6 +48,6 @@ internal fun createNameFilter(
     matchMode: String,
     matcher: MinusculeMatcher
 ): (String) -> Boolean = when (matchMode) {
-    "exact" -> { name -> name.equals(pattern, ignoreCase = true) }
+    "exact" -> { name -> name == pattern }
     else -> { name -> matcher.matches(name) }
 }
