@@ -102,7 +102,6 @@ class FindUsagesTool : AbstractMcpTool() {
 
             // Lock-free concurrent collection - ReferencesSearch may invoke processor from multiple threads
             val usages = ConcurrentLinkedQueue<UsageLocation>()
-            val collected = AtomicInteger(0)
             val totalFound = AtomicInteger(0)
             // Cap total counting to avoid scanning unbounded references
             val totalCountLimit = maxResults * 10
@@ -116,10 +115,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 if (refFile != null) {
                     val total = totalFound.incrementAndGet()
 
-                    // Claim a slot first, then do expensive document processing only if slot is valid.
-                    // This prevents multiple threads from doing wasted work past the limit.
-                    val slot = collected.incrementAndGet()
-                    if (slot <= maxResults) {
+                    if (total <= maxResults) {
                         val document = PsiDocumentManager.getInstance(project)
                             .getDocument(refElement.containingFile)
                         if (document != null) {

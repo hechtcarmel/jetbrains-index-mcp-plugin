@@ -4,7 +4,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
@@ -32,10 +31,6 @@ class FindSymbolTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
-        // Over-fetch factor: collect this many times the requested limit from each handler so that
-        // excluded-path results (venv, node_modules, worktrees) don't exhaust the limit before
-        // real project symbols are collected.
-        private const val OVER_FETCH_FACTOR = 5
     }
 
     override val name = ToolNames.FIND_SYMBOL
@@ -118,9 +113,7 @@ class FindSymbolTool : AbstractMcpTool() {
             }
 
             val allMatches = mutableListOf<SymbolMatch>()
-            // Over-fetch so that excluded-path results (venv, node_modules, worktrees) don't
-            // exhaust the limit before real project symbols are collected.
-            val handlerLimit = limit * OVER_FETCH_FACTOR
+            val handlerLimit = limit
 
             for (handler in handlers) {
                 val handlerResults = handler.searchSymbols(project, query, includeLibraries, handlerLimit, matchMode)
@@ -141,7 +134,6 @@ class FindSymbolTool : AbstractMcpTool() {
 
             val sortedMatches = allMatches
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
-                .filterNot { isExcludedPath(it.file) }
                 .take(limit)
 
             createJsonResult(FindSymbolResult(

@@ -852,11 +852,7 @@ class GoSymbolSearchHandler : BaseGoHandler<List<SymbolData>>(), SymbolSearchHan
         limit: Int,
         matchMode: String
     ): List<SymbolData> {
-        val scope = if (includeLibraries) {
-            GlobalSearchScope.allScope(project)
-        } else {
-            GlobalSearchScope.projectScope(project)
-        }
+        val scope = createFilteredScope(project, includeLibraries)
 
         // Use the optimized platform-based search with language filter for Go
         return OptimizedSymbolSearch.search(

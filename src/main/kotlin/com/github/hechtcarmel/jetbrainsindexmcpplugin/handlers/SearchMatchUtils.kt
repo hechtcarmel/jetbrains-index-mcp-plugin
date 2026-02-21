@@ -22,15 +22,16 @@ internal val ROOT_ONLY_EXCLUDED_PREFIXES = listOf(
  * Path segments that are excluded at any depth in the project tree.
  * Virtual environments and package manager directories should never contain source files
  * regardless of where they appear in the project hierarchy.
+ *
+ * Note: `.env/` and `env/` are intentionally omitted — they are too generic and would
+ * produce false positives (e.g. `src/config/env/`, `docker/env/`). Only the conventional
+ * Python venv names `.venv/` and `venv/` are excluded.
  */
 internal val DEEP_EXCLUDED_SEGMENTS = listOf(
-    ".venv/", "venv/", ".env/", "env/",
+    ".venv/", "venv/",
     "node_modules/",
     ".worktrees/", ".claude/worktrees/"
 )
-
-// Keep for backwards compatibility / tests
-internal val EXCLUDED_PATH_PREFIXES = ROOT_ONLY_EXCLUDED_PREFIXES + DEEP_EXCLUDED_SEGMENTS
 
 /** Returns true if [path] matches any excluded directory rule. */
 internal fun isExcludedPath(path: String): Boolean {

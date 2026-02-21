@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createFilteredScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -98,17 +98,12 @@ class FindFileTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val scope = if (includeLibraries) {
-                GlobalSearchScope.allScope(project)
-            } else {
-                GlobalSearchScope.projectScope(project)
-            }
+            val scope = createFilteredScope(project, includeLibraries)
             val matcher = createMatcher(query)
             val files = searchFiles(project, query, scope, limit, matcher)
 
             val sortedFiles = files
                 .distinctBy { it.path }
-                .filterNot { isExcludedPath(it.path) }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 

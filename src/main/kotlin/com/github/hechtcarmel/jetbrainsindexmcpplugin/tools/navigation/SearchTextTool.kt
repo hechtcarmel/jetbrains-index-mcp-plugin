@@ -3,7 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createFilteredScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
@@ -41,8 +41,6 @@ class SearchTextTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_LIMIT = 100
         private const val MAX_LIMIT = 500
-        // Over-fetch to compensate for results filtered by isExcludedPath (.worktrees, node_modules, etc.)
-        private const val OVER_FETCH_FACTOR = 3
     }
 
     override val name = ToolNames.SEARCH_TEXT
@@ -116,11 +114,8 @@ class SearchTextTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val scope = GlobalSearchScope.projectScope(project)
-            // Over-fetch to compensate for results that will be filtered by isExcludedPath
-            val matches = searchText(project, query, scope, searchContext, caseSensitive, limit * OVER_FETCH_FACTOR)
-                .filterNot { isExcludedPath(it.file) }
-                .take(limit)
+            val scope = createFilteredScope(project)
+            val matches = searchText(project, query, scope, searchContext, caseSensitive, limit)
 
             createJsonResult(
                 SearchTextResult(

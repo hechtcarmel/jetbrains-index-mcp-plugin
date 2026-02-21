@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createFilteredScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -51,10 +51,6 @@ class FindClassTool : AbstractMcpTool() {
         // with library class names (e.g., "Toolkit", "ToolProvider") before reaching project classes.
         // Use a generous limit so project classes are always collected.
         private const val MAX_NAME_COLLECTION_LIMIT = 5000
-        // Over-fetch factor: collect this many times the requested limit from IntelliJ so that
-        // excluded-path results (venv, node_modules, etc.) are filtered out without leaving the
-        // final result set empty.
-        private const val OVER_FETCH_FACTOR = 5
     }
 
     override val name = ToolNames.FIND_CLASS
@@ -125,22 +121,16 @@ class FindClassTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val scope = if (includeLibraries) {
-                GlobalSearchScope.allScope(project)
-            } else {
-                GlobalSearchScope.projectScope(project)
-            }
+            // Scope-based exclusion: venv, node_modules, and worktree files are filtered out
+            // at the IntelliJ search-infrastructure level, so they never consume buffer slots.
+            val scope = createFilteredScope(project, includeLibraries)
 
             val matcher = createMatcher(query, matchMode)
             val nameFilter = createNameFilter(query, matchMode, matcher)
-            // Over-fetch so that excluded-path results (venv, node_modules, worktrees) don't
-            // exhaust the limit before real project classes are collected.
-            val fetchLimit = limit * OVER_FETCH_FACTOR
-            val classes = searchClasses(project, query, scope, fetchLimit, nameFilter, matcher, languageFilter)
+            val classes = searchClasses(project, query, scope, limit, nameFilter, matcher, languageFilter)
 
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
-                .filterNot { isExcludedPath(it.file) }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 
@@ -276,8 +266,6 @@ class FindClassTool : AbstractMcpTool() {
         val file = targetElement.containingFile?.virtualFile ?: return null
         val basePath = project.basePath ?: ""
         val relativePath = file.path.removePrefix(basePath).removePrefix("/")
-
-        if (isExcludedPath(relativePath)) return null
 
         val name = when (targetElement) {
             is PsiNamedElement -> targetElement.name

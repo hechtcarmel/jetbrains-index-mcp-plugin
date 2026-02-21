@@ -130,7 +130,7 @@ interface SymbolSearchHandler : LanguageHandler<List<SymbolData>> {
      * @param includeLibraries Whether to search in library dependencies
      * @param limit Maximum number of results
      * @param matchMode How to match the pattern: "substring" (default, matches anywhere),
-     *                  "prefix" (camelCase-aware prefix matching), or "exact" (case-insensitive exact match)
+     *                  "prefix" (camelCase-aware prefix matching), or "exact" (case-sensitive exact match)
      * @return List of matching symbols
      */
     fun searchSymbols(
