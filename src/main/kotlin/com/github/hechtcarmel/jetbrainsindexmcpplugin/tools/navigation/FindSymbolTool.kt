@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
@@ -135,6 +136,7 @@ class FindSymbolTool : AbstractMcpTool() {
 
             val sortedMatches = allMatches
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+                .filterNot { isExcludedPath(it.file) }
                 .take(limit)
 
             createJsonResult(FindSymbolResult(

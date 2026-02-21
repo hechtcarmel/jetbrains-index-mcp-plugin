@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isBuildOutputPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -108,7 +108,7 @@ class FindFileTool : AbstractMcpTool() {
 
             val sortedFiles = files
                 .distinctBy { it.path }
-                .filterNot { isBuildOutputPath(it.path) }
+                .filterNot { isExcludedPath(it.path) }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 

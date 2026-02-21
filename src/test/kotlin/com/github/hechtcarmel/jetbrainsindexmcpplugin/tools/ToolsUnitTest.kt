@@ -21,7 +21,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStat
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isBuildOutputPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -631,19 +631,37 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have maxResults property", properties?.get("maxResults"))
     }
 
-    // ── isBuildOutputPath pure logic tests ────────────────────────────────────
+    // ── isExcludedPath pure logic tests ─────────────────────────────────────
 
-    fun testIsBuildOutputPathDetectsBuildDirs() {
-        assertTrue("bin/ should be build output",     isBuildOutputPath("bin/Main.class"))
-        assertTrue("build/ should be build output",   isBuildOutputPath("build/libs/app.jar"))
-        assertTrue("out/ should be build output",     isBuildOutputPath("out/production/Main.class"))
-        assertTrue(".gradle/ should be build output", isBuildOutputPath(".gradle/cache/file.jar"))
+    fun testIsExcludedPathDetectsBuildDirs() {
+        assertTrue("bin/ should be excluded",     isExcludedPath("bin/Main.class"))
+        assertTrue("build/ should be excluded",   isExcludedPath("build/libs/app.jar"))
+        assertTrue("out/ should be excluded",     isExcludedPath("out/production/Main.class"))
+        assertTrue(".gradle/ should be excluded", isExcludedPath(".gradle/cache/file.jar"))
     }
 
-    fun testIsBuildOutputPathAllowsSourcePaths() {
-        assertFalse("src/ should not be build output",           isBuildOutputPath("src/main/kotlin/Foo.kt"))
-        assertFalse("nested bin path should not match",          isBuildOutputPath("src/bin/config.txt"))
-        assertFalse("nested build path should not match",        isBuildOutputPath("src/build/notes.md"))
-        assertFalse("root file should not be build output",      isBuildOutputPath("README.md"))
+    fun testIsExcludedPathDetectsVenvDirs() {
+        assertTrue(".venv/ should be excluded",   isExcludedPath(".venv/lib/python3.11/site-packages/flask/__init__.py"))
+        assertTrue("venv/ should be excluded",    isExcludedPath("venv/lib/python3.11/site-packages/flask/__init__.py"))
+        assertTrue(".env/ should be excluded",    isExcludedPath(".env/lib/python3.11/site-packages/flask/__init__.py"))
+        assertTrue("env/ should be excluded",     isExcludedPath("env/lib/python3.11/site-packages/flask/__init__.py"))
+    }
+
+    fun testIsExcludedPathDetectsNodeModules() {
+        assertTrue("node_modules/ should be excluded", isExcludedPath("node_modules/@types/react/index.d.ts"))
+    }
+
+    fun testIsExcludedPathDetectsWorktrees() {
+        assertTrue(".worktrees/ should be excluded",        isExcludedPath(".worktrees/feature-branch/src/Main.kt"))
+        assertTrue(".claude/worktrees/ should be excluded", isExcludedPath(".claude/worktrees/fix-123/src/Main.kt"))
+    }
+
+    fun testIsExcludedPathAllowsSourcePaths() {
+        assertFalse("src/ should not be excluded",             isExcludedPath("src/main/kotlin/Foo.kt"))
+        assertFalse("nested bin path should not match",        isExcludedPath("src/bin/config.txt"))
+        assertFalse("nested build path should not match",      isExcludedPath("src/build/notes.md"))
+        assertFalse("root file should not be excluded",        isExcludedPath("README.md"))
+        assertFalse("nested node_modules should not match",    isExcludedPath("src/node_modules/readme.txt"))
+        assertFalse("nested venv should not match",            isExcludedPath("src/venv/readme.txt"))
     }
 }

@@ -1,11 +1,14 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaScriptPluginDetector
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
@@ -58,6 +61,7 @@ object JavaScriptHandlers {
             registry.registerCallHierarchyHandler(JavaScriptCallHierarchyHandler())
             registry.registerSymbolSearchHandler(JavaScriptSymbolSearchHandler())
             registry.registerSuperMethodsHandler(JavaScriptSuperMethodsHandler())
+            registry.registerStructureHandler(JavaScriptStructureHandler())
 
             // Also register for TypeScript (uses same handlers)
             registry.registerTypeHierarchyHandler(TypeScriptTypeHierarchyHandler())
@@ -65,6 +69,7 @@ object JavaScriptHandlers {
             registry.registerCallHierarchyHandler(TypeScriptCallHierarchyHandler())
             registry.registerSymbolSearchHandler(TypeScriptSymbolSearchHandler())
             registry.registerSuperMethodsHandler(TypeScriptSuperMethodsHandler())
+            registry.registerStructureHandler(TypeScriptStructureHandler())
 
             LOG.info("Registered JavaScript and TypeScript handlers")
         } catch (e: ClassNotFoundException) {
@@ -1109,5 +1114,272 @@ class TypeScriptSymbolSearchHandler : SymbolSearchHandler by JavaScriptSymbolSea
 }
 
 class TypeScriptSuperMethodsHandler : SuperMethodsHandler by JavaScriptSuperMethodsHandler() {
+    override val languageId = "TypeScript"
+}
+
+/**
+ * JavaScript implementation of [StructureHandler].
+ *
+ * Extracts the hierarchical structure of JavaScript source files including
+ * classes, functions, variables, and their nesting relationships.
+ *
+ * Uses reflection to access JavaScript PSI classes to avoid compile-time dependencies.
+ */
+class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(), StructureHandler {
+
+    companion object {
+        private val LOG = logger<JavaScriptStructureHandler>()
+    }
+
+    override val languageId = "JavaScript"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaScriptLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+
+    override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
+        val structure = mutableListOf<StructureNode>()
+
+        try {
+            // Check if the file is a JavaScript/TypeScript file
+            val jsFileClass = try {
+                Class.forName("com.intellij.lang.javascript.psi.JSFile")
+            } catch (_: ClassNotFoundException) {
+                null
+            }
+            if (jsFileClass != null && !jsFileClass.isInstance(file)) {
+                LOG.debug("File is not a JSFile: ${file.javaClass.name}, language: ${file.language.id}")
+                return emptyList()
+            }
+
+            // Find top-level classes
+            if (jsClassClass != null) {
+                @Suppress("UNCHECKED_CAST")
+                val classes = PsiTreeUtil.findChildrenOfType(file, jsClassClass as Class<PsiElement>)
+                classes?.forEach { jsClass ->
+                    if (isTopLevel(jsClass, file)) {
+                        structure.add(extractClassStructure(jsClass, project))
+                    }
+                }
+            }
+
+            // Find top-level functions
+            if (jsFunctionClass != null) {
+                @Suppress("UNCHECKED_CAST")
+                val functions = PsiTreeUtil.findChildrenOfType(file, jsFunctionClass as Class<PsiElement>)
+                functions?.forEach { jsFunction ->
+                    if (isTopLevel(jsFunction, file)) {
+                        structure.add(extractFunctionStructure(jsFunction, project))
+                    }
+                }
+            }
+
+            // Find top-level variables
+            if (jsVariableClass != null) {
+                @Suppress("UNCHECKED_CAST")
+                val variables = PsiTreeUtil.findChildrenOfType(file, jsVariableClass as Class<PsiElement>)
+                variables?.forEach { jsVariable ->
+                    if (isTopLevel(jsVariable, file)) {
+                        structure.add(extractVariableStructure(jsVariable, project))
+                    }
+                }
+            }
+
+        } catch (e: ClassNotFoundException) {
+            LOG.warn("JavaScript PSI class not found: ${e.message}")
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${e.javaClass.simpleName}")
+        }
+
+        return structure.sortedBy { it.line }
+    }
+
+    private fun isTopLevel(element: PsiElement, file: PsiFile): Boolean {
+        var current: PsiElement? = element.parent
+        while (current != null && current != file) {
+            if (isJSClass(current) || isJSFunction(current)) {
+                return false
+            }
+            current = current.parent
+        }
+        return true
+    }
+
+    private fun extractClassStructure(jsClass: PsiElement, project: Project): StructureNode {
+        val children = mutableListOf<StructureNode>()
+
+        try {
+            // Get class methods via getFunctions()
+            val getFunctionsMethod = jsClass.javaClass.getMethod("getFunctions")
+            val functions = getFunctionsMethod.invoke(jsClass) as? Array<*> ?: emptyArray<Any?>()
+            for (func in functions) {
+                if (func is PsiElement) {
+                    children.add(extractMethodStructure(func, project))
+                }
+            }
+        } catch (_: Exception) {
+            // getFunctions() not available, try children scan
+            try {
+                if (jsFunctionClass != null) {
+                    @Suppress("UNCHECKED_CAST")
+                    val methods = PsiTreeUtil.findChildrenOfType(jsClass, jsFunctionClass as Class<PsiElement>)
+                    methods?.forEach { method ->
+                        if (method.parent == jsClass || method.parent?.parent == jsClass) {
+                            children.add(extractMethodStructure(method, project))
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Ignore
+            }
+        }
+
+        try {
+            // Get class fields via getFields()
+            val getFieldsMethod = jsClass.javaClass.getMethod("getFields")
+            val fields = getFieldsMethod.invoke(jsClass) as? Array<*> ?: emptyArray<Any?>()
+            for (field in fields) {
+                if (field is PsiElement) {
+                    children.add(extractFieldStructure(field, project))
+                }
+            }
+        } catch (_: Exception) {
+            // getFields() not available, skip
+        }
+
+        val name = getName(jsClass) ?: "unknown"
+        val kind = if (getClassKind(jsClass) == "INTERFACE") StructureKind.INTERFACE else StructureKind.CLASS
+
+        return StructureNode(
+            name = name,
+            kind = kind,
+            modifiers = getJavaScriptModifiers(jsClass),
+            signature = buildClassSignature(jsClass),
+            line = getLineNumber(project, jsClass) ?: 0,
+            children = children.sortedBy { it.line }
+        )
+    }
+
+    private fun extractMethodStructure(jsFunction: PsiElement, project: Project): StructureNode {
+        val name = getName(jsFunction) ?: "unknown"
+        return StructureNode(
+            name = name,
+            kind = StructureKind.METHOD,
+            modifiers = getJavaScriptModifiers(jsFunction),
+            signature = buildFunctionSignature(jsFunction),
+            line = getLineNumber(project, jsFunction) ?: 0
+        )
+    }
+
+    private fun extractFunctionStructure(jsFunction: PsiElement, project: Project): StructureNode {
+        val name = getName(jsFunction) ?: "unknown"
+        return StructureNode(
+            name = name,
+            kind = StructureKind.FUNCTION,
+            modifiers = getJavaScriptModifiers(jsFunction),
+            signature = buildFunctionSignature(jsFunction),
+            line = getLineNumber(project, jsFunction) ?: 0
+        )
+    }
+
+    private fun extractVariableStructure(jsVariable: PsiElement, project: Project): StructureNode {
+        val name = getName(jsVariable) ?: "unknown"
+        return StructureNode(
+            name = name,
+            kind = StructureKind.VARIABLE,
+            modifiers = emptyList(),
+            signature = null,
+            line = getLineNumber(project, jsVariable) ?: 0
+        )
+    }
+
+    private fun extractFieldStructure(field: PsiElement, project: Project): StructureNode {
+        val name = getName(field) ?: "unknown"
+        return StructureNode(
+            name = name,
+            kind = StructureKind.FIELD,
+            modifiers = getJavaScriptModifiers(field),
+            signature = null,
+            line = getLineNumber(project, field) ?: 0
+        )
+    }
+
+    private fun getJavaScriptModifiers(element: PsiElement): List<String> {
+        val modifiers = mutableListOf<String>()
+        try {
+            val attrListMethod = element.javaClass.getMethod("getAttributeList")
+            val attrList = attrListMethod.invoke(element) ?: return modifiers
+
+            val accessTypeMethod = attrList.javaClass.getMethod("getAccessType")
+            val accessType = accessTypeMethod.invoke(attrList)
+            val accessName = accessType?.toString()?.lowercase()
+            if (accessName != null && accessName != "public" && accessName != "package_local") {
+                modifiers.add(accessName)
+            }
+
+            try {
+                val isStaticMethod = attrList.javaClass.getMethod("hasModifier", String::class.java)
+                if (isStaticMethod.invoke(attrList, "static") as? Boolean == true) {
+                    modifiers.add("static")
+                }
+                if (isStaticMethod.invoke(attrList, "async") as? Boolean == true) {
+                    modifiers.add("async")
+                }
+                if (isStaticMethod.invoke(attrList, "abstract") as? Boolean == true) {
+                    modifiers.add("abstract")
+                }
+            } catch (_: Exception) {
+                // hasModifier not available
+            }
+        } catch (_: Exception) {
+            // No attribute list available
+        }
+        return modifiers
+    }
+
+    private fun buildClassSignature(jsClass: PsiElement): String {
+        return try {
+            val superClasses = getSuperClasses(jsClass)
+            if (superClasses != null && superClasses.isNotEmpty()) {
+                val names = superClasses.filterIsInstance<PsiElement>().mapNotNull {
+                    getQualifiedName(it) ?: getName(it)
+                }
+                if (names.isNotEmpty()) "extends ${names.joinToString(", ")}" else ""
+            } else ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun buildFunctionSignature(jsFunction: PsiElement): String {
+        return try {
+            val getParameterListMethod = jsFunction.javaClass.getMethod("getParameterList")
+            val parameterList = getParameterListMethod.invoke(jsFunction) ?: return "()"
+            val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
+            val parameters = getParametersMethod.invoke(parameterList) as? Array<*> ?: return "()"
+
+            val params = parameters.filterIsInstance<PsiElement>().mapNotNull { param ->
+                try {
+                    val getNameMethod = param.javaClass.getMethod("getName")
+                    getNameMethod.invoke(param) as? String
+                } catch (_: Exception) {
+                    null
+                }
+            }.joinToString(", ")
+
+            "($params)"
+        } catch (_: Exception) {
+            "()"
+        }
+    }
+}
+
+/**
+ * TypeScript implementation of [StructureHandler].
+ * Delegates to [JavaScriptStructureHandler] with TypeScript language ID.
+ */
+class TypeScriptStructureHandler : StructureHandler by JavaScriptStructureHandler() {
     override val languageId = "TypeScript"
 }

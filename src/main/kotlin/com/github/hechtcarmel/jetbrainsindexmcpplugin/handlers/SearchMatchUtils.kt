@@ -10,12 +10,17 @@ import com.intellij.psi.codeStyle.NameUtil
  * tools (FindClassTool, FindFileTool) to avoid duplication.
  */
 
-/** Build output directories that duplicate source files and should be excluded from results. */
-internal val BUILD_OUTPUT_PREFIXES = listOf("bin/", "build/", "out/", ".gradle/")
+/** Path prefixes for directories that should be excluded from search results (build output, virtual environments, worktrees). */
+internal val EXCLUDED_PATH_PREFIXES = listOf(
+    "bin/", "build/", "out/", ".gradle/",
+    ".venv/", "venv/", ".env/", "env/",
+    "node_modules/",
+    ".worktrees/", ".claude/worktrees/"
+)
 
-/** Returns true if [path] is inside a build output directory. */
-internal fun isBuildOutputPath(path: String): Boolean =
-    BUILD_OUTPUT_PREFIXES.any { path.startsWith(it) }
+/** Returns true if [path] starts with an excluded directory prefix (build output, venv, worktree, etc.). */
+internal fun isExcludedPath(path: String): Boolean =
+    EXCLUDED_PATH_PREFIXES.any { path.startsWith(it) }
 
 /**
  * Build a [MinusculeMatcher] for the given [pattern] and [matchMode].

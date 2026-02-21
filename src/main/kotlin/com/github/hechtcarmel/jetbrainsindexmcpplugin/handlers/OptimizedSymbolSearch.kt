@@ -216,6 +216,8 @@ object OptimizedSymbolSearch {
         val basePath = project.basePath ?: ""
         val relativePath = file.path.removePrefix(basePath).removePrefix("/")
 
+        if (isExcludedPath(relativePath)) return null
+
         val name = when (targetElement) {
             is PsiNamedElement -> targetElement.name
             else -> {

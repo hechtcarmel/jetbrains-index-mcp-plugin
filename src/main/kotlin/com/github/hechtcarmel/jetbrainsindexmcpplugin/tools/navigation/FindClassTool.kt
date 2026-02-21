@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isBuildOutputPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -133,7 +133,7 @@ class FindClassTool : AbstractMcpTool() {
 
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
-                .filterNot { isBuildOutputPath(it.file) }
+                .filterNot { isExcludedPath(it.file) }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 
@@ -269,6 +269,8 @@ class FindClassTool : AbstractMcpTool() {
         val file = targetElement.containingFile?.virtualFile ?: return null
         val basePath = project.basePath ?: ""
         val relativePath = file.path.removePrefix(basePath).removePrefix("/")
+
+        if (isExcludedPath(relativePath)) return null
 
         val name = when (targetElement) {
             is PsiNamedElement -> targetElement.name
