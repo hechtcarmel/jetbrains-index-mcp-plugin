@@ -51,6 +51,10 @@ class FindClassTool : AbstractMcpTool() {
         // with library class names (e.g., "Toolkit", "ToolProvider") before reaching project classes.
         // Use a generous limit so project classes are always collected.
         private const val MAX_NAME_COLLECTION_LIMIT = 5000
+        // Over-fetch factor: collect this many times the requested limit from IntelliJ so that
+        // excluded-path results (venv, node_modules, etc.) are filtered out without leaving the
+        // final result set empty.
+        private const val OVER_FETCH_FACTOR = 5
     }
 
     override val name = ToolNames.FIND_CLASS
@@ -129,7 +133,10 @@ class FindClassTool : AbstractMcpTool() {
 
             val matcher = createMatcher(query, matchMode)
             val nameFilter = createNameFilter(query, matchMode, matcher)
-            val classes = searchClasses(project, query, scope, limit, nameFilter, matcher, languageFilter)
+            // Over-fetch so that excluded-path results (venv, node_modules, worktrees) don't
+            // exhaust the limit before real project classes are collected.
+            val fetchLimit = limit * OVER_FETCH_FACTOR
+            val classes = searchClasses(project, query, scope, fetchLimit, nameFilter, matcher, languageFilter)
 
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }

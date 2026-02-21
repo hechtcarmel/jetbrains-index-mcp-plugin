@@ -32,6 +32,10 @@ class FindSymbolTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
+        // Over-fetch factor: collect this many times the requested limit from each handler so that
+        // excluded-path results (venv, node_modules, worktrees) don't exhaust the limit before
+        // real project symbols are collected.
+        private const val OVER_FETCH_FACTOR = 5
     }
 
     override val name = ToolNames.FIND_SYMBOL
@@ -114,8 +118,9 @@ class FindSymbolTool : AbstractMcpTool() {
             }
 
             val allMatches = mutableListOf<SymbolMatch>()
-            // When language filtering, collect more from each handler to ensure enough results
-            val handlerLimit = if (languageFilter != null) limit * 3 else limit
+            // Over-fetch so that excluded-path results (venv, node_modules, worktrees) don't
+            // exhaust the limit before real project symbols are collected.
+            val handlerLimit = limit * OVER_FETCH_FACTOR
 
             for (handler in handlers) {
                 val handlerResults = handler.searchSymbols(project, query, includeLibraries, handlerLimit, matchMode)
