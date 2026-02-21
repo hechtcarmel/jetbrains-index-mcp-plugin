@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+### Added
+- **`matchMode` parameter for `ide_find_symbol` and `ide_find_class`** - Control how queries match symbol names
+  - `"substring"` (default) - matches anywhere in name (backward compatible)
+  - `"prefix"` - camelCase-aware prefix matching (e.g., "find" matches "findSymbol")
+  - `"exact"` - case-insensitive exact match
+- **`language` parameter for `ide_find_symbol` and `ide_find_class`** - Filter results by programming language (e.g., `"Kotlin"`, `"Java"`)
+- **`maxPreviewLines` parameter for `ide_find_definition`** - Limit `fullElementPreview` output size (default: 50, max: 500)
+- **Glob pattern support for `ide_search_text`** - File type filtering via glob patterns (e.g., `*.kt`, `*.gradle.kts`)
+- **Kotlin callee resolution for `ide_call_hierarchy`** - Callees direction now works for Kotlin methods by resolving `KtCallExpression` references via reflection
+- **Path-based search fallback for `ide_find_file`** - Falls back to path matching when filename search returns no results
+
+### Fixed
+- **`ide_call_hierarchy` callers for Kotlin methods** - Added `ReferencesSearch` fallback when `MethodReferencesSearch` misses Kotlin references. Extended `resolveKotlinMethod` to handle `KtPropertyAccessor` and `KtProperty` parents for call sites in property getters/setters/initializers
+- **`ide_find_class` short/generic queries returning 0 results** - Increased `processNames` collection limit from 75 to 5000. The contributor's `processNames` emits names from broader scope (JDK/libraries) even when searching project scope; short patterns like "Tool" would fill the small buffer with library names before reaching project classes
+- **`ide_find_class` language filter** - Filter applied at collection time in `processContributor` instead of post-filtering, preventing generic queries from returning 0 results when language filtering
+- **`ide_find_symbol` language filter** - Collects 3x more from handlers when filtering and filters during collection loop
+- **`ide_find_definition` on import statements** - Class imports now resolve correctly. Package-segment imports resolve to the package directory via `PsiPackage`/`PsiDirectory` handling instead of returning "Definition file not found"
+- **`ide_find_definition` compiled class targets** - `effectiveTarget` now uses `navigationElement` when target resolves to compiled class in JAR
+- **`ide_search_text` deduplication and false positives** - Results deduplicated by (file, line) and validated that the search word appears in the matched line
+- **`ide_find_references` Processor pattern** - Uses streaming `Processor` with early termination instead of `findAll().take(n)` to avoid loading all results into memory
+- **`ide_type_hierarchy` Kotlin language detection** - Uses `navigationElement.language.id` to correctly detect Kotlin types instead of reporting them as Java
+- **`ide_find_file` build output duplicates** - Filters `bin/`, `build/`, `out/`, `.gradle/` output directories from results
+
 ## [3.8.0] - 2026-02-19
 
 ### Added
