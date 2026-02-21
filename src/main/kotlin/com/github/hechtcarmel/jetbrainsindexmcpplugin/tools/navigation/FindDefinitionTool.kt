@@ -13,6 +13,8 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiPackage
+import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -125,6 +127,20 @@ class FindDefinitionTool : AbstractMcpTool() {
                     preview = "Package directory: $dirPath",
                     symbolName = effectiveTarget.name
                 ))
+            }
+            if (effectiveTarget is PsiPackage) {
+                val dirs = effectiveTarget.getDirectories(GlobalSearchScope.projectScope(project))
+                val dir = dirs.firstOrNull()
+                if (dir != null) {
+                    val dirPath = getRelativePath(project, dir.virtualFile)
+                    return@suspendingReadAction createJsonResult(DefinitionResult(
+                        file = dirPath,
+                        line = 1,
+                        column = 1,
+                        preview = "Package: ${effectiveTarget.qualifiedName}",
+                        symbolName = effectiveTarget.qualifiedName
+                    ))
+                }
             }
 
             val targetFile = effectiveTarget.containingFile?.virtualFile
