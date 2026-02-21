@@ -321,18 +321,11 @@ object OptimizedSymbolSearch {
         }
     }
 
-    private fun createMatcher(pattern: String, matchMode: String = "substring"): MinusculeMatcher {
-        val matcherPattern = when (matchMode) {
-            "prefix" -> pattern        // prefix/camelCase matching only
-            else -> "*$pattern"         // substring (default) and exact (used for sorting)
-        }
-        return NameUtil.buildMatcher(matcherPattern, NameUtil.MatchingCaseSensitivity.NONE)
-    }
+    // Delegated to shared SearchMatchUtils.createMatcher — kept as private alias for call-site clarity
+    private fun createMatcher(pattern: String, matchMode: String = "substring"): MinusculeMatcher =
+        com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher(pattern, matchMode)
 
-    private fun createNameFilter(pattern: String, matchMode: String, matcher: MinusculeMatcher): (String) -> Boolean {
-        return when (matchMode) {
-            "exact" -> { name -> name.equals(pattern, ignoreCase = true) }
-            else -> { name -> matcher.matches(name) }
-        }
-    }
+    // Delegated to shared SearchMatchUtils.createNameFilter
+    private fun createNameFilter(pattern: String, matchMode: String, matcher: MinusculeMatcher): (String) -> Boolean =
+        com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter(pattern, matchMode, matcher)
 }

@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isBuildOutputPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -42,13 +43,6 @@ class FindFileTool : AbstractMcpTool() {
         private val LOG = logger<FindFileTool>()
         private const val DEFAULT_LIMIT = 25
         private const val MAX_LIMIT = 100
-
-        /** Common build output directories that duplicate source files. */
-        private val BUILD_OUTPUT_PREFIXES = listOf("bin/", "build/", "out/", ".gradle/")
-
-        private fun isBuildOutputPath(path: String): Boolean {
-            return BUILD_OUTPUT_PREFIXES.any { path.startsWith(it) }
-        }
     }
 
     override val name = ToolNames.FIND_FILE

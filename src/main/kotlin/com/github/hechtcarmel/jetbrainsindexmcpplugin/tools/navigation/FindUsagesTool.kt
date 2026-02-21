@@ -116,8 +116,10 @@ class FindUsagesTool : AbstractMcpTool() {
                 if (refFile != null) {
                     val total = totalFound.incrementAndGet()
 
-                    // Collect details only up to maxResults
-                    if (collected.get() < maxResults) {
+                    // Claim a slot first, then do expensive document processing only if slot is valid.
+                    // This prevents multiple threads from doing wasted work past the limit.
+                    val slot = collected.incrementAndGet()
+                    if (slot <= maxResults) {
                         val document = PsiDocumentManager.getInstance(project)
                             .getDocument(refElement.containingFile)
                         if (document != null) {
@@ -132,16 +134,13 @@ class FindUsagesTool : AbstractMcpTool() {
                                 )
                             ).trim()
 
-                            val slot = collected.incrementAndGet()
-                            if (slot <= maxResults) {
-                                usages.add(UsageLocation(
-                                    file = getRelativePath(project, refFile),
-                                    line = lineNumber,
-                                    column = columnNumber,
-                                    context = lineText,
-                                    type = classifyUsage(refElement)
-                                ))
-                            }
+                            usages.add(UsageLocation(
+                                file = getRelativePath(project, refFile),
+                                line = lineNumber,
+                                column = columnNumber,
+                                context = lineText,
+                                type = classifyUsage(refElement)
+                            ))
                         }
                     }
 

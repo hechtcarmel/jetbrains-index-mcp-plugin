@@ -210,6 +210,31 @@ before executing any tool. This ensures PSI is synchronized with external file c
 - Keep functions small and focused
 - Extract reusable logic to utility classes
 
+### Tool Schema Guidelines
+
+When defining `inputSchema` for MCP tools, use JSON Schema `enum` for parameters with a fixed set of valid values. This gives LLM clients auto-validation and clear error messages instead of relying on description text alone.
+
+```kotlin
+// ✗ Bad — values only in description, no validation
+putJsonObject(ParamNames.MATCH_MODE) {
+    put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+    put(SchemaConstants.DESCRIPTION, "How to match: \"substring\", \"prefix\", or \"exact\".")
+}
+
+// ✓ Good — enum validates input and is visible to LLMs
+putJsonObject(ParamNames.MATCH_MODE) {
+    put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+    put(SchemaConstants.DESCRIPTION, "How to match the query. Default: \"substring\".")
+    putJsonArray("enum") {
+        add(JsonPrimitive("substring"))
+        add(JsonPrimitive("prefix"))
+        add(JsonPrimitive("exact"))
+    }
+}
+```
+
+See `SearchTextTool.kt`'s `context` parameter for an existing example of this pattern.
+
 ## Building and Running
 
 ```bash

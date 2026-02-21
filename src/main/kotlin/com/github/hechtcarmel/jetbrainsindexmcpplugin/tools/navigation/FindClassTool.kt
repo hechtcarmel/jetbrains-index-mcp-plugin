@@ -1,5 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isBuildOutputPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -48,12 +51,6 @@ class FindClassTool : AbstractMcpTool() {
         // with library class names (e.g., "Toolkit", "ToolProvider") before reaching project classes.
         // Use a generous limit so project classes are always collected.
         private const val MAX_NAME_COLLECTION_LIMIT = 5000
-
-        private val BUILD_OUTPUT_PREFIXES = listOf("bin/", "build/", "out/", ".gradle/")
-
-        private fun isBuildOutputPath(path: String): Boolean {
-            return BUILD_OUTPUT_PREFIXES.any { path.startsWith(it) }
-        }
     }
 
     override val name = ToolNames.FIND_CLASS
@@ -91,7 +88,12 @@ class FindClassTool : AbstractMcpTool() {
             }
             putJsonObject(ParamNames.MATCH_MODE) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-                put(SchemaConstants.DESCRIPTION, "How to match the query: \"substring\" (default, matches anywhere in name), \"prefix\" (camelCase-aware prefix matching), or \"exact\" (case-insensitive exact match).")
+                put(SchemaConstants.DESCRIPTION, "How to match the query. Default: \"substring\".")
+                putJsonArray("enum") {
+                    add(JsonPrimitive("substring"))
+                    add(JsonPrimitive("prefix"))
+                    add(JsonPrimitive("exact"))
+                }
             }
             putJsonObject(ParamNames.LIMIT) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
@@ -342,18 +344,11 @@ class FindClassTool : AbstractMcpTool() {
         }
     }
 
-    private fun createMatcher(pattern: String, matchMode: String = "substring"): MinusculeMatcher {
-        val matcherPattern = when (matchMode) {
-            "prefix" -> pattern        // prefix/camelCase matching only
-            else -> "*$pattern"         // substring (default) and exact (used for sorting)
-        }
-        return NameUtil.buildMatcher(matcherPattern, NameUtil.MatchingCaseSensitivity.NONE)
-    }
+    // Provided by SearchMatchUtils — this local alias preserves call-site compatibility
+    private fun createMatcher(pattern: String, matchMode: String = "substring"): MinusculeMatcher =
+        com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher(pattern, matchMode)
 
-    private fun createNameFilter(pattern: String, matchMode: String, matcher: MinusculeMatcher): (String) -> Boolean {
-        return when (matchMode) {
-            "exact" -> { name -> name.equals(pattern, ignoreCase = true) }
-            else -> { name -> matcher.matches(name) }
-        }
-    }
+    // Provided by SearchMatchUtils
+    private fun createNameFilter(pattern: String, matchMode: String, matcher: MinusculeMatcher): (String) -> Boolean =
+        com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter(pattern, matchMode, matcher)
 }

@@ -21,7 +21,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStat
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isBuildOutputPath
 import junit.framework.TestCase
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -553,5 +555,95 @@ class ToolsUnitTest : TestCase() {
         val searchTextTool = registry.getTool(ToolNames.SEARCH_TEXT)
         assertNotNull("ide_search_text should be registered", searchTextTool)
         assertEquals(ToolNames.SEARCH_TEXT, searchTextTool?.name)
+    }
+
+
+    // ── matchMode enum schema tests ────────────────────────────────────────────
+
+    fun testFindSymbolToolSchemaHasMatchModeEnum() {
+        val tool = FindSymbolTool()
+        val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+
+        val matchModeProp = properties?.get(ParamNames.MATCH_MODE)?.jsonObject
+        assertNotNull("Should have matchMode property", matchModeProp)
+
+        val enumArray = matchModeProp?.get("enum")?.jsonArray
+        assertNotNull("matchMode should have an enum array", enumArray)
+
+        val values = enumArray?.map { it.jsonPrimitive.content }
+        assertTrue("enum should contain 'substring'", values?.contains("substring") == true)
+        assertTrue("enum should contain 'prefix'",    values?.contains("prefix")    == true)
+        assertTrue("enum should contain 'exact'",     values?.contains("exact")     == true)
+        assertEquals("enum should have exactly 3 values", 3, values?.size)
+    }
+
+    fun testFindClassToolSchemaHasMatchModeEnum() {
+        val tool = FindClassTool()
+        val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+
+        val matchModeProp = properties?.get(ParamNames.MATCH_MODE)?.jsonObject
+        assertNotNull("Should have matchMode property", matchModeProp)
+
+        val enumArray = matchModeProp?.get("enum")?.jsonArray
+        assertNotNull("matchMode should have an enum array", enumArray)
+
+        val values = enumArray?.map { it.jsonPrimitive.content }
+        assertTrue("enum should contain 'substring'", values?.contains("substring") == true)
+        assertTrue("enum should contain 'prefix'",    values?.contains("prefix")    == true)
+        assertTrue("enum should contain 'exact'",     values?.contains("exact")     == true)
+        assertEquals("enum should have exactly 3 values", 3, values?.size)
+    }
+
+    // ── language filter schema tests ───────────────────────────────────────────
+
+    fun testFindSymbolToolSchemaHasLanguageFilter() {
+        val tool = FindSymbolTool()
+        val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+    }
+
+    fun testFindClassToolSchemaHasLanguageFilter() {
+        val tool = FindClassTool()
+        val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+    }
+
+    // ── maxPreviewLines schema test ────────────────────────────────────────────
+
+    fun testFindDefinitionToolSchemaHasMaxPreviewLines() {
+        val tool = FindDefinitionTool()
+        val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+        assertNotNull("Should have fullElementPreview property", properties?.get("fullElementPreview"))
+        assertNotNull("Should have maxPreviewLines property", properties?.get("maxPreviewLines"))
+    }
+
+    // ── FindUsagesTool totalCount/truncated via maxResults schema ──────────────
+
+    fun testFindUsagesToolSchemaHasMaxResults() {
+        val tool = FindUsagesTool()
+        val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+        assertNotNull("Should have maxResults property", properties?.get("maxResults"))
+    }
+
+    // ── isBuildOutputPath pure logic tests ────────────────────────────────────
+
+    fun testIsBuildOutputPathDetectsBuildDirs() {
+        assertTrue("bin/ should be build output",     isBuildOutputPath("bin/Main.class"))
+        assertTrue("build/ should be build output",   isBuildOutputPath("build/libs/app.jar"))
+        assertTrue("out/ should be build output",     isBuildOutputPath("out/production/Main.class"))
+        assertTrue(".gradle/ should be build output", isBuildOutputPath(".gradle/cache/file.jar"))
+    }
+
+    fun testIsBuildOutputPathAllowsSourcePaths() {
+        assertFalse("src/ should not be build output",           isBuildOutputPath("src/main/kotlin/Foo.kt"))
+        assertFalse("nested bin path should not match",          isBuildOutputPath("src/bin/config.txt"))
+        assertFalse("nested build path should not match",        isBuildOutputPath("src/build/notes.md"))
+        assertFalse("root file should not be build output",      isBuildOutputPath("README.md"))
     }
 }

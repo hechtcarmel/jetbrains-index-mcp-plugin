@@ -561,6 +561,19 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
     companion object {
         private const val MAX_RESULTS_PER_LEVEL = 20
         private const val MAX_STACK_DEPTH = 50
+
+        // Cached via lazy — getMethod() is non-trivial and called in a loop for every KtCallExpression
+        private val ktCallExpressionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
+            } catch (_: ClassNotFoundException) { null }
+        }
+
+        private val getCalleeExpressionMethod by lazy {
+            try {
+                ktCallExpressionClass?.getMethod("getCalleeExpression")
+            } catch (_: Exception) { null }
+        }
     }
 
     override val languageId = "JAVA"
@@ -612,12 +625,14 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
             methodsToSearch.addAll(method.findDeepestSuperMethods().take(10))
 
             val allReferences = mutableListOf<PsiElement>()
-            val seenOffsets = mutableSetOf<Int>()
+            // Dedup key includes file path — textOffset alone is not globally unique across files
+            val seenKeys = mutableSetOf<String>()
             for (methodToSearch in methodsToSearch) {
                 if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
                 MethodReferencesSearch.search(methodToSearch, GlobalSearchScope.projectScope(project), true)
                     .forEach(Processor { reference ->
-                        if (seenOffsets.add(reference.element.textOffset)) {
+                        val file = reference.element.containingFile?.virtualFile?.path ?: ""
+                        if (seenKeys.add("$file:${reference.element.textOffset}")) {
                             allReferences.add(reference.element)
                         }
                         allReferences.size < MAX_RESULTS_PER_LEVEL * 2
@@ -633,7 +648,8 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                     val searchTarget = methodToSearch.navigationElement ?: methodToSearch
                     ReferencesSearch.search(searchTarget, scope, false)
                         .forEach(Processor { reference ->
-                            if (seenOffsets.add(reference.element.textOffset)) {
+                            val file = reference.element.containingFile?.virtualFile?.path ?: ""
+                            if (seenKeys.add("$file:${reference.element.textOffset}")) {
                                 allReferences.add(reference.element)
                             }
                             allReferences.size < MAX_RESULTS_PER_LEVEL * 2
@@ -729,11 +745,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
         stackDepth: Int,
         callees: MutableList<CallElementData>
     ) {
-        val ktCallExpressionClass = try {
-            Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
-        } catch (_: ClassNotFoundException) {
-            return
-        }
+        val callExprClass = ktCallExpressionClass ?: return
 
         // Navigate from light method back to the original Kotlin PSI element
         val navigationElement = method.navigationElement ?: return
@@ -741,7 +753,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
 
         // Find all call expressions in the Kotlin function body via reflection
         @Suppress("UNCHECKED_CAST")
-        val callExpressions = PsiTreeUtil.findChildrenOfType(navigationElement, ktCallExpressionClass as Class<PsiElement>)
+        val callExpressions = PsiTreeUtil.findChildrenOfType(navigationElement, callExprClass as Class<PsiElement>)
             .take(MAX_RESULTS_PER_LEVEL)
 
         for (callExpr in callExpressions) {
@@ -772,13 +784,14 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
 
     /**
      * Try to resolve a Kotlin call expression's callee by navigating into the calleeExpression
-     * and resolving its reference.
+     * and resolving its reference. Uses a cached Method reference to avoid repeated reflection
+     * lookups in the call loop.
      */
     private fun resolveKotlinCalleeFromExpression(callExpr: PsiElement): PsiMethod? {
         return try {
             // KtCallExpression has getCalleeExpression() which returns the name reference
-            val getCalleeMethod = callExpr.javaClass.getMethod("getCalleeExpression")
-            val calleeExpr = getCalleeMethod.invoke(callExpr) as? PsiElement ?: return null
+            val calleeMethod = getCalleeExpressionMethod ?: return null
+            val calleeExpr = calleeMethod.invoke(callExpr) as? PsiElement ?: return null
             // The callee expression's reference resolves to the called method/function
             val resolved = calleeExpr.reference?.resolve()
             when (resolved) {
@@ -819,7 +832,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
             file = file?.let { getRelativePath(project, it) } ?: "unknown",
             line = getLineNumber(project, method) ?: 0,
             column = getColumnNumber(project, method) ?: 0,
-            language = if (method.language.id == "kotlin") "Kotlin" else "Java",
+            language = if (method.navigationElement.language.id == "kotlin") "Kotlin" else "Java",
             children = children?.takeIf { it.isNotEmpty() }
         )
     }

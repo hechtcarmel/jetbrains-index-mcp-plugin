@@ -70,7 +70,12 @@ class FindSymbolTool : AbstractMcpTool() {
             }
             putJsonObject(ParamNames.MATCH_MODE) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-                put(SchemaConstants.DESCRIPTION, "How to match the query: \"substring\" (default, matches anywhere in name), \"prefix\" (camelCase-aware prefix matching), or \"exact\" (case-insensitive exact match).")
+                put(SchemaConstants.DESCRIPTION, "How to match the query. Default: \"substring\".")
+                putJsonArray("enum") {
+                    add(JsonPrimitive("substring"))
+                    add(JsonPrimitive("prefix"))
+                    add(JsonPrimitive("exact"))
+                }
             }
             putJsonObject(ParamNames.LIMIT) {
                 put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
