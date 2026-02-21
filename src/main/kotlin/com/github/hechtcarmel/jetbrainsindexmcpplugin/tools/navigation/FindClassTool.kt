@@ -122,18 +122,11 @@ class FindClassTool : AbstractMcpTool() {
 
             val matcher = createMatcher(query, matchMode)
             val nameFilter = createNameFilter(query, matchMode, matcher)
-            // Collect more results than needed to account for filtering
-            val searchLimit = if (languageFilter != null) limit * 4 else limit
-            val classes = searchClasses(project, query, scope, searchLimit, nameFilter, matcher)
+            val classes = searchClasses(project, query, scope, limit, nameFilter, matcher, languageFilter)
 
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
                 .filterNot { isBuildOutputPath(it.file) }
-                .let { results ->
-                    if (languageFilter != null) {
-                        results.filter { it.language.equals(languageFilter, ignoreCase = true) }
-                    } else results
-                }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
                 .take(limit)
 
@@ -154,7 +147,8 @@ class FindClassTool : AbstractMcpTool() {
         scope: GlobalSearchScope,
         limit: Int,
         nameFilter: (String) -> Boolean,
-        matcher: MinusculeMatcher
+        matcher: MinusculeMatcher,
+        languageFilter: String? = null
     ): List<SymbolMatch> {
         val results = mutableListOf<SymbolMatch>()
         val seen = mutableSetOf<String>()
@@ -166,7 +160,7 @@ class FindClassTool : AbstractMcpTool() {
             if (results.size >= limit) break
 
             try {
-                processContributor(contributor, project, pattern, scope, limit, nameFilter, matcher, results, seen)
+                processContributor(contributor, project, pattern, scope, limit, nameFilter, matcher, results, seen, languageFilter)
             } catch (e: Exception) {
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }
@@ -184,7 +178,8 @@ class FindClassTool : AbstractMcpTool() {
         nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolMatch>,
-        seen: MutableSet<String>
+        seen: MutableSet<String>,
+        languageFilter: String? = null
     ) {
         if (contributor is ChooseByNameContributorEx) {
             // Modern API with Processor pattern
@@ -211,7 +206,8 @@ class FindClassTool : AbstractMcpTool() {
                         if (results.size >= limit) return@processElementsWithName false
 
                         val symbolMatch = convertToSymbolMatch(item, project)
-                        if (symbolMatch != null) {
+                        if (symbolMatch != null &&
+                            (languageFilter == null || symbolMatch.language.equals(languageFilter, ignoreCase = true))) {
                             val key = "${symbolMatch.file}:${symbolMatch.line}:${symbolMatch.column}:${symbolMatch.name}"
                             if (key !in seen) {
                                 seen.add(key)
@@ -236,7 +232,8 @@ class FindClassTool : AbstractMcpTool() {
                     if (results.size >= limit) break
 
                     val symbolMatch = convertToSymbolMatch(item, project)
-                    if (symbolMatch != null) {
+                    if (symbolMatch != null &&
+                        (languageFilter == null || symbolMatch.language.equals(languageFilter, ignoreCase = true))) {
                         val key = "${symbolMatch.file}:${symbolMatch.line}:${symbolMatch.column}:${symbolMatch.name}"
                         if (key !in seen) {
                             seen.add(key)

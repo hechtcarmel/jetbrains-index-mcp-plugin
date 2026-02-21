@@ -11,6 +11,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ClassInheritorsSearch
 import com.intellij.psi.search.searches.MethodReferencesSearch
 import com.intellij.psi.search.searches.OverridingMethodsSearch
+import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.Processor
 
@@ -88,6 +89,24 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
                 Class.forName("org.jetbrains.kotlin.psi.KtNamedFunction")
             } catch (e: ClassNotFoundException) {
                 LOG.debug("Kotlin KtNamedFunction class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktPropertyAccessorClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtPropertyAccessor")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtPropertyAccessor class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktPropertyClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtProperty")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtProperty class not found: ${e.message}")
                 null
             }
         }
@@ -171,24 +190,29 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
 
     /**
      * Resolves a Kotlin function to its light method (PsiMethod).
-     * Walks up the parent chain to find a KtNamedFunction and converts via toLightMethods().
+     * Walks up the parent chain to find a KtNamedFunction, KtPropertyAccessor, or KtProperty
+     * and converts via toLightMethods().
      */
     protected fun resolveKotlinMethod(element: PsiElement): PsiMethod? {
-        val ktFunctionClass = ktNamedFunctionClass ?: return null
         val lightClassExtensions = lightClassExtensionsClass ?: return null
 
-        // Find KtNamedFunction in parent chain
+        // Find Kotlin declaration in parent chain
         var current: PsiElement? = element
         var depth = 0
         while (current != null && depth < MAX_PARENT_TRAVERSAL_DEPTH) {
-            if (ktFunctionClass.isInstance(current)) {
+            // Check for KtNamedFunction, KtPropertyAccessor, or KtProperty
+            val isKotlinDeclaration = (ktNamedFunctionClass?.isInstance(current) == true) ||
+                (ktPropertyAccessorClass?.isInstance(current) == true) ||
+                (ktPropertyClass?.isInstance(current) == true)
+
+            if (isKotlinDeclaration) {
                 // Convert to light method via toLightMethods() extension function
                 return try {
                     val toLightMethodsMethod = lightClassExtensions.getMethod("toLightMethods", PsiElement::class.java)
                     val lightMethods = toLightMethodsMethod.invoke(null, current) as? List<*>
                     lightMethods?.firstOrNull() as? PsiMethod
                 } catch (e: ReflectiveOperationException) {
-                    LOG.debug("Failed to get light method for Kotlin function: ${e.javaClass.simpleName}: ${e.message}")
+                    LOG.debug("Failed to get light method for Kotlin element: ${e.javaClass.simpleName}: ${e.message}")
                     null
                 }
             }
@@ -588,13 +612,33 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
             methodsToSearch.addAll(method.findDeepestSuperMethods().take(10))
 
             val allReferences = mutableListOf<PsiElement>()
+            val seenOffsets = mutableSetOf<Int>()
             for (methodToSearch in methodsToSearch) {
                 if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
                 MethodReferencesSearch.search(methodToSearch, GlobalSearchScope.projectScope(project), true)
                     .forEach(Processor { reference ->
-                        allReferences.add(reference.element)
+                        if (seenOffsets.add(reference.element.textOffset)) {
+                            allReferences.add(reference.element)
+                        }
                         allReferences.size < MAX_RESULTS_PER_LEVEL * 2
                     })
+            }
+
+            // Fallback: use broader ReferencesSearch for Kotlin methods where MethodReferencesSearch may miss references
+            if (allReferences.isEmpty()) {
+                val scope = GlobalSearchScope.projectScope(project)
+                for (methodToSearch in methodsToSearch) {
+                    if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
+                    // Search the navigation element (Kotlin PSI) for broader coverage
+                    val searchTarget = methodToSearch.navigationElement ?: methodToSearch
+                    ReferencesSearch.search(searchTarget, scope, false)
+                        .forEach(Processor { reference ->
+                            if (seenOffsets.add(reference.element.textOffset)) {
+                                allReferences.add(reference.element)
+                            }
+                            allReferences.size < MAX_RESULTS_PER_LEVEL * 2
+                        })
+                }
             }
 
             allReferences

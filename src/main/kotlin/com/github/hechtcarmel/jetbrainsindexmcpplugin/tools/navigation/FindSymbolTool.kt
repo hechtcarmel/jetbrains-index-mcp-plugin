@@ -108,11 +108,14 @@ class FindSymbolTool : AbstractMcpTool() {
             }
 
             val allMatches = mutableListOf<SymbolMatch>()
+            // When language filtering, collect more from each handler to ensure enough results
+            val handlerLimit = if (languageFilter != null) limit * 3 else limit
 
             for (handler in handlers) {
-                val handlerResults = handler.searchSymbols(project, query, includeLibraries, limit, matchMode)
-                allMatches.addAll(handlerResults.map { symbolData ->
-                    SymbolMatch(
+                val handlerResults = handler.searchSymbols(project, query, includeLibraries, handlerLimit, matchMode)
+                for (symbolData in handlerResults) {
+                    if (languageFilter != null && !symbolData.language.equals(languageFilter, ignoreCase = true)) continue
+                    allMatches.add(SymbolMatch(
                         name = symbolData.name,
                         qualifiedName = symbolData.qualifiedName,
                         kind = symbolData.kind,
@@ -121,17 +124,12 @@ class FindSymbolTool : AbstractMcpTool() {
                         column = symbolData.column,
                         containerName = symbolData.containerName,
                         language = symbolData.language
-                    )
-                })
+                    ))
+                }
             }
 
             val sortedMatches = allMatches
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
-                .let { results ->
-                    if (languageFilter != null) {
-                        results.filter { it.language.equals(languageFilter, ignoreCase = true) }
-                    } else results
-                }
                 .take(limit)
 
             createJsonResult(FindSymbolResult(
