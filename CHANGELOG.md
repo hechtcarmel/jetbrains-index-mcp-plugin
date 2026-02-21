@@ -4,19 +4,29 @@
 
 ## [Unreleased]
 
+## [3.9.1] - 2026-02-21
+
 ### Added
 - **`matchMode` parameter for `ide_find_symbol` and `ide_find_class`** - Control how queries match symbol names
   - `"substring"` (default) - matches anywhere in name (backward compatible)
   - `"prefix"` - camelCase-aware prefix matching (e.g., "find" matches "findSymbol")
-  - `"exact"` - case-insensitive exact match
+  - `"exact"` - case-sensitive exact match
 - **`language` parameter for `ide_find_symbol` and `ide_find_class`** - Filter results by programming language (e.g., `"Kotlin"`, `"Java"`)
 - **`maxPreviewLines` parameter for `ide_find_definition`** - Limit `fullElementPreview` output size (default: 50, max: 500)
 - **Glob pattern support for `ide_search_text`** - File type filtering via glob patterns (e.g., `*.kt`, `*.gradle.kts`)
 - **Kotlin callee resolution for `ide_call_hierarchy`** - Callees direction now works for Kotlin methods by resolving `KtCallExpression` references via reflection
 - **Path-based search fallback for `ide_find_file`** - Falls back to path matching when filename search returns no results
+- **`ide_file_structure` for JavaScript and TypeScript** - Previously returned "Language not supported". Now works for `.js`, `.ts`, `.jsx`, `.tsx` files
 
 ### Fixed
-- **`ide_call_hierarchy` callers for Kotlin methods** - Added `ReferencesSearch` fallback when `MethodReferencesSearch` misses Kotlin references. Extended `resolveKotlinMethod` to handle `KtPropertyAccessor` and `KtProperty` parents for call sites in property getters/setters/initializers
+- **`ide_call_hierarchy` callers for Kotlin `suspend fun`** - `MethodReferencesSearch` misses `suspend fun` call sites because the Kotlin compiler appends a hidden `Continuation<T>` parameter to the JVM signature. Added unconditional `ReferencesSearch.search(navigationElement)` alongside `MethodReferencesSearch` (with deduplication) so callers are always found
+- **`ide_call_hierarchy` callers inside `val`/`var` assignments** - `resolveKotlinMethod` was stopping at local `val`/`var` PSI nodes (`KtProperty` with no backing JVM method) and returning `null`, silently dropping every such caller reference. Now continues walking up the PSI tree to find the enclosing named function
+- **`ide_call_hierarchy` "unknown" caller names for JSX arrow functions** - `findContainingCallable` was returning unnamed anonymous arrow functions (`const App = () => ...`) instead of the enclosing `JSVariable`. Now skips unnamed `JSFunction` nodes and falls back to the containing `JSVariable` for correct caller name resolution
+- **`ide_find_symbol` and `ide_find_class` wildcard queries returning empty results** - Both tools now request `limit × 5` results from IntelliJ before applying path exclusion filters. Previously, when all results within the requested limit were from excluded paths (venv, node_modules, etc.), the final result was empty even though real project symbols existed
+- **`ide_find_symbol` and `ide_find_class` polluted by venv/node_modules in subdirectories** - Exclusion filter now matches `.venv/`, `venv/`, `node_modules/`, and `.worktrees/` at any path depth (not only at the project root). Fixes multi-module projects where the virtual environment is inside a subdirectory (e.g. `python-services/.venv/`)
+- **`ide_find_symbol` exact `matchMode` was case-insensitive** - Changed from `name.equals(pattern, ignoreCase = true)` to `name == pattern`. `"CalendarService"` with `exact` no longer matches `calendarService` properties
+- **`ide_find_references` duplicate entries for JSX components** - Opening and closing JSX tags (`<Foo>` / `</Foo>`) resolved to identical `file:line:column` positions, producing duplicate entries. Results are now deduplicated by position
+- **`ide_find_references` `truncated` flag incorrectly true after deduplication** - `truncated` was computed as `totalFound > usages.size`, which fired whenever deduplication removed JSX tag duplicates. Now correctly set to `totalFound > maxResults` — only true when results were actually cut off by the limit
 - **`ide_find_class` short/generic queries returning 0 results** - Increased `processNames` collection limit from 75 to 5000. The contributor's `processNames` emits names from broader scope (JDK/libraries) even when searching project scope; short patterns like "Tool" would fill the small buffer with library names before reaching project classes
 - **`ide_find_class` language filter** - Filter applied at collection time in `processContributor` instead of post-filtering, preventing generic queries from returning 0 results when language filtering
 - **`ide_find_symbol` language filter** - Collects 3x more from handlers when filtering and filters during collection loop
