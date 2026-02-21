@@ -639,22 +639,29 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                     })
             }
 
-            // Fallback: use broader ReferencesSearch for Kotlin methods where MethodReferencesSearch may miss references
-            if (allReferences.isEmpty()) {
-                val scope = GlobalSearchScope.projectScope(project)
-                for (methodToSearch in methodsToSearch) {
-                    if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
-                    // Search the navigation element (Kotlin PSI) for broader coverage
-                    val searchTarget = methodToSearch.navigationElement ?: methodToSearch
-                    ReferencesSearch.search(searchTarget, scope, false)
-                        .forEach(Processor { reference ->
-                            val file = reference.element.containingFile?.virtualFile?.path ?: ""
-                            if (seenKeys.add("$file:${reference.element.textOffset}")) {
-                                allReferences.add(reference.element)
-                            }
-                            allReferences.size < MAX_RESULTS_PER_LEVEL * 2
-                        })
-                }
+            // For Kotlin methods, always supplement with ReferencesSearch on the KtNamedFunction.
+            // MethodReferencesSearch operates on the JVM-desugared PsiMethod, which for `suspend fun`
+            // has a compiler-added `Continuation` parameter that never appears in Kotlin source call
+            // sites. This causes MethodReferencesSearch to miss all callers of suspend funs in
+            // concrete classes. ReferencesSearch on the KtNamedFunction resolves this — it is the
+            // same approach used by ide_find_references (FindUsagesTool), which always works.
+            // Deduplication via seenKeys prevents double-counting when both searches find the same ref.
+            // Note: do NOT guard this with `if (allReferences.isEmpty())`. That original guard caused
+            // the fix to be silently skipped whenever MethodReferencesSearch returned any result
+            // (even declaration-site or annotation references that later get filtered out).
+            for (methodToSearch in methodsToSearch) {
+                if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
+                val navElement = methodToSearch.navigationElement ?: continue
+                if (navElement.language.id != "kotlin") continue
+                // Use element.useScope (no explicit scope arg) — matches FindUsagesTool behaviour
+                ReferencesSearch.search(navElement)
+                    .forEach(Processor { reference ->
+                        val file = reference.element.containingFile?.virtualFile?.path ?: ""
+                        if (seenKeys.add("$file:${reference.element.textOffset}")) {
+                            allReferences.add(reference.element)
+                        }
+                        allReferences.size < MAX_RESULTS_PER_LEVEL * 2
+                    })
             }
 
             allReferences
