@@ -641,14 +641,19 @@ class ToolsUnitTest : TestCase() {
     }
 
     fun testIsExcludedPathDetectsVenvDirs() {
+        // Root-level venv dirs
         assertTrue(".venv/ should be excluded",   isExcludedPath(".venv/lib/python3.11/site-packages/flask/__init__.py"))
         assertTrue("venv/ should be excluded",    isExcludedPath("venv/lib/python3.11/site-packages/flask/__init__.py"))
         assertTrue(".env/ should be excluded",    isExcludedPath(".env/lib/python3.11/site-packages/flask/__init__.py"))
         assertTrue("env/ should be excluded",     isExcludedPath("env/lib/python3.11/site-packages/flask/__init__.py"))
+        // Nested venv dirs (e.g. multi-module projects like python-services/.venv/)
+        assertTrue("nested .venv/ should be excluded", isExcludedPath("python-services/.venv/lib/python3.13/site-packages/h11/_writers.py"))
+        assertTrue("nested venv/ should be excluded",  isExcludedPath("backend/venv/lib/python3.11/flask/__init__.py"))
     }
 
     fun testIsExcludedPathDetectsNodeModules() {
-        assertTrue("node_modules/ should be excluded", isExcludedPath("node_modules/@types/react/index.d.ts"))
+        assertTrue("node_modules/ should be excluded",        isExcludedPath("node_modules/@types/react/index.d.ts"))
+        assertTrue("nested node_modules/ should be excluded", isExcludedPath("packages/ui/node_modules/react/index.js"))
     }
 
     fun testIsExcludedPathDetectsWorktrees() {
@@ -657,11 +662,9 @@ class ToolsUnitTest : TestCase() {
     }
 
     fun testIsExcludedPathAllowsSourcePaths() {
-        assertFalse("src/ should not be excluded",             isExcludedPath("src/main/kotlin/Foo.kt"))
-        assertFalse("nested bin path should not match",        isExcludedPath("src/bin/config.txt"))
-        assertFalse("nested build path should not match",      isExcludedPath("src/build/notes.md"))
-        assertFalse("root file should not be excluded",        isExcludedPath("README.md"))
-        assertFalse("nested node_modules should not match",    isExcludedPath("src/node_modules/readme.txt"))
-        assertFalse("nested venv should not match",            isExcludedPath("src/venv/readme.txt"))
+        assertFalse("src/ should not be excluded",        isExcludedPath("src/main/kotlin/Foo.kt"))
+        assertFalse("nested bin path should not match",   isExcludedPath("src/bin/config.txt"))
+        assertFalse("nested build path should not match", isExcludedPath("src/build/notes.md"))
+        assertFalse("root file should not be excluded",   isExcludedPath("README.md"))
     }
 }

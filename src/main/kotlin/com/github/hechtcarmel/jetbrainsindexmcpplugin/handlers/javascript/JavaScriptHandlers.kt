@@ -821,11 +821,15 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
 
     /**
      * Find the containing callable for a reference element.
-     * Tries JSFunction first, then falls back to JSVariable (for arrow functions assigned to variables).
+     * Tries JSFunction first, but only if it has a non-empty name.
+     * Anonymous arrow functions (e.g. `const App = () => ...`) are skipped and the
+     * enclosing JSVariable is returned instead so the caller name resolves correctly.
      */
     private fun findContainingCallable(element: PsiElement): PsiElement? {
         val containingFunction = findContainingJSFunction(element)
-        if (containingFunction != null) return containingFunction
+        if (containingFunction != null && !getName(containingFunction).isNullOrBlank()) {
+            return containingFunction
+        }
         val jsVar = jsVariableClass ?: return null
         @Suppress("UNCHECKED_CAST")
         return PsiTreeUtil.getParentOfType(element, jsVar as Class<out PsiElement>)

@@ -10,17 +10,34 @@ import com.intellij.psi.codeStyle.NameUtil
  * tools (FindClassTool, FindFileTool) to avoid duplication.
  */
 
-/** Path prefixes for directories that should be excluded from search results (build output, virtual environments, worktrees). */
-internal val EXCLUDED_PATH_PREFIXES = listOf(
-    "bin/", "build/", "out/", ".gradle/",
+/**
+ * Path prefixes that are excluded only when they appear at the project root.
+ * These are common build output dirs that could legitimately appear as nested source dirs.
+ */
+internal val ROOT_ONLY_EXCLUDED_PREFIXES = listOf(
+    "bin/", "build/", "out/", ".gradle/"
+)
+
+/**
+ * Path segments that are excluded at any depth in the project tree.
+ * Virtual environments and package manager directories should never contain source files
+ * regardless of where they appear in the project hierarchy.
+ */
+internal val DEEP_EXCLUDED_SEGMENTS = listOf(
     ".venv/", "venv/", ".env/", "env/",
     "node_modules/",
     ".worktrees/", ".claude/worktrees/"
 )
 
-/** Returns true if [path] starts with an excluded directory prefix (build output, venv, worktree, etc.). */
-internal fun isExcludedPath(path: String): Boolean =
-    EXCLUDED_PATH_PREFIXES.any { path.startsWith(it) }
+// Keep for backwards compatibility / tests
+internal val EXCLUDED_PATH_PREFIXES = ROOT_ONLY_EXCLUDED_PREFIXES + DEEP_EXCLUDED_SEGMENTS
+
+/** Returns true if [path] matches any excluded directory rule. */
+internal fun isExcludedPath(path: String): Boolean {
+    if (ROOT_ONLY_EXCLUDED_PREFIXES.any { path.startsWith(it) }) return true
+    if (DEEP_EXCLUDED_SEGMENTS.any { seg -> path.startsWith(seg) || path.contains("/$seg") }) return true
+    return false
+}
 
 /**
  * Build a [MinusculeMatcher] for the given [pattern] and [matchMode].

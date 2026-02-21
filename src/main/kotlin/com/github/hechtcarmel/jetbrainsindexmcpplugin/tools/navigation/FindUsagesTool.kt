@@ -157,7 +157,7 @@ class FindUsagesTool : AbstractMcpTool() {
             createJsonResult(FindUsagesResult(
                 usages = usagesList,
                 totalCount = total,
-                truncated = total > usagesList.size
+                truncated = total > maxResults
             ))
         }
     }
