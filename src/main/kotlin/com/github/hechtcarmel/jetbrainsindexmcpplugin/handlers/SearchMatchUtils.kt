@@ -12,20 +12,18 @@ import com.intellij.psi.codeStyle.NameUtil
 
 /**
  * Path prefixes that are excluded only when they appear at the project root.
- * These are common build output dirs that could legitimately appear as nested source dirs.
+ * These are common build output dirs or environment dirs that could legitimately appear
+ * as nested source dirs (e.g. `src/config/env/`, `docker/env/`).
  */
 internal val ROOT_ONLY_EXCLUDED_PREFIXES = listOf(
-    "bin/", "build/", "out/", ".gradle/"
+    "bin/", "build/", "out/", ".gradle/",
+    ".env/", "env/"  // Python venv aliases — root-only to avoid false positives at depth
 )
 
 /**
  * Path segments that are excluded at any depth in the project tree.
  * Virtual environments and package manager directories should never contain source files
  * regardless of where they appear in the project hierarchy.
- *
- * Note: `.env/` and `env/` are intentionally omitted — they are too generic and would
- * produce false positives (e.g. `src/config/env/`, `docker/env/`). Only the conventional
- * Python venv names `.venv/` and `venv/` are excluded.
  */
 internal val DEEP_EXCLUDED_SEGMENTS = listOf(
     ".venv/", "venv/",

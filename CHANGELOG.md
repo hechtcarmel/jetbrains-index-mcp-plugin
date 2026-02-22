@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-## [3.9.1] - 2026-02-21
+## [3.10.0] - 2026-02-22
 
 ### Added
 - **`matchMode` parameter for `ide_find_symbol` and `ide_find_class`** - Control how queries match symbol names
@@ -22,7 +22,7 @@
 - **`ide_call_hierarchy` callers for Kotlin `suspend fun`** - `MethodReferencesSearch` misses `suspend fun` call sites because the Kotlin compiler appends a hidden `Continuation<T>` parameter to the JVM signature. Added unconditional `ReferencesSearch.search(navigationElement)` alongside `MethodReferencesSearch` (with deduplication) so callers are always found
 - **`ide_call_hierarchy` callers inside `val`/`var` assignments** - `resolveKotlinMethod` was stopping at local `val`/`var` PSI nodes (`KtProperty` with no backing JVM method) and returning `null`, silently dropping every such caller reference. Now continues walking up the PSI tree to find the enclosing named function
 - **`ide_call_hierarchy` "unknown" caller names for JSX arrow functions** - `findContainingCallable` was returning unnamed anonymous arrow functions (`const App = () => ...`) instead of the enclosing `JSVariable`. Now skips unnamed `JSFunction` nodes and falls back to the containing `JSVariable` for correct caller name resolution
-- **`ide_find_symbol` and `ide_find_class` wildcard queries returning empty results** - Both tools now request `limit × 5` results from IntelliJ before applying path exclusion filters. Previously, when all results within the requested limit were from excluded paths (venv, node_modules, etc.), the final result was empty even though real project symbols existed
+- **`ide_find_symbol`, `ide_find_class`, `ide_search_text`, `ide_find_file` polluted by excluded paths** - All search tools now use a `DelegatingGlobalSearchScope` subclass (`ExcludedPathScope`) that rejects venv, node_modules, build output, and worktree files at the IntelliJ search-infrastructure level. Excluded files never consume buffer slots, replacing the fragile over-fetch-then-filter approach
 - **`ide_find_symbol` and `ide_find_class` polluted by venv/node_modules in subdirectories** - Exclusion filter now matches `.venv/`, `venv/`, `node_modules/`, and `.worktrees/` at any path depth (not only at the project root). Fixes multi-module projects where the virtual environment is inside a subdirectory (e.g. `python-services/.venv/`)
 - **`ide_find_symbol` exact `matchMode` was case-insensitive** - Changed from `name.equals(pattern, ignoreCase = true)` to `name == pattern`. `"CalendarService"` with `exact` no longer matches `calendarService` properties
 - **`ide_find_references` duplicate entries for JSX components** - Opening and closing JSX tags (`<Foo>` / `</Foo>`) resolved to identical `file:line:column` positions, producing duplicate entries. Results are now deduplicated by position
@@ -36,6 +36,8 @@
 - **`ide_find_references` Processor pattern** - Uses streaming `Processor` with early termination instead of `findAll().take(n)` to avoid loading all results into memory
 - **`ide_type_hierarchy` Kotlin language detection** - Uses `navigationElement.language.id` to correctly detect Kotlin types instead of reporting them as Java
 - **`ide_find_file` build output duplicates** - Filters `bin/`, `build/`, `out/`, `.gradle/` output directories from results
+- **`ide_search_text` returning results from worktrees and node_modules** - Search results were not filtered by excluded paths; now uses scope-based exclusion like all other search tools
+- **`ide_file_structure` duplicate constructors for Java classes** - `PsiClass.methods` includes constructors in IntelliJ PSI, causing constructor entries to appear twice (once from `psiClass.constructors` and once from `psiClass.methods`). Now skips constructor entries when iterating methods
 
 ## [3.8.0] - 2026-02-19
 
