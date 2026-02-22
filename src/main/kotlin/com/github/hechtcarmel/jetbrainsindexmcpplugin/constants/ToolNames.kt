@@ -26,6 +26,9 @@ object ToolNames {
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
     const val REFACTOR_SAFE_DELETE = "ide_refactor_safe_delete"
+    const val REPLACE_SYMBOL_BODY = "ide_replace_symbol_body"
+    const val INSERT_AFTER_SYMBOL = "ide_insert_after_symbol"
+    const val INSERT_BEFORE_SYMBOL = "ide_insert_before_symbol"
 
     // Editor tools
     const val GET_ACTIVE_FILE = "ide_get_active_file"

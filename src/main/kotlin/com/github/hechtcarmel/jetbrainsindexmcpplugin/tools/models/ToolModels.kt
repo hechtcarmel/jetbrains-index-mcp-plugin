@@ -281,3 +281,12 @@ data class ReadSymbolResult(
     val preview: String,
     val totalLines: Int? = null
 )
+
+@Serializable
+data class SymbolEditResult(
+    val success: Boolean,
+    val file: String,
+    val startLine: Int,
+    val endLine: Int,
+    val message: String
+)
