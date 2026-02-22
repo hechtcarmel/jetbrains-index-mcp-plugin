@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -33,6 +34,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
@@ -186,6 +189,7 @@ abstract class AbstractMcpTool : McpTool {
      * This method:
      * 1. Synchronizes PSI with documents (if enabled by settings and tool requires it)
      * 2. Delegates to [doExecute] for tool-specific implementation
+     * 3. Truncates the result if it exceeds the max_answer_chars limit
      *
      * PSI synchronization runs when:
      * - The tool's [requiresPsiSync] is true (tool needs PSI), AND
@@ -200,7 +204,55 @@ abstract class AbstractMcpTool : McpTool {
         if (requiresPsiSync && settings.syncExternalChanges) {
             ensurePsiUpToDate(project)
         }
-        return doExecute(project, arguments)
+        val result = doExecute(project, arguments)
+        return truncateIfNeeded(result, arguments, settings)
+    }
+
+    /**
+     * Truncates tool result if it exceeds the max_answer_chars limit.
+     *
+     * The limit is read from the request arguments (per-call override)
+     * or falls back to the global default from settings.
+     *
+     * @param result The tool result to potentially truncate
+     * @param arguments The request arguments (may contain max_answer_chars)
+     * @param settings The global settings (provides default limit)
+     * @return The original result if within limit, or a truncated version
+     */
+    private fun truncateIfNeeded(
+        result: ToolCallResult,
+        arguments: JsonObject,
+        settings: McpSettings
+    ): ToolCallResult {
+        val maxChars = arguments[ParamNames.MAX_ANSWER_CHARS]?.jsonPrimitive?.intOrNull
+            ?: settings.defaultMaxAnswerChars
+        if (maxChars <= 0) return result
+
+        val totalChars = result.content.sumOf { block ->
+            when (block) {
+                is ContentBlock.Text -> block.text.length
+                else -> 0
+            }
+        }
+
+        if (totalChars <= maxChars) return result
+
+        val truncatedContent = result.content.map { block ->
+            when (block) {
+                is ContentBlock.Text -> {
+                    if (block.text.length > maxChars) {
+                        ContentBlock.Text(
+                            text = block.text.take(maxChars) +
+                                "\n\n[Response truncated at $maxChars chars. " +
+                                "Use a more specific query or increase max_answer_chars.]"
+                        )
+                    } else block
+                }
+                else -> block
+            }
+        }
+
+        return ToolCallResult(content = truncatedContent, isError = result.isError)
     }
 
     /**
