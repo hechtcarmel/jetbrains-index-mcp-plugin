@@ -27,6 +27,7 @@ class McpSettingsConfigurable : Configurable {
 
     private var panel: JPanel? = null
     private var maxHistorySizeSpinner: JSpinner? = null
+    private var maxAnswerCharsSpinner: JSpinner? = null
     private var serverPortSpinner: JSpinner? = null
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
@@ -35,6 +36,7 @@ class McpSettingsConfigurable : Configurable {
 
     override fun createComponent(): JComponent {
         maxHistorySizeSpinner = JSpinner(SpinnerNumberModel(100, 10, 10000, 10))
+        maxAnswerCharsSpinner = JSpinner(SpinnerNumberModel(100_000, 1_000, 1_000_000, 10_000))
         serverPortSpinner = JSpinner(SpinnerNumberModel(McpConstants.getDefaultServerPort(), 1024, 65535, 1)).apply {
             toolTipText = McpBundle.message("settings.serverPort.tooltip")
         }
@@ -63,6 +65,7 @@ class McpSettingsConfigurable : Configurable {
         panel = FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel(McpBundle.message("settings.serverPort") + ":"), serverPortSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel("Default max response chars:"), maxAnswerCharsSpinner!!, 1, false)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
@@ -106,6 +109,7 @@ class McpSettingsConfigurable : Configurable {
 
         if (serverPortSpinner?.value != settings.serverPort ||
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
+            maxAnswerCharsSpinner?.value != settings.defaultMaxAnswerChars ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges) {
             return true
         }
@@ -135,6 +139,7 @@ class McpSettingsConfigurable : Configurable {
 
         settings.serverPort = newPort
         settings.maxHistorySize = maxHistorySizeSpinner?.value as? Int ?: 100
+        settings.defaultMaxAnswerChars = maxAnswerCharsSpinner?.value as? Int ?: 100_000
         settings.syncExternalChanges = syncExternalChangesCheckBox?.isSelected ?: false
 
         val disabledTools = mutableSetOf<String>()
@@ -207,6 +212,7 @@ class McpSettingsConfigurable : Configurable {
         val settings = McpSettings.getInstance()
         serverPortSpinner?.value = settings.serverPort
         maxHistorySizeSpinner?.value = settings.maxHistorySize
+        maxAnswerCharsSpinner?.value = settings.defaultMaxAnswerChars
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
 
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -218,6 +224,7 @@ class McpSettingsConfigurable : Configurable {
         panel = null
         serverPortSpinner = null
         maxHistorySizeSpinner = null
+        maxAnswerCharsSpinner = null
         syncExternalChangesCheckBox = null
         toolCheckBoxes.clear()
     }

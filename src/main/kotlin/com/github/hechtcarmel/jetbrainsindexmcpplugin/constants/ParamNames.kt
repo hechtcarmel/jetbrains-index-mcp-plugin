@@ -51,4 +51,7 @@ object ParamNames {
     // Filter parameters
     const val LANGUAGE = "language"
     const val MATCH_MODE = "matchMode"
+
+    // Output control parameters
+    const val MAX_ANSWER_CHARS = "max_answer_chars"
 }
