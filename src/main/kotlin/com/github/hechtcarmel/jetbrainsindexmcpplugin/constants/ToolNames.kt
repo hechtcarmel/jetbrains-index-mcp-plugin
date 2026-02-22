@@ -14,6 +14,7 @@ object ToolNames {
     const val FIND_FILE = "ide_find_file"
     const val SEARCH_TEXT = "ide_search_text"
     const val READ_FILE = "ide_read_file"
+    const val READ_SYMBOL = "ide_read_symbol"
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"

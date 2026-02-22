@@ -48,6 +48,11 @@ object ParamNames {
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
     const val MAX_PREVIEW_LINES = "maxPreviewLines"
 
+    // Read symbol parameters
+    const val SYMBOL_NAME = "symbolName"
+    const val DEPTH = "depth"
+    const val BODY = "body"
+
     // Filter parameters
     const val LANGUAGE = "language"
     const val MATCH_MODE = "matchMode"

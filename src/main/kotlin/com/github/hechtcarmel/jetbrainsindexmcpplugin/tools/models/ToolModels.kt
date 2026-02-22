@@ -269,3 +269,15 @@ data class TextMatch(
     val context: String,       // line content
     val contextType: String    // "CODE", "COMMENT", "STRING_LITERAL"
 )
+
+@Serializable
+data class ReadSymbolResult(
+    val file: String,
+    val symbol: String,
+    val kind: String,
+    val line: Int,
+    val column: Int,
+    val depth: Int,
+    val preview: String,
+    val totalLines: Int? = null
+)
