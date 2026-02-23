@@ -250,16 +250,25 @@ abstract class AbstractMcpTool : McpTool {
 
         if (totalChars <= maxChars) return result
 
+        // Track a running character budget across all blocks
+        var remaining = maxChars
         val truncatedContent = result.content.map { block ->
             when (block) {
                 is ContentBlock.Text -> {
-                    if (block.text.length > maxChars) {
-                        ContentBlock.Text(
-                            text = block.text.take(maxChars) +
+                    if (remaining <= 0) {
+                        ContentBlock.Text(text = "")
+                    } else if (block.text.length > remaining) {
+                        val truncated = ContentBlock.Text(
+                            text = block.text.take(remaining) +
                                 "\n\n[Response truncated at $maxChars chars. " +
                                 "Use a more specific query or increase max_answer_chars.]"
                         )
-                    } else block
+                        remaining = 0
+                        truncated
+                    } else {
+                        remaining -= block.text.length
+                        block
+                    }
                 }
                 else -> block
             }

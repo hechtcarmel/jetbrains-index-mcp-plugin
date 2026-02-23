@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
@@ -22,6 +23,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSy
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceSymbolBodyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
 import com.intellij.openapi.diagnostic.logger
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -138,7 +144,7 @@ class ToolRegistry {
                 ToolDefinition(
                     name = tool.name,
                     description = tool.description,
-                    inputSchema = tool.inputSchema
+                    inputSchema = injectMaxAnswerChars(tool.inputSchema)
                 )
             }
     }
@@ -154,8 +160,37 @@ class ToolRegistry {
             ToolDefinition(
                 name = tool.name,
                 description = tool.description,
-                inputSchema = tool.inputSchema
+                inputSchema = injectMaxAnswerChars(tool.inputSchema)
             )
+        }
+    }
+
+    /**
+     * Injects the `max_answer_chars` property into a tool's input schema.
+     * This ensures MCP clients can discover the parameter without requiring
+     * every tool to declare it individually.
+     */
+    private fun injectMaxAnswerChars(schema: JsonObject): JsonObject {
+        val properties = schema["properties"]?.jsonObject ?: return schema
+        if (properties.containsKey(ParamNames.MAX_ANSWER_CHARS)) return schema
+
+        val newProperties = buildJsonObject {
+            for ((key, value) in properties) {
+                put(key, value)
+            }
+            putJsonObject(ParamNames.MAX_ANSWER_CHARS) {
+                put("type", "integer")
+                put("description", "Maximum characters in the response. Truncates output exceeding this limit. Default: configured in IDE settings (100000).")
+            }
+        }
+        return buildJsonObject {
+            for ((key, value) in schema) {
+                if (key == "properties") {
+                    put("properties", newProperties)
+                } else {
+                    put(key, value)
+                }
+            }
         }
     }
 

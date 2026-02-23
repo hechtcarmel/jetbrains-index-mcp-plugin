@@ -105,8 +105,8 @@ class ReadSymbolTool : AbstractMcpTool() {
             .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
 
         // Validate: either line+column or symbolName must be provided
-        if (line == null && column == null && symbolName == null) {
-            return createErrorResult("Either line+column or symbolName must be provided.")
+        if (symbolName == null && (line == null || column == null)) {
+            return createErrorResult("Either both line+column or symbolName must be provided.")
         }
 
         requireSmartMode(project)

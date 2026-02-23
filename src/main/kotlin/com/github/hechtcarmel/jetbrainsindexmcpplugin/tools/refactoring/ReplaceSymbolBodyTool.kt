@@ -9,7 +9,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolEditRes
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.codeStyle.CodeStyleManager
@@ -41,6 +40,9 @@ class ReplaceSymbolBodyTool : AbstractRefactoringTool() {
         Replace the entire body of a symbol (class, method, function, field) with new source code.
         The symbol is identified by file + line + column. The new body replaces the complete element text.
         Auto-reformats after replacement. Supports undo (Ctrl+Z).
+
+        IMPORTANT: The body must start with the declaration (not a comment or import). Leading comments
+        will cause the replacement to only use the comment as the new element.
 
         Returns: success status with file path and new line range.
 
@@ -88,7 +90,7 @@ class ReplaceSymbolBodyTool : AbstractRefactoringTool() {
      * Data class holding the validated target element from Phase 1.
      */
     private data class SymbolValidation(
-        val element: PsiNamedElement,
+        val element: PsiNamedElement?,
         val elementName: String,
         val error: String? = null
     )
@@ -121,6 +123,7 @@ class ReplaceSymbolBodyTool : AbstractRefactoringTool() {
         }
 
         val targetElement = validation.element
+            ?: return createErrorResult(validation.error ?: "Unknown error")
         val elementName = validation.elementName
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -132,6 +135,10 @@ class ReplaceSymbolBodyTool : AbstractRefactoringTool() {
 
         suspendingWriteAction(project, "Replace symbol body") {
             try {
+                if (!targetElement.isValid) {
+                    errorMessage = "Target element is no longer valid. The file may have been modified between read and write phases."
+                    return@suspendingWriteAction
+                }
                 val result = replaceElement(project, targetElement, body)
                 startLine = result.first
                 endLine = result.second
@@ -167,21 +174,21 @@ class ReplaceSymbolBodyTool : AbstractRefactoringTool() {
     ): SymbolValidation {
         val rawElement = findPsiElement(project, file, line, column)
             ?: return SymbolValidation(
-                element = DummyNamedElement,
+                element = null,
                 elementName = "",
                 error = ErrorMessages.noElementAtPosition(file, line, column)
             )
 
         val namedElement = PsiTreeUtil.getParentOfType(rawElement, PsiNamedElement::class.java, false)
             ?: return SymbolValidation(
-                element = DummyNamedElement,
+                element = null,
                 elementName = "",
                 error = ErrorMessages.NO_NAMED_ELEMENT
             )
 
         val name = namedElement.name
             ?: return SymbolValidation(
-                element = DummyNamedElement,
+                element = null,
                 elementName = "",
                 error = "Element has no name"
             )
@@ -242,80 +249,4 @@ class ReplaceSymbolBodyTool : AbstractRefactoringTool() {
         }
     }
 
-    /**
-     * Dummy placeholder for error cases to satisfy non-null return type in [SymbolValidation].
-     */
-    private object DummyNamedElement : PsiNamedElement {
-        override fun setName(name: String): PsiElement = this
-        override fun getName(): String? = null
-        override fun getProject() = throw UnsupportedOperationException()
-        override fun getLanguage() = throw UnsupportedOperationException()
-        override fun getManager() = throw UnsupportedOperationException()
-        override fun getChildren() = throw UnsupportedOperationException()
-        override fun getParent() = throw UnsupportedOperationException()
-        override fun getFirstChild() = throw UnsupportedOperationException()
-        override fun getLastChild() = throw UnsupportedOperationException()
-        override fun getNextSibling() = throw UnsupportedOperationException()
-        override fun getPrevSibling() = throw UnsupportedOperationException()
-        override fun getContainingFile() = throw UnsupportedOperationException()
-        override fun getTextRange() = throw UnsupportedOperationException()
-        override fun getStartOffsetInParent() = throw UnsupportedOperationException()
-        override fun getTextLength() = throw UnsupportedOperationException()
-        override fun findElementAt(offset: Int) = throw UnsupportedOperationException()
-        override fun findReferenceAt(offset: Int) = throw UnsupportedOperationException()
-        override fun getTextOffset() = throw UnsupportedOperationException()
-        override fun getText() = throw UnsupportedOperationException()
-        override fun textToCharArray() = throw UnsupportedOperationException()
-        override fun getNavigationElement() = throw UnsupportedOperationException()
-        override fun getOriginalElement() = throw UnsupportedOperationException()
-        override fun textMatches(text: CharSequence) = throw UnsupportedOperationException()
-        override fun textMatches(element: PsiElement) = throw UnsupportedOperationException()
-        override fun textContains(c: Char) = throw UnsupportedOperationException()
-        override fun accept(visitor: com.intellij.psi.PsiElementVisitor) = throw UnsupportedOperationException()
-        override fun acceptChildren(visitor: com.intellij.psi.PsiElementVisitor) =
-            throw UnsupportedOperationException()
-
-        override fun copy() = throw UnsupportedOperationException()
-        override fun add(element: PsiElement) = throw UnsupportedOperationException()
-        override fun addBefore(element: PsiElement, anchor: PsiElement?) = throw UnsupportedOperationException()
-        override fun addAfter(element: PsiElement, anchor: PsiElement?) = throw UnsupportedOperationException()
-        override fun checkAdd(element: PsiElement) = throw UnsupportedOperationException()
-        override fun addRange(first: PsiElement, last: PsiElement) = throw UnsupportedOperationException()
-        override fun addRangeBefore(first: PsiElement, last: PsiElement, anchor: PsiElement) =
-            throw UnsupportedOperationException()
-
-        override fun addRangeAfter(first: PsiElement, last: PsiElement, anchor: PsiElement) =
-            throw UnsupportedOperationException()
-
-        override fun delete() = throw UnsupportedOperationException()
-        override fun checkDelete() = throw UnsupportedOperationException()
-        override fun deleteChildRange(first: PsiElement, last: PsiElement) = throw UnsupportedOperationException()
-        override fun replace(newElement: PsiElement) = throw UnsupportedOperationException()
-        override fun isValid() = false
-        override fun isWritable() = false
-        override fun getReference() = throw UnsupportedOperationException()
-        override fun getReferences() = throw UnsupportedOperationException()
-        override fun <T> getCopyableUserData(key: com.intellij.openapi.util.Key<T>) =
-            throw UnsupportedOperationException()
-
-        override fun <T> putCopyableUserData(key: com.intellij.openapi.util.Key<T>, value: T?) =
-            throw UnsupportedOperationException()
-
-        override fun processDeclarations(
-            processor: com.intellij.psi.scope.PsiScopeProcessor,
-            state: com.intellij.psi.ResolveState,
-            lastParent: PsiElement?,
-            place: PsiElement
-        ) = throw UnsupportedOperationException()
-
-        override fun getContext() = throw UnsupportedOperationException()
-        override fun isPhysical() = false
-        override fun getResolveScope() = throw UnsupportedOperationException()
-        override fun getUseScope() = throw UnsupportedOperationException()
-        override fun getNode() = throw UnsupportedOperationException()
-        override fun isEquivalentTo(another: PsiElement?) = false
-        override fun getIcon(flags: Int) = throw UnsupportedOperationException()
-        override fun <T> getUserData(key: com.intellij.openapi.util.Key<T>): T? = null
-        override fun <T> putUserData(key: com.intellij.openapi.util.Key<T>, value: T?) {}
-    }
 }
