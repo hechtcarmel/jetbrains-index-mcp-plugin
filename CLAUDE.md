@@ -56,6 +56,7 @@ src/
 │   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
 │   │   │   └── rust/RustHandlers.kt    # Rust handlers (reflection)
 │   │   ├── services/                   # Application/project services
+│   │   │   └── ToolUsageTracker.kt     # Per-tool session analytics
 │   │   ├── startup/                    # Startup activities
 │   │   ├── tools/                      # MCP tool implementations
 │   │   │   ├── editor/                 # Editor interaction tools
@@ -347,11 +348,16 @@ Tools are organized by IDE availability.
 
 **Universal Tools (All JetBrains IDEs):**
 - `ide_find_references` - Find all usages of a symbol
-- `ide_find_definition` - Find symbol definition location
+- `ide_find_definition` - Find symbol definition location with optional full element preview (`fullElementPreview`, `maxPreviewLines`)
+- `ide_read_symbol` - Get code of a symbol with depth control for progressive disclosure (depth=0 full body, depth=1 signatures only)
+- `ide_read_file` - Read file contents with optional line range, supports library/jar sources
 - `ide_diagnostics` - Analyze file for problems and available intentions
 - `ide_index_status` - Check indexing status (dumb/smart mode)
 - `ide_sync_files` - Force sync IDE's virtual file system and PSI cache with external file changes
 - `ide_refactor_rename` - Rename a symbol across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages.
+- `ide_replace_symbol_body` - Replace the entire body of a symbol with new source code. Auto-reformats, supports undo.
+- `ide_insert_after_symbol` - Insert content after a symbol's definition. Auto-reformats, supports undo.
+- `ide_insert_before_symbol` - Insert content before a symbol's definition. Auto-reformats, supports undo.
 - `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
 - `ide_open_file` - Open a file in the editor with optional line/column navigation (disabled by default)
 
@@ -393,11 +399,22 @@ The plugin uses a language handler pattern for multi-IDE support:
 
 **Registration Flow:**
 1. `LanguageHandlerRegistry.registerHandlers()` - Registers handlers for available language plugins
-2. `ToolRegistry.registerUniversalTools()` - Registers universal tools including `ide_refactor_rename`, `ide_sync_files`
+2. `ToolRegistry.registerUniversalTools()` - Registers universal tools including navigation, search, symbol editing, and refactoring tools
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
 4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` if Java plugin available
 
 **Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+
+### Token Awareness
+
+All tools support output size limiting via the `max_answer_chars` parameter:
+
+- **Parameter:** `max_answer_chars` (integer, optional) — available on every tool via `AbstractMcpTool`
+- **Default:** Configurable in Settings → Tools → Index MCP Server (default: 100,000 chars)
+- **Behavior:** After tool execution, responses exceeding the limit are truncated with a clear message
+- **Complements `maxResults`:** `maxResults` limits result *count*, `max_answer_chars` limits total *output size*
+
+**Usage Analytics:** The `ToolUsageTracker` project-level service tracks per-tool call counts and response sizes. View stats in the "Usage" tab of the Index MCP Server tool window. Stats are session-only (reset on IDE restart).
 
 ### Optimized Symbol Search
 
