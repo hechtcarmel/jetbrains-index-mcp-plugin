@@ -301,6 +301,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.FIND_CLASS,
             ToolNames.FIND_FILE,
             ToolNames.READ_FILE,
+            ToolNames.READ_SYMBOL,
             ToolNames.SEARCH_TEXT,
             // Intelligence tools
             ToolNames.DIAGNOSTICS,
@@ -310,6 +311,10 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             // Refactoring tools
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
+            // Symbol editing tools
+            ToolNames.REPLACE_SYMBOL_BODY,
+            ToolNames.INSERT_AFTER_SYMBOL,
+            ToolNames.INSERT_BEFORE_SYMBOL,
             // Editor tools
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE

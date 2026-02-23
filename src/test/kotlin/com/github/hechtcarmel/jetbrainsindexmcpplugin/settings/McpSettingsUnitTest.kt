@@ -11,6 +11,7 @@ class McpSettingsUnitTest : TestCase() {
 
         assertEquals("Default maxHistorySize should be 100", 100, state.maxHistorySize)
         assertFalse("Default syncExternalChanges should be false", state.syncExternalChanges)
+        assertEquals("Default defaultMaxAnswerChars should be 100000", 100_000, state.defaultMaxAnswerChars)
     }
 
     // State mutability tests
