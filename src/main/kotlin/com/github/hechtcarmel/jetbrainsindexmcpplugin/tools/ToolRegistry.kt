@@ -16,7 +16,10 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadSymbo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InsertAfterSymbolTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InsertBeforeSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceSymbolBodyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
 import com.intellij.openapi.diagnostic.logger
 import java.util.concurrent.ConcurrentHashMap
@@ -227,6 +230,11 @@ class ToolRegistry {
         register(SearchTextTool())
         register(ReadFileTool())
         register(ReadSymbolTool())
+
+        // Symbol editing tools (universal)
+        register(ReplaceSymbolBodyTool())
+        register(InsertAfterSymbolTool())
+        register(InsertBeforeSymbolTool())
 
         // Editor tools (universal, disabled by default)
         register(GetActiveFileTool())
