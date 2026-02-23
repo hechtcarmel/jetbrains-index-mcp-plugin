@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.actions
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowPanel
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.UsageStatsPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -20,6 +21,9 @@ class RefreshAction : AnAction(
         toolWindow?.contentManager?.contents?.forEach { content ->
             val component = content.component
             if (component is McpToolWindowPanel) {
+                component.refresh()
+            }
+            if (component is UsageStatsPanel) {
                 component.refresh()
             }
         }

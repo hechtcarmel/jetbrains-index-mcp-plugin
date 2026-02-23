@@ -132,6 +132,15 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
         )
         toolWindow.contentManager.addContent(content)
 
+        // Add Usage tab
+        val usagePanel = UsageStatsPanel(project)
+        val usageContent = ContentFactory.getInstance().createContent(
+            usagePanel,
+            "Usage",
+            false
+        )
+        toolWindow.contentManager.addContent(usageContent)
+
         // Also add quick actions to title bar
         toolWindow.setTitleActions(listOf(CopyServerUrlAction(), RefreshAction()))
     }
