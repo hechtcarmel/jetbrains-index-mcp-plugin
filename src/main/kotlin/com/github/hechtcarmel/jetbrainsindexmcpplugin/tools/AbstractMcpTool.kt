@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.services.ToolUsageTracker
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
@@ -190,6 +191,7 @@ abstract class AbstractMcpTool : McpTool {
      * 1. Synchronizes PSI with documents (if enabled by settings and tool requires it)
      * 2. Delegates to [doExecute] for tool-specific implementation
      * 3. Truncates the result if it exceeds the max_answer_chars limit
+     * 4. Records usage statistics (tool name, response size)
      *
      * PSI synchronization runs when:
      * - The tool's [requiresPsiSync] is true (tool needs PSI), AND
@@ -205,7 +207,18 @@ abstract class AbstractMcpTool : McpTool {
             ensurePsiUpToDate(project)
         }
         val result = doExecute(project, arguments)
-        return truncateIfNeeded(result, arguments, settings)
+        val finalResult = truncateIfNeeded(result, arguments, settings)
+
+        // Record usage stats
+        val responseChars = finalResult.content.sumOf { block ->
+            when (block) {
+                is ContentBlock.Text -> block.text.length
+                else -> 0
+            }
+        }
+        ToolUsageTracker.getInstance(project).record(name, responseChars)
+
+        return finalResult
     }
 
     /**

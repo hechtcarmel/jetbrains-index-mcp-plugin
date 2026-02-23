@@ -121,6 +121,9 @@ for detailed documentation and examples.</p>
         <!-- Project-level Command History Service -->
         <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService"/>
 
+        <!-- Project-level Tool Usage Tracker Service -->
+        <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.services.ToolUsageTracker"/>
+
         <!-- Tool Window -->
         <toolWindow id="Index MCP Server" anchor="bottom" icon="com.github.hechtcarmel.jetbrainsindexmcpplugin.icons.McpIcons.ToolWindow" factoryClass="com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowFactory"/>
 
