@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefin
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
@@ -225,6 +226,7 @@ class ToolRegistry {
         register(FindFileTool())
         register(SearchTextTool())
         register(ReadFileTool())
+        register(ReadSymbolTool())
 
         // Editor tools (universal, disabled by default)
         register(GetActiveFileTool())
