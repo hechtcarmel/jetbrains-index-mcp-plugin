@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-02-27
+
+### Changed
+- **Codebase refactoring overhaul** — Major internal cleanup reducing ~926 lines of duplication
+  - **Generic `PluginDetector`** — Replaced 6 nearly identical plugin detector files (640 lines) with a single generic `PluginDetector` class and `PluginDetectors` registry (~80 lines)
+  - **`SchemaBuilder` utility** — All 19 tool input schemas now use a fluent `SchemaBuilder` instead of manual JSON construction, eliminating ~460 lines of boilerplate
+  - **Data-driven registration** — Handler and tool registration use data-driven loops instead of duplicated reflection blocks
+  - **`ClassResolver`** — Extracted class-by-FQN resolution (PHP/Java) from `AbstractMcpTool` into standalone utility
+  - **`ProjectResolver`** — Extracted multi-project resolution logic from `JsonRpcHandler` into independently testable class
+  - **`server/transport/` package** — Moved `KtorMcpServer` and `KtorSseSessionManager` to dedicated transport sub-package
+  - **Consolidated error builders** — Replaced 4 nearly identical JSON-RPC error response methods with single factory
+
+### Fixed
+- **JSON-RPC error responses used unsafe string concatenation** — `KtorMcpServer.createJsonRpcError()` now uses proper `kotlinx.serialization` instead of manual string interpolation, preventing malformed JSON from special characters in error messages
+- **Streamable HTTP notifications returned no response** — Notifications (e.g., `notifications/initialized`) sent via Streamable HTTP transport now correctly return `202 Accepted` instead of silently dropping the connection
+- **No JSON-RPC version validation** — Server now validates that `request.jsonrpc == "2.0"` and returns `INVALID_REQUEST` (-32600) for non-compliant requests
+
 ## [3.10.2] - 2026-02-27
 
 ### Fixed
