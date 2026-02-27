@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.diagnostic.logger
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -199,7 +201,9 @@ class KtorMcpServer(
         }
 
         try {
-            val response = jsonRpcHandler.handleRequest(body)
+            val response = withContext(ModalityState.any().asContextElement()) {
+                jsonRpcHandler.handleRequest(body)
+            }
             if (response != null){
                 call.respondText(response, ContentType.Application.Json)
             }

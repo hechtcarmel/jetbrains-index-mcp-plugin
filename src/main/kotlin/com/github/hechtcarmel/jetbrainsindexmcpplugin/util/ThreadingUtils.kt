@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.DumbService
@@ -35,7 +36,7 @@ object ThreadingUtils {
     }
 
     fun runOnEdt(action: () -> Unit) {
-        ApplicationManager.getApplication().invokeLater(action)
+        ApplicationManager.getApplication().invokeLater(action, ModalityState.any())
     }
 
     fun <T> runOnEdtAndWait(action: () -> T): T {

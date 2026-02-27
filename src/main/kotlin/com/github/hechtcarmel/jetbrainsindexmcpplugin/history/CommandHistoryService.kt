@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.history
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
@@ -129,7 +130,7 @@ class CommandHistoryService(private val project: Project) {
     }
 
     private fun notifyListeners(event: CommandHistoryEvent) {
-        ApplicationManager.getApplication().invokeLater {
+        ApplicationManager.getApplication().invokeLater({
             when (event) {
                 is CommandHistoryEvent.CommandAdded -> {
                     listeners.forEach { it.onCommandAdded(event.entry) }
@@ -141,6 +142,6 @@ class CommandHistoryService(private val project: Project) {
                     listeners.forEach { it.onHistoryCleared() }
                 }
             }
-        }
+        }, ModalityState.any())
     }
 }

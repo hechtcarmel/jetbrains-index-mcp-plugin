@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.ui.JBColor
@@ -147,7 +148,7 @@ class McpSettingsConfigurable : Configurable {
 
         // Auto-restart server if port changed
         if (newPort != oldPort) {
-            ApplicationManager.getApplication().invokeLater {
+            ApplicationManager.getApplication().invokeLater({
                 val mcpService = McpServerService.getInstance()
                 if (!mcpService.isInitialized) return@invokeLater
                 val result = mcpService.restartServer(newPort)
@@ -176,7 +177,7 @@ class McpSettingsConfigurable : Configurable {
                             .notify(null)
                     }
                 }
-            }
+            }, ModalityState.any())
         }
     }
 

@@ -12,6 +12,8 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
@@ -46,8 +48,12 @@ class McpServerService : Disposable {
      * Coroutine scope for non-blocking tool execution.
      * Uses SupervisorJob so failures in one tool don't cancel others.
      * Uses Default dispatcher for CPU-bound PSI operations.
+     * Uses ModalityState.any() so EDT-bound work executes even when modal dialogs are open,
+     * preventing MCP tool calls from hanging indefinitely (see issue #68).
      */
-    val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val coroutineScope: CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + ModalityState.any().asContextElement()
+    )
 
     /**
      * Represents a server error state.
@@ -136,11 +142,11 @@ class McpServerService : Disposable {
      * Notifies all listeners that the server status has changed.
      */
     private fun notifyStatusChanged() {
-        ApplicationManager.getApplication().invokeLater {
+        ApplicationManager.getApplication().invokeLater({
             ApplicationManager.getApplication().messageBus
                 .syncPublisher(McpConstants.SERVER_STATUS_TOPIC)
                 .serverStatusChanged()
-        }
+        }, ModalityState.any())
     }
 
     /**
@@ -218,7 +224,7 @@ class McpServerService : Disposable {
      * Shows a notification when the port is already in use.
      */
     private fun showPortInUseNotification(port: Int) {
-        ApplicationManager.getApplication().invokeLater {
+        ApplicationManager.getApplication().invokeLater({
             NotificationGroupManager.getInstance()
                 .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
@@ -233,7 +239,7 @@ class McpServerService : Disposable {
                     }
                 })
                 .notify(null)
-        }
+        }, ModalityState.any())
     }
 
     override fun dispose() {

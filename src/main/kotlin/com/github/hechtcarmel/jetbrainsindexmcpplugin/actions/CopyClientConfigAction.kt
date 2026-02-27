@@ -14,6 +14,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -234,7 +235,7 @@ class CopyClientConfigAction : AnAction() {
                     }
 
                     override fun processTerminated(event: ProcessEvent) {
-                        ApplicationManager.getApplication().invokeLater {
+                        ApplicationManager.getApplication().invokeLater({
                             val exitCode = event.exitCode
                             if (exitCode == 0) {
                                 showNotification(
@@ -251,21 +252,21 @@ class CopyClientConfigAction : AnAction() {
                                     NotificationType.ERROR
                                 )
                             }
-                        }
+                        }, ModalityState.any())
                     }
                 })
 
                 handler.startNotify()
                 handler.waitFor()
             } catch (e: Exception) {
-                ApplicationManager.getApplication().invokeLater {
+                ApplicationManager.getApplication().invokeLater({
                     showNotification(
                         project,
                         "Installation Failed",
                         "Failed to run command:\n$command\n\nError: ${e.message}",
                         NotificationType.ERROR
                     )
-                }
+                }, ModalityState.any())
             }
         }
     }
