@@ -32,14 +32,22 @@ class JsonRpcHandler(
             json.decodeFromString<JsonRpcRequest>(jsonString)
         } catch (e: Exception) {
             LOG.warn("Failed to parse JSON-RPC request", e)
-            return json.encodeToString(createParseErrorResponse())
+            return json.encodeToString(createErrorResponse(code = JsonRpcErrorCodes.PARSE_ERROR, message = ErrorMessages.PARSE_ERROR))
+        }
+
+        if (request.jsonrpc != "2.0") {
+            return json.encodeToString(createErrorResponse(
+                id = request.id,
+                code = JsonRpcErrorCodes.INVALID_REQUEST,
+                message = "Invalid JSON-RPC version: ${request.jsonrpc}. Expected \"2.0\"."
+            ))
         }
 
         val response = try {
             routeRequest(request)
         } catch (e: Exception) {
             LOG.error("Error processing request: ${request.method}", e)
-            createInternalErrorResponse(request.id, e.message ?: "Unknown error")
+            createErrorResponse(request.id, JsonRpcErrorCodes.INTERNAL_ERROR, e.message ?: "Unknown error")
         }
 
         return response?.let { json.encodeToString(response) }
@@ -52,7 +60,7 @@ class JsonRpcHandler(
             JsonRpcMethods.TOOLS_LIST -> processToolsList(request)
             JsonRpcMethods.TOOLS_CALL -> processToolCall(request)
             JsonRpcMethods.PING -> processPing(request)
-            else -> createMethodNotFoundResponse(request.id, request.method)
+            else -> createErrorResponse(request.id, JsonRpcErrorCodes.METHOD_NOT_FOUND, ErrorMessages.methodNotFound(request.method))
         }
     }
 
@@ -87,15 +95,15 @@ class JsonRpcHandler(
 
     private suspend fun processToolCall(request: JsonRpcRequest): JsonRpcResponse {
         val params = request.params
-            ?: return createInvalidParamsResponse(request.id, ErrorMessages.MISSING_PARAMS)
+            ?: return createErrorResponse(request.id, JsonRpcErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_PARAMS)
 
         val toolName = params[ParamNames.NAME]?.jsonPrimitive?.contentOrNull
-            ?: return createInvalidParamsResponse(request.id, ErrorMessages.MISSING_TOOL_NAME)
+            ?: return createErrorResponse(request.id, JsonRpcErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_TOOL_NAME)
 
         val arguments = params[ParamNames.ARGUMENTS]?.jsonObject ?: JsonObject(emptyMap())
 
         val tool = toolRegistry.getTool(toolName)
-            ?: return createMethodNotFoundResponse(request.id, ErrorMessages.toolNotFound(toolName))
+            ?: return createErrorResponse(request.id, JsonRpcErrorCodes.METHOD_NOT_FOUND, ErrorMessages.toolNotFound(toolName))
 
         // Extract optional project_path from arguments
         val projectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
@@ -176,42 +184,12 @@ class JsonRpcHandler(
         )
     }
 
-    private fun createParseErrorResponse(): JsonRpcResponse {
-        return JsonRpcResponse(
-            error = JsonRpcError(
-                code = JsonRpcErrorCodes.PARSE_ERROR,
-                message = ErrorMessages.PARSE_ERROR
-            )
-        )
-    }
-
-    private fun createInvalidParamsResponse(id: JsonElement?, message: String): JsonRpcResponse {
-        return JsonRpcResponse(
-            id = id,
-            error = JsonRpcError(
-                code = JsonRpcErrorCodes.INVALID_PARAMS,
-                message = message
-            )
-        )
-    }
-
-    private fun createMethodNotFoundResponse(id: JsonElement?, method: String): JsonRpcResponse {
-        return JsonRpcResponse(
-            id = id,
-            error = JsonRpcError(
-                code = JsonRpcErrorCodes.METHOD_NOT_FOUND,
-                message = ErrorMessages.methodNotFound(method)
-            )
-        )
-    }
-
-    private fun createInternalErrorResponse(id: JsonElement?, message: String): JsonRpcResponse {
-        return JsonRpcResponse(
-            id = id,
-            error = JsonRpcError(
-                code = JsonRpcErrorCodes.INTERNAL_ERROR,
-                message = message
-            )
-        )
-    }
+    private fun createErrorResponse(
+        id: JsonElement? = null,
+        code: Int,
+        message: String
+    ) = JsonRpcResponse(
+        id = id,
+        error = JsonRpcError(code = code, message = message)
+    )
 }
