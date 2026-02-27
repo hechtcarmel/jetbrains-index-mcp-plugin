@@ -11,15 +11,13 @@ import com.intellij.openapi.roots.ModuleRootManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
-class ProjectResolver {
+object ProjectResolver {
 
-    companion object {
-        private val LOG = logger<ProjectResolver>()
-        private val json = Json { encodeDefaults = true; prettyPrint = false }
+    private val LOG = logger<ProjectResolver>()
+    private val json = Json { encodeDefaults = true; prettyPrint = false }
 
-        fun normalizePath(path: String): String {
-            return path.trimEnd('/', '\\').replace('\\', '/')
-        }
+    fun normalizePath(path: String): String {
+        return path.trimEnd('/', '\\').replace('\\', '/')
     }
 
     data class Result(

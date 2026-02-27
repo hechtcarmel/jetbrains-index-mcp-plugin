@@ -81,9 +81,11 @@ class SchemaBuilder private constructor() {
                 put(name, schema)
             }
         }
-        putJsonArray(SchemaConstants.REQUIRED) {
-            for (field in requiredFields) {
-                add(JsonPrimitive(field))
+        if (requiredFields.isNotEmpty()) {
+            putJsonArray(SchemaConstants.REQUIRED) {
+                for (field in requiredFields) {
+                    add(JsonPrimitive(field))
+                }
             }
         }
     }

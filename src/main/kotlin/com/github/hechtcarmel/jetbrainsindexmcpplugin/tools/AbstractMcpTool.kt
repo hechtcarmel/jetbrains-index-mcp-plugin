@@ -28,8 +28,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /**
  * Abstract base class for MCP tools providing common functionality.
@@ -90,24 +88,6 @@ abstract class AbstractMcpTool : McpTool {
         ignoreUnknownKeys = true
         encodeDefaults = true
         prettyPrint = false
-    }
-
-    companion object {
-        /**
-         * Creates the `project_path` property definition for tool input schemas.
-         *
-         * All tools should include this property to support multi-project scenarios.
-         * The property is optional - if omitted and only one project is open,
-         * that project is used automatically.
-         *
-         * @return A pair of property name and JSON Schema definition
-         */
-        fun projectPathProperty(): Pair<String, JsonObject> {
-            return "project_path" to buildJsonObject {
-                put("type", "string")
-                put("description", "Absolute path to the project root. Required when multiple projects are open, optional otherwise.")
-            }
-        }
     }
 
     /**

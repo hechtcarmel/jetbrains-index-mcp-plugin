@@ -16,7 +16,7 @@ import kotlinx.serialization.json.*
 class JsonRpcHandler(
     private val toolRegistry: ToolRegistry
 ) {
-    private val projectResolver = ProjectResolver()
+    private val projectResolver = ProjectResolver
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true

@@ -96,7 +96,7 @@ interface McpTool {
      * All tools should include `project_path` as an optional parameter
      * to support multi-project scenarios.
      *
-     * @see AbstractMcpTool.projectPathProperty
+     * @see com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
      */
     val inputSchema: JsonObject
 

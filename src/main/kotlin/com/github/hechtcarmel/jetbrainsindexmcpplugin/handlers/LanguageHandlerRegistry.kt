@@ -282,7 +282,7 @@ object LanguageHandlerRegistry {
         } catch (e: ClassNotFoundException) {
             LOG.info("$displayName handlers not available ($displayName plugin not installed)")
         } catch (e: Exception) {
-            LOG.warn("Failed to register $displayName handlers: ${e.message}")
+            LOG.warn("Failed to register $displayName handlers: ${e.message}", e)
         }
     }
 }

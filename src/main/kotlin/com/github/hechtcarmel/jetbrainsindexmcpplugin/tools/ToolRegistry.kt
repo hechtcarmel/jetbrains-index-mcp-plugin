@@ -257,16 +257,15 @@ class ToolRegistry {
      * for the tool's functionality.
      */
     private fun registerLanguageNavigationTools() {
-        try {
-            for (tool in languageNavigationTools) {
+        for (tool in languageNavigationTools) {
+            try {
                 if (tool.isAvailable()) {
                     val toolClass = Class.forName(tool.className)
                     register(toolClass.getDeclaredConstructor().newInstance() as McpTool)
                 }
+            } catch (e: Exception) {
+                LOG.warn("Failed to register language navigation tool ${tool.className}: ${e.message}")
             }
-            LOG.info("Registered language navigation tools")
-        } catch (e: Exception) {
-            LOG.warn("Failed to register language navigation tools: ${e.message}")
         }
     }
 
@@ -282,21 +281,18 @@ class ToolRegistry {
      * IMPORTANT: This method must only be called after checking [PluginDetectors.java.isAvailable]
      */
     private fun registerJavaRefactoringTools() {
-        try {
-            val refactoringToolClasses = listOf(
-                // RenameSymbolTool moved to registerUniversalTools() - now language-agnostic
-                "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool"
-            )
+        val refactoringToolClasses = listOf(
+            "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool"
+        )
 
-            for (className in refactoringToolClasses) {
+        for (className in refactoringToolClasses) {
+            try {
                 val toolClass = Class.forName(className)
                 val tool = toolClass.getDeclaredConstructor().newInstance() as McpTool
                 register(tool)
+            } catch (e: Exception) {
+                LOG.warn("Failed to register Java refactoring tool $className: ${e.message}")
             }
-
-            LOG.info("Registered Java-specific refactoring tools")
-        } catch (e: Exception) {
-            LOG.warn("Failed to register Java refactoring tools: ${e.message}")
         }
     }
 }

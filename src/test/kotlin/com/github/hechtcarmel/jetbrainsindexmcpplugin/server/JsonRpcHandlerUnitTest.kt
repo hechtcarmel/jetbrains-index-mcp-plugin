@@ -144,4 +144,26 @@ class JsonRpcHandlerUnitTest : TestCase() {
         assertNotNull("Invalid JSON should return error", response.error)
         assertEquals(JsonRpcErrorCodes.PARSE_ERROR, response.error?.code)
     }
+
+    fun testInvalidJsonRpcVersion() = runBlocking {
+        val requestJson = """{"jsonrpc":"1.0","id":1,"method":"ping"}"""
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertNotNull("Invalid jsonrpc version should return error", response.error)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, response.error?.code)
+        assertTrue(
+            "Error message should mention version",
+            response.error?.message?.contains("2.0") == true
+        )
+    }
+
+    fun testNotificationReturnsNull() = runBlocking {
+        val requestJson = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""
+
+        val responseJson = handler.handleRequest(requestJson)
+
+        assertNull("Notification should return null (no response)", responseJson)
+    }
 }

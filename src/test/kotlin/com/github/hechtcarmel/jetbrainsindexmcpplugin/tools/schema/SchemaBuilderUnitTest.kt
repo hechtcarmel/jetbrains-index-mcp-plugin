@@ -86,6 +86,15 @@ class SchemaBuilderUnitTest : TestCase() {
         assertFalse("project_path should NOT be required", required.contains(ParamNames.PROJECT_PATH))
     }
 
+    fun testNoRequiredFieldsOmitsRequiredKey() {
+        val schema = SchemaBuilder.tool()
+            .projectPath()
+            .intProperty("limit", "Max results")
+            .build()
+
+        assertNull("Schema with no required fields should not have 'required' key", schema[SchemaConstants.REQUIRED])
+    }
+
     fun testRawProperty() {
         val customSchema = kotlinx.serialization.json.buildJsonObject {
             put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)

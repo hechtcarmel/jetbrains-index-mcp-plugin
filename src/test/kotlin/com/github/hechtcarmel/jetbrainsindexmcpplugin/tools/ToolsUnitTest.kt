@@ -52,8 +52,7 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
         assertNotNull("Should have paths property", properties?.get("paths"))
 
-        val required = schema[SchemaConstants.REQUIRED]
-        assertNotNull("Should have required array", required)
+        assertNull("Should not have required array (no required fields)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testSyncFilesToolIsRegistered() {
@@ -500,8 +499,7 @@ class ToolsUnitTest : TestCase() {
 
         assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
 
-        val required = schema[SchemaConstants.REQUIRED]
-        assertNotNull("Should have required array", required)
+        assertNull("Should not have required array (no required fields)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testOpenFileToolSchema() {
