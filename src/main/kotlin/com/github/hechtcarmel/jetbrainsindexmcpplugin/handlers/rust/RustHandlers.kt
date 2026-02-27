@@ -1,7 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.rust
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.RustPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -53,7 +53,7 @@ object RustHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!RustPluginDetector.isRustPluginAvailable) {
+        if (!PluginDetectors.rust.isAvailable) {
             LOG.info("Rust plugin not available, skipping Rust handler registration")
             return
         }
@@ -397,7 +397,7 @@ class RustTypeHierarchyHandler : BaseRustHandler<TypeHierarchyData>(), TypeHiera
         return isAvailable() && isRustLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = RustPluginDetector.isRustPluginAvailable && rsTraitItemClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.rust.isAvailable && rsTraitItemClass != null
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
         LOG.debug("Getting type hierarchy for Rust element at ${element.containingFile?.name}")
@@ -678,7 +678,7 @@ class RustImplementationsHandler : BaseRustHandler<List<ImplementationData>>(), 
         return isAvailable() && isRustLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = RustPluginDetector.isRustPluginAvailable && rsTraitItemClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.rust.isAvailable && rsTraitItemClass != null
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
@@ -820,7 +820,7 @@ class RustCallHierarchyHandler : BaseRustHandler<CallHierarchyData>(), CallHiera
         return isAvailable() && isRustLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = RustPluginDetector.isRustPluginAvailable && rsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.rust.isAvailable && rsFunctionClass != null
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -1052,7 +1052,7 @@ class RustSymbolSearchHandler : BaseRustHandler<List<SymbolData>>(), SymbolSearc
 
     override fun canHandle(element: PsiElement): Boolean = isAvailable()
 
-    override fun isAvailable(): Boolean = RustPluginDetector.isRustPluginAvailable && rsFileClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.rust.isAvailable && rsFileClass != null
 
     override fun searchSymbols(
         project: Project,
@@ -1097,7 +1097,7 @@ class RustSuperMethodsHandler : BaseRustHandler<SuperMethodsData>(), SuperMethod
         return isAvailable() && isRustLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = RustPluginDetector.isRustPluginAvailable && rsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.rust.isAvailable && rsFunctionClass != null
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val function = findContainingRsFunction(element) ?: return null

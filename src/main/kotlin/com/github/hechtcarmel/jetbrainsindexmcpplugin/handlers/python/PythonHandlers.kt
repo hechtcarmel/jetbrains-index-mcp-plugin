@@ -3,7 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.python
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PythonPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -39,7 +39,7 @@ object PythonHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!PythonPluginDetector.isPythonPluginAvailable) {
+        if (!PluginDetectors.python.isAvailable) {
             LOG.info("Python plugin not available, skipping Python handler registration")
             return
         }
@@ -208,7 +208,7 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
         return isAvailable() && isPythonLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
         val pyClass = findContainingPyClass(element) ?: return null
@@ -306,7 +306,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
         return isAvailable() && isPythonLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
         val pyFunction = findContainingPyFunction(element)
@@ -397,7 +397,7 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         return isAvailable() && isPythonLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyFunctionClass != null
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -604,7 +604,7 @@ class PythonSymbolSearchHandler : BasePythonHandler<List<SymbolData>>(), SymbolS
 
     override fun canHandle(element: PsiElement): Boolean = isAvailable()
 
-    override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
 
     override fun searchSymbols(
         project: Project,
@@ -638,7 +638,7 @@ class PythonSuperMethodsHandler : BasePythonHandler<SuperMethodsData>(), SuperMe
         return isAvailable() && isPythonLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyFunctionClass != null
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val pyFunction = findContainingPyFunction(element) ?: return null
@@ -766,7 +766,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
         return isAvailable() && isPythonLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PythonPluginDetector.isPythonPluginAvailable && pyClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         val structure = mutableListOf<StructureNode>()

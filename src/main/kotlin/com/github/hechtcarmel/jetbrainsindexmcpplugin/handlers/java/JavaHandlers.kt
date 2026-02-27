@@ -3,7 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
@@ -32,7 +32,7 @@ object JavaHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!JavaPluginDetector.isJavaPluginAvailable) {
+        if (!PluginDetectors.java.isAvailable) {
             LOG.info("Java plugin not available, skipping Java handler registration")
             return
         }
@@ -330,7 +330,7 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
         return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
         // Use reference-aware resolution: if cursor is on a type reference,
@@ -497,7 +497,7 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
         return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
         // Use reference-aware resolution: if cursor is on a method call/reference,
@@ -592,7 +592,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
         return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -870,7 +870,7 @@ class JavaSymbolSearchHandler : BaseJavaHandler<List<SymbolData>>(), SymbolSearc
 
     override fun canHandle(element: PsiElement): Boolean = isAvailable()
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
 
     override fun searchSymbols(
         project: Project,
@@ -904,7 +904,7 @@ class JavaSuperMethodsHandler : BaseJavaHandler<SuperMethodsData>(), SuperMethod
         return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         // Use reference-aware resolution: if cursor is on a method call,
@@ -1011,7 +1011,7 @@ class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHa
         return isAvailable() && isJavaOrKotlinLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaPluginDetector.isJavaPluginAvailable
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         val structure = mutableListOf<StructureNode>()
@@ -1222,7 +1222,7 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
     }
 
     override fun isAvailable(): Boolean =
-        JavaPluginDetector.isJavaPluginAvailable && ktFileClass != null
+        PluginDetectors.java.isAvailable && ktFileClass != null
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         val structure = mutableListOf<StructureNode>()

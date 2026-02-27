@@ -3,7 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.JavaScriptPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -47,7 +47,7 @@ object JavaScriptHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!JavaScriptPluginDetector.isJavaScriptPluginAvailable) {
+        if (!PluginDetectors.javaScript.isAvailable) {
             LOG.info("JavaScript plugin not available, skipping JavaScript handler registration")
             return
         }
@@ -352,7 +352,7 @@ class JavaScriptTypeHierarchyHandler : BaseJavaScriptHandler<TypeHierarchyData>(
         return isAvailable() && isJavaScriptLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
         val jsClass = findContainingJSClass(element) ?: return null
@@ -518,7 +518,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
         return isAvailable() && isJavaScriptLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
@@ -699,7 +699,7 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
         return isAvailable() && isJavaScriptLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -924,7 +924,7 @@ class JavaScriptSymbolSearchHandler : BaseJavaScriptHandler<List<SymbolData>>(),
 
     override fun canHandle(element: PsiElement): Boolean = isAvailable()
 
-    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
 
     override fun searchSymbols(
         project: Project,
@@ -958,7 +958,7 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
         return isAvailable() && isJavaScriptLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val jsFunction = findContainingJSFunction(element) ?: return null
@@ -1149,7 +1149,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
         return isAvailable() && isJavaScriptLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = JavaScriptPluginDetector.isJavaScriptPluginAvailable && jsFunctionClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         val structure = mutableListOf<StructureNode>()

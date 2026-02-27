@@ -1,7 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PhpPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -45,7 +45,7 @@ object PhpHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!PhpPluginDetector.isPhpPluginAvailable) {
+        if (!PluginDetectors.php.isAvailable) {
             LOG.info("PHP plugin not available, skipping PHP handler registration")
             return
         }
@@ -461,7 +461,7 @@ class PhpTypeHierarchyHandler : BasePhpHandler<TypeHierarchyData>(), TypeHierarc
         return isAvailable() && isPhpLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PhpPluginDetector.isPhpPluginAvailable && phpClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.php.isAvailable && phpClassClass != null
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
         val phpClass = findContainingPhpClass(element) ?: return null
@@ -603,7 +603,7 @@ class PhpImplementationsHandler : BasePhpHandler<List<ImplementationData>>(), Im
         return isAvailable() && isPhpLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PhpPluginDetector.isPhpPluginAvailable && phpClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.php.isAvailable && phpClassClass != null
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
@@ -711,7 +711,7 @@ class PhpCallHierarchyHandler : BasePhpHandler<CallHierarchyData>(), CallHierarc
         return isAvailable() && isPhpLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PhpPluginDetector.isPhpPluginAvailable && methodClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.php.isAvailable && methodClass != null
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -948,7 +948,7 @@ class PhpSymbolSearchHandler : BasePhpHandler<List<SymbolData>>(), SymbolSearchH
 
     override fun canHandle(element: PsiElement): Boolean = isAvailable()
 
-    override fun isAvailable(): Boolean = PhpPluginDetector.isPhpPluginAvailable && phpClassClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.php.isAvailable && phpClassClass != null
 
     override fun searchSymbols(
         project: Project,
@@ -986,7 +986,7 @@ class PhpSuperMethodsHandler : BasePhpHandler<SuperMethodsData>(), SuperMethodsH
         return isAvailable() && isPhpLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = PhpPluginDetector.isPhpPluginAvailable && methodClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.php.isAvailable && methodClass != null
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val method = findContainingMethod(element) ?: return null

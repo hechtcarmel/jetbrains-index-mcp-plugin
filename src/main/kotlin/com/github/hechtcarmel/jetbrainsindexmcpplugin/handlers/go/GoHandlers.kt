@@ -1,7 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.go
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.GoPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -61,7 +61,7 @@ object GoHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!GoPluginDetector.isGoPluginAvailable) {
+        if (!PluginDetectors.go.isAvailable) {
             LOG.info("Go plugin not available, skipping Go handler registration")
             return
         }
@@ -349,7 +349,7 @@ class GoTypeHierarchyHandler : BaseGoHandler<TypeHierarchyData>(), TypeHierarchy
         return isAvailable() && isGoLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = GoPluginDetector.isGoPluginAvailable && goTypeSpecClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.go.isAvailable && goTypeSpecClass != null
 
     override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
         val goType = findContainingGoType(element) ?: return null
@@ -556,7 +556,7 @@ class GoImplementationsHandler : BaseGoHandler<List<ImplementationData>>(), Impl
         return isAvailable() && isGoLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = GoPluginDetector.isGoPluginAvailable && goTypeSpecClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.go.isAvailable && goTypeSpecClass != null
 
     override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
@@ -665,7 +665,7 @@ class GoCallHierarchyHandler : BaseGoHandler<CallHierarchyData>(), CallHierarchy
         return isAvailable() && isGoLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = GoPluginDetector.isGoPluginAvailable && goFunctionDeclarationClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.go.isAvailable && goFunctionDeclarationClass != null
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -843,7 +843,7 @@ class GoSymbolSearchHandler : BaseGoHandler<List<SymbolData>>(), SymbolSearchHan
 
     override fun canHandle(element: PsiElement): Boolean = isAvailable()
 
-    override fun isAvailable(): Boolean = GoPluginDetector.isGoPluginAvailable && goFileClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.go.isAvailable && goFileClass != null
 
     override fun searchSymbols(
         project: Project,
@@ -885,7 +885,7 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
         return isAvailable() && isGoLanguage(element)
     }
 
-    override fun isAvailable(): Boolean = GoPluginDetector.isGoPluginAvailable && goMethodDeclarationClass != null
+    override fun isAvailable(): Boolean = PluginDetectors.go.isAvailable && goMethodDeclarationClass != null
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val goFunction = findContainingGoFunction(element) ?: return null
