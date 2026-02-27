@@ -13,7 +13,6 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiNamedElement
-import com.intellij.psi.PsiPackage
 import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -128,19 +127,29 @@ class FindDefinitionTool : AbstractMcpTool() {
                     symbolName = effectiveTarget.name
                 ))
             }
-            if (effectiveTarget is PsiPackage) {
-                val dirs = effectiveTarget.getDirectories(GlobalSearchScope.projectScope(project))
-                val dir = dirs.firstOrNull()
-                if (dir != null) {
-                    val dirPath = getRelativePath(project, dir.virtualFile)
-                    return@suspendingReadAction createJsonResult(DefinitionResult(
-                        file = dirPath,
-                        line = 1,
-                        column = 1,
-                        preview = "Package: ${effectiveTarget.qualifiedName}",
-                        symbolName = effectiveTarget.qualifiedName
-                    ))
+            // PsiPackage is Java-plugin-only; use reflection to avoid NoClassDefFoundError in non-Java IDEs
+            try {
+                val psiPackageClass = Class.forName("com.intellij.psi.PsiPackage")
+                if (psiPackageClass.isInstance(effectiveTarget)) {
+                    val qualifiedName = psiPackageClass.getMethod("getQualifiedName")
+                        .invoke(effectiveTarget) as? String ?: "unknown"
+                    val dirs = psiPackageClass
+                        .getMethod("getDirectories", GlobalSearchScope::class.java)
+                        .invoke(effectiveTarget, GlobalSearchScope.projectScope(project)) as Array<*>
+                    val dir = dirs.firstOrNull() as? PsiDirectory
+                    if (dir != null) {
+                        val dirPath = getRelativePath(project, dir.virtualFile)
+                        return@suspendingReadAction createJsonResult(DefinitionResult(
+                            file = dirPath,
+                            line = 1,
+                            column = 1,
+                            preview = "Package: $qualifiedName",
+                            symbolName = qualifiedName
+                        ))
+                    }
                 }
+            } catch (_: ClassNotFoundException) {
+                // Java plugin not available — skip PsiPackage handling
             }
 
             val targetFile = effectiveTarget.containingFile?.virtualFile

@@ -5,15 +5,12 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
-import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiReference
-import com.intellij.psi.util.PsiTreeUtil
 
 object PsiUtils {
 
@@ -191,14 +188,6 @@ object PsiUtils {
         return lines.subList(clampedStart, clampedEnd + 1).joinToString("\n")
     }
 
-    fun getContainingClass(element: PsiElement): PsiClass? {
-        return PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
-    }
-
-    fun getContainingMethod(element: PsiElement): PsiMethod? {
-        return PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
-    }
-
     fun findNamedElement(element: PsiElement): PsiNamedElement? {
         var current: PsiElement? = element
         while (current != null) {
@@ -210,25 +199,6 @@ object PsiUtils {
             current = current.parent
         }
         return null
-    }
-
-    fun extractDocumentation(element: PsiElement): String? {
-        // Try to find doc comment
-        val docComment = when (element) {
-            is PsiMethod -> element.docComment
-            is PsiClass -> element.docComment
-            else -> null
-        }
-
-        return docComment?.text?.let { text ->
-            // Clean up doc comment
-            text.lines()
-                .map { it.trim() }
-                .filter { it.isNotEmpty() && it != "/**" && it != "*/" }
-                .joinToString("\n") { line ->
-                    line.removePrefix("*").trim()
-                }
-        }
     }
 
     /**

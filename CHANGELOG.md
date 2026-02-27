@@ -4,10 +4,15 @@
 
 ## [Unreleased]
 
-## [3.10.1] - 2026-02-27
+## [3.10.2] - 2026-02-27
 
 ### Fixed
 - **Tools stop responding when a modal dialog is open** - MCP tool calls (e.g., `ide_sync_files`, `ide_refactor_rename`) no longer hang indefinitely when a modal dialog (Settings, Registry, refactoring preview, etc.) is open in the IDE
+
+## [3.10.1] - 2026-02-27
+
+### Fixed
+- **`ide_find_definition` crash in PhpStorm and other non-Java IDEs**
 
 ## [3.10.0] - 2026-02-22
 
