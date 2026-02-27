@@ -1,4 +1,4 @@
-package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
+package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport
 
 import com.intellij.openapi.diagnostic.logger
 import io.ktor.server.response.*
