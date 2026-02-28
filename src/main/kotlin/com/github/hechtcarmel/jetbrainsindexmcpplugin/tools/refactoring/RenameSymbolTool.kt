@@ -46,9 +46,14 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         Automatically renames related elements: getters/setters, overriding methods, constructor parameters ↔ fields, test classes.
 
+        When renaming a method that overrides a base method, the `overrideStrategy` parameter controls behavior:
+        - "rename_base" (default): Automatically renames the base method and all overrides. No dialog shown.
+        - "rename_only_current": Renames only the current method, leaving the base and other overrides unchanged.
+        - "ask": Shows the IDE's built-in dialog to let the user choose interactively.
+
         Returns: affected files list and change count. Modifies source files.
 
-        Parameters: file + line + column + newName (all required).
+        Parameters: file + line + column + newName (all required), overrideStrategy (optional).
 
         Example: {"file": "src/UserService.java", "line": 15, "column": 18, "newName": "CustomerService"}
     """.trimIndent()
@@ -58,6 +63,14 @@ class RenameSymbolTool : AbstractMcpTool() {
         .file(description = "Path to file relative to project root. REQUIRED.")
         .lineAndColumn()
         .stringProperty("newName", "The new name for the symbol. REQUIRED.", required = true)
+        .enumProperty(
+            "overrideStrategy",
+            "Strategy when renaming a method that overrides a base method. " +
+                "'rename_base' (default): rename the base method and all overrides automatically. " +
+                "'rename_only_current': rename only the current method. " +
+                "'ask': show the IDE dialog for interactive choice.",
+            listOf("rename_base", "rename_only_current", "ask")
+        )
         .build()
 
     /**
@@ -78,6 +91,11 @@ class RenameSymbolTool : AbstractMcpTool() {
             ?: return createErrorResult("Missing required parameter: column")
         val newName = arguments["newName"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: newName")
+
+        val overrideStrategy = arguments["overrideStrategy"]?.jsonPrimitive?.content ?: "rename_base"
+        if (overrideStrategy !in listOf("rename_base", "rename_only_current", "ask")) {
+            return createErrorResult("Invalid overrideStrategy: '$overrideStrategy'. Must be 'rename_base', 'rename_only_current', or 'ask'.")
+        }
 
         if (newName.isBlank()) {
             return createErrorResult("newName cannot be blank")
@@ -109,7 +127,7 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         withContext(Dispatchers.EDT) {
             try {
-                val result = executeRename(project, element, newName, affectedFiles)
+                val result = executeRename(project, element, newName, overrideStrategy, affectedFiles)
                 changesCount = result.first
                 relatedRenamesCount = result.second
             } catch (e: Exception) {
@@ -261,14 +279,17 @@ class RenameSymbolTool : AbstractMcpTool() {
         project: Project,
         element: PsiNamedElement,
         newName: String,
+        overrideStrategy: String,
         affectedFiles: MutableSet<String>
     ): Pair<Int, Int> {
-        // Get the language-specific processor for this element
-        val elementProcessor = RenamePsiElementProcessor.forElement(element)
-
-        // Some elements need substitution (e.g., light elements → real elements)
-        val substituted = elementProcessor.substituteElementToRename(element, null)
-        val targetElement = (substituted as? PsiNamedElement) ?: element
+        // Resolve the actual target element to rename based on override strategy.
+        // For methods that override a base method, RenameJavaMethodProcessor's
+        // substituteElementToRename() calls SuperMethodWarningUtil.checkSuperMethod()
+        // which shows a modal dialog. We handle this ourselves based on the strategy:
+        // - "rename_base": resolve to deepest super method (no dialog)
+        // - "rename_only_current": use the element as-is (no dialog)
+        // - "ask": delegate to substituteElementToRename (shows dialog)
+        val targetElement = resolveRenameTarget(element, overrideStrategy)
 
         // Track the file containing the declaration
         targetElement.containingFile?.virtualFile?.let { vf ->
@@ -344,6 +365,111 @@ class RenameSymbolTool : AbstractMcpTool() {
         FileDocumentManager.getInstance().saveAllDocuments()
 
         return Pair(affectedFiles.size, relatedRenamesCount)
+    }
+
+    /**
+     * Resolves the actual PsiNamedElement to rename based on the override strategy.
+     *
+     * For methods that override a base method, IntelliJ's substituteElementToRename()
+     * calls SuperMethodWarningUtil.checkSuperMethod() which shows a modal dialog.
+     *
+     * @param overrideStrategy Controls behavior for override methods:
+     *   - "rename_base": resolve to deepest super method automatically (no dialog)
+     *   - "rename_only_current": use the element as-is, skip substitution (no dialog)
+     *   - "ask": delegate to substituteElementToRename (shows IDE dialog)
+     */
+    private fun resolveRenameTarget(element: PsiNamedElement, overrideStrategy: String): PsiNamedElement {
+        when (overrideStrategy) {
+            "rename_base" -> {
+                // Resolve to the deepest super method to avoid the dialog
+                val deepestSuper = resolveDeepestSuperMethod(element)
+                if (deepestSuper != null) return deepestSuper
+            }
+            "rename_only_current" -> {
+                // Use the element directly — skip substituteElementToRename entirely
+                // to avoid the dialog. Only apply non-dialog substitutions.
+                return resolveNonDialogSubstitution(element)
+            }
+            "ask" -> {
+                // Fall through to substituteElementToRename (will show dialog)
+            }
+        }
+
+        // For non-override elements or "ask" strategy, use standard substitution
+        val elementProcessor = RenamePsiElementProcessor.forElement(element)
+        val substituted = elementProcessor.substituteElementToRename(element, null)
+        return (substituted as? PsiNamedElement) ?: element
+    }
+
+    /**
+     * Applies non-dialog substitutions (e.g., record component for accessor).
+     * Skips substituteElementToRename() which would trigger the super method dialog.
+     */
+    private fun resolveNonDialogSubstitution(element: PsiNamedElement): PsiNamedElement {
+        try {
+            // Check for record component accessor (Java 16+)
+            val recordUtilClass = Class.forName("com.intellij.psi.util.JavaPsiRecordUtil")
+            val result = recordUtilClass.getMethod("getRecordComponentForAccessor", Class.forName("com.intellij.psi.PsiMethod"))
+                .invoke(null, element)
+            if (result is PsiNamedElement) return result
+        } catch (_: Exception) {
+            // Not a Java method or no Java plugin — ignore
+        }
+        return element
+    }
+
+    /**
+     * If the element is a method that overrides a base method, returns the deepest
+     * super method. Returns null if the element is not a method or has no super methods.
+     *
+     * Handles both:
+     * - Java/Kotlin PsiMethod (including KtLightMethod) via PsiMethod.findDeepestSuperMethods()
+     * - Kotlin KtNamedFunction via KtNamedFunction.getOverriddenDescriptors() (reflection)
+     *
+     * Uses reflection to access language-specific APIs to keep the tool language-agnostic.
+     */
+    private fun resolveDeepestSuperMethod(element: PsiNamedElement): PsiNamedElement? {
+        // Try Java/Kotlin PsiMethod path (covers KtLightMethod too)
+        try {
+            val psiMethodClass = Class.forName("com.intellij.psi.PsiMethod")
+            if (psiMethodClass.isInstance(element)) {
+                val deepestSuperMethods = psiMethodClass.getMethod("findDeepestSuperMethods")
+                    .invoke(element) as? Array<*> ?: return null
+                if (deepestSuperMethods.isNotEmpty()) {
+                    return deepestSuperMethods[0] as? PsiNamedElement
+                }
+                return null
+            }
+        } catch (_: Exception) {
+            // PsiMethod not available
+        }
+
+        // Try Kotlin KtNamedFunction path — unwrap to light method and use PsiMethod API
+        try {
+            val ktNamedFunctionClass = Class.forName("org.jetbrains.kotlin.psi.KtNamedFunction")
+            if (!ktNamedFunctionClass.isInstance(element)) return null
+
+            // Use LightClassUtils to get the light method wrapper
+            val lightClassUtilsClass = Class.forName("org.jetbrains.kotlin.asJava.LightClassUtilsKt")
+            val lightElements = lightClassUtilsClass.getMethod("toLightMethods", Class.forName("org.jetbrains.kotlin.psi.KtDeclaration"))
+                .invoke(null, element) as? List<*> ?: return null
+
+            val lightMethod = lightElements.firstOrNull() ?: return null
+
+            val psiMethodClass = Class.forName("com.intellij.psi.PsiMethod")
+            if (!psiMethodClass.isInstance(lightMethod)) return null
+
+            val deepestSuperMethods = psiMethodClass.getMethod("findDeepestSuperMethods")
+                .invoke(lightMethod) as? Array<*> ?: return null
+
+            if (deepestSuperMethods.isNotEmpty()) {
+                return deepestSuperMethods[0] as? PsiNamedElement
+            }
+        } catch (_: Exception) {
+            // Kotlin plugin not available or different API version
+        }
+
+        return null
     }
 
     /**
