@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.lang.LanguageNamesValidation
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -38,6 +39,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * 2. **EDT Phase**: Execute rename via RenameProcessor (handles all references)
  */
 class RenameSymbolTool : AbstractMcpTool() {
+
+    companion object {
+        private val LOG = logger<RenameSymbolTool>()
+    }
 
     override val name = "ide_refactor_rename"
 
@@ -412,8 +417,8 @@ class RenameSymbolTool : AbstractMcpTool() {
             val result = recordUtilClass.getMethod("getRecordComponentForAccessor", Class.forName("com.intellij.psi.PsiMethod"))
                 .invoke(null, element)
             if (result is PsiNamedElement) return result
-        } catch (_: Exception) {
-            // Not a Java method or no Java plugin — ignore
+        } catch (e: Exception) {
+            LOG.warn("Failed to resolve record component for accessor: ${e.message}", e)
         }
         return element
     }
@@ -440,8 +445,8 @@ class RenameSymbolTool : AbstractMcpTool() {
                 }
                 return null
             }
-        } catch (_: Exception) {
-            // PsiMethod not available
+        } catch (e: Exception) {
+            LOG.warn("Failed to resolve deepest super method via PsiMethod API: ${e.message}", e)
         }
 
         // Try Kotlin KtNamedFunction path — unwrap to light method and use PsiMethod API
@@ -465,8 +470,8 @@ class RenameSymbolTool : AbstractMcpTool() {
             if (deepestSuperMethods.isNotEmpty()) {
                 return deepestSuperMethods[0] as? PsiNamedElement
             }
-        } catch (_: Exception) {
-            // Kotlin plugin not available or different API version
+        } catch (e: Exception) {
+            LOG.warn("Failed to resolve deepest super method via Kotlin KtNamedFunction API: ${e.message}", e)
         }
 
         return null

@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-03-01
+
+### Added
+- **`overrideStrategy` parameter for `ide_refactor_rename`** — Controls how renaming a method that overrides a base method is handled, enabling fully headless/agent usage without modal dialogs
+  - `"rename_base"` (default): Automatically renames the base method and all overrides by resolving to the deepest super method via `PsiMethod.findDeepestSuperMethods()`, bypassing the dialog entirely
+  - `"rename_only_current"`: Renames only the current method, leaving the base and other overrides unchanged
+  - `"ask"`: Preserves original IDE behavior, showing the dialog for interactive choice
+
 ## [3.11.0] - 2026-02-27
 
 ### Changed
