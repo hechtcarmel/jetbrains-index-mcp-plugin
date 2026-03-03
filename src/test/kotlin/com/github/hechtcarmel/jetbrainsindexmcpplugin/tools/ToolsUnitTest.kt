@@ -385,6 +385,18 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have required array", required)
     }
 
+    fun testAllRegisteredToolNamesAreInToolNamesAll() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        for (tool in registry.getAllTools()) {
+            assertTrue(
+                "Registered tool '${tool.name}' should be listed in ToolNames.ALL",
+                ToolNames.ALL.contains(tool.name)
+            )
+        }
+    }
+
     fun testAllToolsHaveProjectPathInSchema() {
         val registry = ToolRegistry()
         registry.registerBuiltInTools()

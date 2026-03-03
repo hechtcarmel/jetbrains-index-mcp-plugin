@@ -70,7 +70,12 @@ class McpToolWindowPanel(
         headerPanel.add(agentRuleTipPanel)
 
         // Filter toolbar below tip
-        filterToolbar = FilterToolbar { filter ->
+        val registeredToolNames = try {
+            McpServerService.getInstance().getToolRegistry().getAllTools().map { it.name }.sorted()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        filterToolbar = FilterToolbar(registeredToolNames) { filter ->
             currentFilter = filter
             refreshHistory()
         }
@@ -358,6 +363,7 @@ class CommandListCellRenderer : ListCellRenderer<CommandEntry> {
 }
 
 class FilterToolbar(
+    toolNames: List<String>,
     private val onFilterChanged: (CommandFilter) -> Unit
 ) : JBPanel<FilterToolbar>(FlowLayout(FlowLayout.LEFT, 8, 4)) {
 
@@ -368,25 +374,9 @@ class FilterToolbar(
     init {
         border = JBUI.Borders.empty(4, 8)
 
-        // Tool name filter
+        // Tool name filter - populated dynamically from registered tools
         add(JBLabel("Tool:"))
-        toolNameComboBox = JComboBox(arrayOf(
-            "All",
-            "find_usages",
-            "find_definition",
-            "type_hierarchy",
-            "call_hierarchy",
-            "find_implementations",
-            "get_symbol_info",
-            "get_completions",
-            "get_inspections",
-            "get_quick_fixes",
-            "apply_quick_fix",
-            "get_index_status",
-            "get_file_structure",
-            "get_project_structure",
-            "get_dependencies"
-        )).apply {
+        toolNameComboBox = JComboBox((listOf("All") + toolNames).toTypedArray()).apply {
             addActionListener { notifyFilterChanged() }
         }
         add(toolNameComboBox)

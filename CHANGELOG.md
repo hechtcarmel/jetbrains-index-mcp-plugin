@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [3.12.2] - 2026-03-03
+
+### Fixed
+- **Tool filter dropdown in tool window was outdated**
+
 ## [3.12.1] - 2026-03-03
 
 ### Fixed
