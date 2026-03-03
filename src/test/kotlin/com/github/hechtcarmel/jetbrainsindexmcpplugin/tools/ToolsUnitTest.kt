@@ -19,6 +19,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTex
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
@@ -383,6 +384,39 @@ class ToolsUnitTest : TestCase() {
 
         val required = schema[SchemaConstants.REQUIRED]
         assertNotNull("Should have required array", required)
+    }
+
+    fun testReformatCodeToolSchema() {
+        val tool = ReformatCodeTool()
+
+        assertEquals(ToolNames.REFORMAT_CODE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have startLine property", properties?.get(ParamNames.START_LINE))
+        assertNotNull("Should have endLine property", properties?.get(ParamNames.END_LINE))
+        assertNotNull("Should have optimizeImports property", properties?.get(ParamNames.OPTIMIZE_IMPORTS))
+        assertNotNull("Should have rearrangeCode property", properties?.get(ParamNames.REARRANGE_CODE))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+        assertTrue("Required should include 'file'", required.toString().contains("file"))
+    }
+
+    fun testReformatCodeToolIsRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val tool = registry.getTool(ToolNames.REFORMAT_CODE)
+        assertNotNull("ide_reformat_code should be registered", tool)
+        assertEquals(ToolNames.REFORMAT_CODE, tool?.name)
     }
 
     fun testAllRegisteredToolNamesAreInToolNamesAll() {

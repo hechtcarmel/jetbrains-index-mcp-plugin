@@ -27,6 +27,7 @@ class ConstantsUnitTest : TestCase() {
     fun testToolNamesRefactoringTools() {
         assertEquals("ide_refactor_rename", ToolNames.REFACTOR_RENAME)
         assertEquals("ide_refactor_safe_delete", ToolNames.REFACTOR_SAFE_DELETE)
+        assertEquals("ide_reformat_code", ToolNames.REFORMAT_CODE)
     }
 
     fun testToolNamesEditorTools() {
@@ -59,6 +60,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.SYNC_FILES,
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
+            ToolNames.REFORMAT_CODE,
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE
         )
@@ -104,6 +106,8 @@ class ConstantsUnitTest : TestCase() {
         assertEquals("startLine", ParamNames.START_LINE)
         assertEquals("endLine", ParamNames.END_LINE)
         assertEquals("force", ParamNames.FORCE)
+        assertEquals("optimizeImports", ParamNames.OPTIMIZE_IMPORTS)
+        assertEquals("rearrangeCode", ParamNames.REARRANGE_CODE)
     }
 
     fun testParamNamesNavigation() {

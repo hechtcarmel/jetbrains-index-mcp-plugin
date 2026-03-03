@@ -25,6 +25,7 @@ object ToolNames {
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
     const val REFACTOR_SAFE_DELETE = "ide_refactor_safe_delete"
+    const val REFORMAT_CODE = "ide_reformat_code"
 
     // Editor tools
     const val GET_ACTIVE_FILE = "ide_get_active_file"
@@ -51,6 +52,7 @@ object ToolNames {
         READ_FILE,
         REFACTOR_RENAME,
         REFACTOR_SAFE_DELETE,
+        REFORMAT_CODE,
         SEARCH_TEXT,
         SYNC_FILES,
         TYPE_HIERARCHY
