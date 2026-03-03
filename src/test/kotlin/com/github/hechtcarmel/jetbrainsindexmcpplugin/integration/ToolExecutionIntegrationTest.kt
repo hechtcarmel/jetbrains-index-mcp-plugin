@@ -310,6 +310,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             // Refactoring tools
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
+            ToolNames.REFORMAT_CODE,
             // Editor tools
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE
