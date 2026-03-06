@@ -11,6 +11,7 @@ class McpSettingsUnitTest : TestCase() {
 
         assertEquals("Default maxHistorySize should be 100", 100, state.maxHistorySize)
         assertFalse("Default syncExternalChanges should be false", state.syncExternalChanges)
+        assertEquals("Default serverHost should be 127.0.0.1", "127.0.0.1", state.serverHost)
     }
 
     // State mutability tests
@@ -20,6 +21,13 @@ class McpSettingsUnitTest : TestCase() {
         state.maxHistorySize = 200
 
         assertEquals(200, state.maxHistorySize)
+    }
+
+    fun testStateServerHostMutable() {
+        val state = McpSettings.State()
+        state.serverHost = "0.0.0.0"
+
+        assertEquals("0.0.0.0", state.serverHost)
     }
 
     fun testStateSyncExternalChangesMutable() {
@@ -127,5 +135,30 @@ class McpSettingsUnitTest : TestCase() {
     fun testMaxHistorySizeNegative() {
         val state = McpSettings.State(maxHistorySize = -1)
         assertEquals(-1, state.maxHistorySize)
+    }
+
+    fun testHostValidationLogic() {
+        assertTrue("127.0.0.1 should be valid", McpSettingsConfigurable.isValidHost("127.0.0.1"))
+        assertTrue("0.0.0.0 should be valid", McpSettingsConfigurable.isValidHost("0.0.0.0"))
+        assertTrue("localhost should be valid", McpSettingsConfigurable.isValidHost("localhost"))
+        assertTrue("  127.0.0.1  should be valid (trimmed)", McpSettingsConfigurable.isValidHost("  127.0.0.1  "))
+
+        // Validate numeric IPs with octet range
+        assertTrue("255.255.255.255 should be valid", 
+            McpSettingsConfigurable.isValidHost("255.255.255.255"))
+        assertFalse("999.999.999.999 should be invalid (octets out of range)", 
+            McpSettingsConfigurable.isValidHost("999.999.999.999"))
+        assertFalse("256.0.0.1 should be invalid (octet out of range)", 
+            McpSettingsConfigurable.isValidHost("256.0.0.1"))
+        
+        assertFalse("Numeric IP with 2 parts should be invalid", McpSettingsConfigurable.isValidHost("127.1"))
+        assertFalse("Numeric IP with 3 parts should be invalid", McpSettingsConfigurable.isValidHost("192.168.1"))
+        assertFalse("Numeric IP with 5 parts should be invalid", McpSettingsConfigurable.isValidHost("1.2.3.4.5"))
+        assertFalse("Numeric IP with empty parts should be invalid", McpSettingsConfigurable.isValidHost("1..1.1"))
+
+        assertFalse("Empty string should be invalid", McpSettingsConfigurable.isValidHost(""))
+        assertFalse("Blank string should be invalid", McpSettingsConfigurable.isValidHost("   "))
+        // Use a host that definitely shouldn't resolve and has invalid chars for IP
+        assertFalse("Invalid hostname should be invalid", McpSettingsConfigurable.isValidHost("invalid_host_name_!@#"))
     }
 }

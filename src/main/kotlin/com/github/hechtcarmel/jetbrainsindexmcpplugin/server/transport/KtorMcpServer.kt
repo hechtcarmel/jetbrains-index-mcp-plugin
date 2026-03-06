@@ -78,6 +78,14 @@ class KtorMcpServer(
             LOG.warn("Port $port is already in use", e)
             StartResult.PortInUse(port)
         } catch (e: Exception) {
+            if (e is CancellationException) {
+                val cause = e.cause
+                if (cause is BindException) {
+                    LOG.warn("Failed to start server on $host:$port: ${cause.message}", cause)
+                    return StartResult.Error("Failed to bind to $host:$port. ${cause.message}", cause)
+                }
+                throw e
+            }
             LOG.error("Failed to start MCP server", e)
             StartResult.Error(e.message ?: "Unknown error", e)
         }

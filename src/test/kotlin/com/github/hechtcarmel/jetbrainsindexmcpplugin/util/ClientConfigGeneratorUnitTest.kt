@@ -392,6 +392,24 @@ class ClientConfigGeneratorUnitTest : TestCase() {
 
 
 
+    // toConnectableHost tests (wildcard bind address remapping)
+
+    fun testToConnectableHostMapsWildcardToLoopback() {
+        assertEquals("127.0.0.1", ClientConfigGenerator.toConnectableHost("0.0.0.0"))
+    }
+
+    fun testToConnectableHostKeepsLoopbackUnchanged() {
+        assertEquals("127.0.0.1", ClientConfigGenerator.toConnectableHost("127.0.0.1"))
+    }
+
+    fun testToConnectableHostKeepsLanAddressUnchanged() {
+        assertEquals("192.168.1.100", ClientConfigGenerator.toConnectableHost("192.168.1.100"))
+    }
+
+    fun testToConnectableHostKeepsHostnameUnchanged() {
+        assertEquals("myhost.local", ClientConfigGenerator.toConnectableHost("myhost.local"))
+    }
+
     // Config Format Tests (structure validation without actual server)
 
     fun testCursorConfigFormatHasUrlKey() {

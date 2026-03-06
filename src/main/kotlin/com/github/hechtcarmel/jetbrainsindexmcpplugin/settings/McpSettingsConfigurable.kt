@@ -4,37 +4,90 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
+import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
+import com.intellij.openapi.ui.ComponentValidator
+import com.intellij.openapi.ui.ValidationInfo
+import com.intellij.openapi.util.Disposer
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBTextField
+import com.intellij.ui.components.panels.HorizontalLayout
+import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
+import org.jetbrains.annotations.VisibleForTesting
 import java.awt.FlowLayout
+import java.awt.event.FocusAdapter
+import java.awt.event.FocusEvent
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.util.function.Supplier
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
+import javax.swing.event.DocumentEvent
 
 class McpSettingsConfigurable : Configurable {
 
     private var panel: JPanel? = null
+    private var serverHostField: JBTextField? = null
     private var maxHistorySizeSpinner: JSpinner? = null
     private var serverPortSpinner: JSpinner? = null
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
+    private var uiDisposable: Disposable? = null
+
+    private var lastValidationInfo: ValidationInfo? = null
+    private var hostValidationErrorLabel: JBLabel? = null
+    private var hostValidationIcon: AsyncProcessIcon? = null
+    private var hostValidIcon: JBLabel? = null
+    private var hostWarningLabel: JBLabel? = null
+    private var isHostResolving = false
 
     override fun getDisplayName(): String = McpBundle.message("settings.title")
 
     override fun createComponent(): JComponent {
+        uiDisposable = Disposer.newDisposable()
+        serverHostField = JBTextField(McpConstants.DEFAULT_SERVER_HOST, 25).apply {
+            toolTipText = McpBundle.message("settings.serverHost.tooltip")
+        }
+        hostValidationErrorLabel = JBLabel().apply {
+            foreground = JBColor.RED
+            isVisible = false
+        }
+        hostValidationIcon = AsyncProcessIcon("HostValidation").apply {
+            isVisible = false
+        }
+        hostValidIcon = JBLabel(AllIcons.General.InspectionsOK).apply {
+            isVisible = false
+        }
+        hostWarningLabel = JBLabel(McpBundle.message("settings.serverHost.publicWarning")).apply {
+            foreground = JBColor.RED
+            isVisible = false
+            border = JBUI.Borders.emptyBottom(5)
+        }
+
+        val serverHostInputRow = JPanel(HorizontalLayout(JBUI.scale(5))).apply {
+            add(serverHostField)
+            add(hostValidationIcon)
+            add(hostValidIcon)
+            add(hostValidationErrorLabel)
+        }
+
+        installHostValidator(serverHostField!!)
+
         maxHistorySizeSpinner = JSpinner(SpinnerNumberModel(100, 10, 10000, 10))
         serverPortSpinner = JSpinner(SpinnerNumberModel(McpConstants.getDefaultServerPort(), 1024, 65535, 1)).apply {
             toolTipText = McpBundle.message("settings.serverPort.tooltip")
@@ -59,15 +112,17 @@ class McpSettingsConfigurable : Configurable {
             add(warningRow)
         }
 
-        val toolsPanel = createToolsPanel()
+        val availableToolsPanel = createToolsPanel()
 
         panel = FormBuilder.createFormBuilder()
+            .addLabeledComponent(JBLabel(McpBundle.message("settings.serverHost") + ":"), serverHostInputRow, 1, false)
+            .addComponentToRightColumn(hostWarningLabel!!)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.serverPort") + ":"), serverPortSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
-            .addComponent(toolsPanel, 5)
+            .addComponent(availableToolsPanel, 5)
             .addComponentFillVertically(JPanel(), 0)
             .panel
 
@@ -105,7 +160,8 @@ class McpSettingsConfigurable : Configurable {
     override fun isModified(): Boolean {
         val settings = McpSettings.getInstance()
 
-        if (serverPortSpinner?.value != settings.serverPort ||
+        if (serverHostField?.text?.trim() != settings.serverHost ||
+            serverPortSpinner?.value != settings.serverPort ||
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges) {
             return true
@@ -122,18 +178,35 @@ class McpSettingsConfigurable : Configurable {
 
     @Throws(ConfigurationException::class)
     override fun apply() {
-        val settings = McpSettings.getInstance()
-        val oldPort = settings.serverPort
-        val newPort = serverPortSpinner?.value as? Int ?: McpConstants.getDefaultServerPort()
-
-        // Validate port availability before applying (only if port changed)
-        if (newPort != oldPort && !isPortAvailable(newPort)) {
+        if (isHostResolving) {
             throw ConfigurationException(
-                "Port $newPort is already in use. Please choose a different port.",
-                "Port Unavailable"
+                McpBundle.message("settings.serverHost.validating"),
+                McpBundle.message("settings.validation.pending.title")
             )
         }
 
+        val settings = McpSettings.getInstance()
+        val oldHost = settings.serverHost
+        val oldPort = settings.serverPort
+        val newHost = serverHostField?.text?.trim() ?: McpConstants.DEFAULT_SERVER_HOST
+        val newPort = serverPortSpinner?.value as? Int ?: McpConstants.getDefaultServerPort()
+
+        if (!isValidHost(newHost)) {
+            throw ConfigurationException(
+                McpBundle.message("settings.serverHost.invalid", newHost),
+                McpBundle.message("settings.validation.host.title")
+            )
+        }
+
+        // Validate port availability before applying (only if host/port changed)
+        if ((newHost != oldHost || newPort != oldPort) && !isServerAddressAvailable(newHost, newPort)) {
+            throw ConfigurationException(
+                McpBundle.message("settings.serverAddress.unavailable", "$newHost:$newPort"),
+                McpBundle.message("settings.validation.serverAddress.title")
+            )
+        }
+
+        settings.serverHost = newHost
         settings.serverPort = newPort
         settings.maxHistorySize = maxHistorySizeSpinner?.value as? Int ?: 100
         settings.syncExternalChanges = syncExternalChangesCheckBox?.isSelected ?: false
@@ -146,19 +219,19 @@ class McpSettingsConfigurable : Configurable {
         }
         settings.disabledTools = disabledTools
 
-        // Auto-restart server if port changed
-        if (newPort != oldPort) {
+        // Auto-restart server if host/port changed
+        if (newHost != oldHost || newPort != oldPort) {
             ApplicationManager.getApplication().invokeLater({
                 val mcpService = McpServerService.getInstance()
                 if (!mcpService.isInitialized) return@invokeLater
-                val result = mcpService.restartServer(newPort)
+                val result = mcpService.restartServer(newHost, newPort)
                 when (result) {
                     is KtorMcpServer.StartResult.Success -> {
                         NotificationGroupManager.getInstance()
                             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                             .createNotification(
                                 McpBundle.message("notification.serverRestarted.title"),
-                                McpBundle.message("notification.serverRestarted", newPort),
+                                McpBundle.message("notification.serverRestarted", "$newHost:$newPort"),
                                 NotificationType.INFORMATION
                             )
                             .notify(null)
@@ -170,8 +243,8 @@ class McpSettingsConfigurable : Configurable {
                         NotificationGroupManager.getInstance()
                             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                             .createNotification(
-                                "MCP Server Error",
-                                result.message,
+                                McpBundle.message("notification.serverStartFailed.title"),
+                                McpBundle.message("notification.serverStartFailed.content", result.message),
                                 NotificationType.ERROR
                             )
                             .notify(null)
@@ -182,10 +255,10 @@ class McpSettingsConfigurable : Configurable {
     }
 
     /**
-     * Checks if a port is available for binding.
-     * Returns true if we can bind to the port, false if it's in use.
+     * Checks if a host:port is available for binding.
+     * Returns true if we can bind to the address, false if it's in use.
      */
-    private fun isPortAvailable(port: Int): Boolean {
+    private fun isServerAddressAvailable(host: String, port: Int): Boolean {
         val mcpService = McpServerService.getInstance()
         // If it's the current server port, it's "available" (we'll restart the server)
         val currentPort = McpSettings.getInstance().serverPort
@@ -196,7 +269,7 @@ class McpSettingsConfigurable : Configurable {
         return try {
             ServerSocket().use { socket ->
                 socket.reuseAddress = true
-                socket.bind(InetSocketAddress(McpConstants.DEFAULT_SERVER_HOST, port))
+                socket.bind(InetSocketAddress(host, port))
                 true
             }
         } catch (e: Exception) {
@@ -206,20 +279,125 @@ class McpSettingsConfigurable : Configurable {
 
     override fun reset() {
         val settings = McpSettings.getInstance()
+        serverHostField?.text = settings.serverHost
         serverPortSpinner?.value = settings.serverPort
         maxHistorySizeSpinner?.value = settings.maxHistorySize
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
+        
+        hostValidationErrorLabel?.isVisible = false
+        hostValidationIcon?.isVisible = false
+        hostValidIcon?.isVisible = false
+        updateHostWarning(settings.serverHost)
+        isHostResolving = false
 
         for ((toolName, checkbox) in toolCheckBoxes) {
             checkbox.isSelected = settings.isToolEnabled(toolName)
         }
     }
 
+    private fun updateHostWarning(host: String) {
+        val trimmedHost = host.trim()
+        val isDefault = trimmedHost == McpConstants.DEFAULT_SERVER_HOST
+        hostWarningLabel?.isVisible = !isDefault
+    }
+
+    private fun installHostValidator(field: JBTextField) {
+        // We use an empty validation info initially so we can control when it appears
+        val validator = ComponentValidator(uiDisposable!!).withValidator(Supplier {
+            lastValidationInfo
+        }).installOn(field)
+
+        field.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                // Clear validation state immediately on typing
+                hostValidationErrorLabel?.isVisible = false
+                hostValidIcon?.isVisible = false
+                hostValidationIcon?.isVisible = false
+                isHostResolving = false
+                lastValidationInfo = null
+                
+                // Update warning visibility
+                updateHostWarning(field.text)
+                
+                ComponentValidator.getInstance(field).ifPresent { it.updateInfo(null) }
+            }
+        })
+
+        field.addFocusListener(object : FocusAdapter() {
+            override fun focusLost(e: FocusEvent) {
+                val host = field.text.trim()
+
+                isHostResolving = true
+                hostValidationErrorLabel?.isVisible = false
+                hostValidIcon?.isVisible = false
+                hostValidationIcon?.isVisible = true
+
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    val isValid = isValidHost(host)
+                    val labelMessage = if (host.isEmpty()) 
+                        McpBundle.message("settings.serverHost.empty") 
+                    else 
+                        McpBundle.message("settings.serverHost.invalidShort")
+                    
+                    // Use empty message for ComponentValidator to show red border but avoid tooltip popup
+                    // as we are showing the error message in the label next to the input
+                    val info = if (isValid) null else ValidationInfo("", field)
+
+                    ApplicationManager.getApplication().invokeLater({
+                        // Only update UI if the text hasn't changed since we started
+                        if (field.text.trim() == host) {
+                            hostValidationIcon?.isVisible = false
+                            isHostResolving = false
+                            lastValidationInfo = info
+
+                            ComponentValidator.getInstance(field).ifPresent { it.updateInfo(info) }
+
+                            if (!isValid) {
+                                hostValidationErrorLabel?.text = labelMessage
+                                hostValidationErrorLabel?.isVisible = true
+                                hostValidIcon?.isVisible = false
+                            } else {
+                                hostValidationErrorLabel?.isVisible = false
+                                hostValidIcon?.isVisible = true
+                            }
+                        }
+                    }, ModalityState.any())
+                }
+            }
+        })
+    }
+
     override fun disposeUIResources() {
         panel = null
+        serverHostField = null
+        hostValidationErrorLabel = null
+        hostValidationIcon = null
+        hostValidIcon = null
         serverPortSpinner = null
         maxHistorySizeSpinner = null
         syncExternalChangesCheckBox = null
         toolCheckBoxes.clear()
+        uiDisposable?.let { Disposer.dispose(it) }
+        uiDisposable = null
+    }
+
+    companion object {
+        @VisibleForTesting
+        fun isValidHost(host: String): Boolean {
+            val trimmedHost = host.trim()
+            if (trimmedHost.isEmpty()) return false
+
+            // Check if input consists only of numbers and dots (potential IPv4)
+            if (trimmedHost.matches(Regex("^[0-9.]+\$"))) {
+                val parts = trimmedHost.split(".")
+                // Check for exactly 4 non-empty parts with valid octet values (0-255)
+                return parts.size == 4 && parts.all { part ->
+                    part.isNotEmpty() && part.toIntOrNull()?.let { it in 0..255 } == true
+                }
+            }
+
+            // Fallback for hostnames
+            return runCatching { InetAddress.getByName(trimmedHost) }.isSuccess
+        }
     }
 }

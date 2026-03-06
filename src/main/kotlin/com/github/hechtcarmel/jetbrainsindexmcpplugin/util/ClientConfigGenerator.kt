@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import org.jetbrains.annotations.VisibleForTesting
 
 /**
  * Generates MCP client configuration snippets for various AI coding assistants.
@@ -24,13 +25,29 @@ object ClientConfigGenerator {
     /**
      * Gets the server URL, using the running server URL if available,
      * or constructing a URL from settings if the server is not running.
+     *
+     * For client configs, `0.0.0.0` is mapped to `127.0.0.1` since clients
+     * need a concrete address to connect to, not a wildcard bind address.
      */
     private fun getServerUrlOrDefault(): String {
-        return McpServerService.getInstance().getServerUrl()
-            ?: run {
-                val port = McpSettings.getInstance().serverPort
-                "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.SSE_ENDPOINT_PATH}"
-            }
+        val runningUrl = McpServerService.getInstance().getServerUrl()
+        if (runningUrl != null) {
+            // Map wildcard bind address to loopback for client connectivity
+            return runningUrl.replace("://0.0.0.0:", "://${McpConstants.DEFAULT_SERVER_HOST}:")
+        }
+        val settings = McpSettings.getInstance()
+        val port = settings.serverPort
+        val host = toConnectableHost(settings.serverHost)
+        return "http://$host:$port${McpConstants.SSE_ENDPOINT_PATH}"
+    }
+
+    /**
+     * Maps a bind address to a connectable address for client configuration.
+     * The wildcard address `0.0.0.0` is not connectable, so it's mapped to `127.0.0.1`.
+     */
+    @VisibleForTesting
+    internal fun toConnectableHost(host: String): String {
+        return if (host == "0.0.0.0") McpConstants.DEFAULT_SERVER_HOST else host
     }
 
     /**

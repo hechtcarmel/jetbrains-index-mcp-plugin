@@ -23,7 +23,8 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var maxHistorySize: Int = 100,
         var syncExternalChanges: Boolean = false,
         var disabledTools: MutableSet<String> = mutableSetOf("ide_file_structure", "ide_find_symbol", "ide_read_file", "ide_get_active_file", "ide_open_file", "ide_reformat_code"),
-        var serverPort: Int = -1 // -1 means use IDE-specific default
+        var serverPort: Int = -1, // -1 means use IDE-specific default
+        var serverHost: String = McpConstants.DEFAULT_SERVER_HOST
     )
 
     private var state = State()
@@ -49,6 +50,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var serverPort: Int
         get() = if (state.serverPort == -1) McpConstants.getDefaultServerPort() else state.serverPort
         set(value) { state.serverPort = value }
+
+    var serverHost: String
+        get() = state.serverHost
+        set(value) { state.serverHost = value }
 
     fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools
 
