@@ -33,9 +33,10 @@ Create an MCP server within an IntelliJ plugin that allows AI coding assistants 
 - **Explore API**: https://plugins.jetbrains.com/docs/intellij/explore-api.html
 
 ### Model Context Protocol (MCP)
-- **Specification**: https://spec.modelcontextprotocol.io/specification/2024-11-05/
-- **Tools API**: https://modelcontextprotocol.io/specification/2024-11-05/server/tools
-- **Resources API**: https://modelcontextprotocol.io/specification/2024-11-05/server/resources
+- **Specification**: https://spec.modelcontextprotocol.io/specification/2025-03-26/
+- **Tools API**: https://modelcontextprotocol.io/specification/2025-03-26/server/tools
+- **Resources API**: https://modelcontextprotocol.io/specification/2025-03-26/server/resources
+- **Legacy SSE Transport**: https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/transports/
 - **GitHub**: https://github.com/modelcontextprotocol/modelcontextprotocol
 
 ## Project Structure

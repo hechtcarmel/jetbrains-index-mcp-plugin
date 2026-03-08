@@ -16,15 +16,11 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.options.ShowSettingsUtil
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -40,7 +36,9 @@ import kotlinx.coroutines.launch
  * Uses HTTP+SSE transport for compatibility with MCP clients.
  */
 @Service(Service.Level.APP)
-class McpServerService : Disposable {
+class McpServerService(
+    private val coroutineScope: CoroutineScope
+) : Disposable {
 
     private val toolRegistry: ToolRegistry = ToolRegistry()
     private val jsonRpcHandler: JsonRpcHandler
@@ -48,17 +46,6 @@ class McpServerService : Disposable {
     private val streamableHttpSessionManager: StreamableHttpSessionManager = StreamableHttpSessionManager()
     private var ktorServer: KtorMcpServer? = null
     private var serverError: ServerError? = null
-
-    /**
-     * Coroutine scope for non-blocking tool execution.
-     * Uses SupervisorJob so failures in one tool don't cancel others.
-     * Uses Default dispatcher for CPU-bound PSI operations.
-     * Uses ModalityState.any() so EDT-bound work executes even when modal dialogs are open,
-     * preventing MCP tool calls from hanging indefinitely (see issue #68).
-     */
-    val coroutineScope: CoroutineScope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Default + ModalityState.any().asContextElement()
-    )
 
     /**
      * Represents a server error state.
@@ -269,7 +256,6 @@ class McpServerService : Disposable {
         stopServer()
         sseSessionManager.closeAllSessions()
         streamableHttpSessionManager.closeAllSessions()
-        coroutineScope.cancel("McpServerService disposed")
     }
 }
 

@@ -357,7 +357,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 
 - **JetBrains IDE** 2025.1 or later (any IDE based on IntelliJ Platform)
 - **JVM** 21 or later
-- **MCP Protocol** 2024-11-05
+- **MCP Protocol** 2025-03-26 (primary Streamable HTTP), with 2024-11-05 legacy SSE compatibility
 
 ### Supported IDEs
 
@@ -381,7 +381,18 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 
 The plugin runs a **custom embedded Ktor CIO HTTP server** with **dual MCP transports**:
 
-### SSE Transport (MCP Inspector, spec-compliant clients)
+### Streamable HTTP Transport (Primary, MCP 2025-03-26)
+
+```
+AI Assistant ──────► POST /index-mcp/streamable-http (initialize)
+                     ◄── HTTP 200 + Mcp-Session-Id
+             ──────► POST /index-mcp/streamable-http (requests/notifications)
+                     ◄── JSON-RPC response or HTTP 202 Accepted
+             ──────► DELETE /index-mcp/streamable-http
+                     ◄── HTTP 200                    (session terminated)
+```
+
+### Legacy SSE Transport (MCP Inspector, older clients)
 
 ```
 AI Assistant ──────► GET /index-mcp/sse              (establish SSE stream)
@@ -391,17 +402,10 @@ AI Assistant ──────► GET /index-mcp/sse              (establish SS
                      ◄── event: message              (JSON-RPC response via SSE)
 ```
 
-### Streamable HTTP Transport (Claude Code, simple clients)
-
-```
-AI Assistant ──────► POST /index-mcp                 (JSON-RPC requests)
-                     ◄── JSON-RPC response           (immediate HTTP response)
-```
-
 This dual approach:
-- **MCP Inspector compatible** - Full SSE transport per MCP spec (2024-11-05)
-- **Claude Code compatible** - Streamable HTTP for simple request/response
-- **Configurable port** - Default 29277, changeable in settings
+- **Primary MCP transport** - Streamable HTTP per MCP `2025-03-26`
+- **MCP Inspector compatible** - Legacy SSE transport per MCP `2024-11-05`
+- **Configurable port** - IDE-specific default port, changeable in settings
 - Works with any MCP-compatible client
 - Single server instance across all open projects
 

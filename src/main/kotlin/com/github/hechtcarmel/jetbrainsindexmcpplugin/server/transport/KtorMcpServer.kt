@@ -64,6 +64,11 @@ class KtorMcpServer(
         private val LOG = logger<KtorMcpServer>()
     }
 
+    private enum class StreamableBatchKind {
+        REQUESTS_OR_NOTIFICATIONS,
+        RESPONSES
+    }
+
     /**
      * Result of attempting to start the server.
      */
@@ -265,10 +270,18 @@ class KtorMcpServer(
             return
         }
 
-        val parsed = element.jsonObject
+        val parsed = element as? JsonObject
+        if (parsed == null || !isSupportedJsonRpcMessage(parsed)) {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Invalid JSON-RPC message"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
+            return
+        }
 
         val method = parsed["method"]?.jsonPrimitive?.contentOrNull
-        val hasId = parsed.containsKey("id") && parsed["id"] != JsonNull
+        val hasId = hasJsonRpcRequestId(parsed)
 
         // Initialize: process and create session
         if (method == "initialize") {
@@ -342,14 +355,27 @@ class KtorMcpServer(
             return
         }
 
+        val batchKind = classifyStreamableBatch(batch)
+        if (batchKind == null) {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Invalid JSON-RPC batch"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
+            return
+        }
+
         if (!validateStreamableSession(call, null)) return
+
+        if (batchKind == StreamableBatchKind.RESPONSES) {
+            call.respond(HttpStatusCode.Accepted)
+            return
+        }
 
         val responses = mutableListOf<JsonElement>()
         for (message in batch) {
-            val parsed = message as? JsonObject
-            if (parsed != null && isJsonRpcResponseMessage(parsed)) {
-                continue
-            }
+            val parsed = message as JsonObject
+            val hasId = hasJsonRpcRequestId(parsed)
 
             val response = try {
                 runWithIdeModality {
@@ -363,7 +389,7 @@ class KtorMcpServer(
                 createJsonRpcError(parsed?.get("id"), -32603, e.message ?: "Internal error")
             }
 
-            if (response != null) {
+            if (hasId && response != null) {
                 responses += json.parseToJsonElement(response)
             }
         }
@@ -598,7 +624,7 @@ class KtorMcpServer(
         }
 
         val scheme = uri.scheme?.lowercase() ?: return false
-        val host = uri.host?.lowercase() ?: return false
+        val host = normalizeOriginHost(uri.host?.lowercase() ?: return false)
         return scheme in setOf("http", "https") && host in setOf("127.0.0.1", "localhost", "::1")
     }
 
@@ -628,6 +654,39 @@ class KtorMcpServer(
     private fun isJsonRpcResponseMessage(parsed: JsonObject): Boolean {
         return !parsed.containsKey("method") && (parsed.containsKey("result") || parsed.containsKey("error"))
     }
+
+    private fun isJsonRpcRequestMessage(parsed: JsonObject): Boolean = parsed.containsKey("method")
+
+    private fun isSupportedJsonRpcMessage(parsed: JsonObject): Boolean {
+        return isJsonRpcRequestMessage(parsed) || isJsonRpcResponseMessage(parsed)
+    }
+
+    private fun hasJsonRpcRequestId(parsed: JsonObject): Boolean {
+        return parsed.containsKey("id") && parsed["id"] != JsonNull
+    }
+
+    private fun classifyStreamableBatch(batch: JsonArray): StreamableBatchKind? {
+        var sawRequestsOrNotifications = false
+        var sawResponses = false
+
+        for (message in batch) {
+            val parsed = message as? JsonObject ?: return null
+            when {
+                isJsonRpcRequestMessage(parsed) -> sawRequestsOrNotifications = true
+                isJsonRpcResponseMessage(parsed) -> sawResponses = true
+                else -> return null
+            }
+        }
+
+        return when {
+            sawRequestsOrNotifications && sawResponses -> null
+            sawRequestsOrNotifications -> StreamableBatchKind.REQUESTS_OR_NOTIFICATIONS
+            sawResponses -> StreamableBatchKind.RESPONSES
+            else -> null
+        }
+    }
+
+    private fun normalizeOriginHost(host: String): String = host.removePrefix("[").removeSuffix("]")
 
     private fun createJsonRpcError(id: JsonElement?, code: Int, message: String): String {
         val response = JsonRpcResponse(
