@@ -14,19 +14,31 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
  * - Cursor
  *
  * Also provides generic configurations:
- * - Standard SSE (for clients with native SSE support)
- * - mcp-remote (for clients without SSE support)
+ * - Streamable HTTP (for modern clients with native support)
+ * - Legacy SSE (for older clients)
  *
- * All configurations use the HTTP+SSE transport with a configurable port.
+ * All configurations use Streamable HTTP as the primary transport.
  */
 object ClientConfigGenerator {
 
     /**
-     * Gets the server URL, using the running server URL if available,
+     * Gets the Streamable HTTP server URL (primary), using the running server URL if available,
      * or constructing a URL from settings if the server is not running.
      */
-    private fun getServerUrlOrDefault(): String {
+    private fun getStreamableHttpUrlOrDefault(): String {
         return McpServerService.getInstance().getServerUrl()
+            ?: run {
+                val port = McpSettings.getInstance().serverPort
+                "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}"
+            }
+    }
+
+    /**
+     * Gets the legacy SSE server URL, using the running server URL if available,
+     * or constructing a URL from settings if the server is not running.
+     */
+    private fun getLegacySseUrlOrDefault(): String {
+        return McpServerService.getInstance().getLegacySseUrl()
             ?: run {
                 val port = McpSettings.getInstance().serverPort
                 "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.SSE_ENDPOINT_PATH}"
@@ -56,7 +68,7 @@ object ClientConfigGenerator {
      * @return The configuration string in the appropriate format for the client
      */
     fun generateConfig(clientType: ClientType, serverName: String = getDefaultServerName()): String {
-        val serverUrl = getServerUrlOrDefault()
+        val serverUrl = getStreamableHttpUrlOrDefault()
 
         return when (clientType) {
             ClientType.CLAUDE_CODE -> generateClaudeCodeConfig(serverUrl, serverName)
@@ -75,7 +87,7 @@ object ClientConfigGenerator {
      */
     fun generateInstallCommand(clientType: ClientType, serverName: String = getDefaultServerName()): String? {
         if (!clientType.supportsInstallCommand) return null
-        val serverUrl = getServerUrlOrDefault()
+        val serverUrl = getStreamableHttpUrlOrDefault()
 
         return when (clientType) {
             ClientType.CLAUDE_CODE -> buildClaudeCodeCommand(serverUrl, serverName)
@@ -106,7 +118,7 @@ object ClientConfigGenerator {
     internal fun buildClaudeCodeCommand(serverUrl: String, serverName: String): String {
         val removeLegacyCmd = "claude mcp remove $LEGACY_SERVER_NAME 2>/dev/null"
         val removeCmd = "claude mcp remove $serverName 2>/dev/null"
-        val addCmd = "claude mcp add --transport sse $serverName $serverUrl --scope user"
+        val addCmd = "claude mcp add --transport http $serverName $serverUrl --scope user"
         return "$removeLegacyCmd ; $removeCmd ; $addCmd"
     }
 
@@ -180,10 +192,10 @@ object ClientConfigGenerator {
     }
 
     /**
-     * Generates standard SSE configuration for MCP clients with native SSE support.
+     * Generates Streamable HTTP configuration for modern MCP clients.
      */
-    fun generateStandardSseConfig(serverName: String = getDefaultServerName()): String {
-        val serverUrl = getServerUrlOrDefault()
+    fun generateStreamableHttpConfig(serverName: String = getDefaultServerName()): String {
+        val serverUrl = getStreamableHttpUrlOrDefault()
         return """
 {
   "mcpServers": {
@@ -196,22 +208,15 @@ object ClientConfigGenerator {
     }
 
     /**
-     * Generates mcp-remote configuration for MCP clients without SSE support.
-     * Uses npx mcp-remote to bridge SSE to stdio transport.
+     * Generates legacy SSE configuration for older MCP clients.
      */
-    fun generateMcpRemoteConfig(serverName: String = getDefaultServerName()): String {
-        val serverUrl = getServerUrlOrDefault()
+    fun generateLegacySseConfig(serverName: String = getDefaultServerName()): String {
+        val serverUrl = getLegacySseUrlOrDefault()
         return """
 {
   "mcpServers": {
     "$serverName": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "$serverUrl",
-        "--allow-http"
-      ]
+      "url": "$serverUrl"
     }
   }
 }
@@ -259,22 +264,19 @@ object ClientConfigGenerator {
     }
 
     /**
-     * Returns hint text for standard SSE configuration.
+     * Returns hint text for Streamable HTTP configuration.
      */
-    fun getStandardSseHint(): String = """
-        Standard MCP configuration using SSE (Server-Sent Events) transport.
-        Use this for any MCP client that supports the SSE transport natively.
+    fun getStreamableHttpHint(): String = """
+        Standard MCP configuration using Streamable HTTP transport (2025-03-26 spec).
+        Use this for any modern MCP client that supports Streamable HTTP natively.
     """.trimIndent()
 
     /**
-     * Returns hint text for mcp-remote configuration.
+     * Returns hint text for legacy SSE configuration.
      */
-    fun getMcpRemoteHint(): String = """
-        For MCP clients that don't support SSE transport natively.
-        Uses mcp-remote to bridge SSE to stdio transport.
-
-        Requires Node.js and npx to be available in your PATH.
-        The --allow-http flag is needed for 127.0.0.1 connections.
+    fun getLegacySseHint(): String = """
+        Legacy MCP configuration using SSE transport (2024-11-05 spec).
+        Use this for older MCP clients that don't support Streamable HTTP.
     """.trimIndent()
 
     /**

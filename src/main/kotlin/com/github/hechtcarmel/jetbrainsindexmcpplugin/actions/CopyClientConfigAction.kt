@@ -190,8 +190,8 @@ class CopyClientConfigAction : AnAction() {
 
     private fun createGenericConfigSection(project: Project?): JPanel {
         val listModel = DefaultListModel<GenericConfigItem>().apply {
-            addElement(GenericConfigItem("Standard SSE", "For clients with native SSE support", GenericConfigType.STANDARD_SSE))
-            addElement(GenericConfigItem("Via mcp-remote", "For clients without SSE support", GenericConfigType.MCP_REMOTE))
+            addElement(GenericConfigItem("Streamable HTTP", "For modern MCP clients (2025-03-26 spec)", GenericConfigType.STREAMABLE_HTTP))
+            addElement(GenericConfigItem("Legacy SSE", "For older MCP clients (2024-11-05 spec)", GenericConfigType.LEGACY_SSE))
         }
 
         val list = JBList(listModel).apply {
@@ -287,11 +287,11 @@ class CopyClientConfigAction : AnAction() {
 
     private fun copyGenericConfig(type: GenericConfigType, project: Project?) {
         val (config, hint) = when (type) {
-            GenericConfigType.STANDARD_SSE -> {
-                ClientConfigGenerator.generateStandardSseConfig() to ClientConfigGenerator.getStandardSseHint()
+            GenericConfigType.STREAMABLE_HTTP -> {
+                ClientConfigGenerator.generateStreamableHttpConfig() to ClientConfigGenerator.getStreamableHttpHint()
             }
-            GenericConfigType.MCP_REMOTE -> {
-                ClientConfigGenerator.generateMcpRemoteConfig() to ClientConfigGenerator.getMcpRemoteHint()
+            GenericConfigType.LEGACY_SSE -> {
+                ClientConfigGenerator.generateLegacySseConfig() to ClientConfigGenerator.getLegacySseHint()
             }
         }
 
@@ -313,8 +313,8 @@ class CopyClientConfigAction : AnAction() {
     }
 
     private enum class GenericConfigType(val displayName: String) {
-        STANDARD_SSE("Standard SSE"),
-        MCP_REMOTE("mcp-remote (stdio)")
+        STREAMABLE_HTTP("Streamable HTTP"),
+        LEGACY_SSE("Legacy SSE")
     }
 
     private data class InstallItem(val clientType: ClientType, val description: String)
