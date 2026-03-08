@@ -110,13 +110,13 @@ Use the "Install on Coding Agents" button in the tool window, or run this comman
 
 ```bash
 # IntelliJ IDEA
-claude mcp add --transport http intellij-index http://127.0.0.1:29170/index-mcp/sse --scope user
+claude mcp add --transport http intellij-index http://127.0.0.1:29170/index-mcp/streamable-http --scope user
 
 # PyCharm
-claude mcp add --transport http pycharm-index http://127.0.0.1:29172/index-mcp/sse --scope user
+claude mcp add --transport http pycharm-index http://127.0.0.1:29172/index-mcp/streamable-http --scope user
 
 # WebStorm
-claude mcp add --transport http webstorm-index http://127.0.0.1:29173/index-mcp/sse --scope user
+claude mcp add --transport http webstorm-index http://127.0.0.1:29173/index-mcp/streamable-http --scope user
 ```
 
 Options:
@@ -131,13 +131,13 @@ Use the "Install on Coding Agents" button in the tool window, or run this comman
 
 ```bash
 # IntelliJ IDEA
-codex mcp add --transport sse intellij-index http://127.0.0.1:29170/index-mcp/sse
+codex mcp add intellij-index --url http://127.0.0.1:29170/index-mcp/streamable-http
 
 # PyCharm
-codex mcp add --transport sse pycharm-index http://127.0.0.1:29172/index-mcp/sse
+codex mcp add pycharm-index --url http://127.0.0.1:29172/index-mcp/streamable-http
 
 # WebStorm
-codex mcp add --transport sse webstorm-index http://127.0.0.1:29173/index-mcp/sse
+codex mcp add webstorm-index --url http://127.0.0.1:29173/index-mcp/streamable-http
 ```
 
 To remove: `codex mcp remove <server-name>` (e.g., `codex mcp remove intellij-index`)
@@ -150,7 +150,7 @@ Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally 
 {
   "mcpServers": {
     "intellij-index": {
-      "url": "http://127.0.0.1:29170/index-mcp/sse"
+      "url": "http://127.0.0.1:29170/index-mcp/streamable-http"
     }
   }
 }
@@ -164,7 +164,7 @@ Add to `~/.codeium/windsurf/mcp_config.json` (adjust name and port for your IDE)
 {
   "mcpServers": {
     "intellij-index": {
-      "serverUrl": "http://127.0.0.1:29170/index-mcp/sse"
+      "serverUrl": "http://127.0.0.1:29170/index-mcp/streamable-http"
     }
   }
 }
@@ -176,8 +176,7 @@ Add to `~/.codeium/windsurf/mcp_config.json` (adjust name and port for your IDE)
 {
   "mcp.servers": {
     "intellij-index": {
-      "transport": "sse",
-      "url": "http://127.0.0.1:29170/index-mcp/sse"
+      "url": "http://127.0.0.1:29170/index-mcp/streamable-http"
     }
   }
 }

@@ -145,6 +145,7 @@ class KtorMcpServer(
 
             get(McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH) {
                 if (!validateOrigin(call)) return@get
+                call.response.header(HttpHeaders.Allow, "POST, DELETE")
                 call.respond(HttpStatusCode.MethodNotAllowed)
             }
 
@@ -330,7 +331,7 @@ class KtorMcpServer(
         } catch (e: Exception) {
             LOG.error("Error processing MCP request (Streamable HTTP)", e)
             call.respondText(
-                createJsonRpcError(null as JsonElement?, -32603, e.message ?: "Internal error"),
+                createJsonRpcError(requestId, -32603, e.message ?: "Internal error"),
                 ContentType.Application.Json
             )
         }

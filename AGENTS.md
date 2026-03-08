@@ -161,7 +161,7 @@ MCP servers expose:
 - `GET /index-mcp/sse` → Opens SSE stream, sends `endpoint` event with POST URL
 - `POST /index-mcp` → JSON-RPC requests/responses
 
-**Client Configuration** (Cursor, Codex Desktop, etc.):
+**Client Configuration** (Cursor, Claude Desktop, etc.):
 ```json
 {
   "mcpServers": {
