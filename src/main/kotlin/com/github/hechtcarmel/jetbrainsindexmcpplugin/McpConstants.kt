@@ -35,8 +35,10 @@ object McpConstants {
     // JSON-RPC version
     const val JSON_RPC_VERSION = "2.0"
 
-    // MCP Protocol version
-    const val MCP_PROTOCOL_VERSION = "2025-03-26"
+    // MCP Protocol versions
+    const val LEGACY_MCP_PROTOCOL_VERSION = "2024-11-05"
+    const val STREAMABLE_HTTP_MCP_PROTOCOL_VERSION = "2025-03-26"
+    const val MCP_PROTOCOL_VERSION = STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
 
     // Server identification - IDE-specific
     /**
@@ -49,7 +51,7 @@ object McpConstants {
      * Legacy constant for backwards compatibility.
      */
     const val SERVER_NAME = "jetbrains-index-mcp"
-    const val SERVER_VERSION = "2.0.0"
+    const val SERVER_VERSION = "4.0.0"
     const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
 
     /**

@@ -319,8 +319,8 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         )
 
         assertTrue(
-            "Command should contain add command with --transport http",
-            command.contains("codex mcp add test-server --transport http http://127.0.0.1:63342/index-mcp/streamable-http")
+            "Command should contain add command with --url",
+            command.contains("codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http")
         )
     }
 
@@ -379,7 +379,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         )
         assertTrue(
             "Add command should use custom server name",
-            command.contains("codex mcp add custom-name --transport http")
+            command.contains("codex mcp add custom-name --url")
         )
     }
 
@@ -451,7 +451,8 @@ class ClientConfigGeneratorUnitTest : TestCase() {
             serverName = "intellij-index"
         )
 
-        assertTrue("Should use native --transport http", command.contains("--transport http"))
+        assertTrue("Should use native --url", command.contains("--url"))
+        assertFalse("Should not use --transport http", command.contains("--transport http"))
         assertFalse("Should not use mcp-remote", command.contains("mcp-remote"))
         assertFalse("Should not use npx", command.contains("npx"))
     }

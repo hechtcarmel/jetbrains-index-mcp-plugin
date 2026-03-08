@@ -65,6 +65,32 @@ class JsonRpcHandlerUnitTest : TestCase() {
         )
     }
 
+    fun testInitializeRequestCanOverrideProtocolVersion() = runBlocking {
+        val request = JsonRpcRequest(
+            id = JsonPrimitive(1),
+            method = JsonRpcMethods.INITIALIZE,
+            params = buildJsonObject {
+                put("protocolVersion", "2024-11-05")
+                put("clientInfo", buildJsonObject {
+                    put("name", "test-client")
+                    put("version", "1.0.0")
+                })
+            }
+        )
+
+        val responseJson = handler.handleRequest(
+            json.encodeToString(JsonRpcRequest.serializer(), request),
+            protocolVersion = "2024-11-05"
+        )
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertNull("Initialize should not return error", response.error)
+        assertEquals(
+            "2024-11-05",
+            response.result!!.jsonObject["protocolVersion"]!!.jsonPrimitive.content
+        )
+    }
+
     fun testPingRequest() = runBlocking {
         val request = JsonRpcRequest(
             id = JsonPrimitive(4),

@@ -27,7 +27,10 @@ class JsonRpcHandler(
         private val LOG = logger<JsonRpcHandler>()
     }
 
-    suspend fun handleRequest(jsonString: String): String? {
+    suspend fun handleRequest(
+        jsonString: String,
+        protocolVersion: String = McpConstants.MCP_PROTOCOL_VERSION
+    ): String? {
         val request = try {
             json.decodeFromString<JsonRpcRequest>(jsonString)
         } catch (e: Exception) {
@@ -44,7 +47,7 @@ class JsonRpcHandler(
         }
 
         val response = try {
-            routeRequest(request)
+            routeRequest(request, protocolVersion)
         } catch (e: Exception) {
             LOG.error("Error processing request: ${request.method}", e)
             createErrorResponse(request.id, JsonRpcErrorCodes.INTERNAL_ERROR, e.message ?: "Unknown error")
@@ -53,9 +56,9 @@ class JsonRpcHandler(
         return response?.let { json.encodeToString(response) }
     }
 
-    private suspend fun routeRequest(request: JsonRpcRequest): JsonRpcResponse? {
+    private suspend fun routeRequest(request: JsonRpcRequest, protocolVersion: String): JsonRpcResponse? {
         return when (request.method) {
-            JsonRpcMethods.INITIALIZE -> processInitialize(request)
+            JsonRpcMethods.INITIALIZE -> processInitialize(request, protocolVersion)
             JsonRpcMethods.NOTIFICATIONS_INITIALIZED -> null
             JsonRpcMethods.TOOLS_LIST -> processToolsList(request)
             JsonRpcMethods.TOOLS_CALL -> processToolCall(request)
@@ -64,9 +67,9 @@ class JsonRpcHandler(
         }
     }
 
-    private fun processInitialize(request: JsonRpcRequest): JsonRpcResponse {
+    private fun processInitialize(request: JsonRpcRequest, protocolVersion: String): JsonRpcResponse {
         val result = InitializeResult(
-            protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
+            protocolVersion = protocolVersion,
             serverInfo = ServerInfo(
                 name = McpConstants.SERVER_NAME,
                 version = McpConstants.SERVER_VERSION,

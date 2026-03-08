@@ -142,7 +142,7 @@ object ClientConfigGenerator {
      */
     internal fun buildCodexCommand(serverUrl: String, serverName: String): String {
         val removeCmd = "codex mcp remove $serverName >/dev/null 2>&1"
-        val addCmd = "codex mcp add $serverName --transport http $serverUrl"
+        val addCmd = "codex mcp add $serverName --url $serverUrl"
         return "$removeCmd ; $addCmd"
     }
 

@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.JsonRpcHandler
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcError
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.diagnostic.logger
@@ -12,7 +13,6 @@ import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
 import io.ktor.server.engine.*
-import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -24,10 +24,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.BindException
+import java.net.URI
 
 /**
  * Embedded Ktor CIO server for MCP protocol.
@@ -79,7 +81,6 @@ class KtorMcpServer(
     fun start(): StartResult {
         return try {
             server = embeddedServer(CIO, port = port, host = host) {
-                configureCors()
                 configureRouting()
             }
             server?.start(wait = false)
@@ -102,6 +103,8 @@ class KtorMcpServer(
         try {
             server?.stop(1000, 2000)
             server = null
+            streamableHttpSessionManager.closeAllSessions()
+            sseSessionManager.closeAllSessions()
             LOG.info("MCP Server stopped")
         } catch (e: Exception) {
             LOG.warn("Error stopping MCP server", e)
@@ -115,22 +118,20 @@ class KtorMcpServer(
 
     override fun dispose() = stop()
 
-    private fun Application.configureCors() {
-        install(CORS) {
-            anyHost()
-            allowMethod(HttpMethod.Get)
-            allowMethod(HttpMethod.Post)
-            allowMethod(HttpMethod.Delete)
-            allowMethod(HttpMethod.Options)
-            allowHeader(HttpHeaders.ContentType)
-            allowHeader(HttpHeaders.Accept)
-            allowHeader(McpConstants.MCP_SESSION_ID_HEADER)
-            exposeHeader(McpConstants.MCP_SESSION_ID_HEADER)
-        }
-    }
-
     private fun Application.configureRouting() {
         routing {
+            options(McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH) {
+                handleCorsPreflight(call)
+            }
+
+            options(McpConstants.MCP_ENDPOINT_PATH) {
+                handleCorsPreflight(call)
+            }
+
+            options(McpConstants.SSE_ENDPOINT_PATH) {
+                handleCorsPreflight(call)
+            }
+
             // === Streamable HTTP Transport (2025-03-26 spec) ===
 
             post(McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH) {
@@ -138,6 +139,7 @@ class KtorMcpServer(
             }
 
             get(McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH) {
+                if (!validateOrigin(call)) return@get
                 call.respond(HttpStatusCode.MethodNotAllowed)
             }
 
@@ -168,6 +170,8 @@ class KtorMcpServer(
      * Keeps the connection open for sending responses to JSON-RPC requests.
      */
     private suspend fun handleSseRequest(call: ApplicationCall) {
+        if (!validateOrigin(call)) return
+
         val sessionId = sseSessionManager.createSession()
         LOG.info("Opening SSE connection, session: $sessionId")
 
@@ -209,12 +213,14 @@ class KtorMcpServer(
      * - Without sessionId: Streamable HTTP - returns immediate JSON response
      */
     private suspend fun handlePostRequest(call: ApplicationCall) {
+        if (!validateOrigin(call)) return
+
         val body = call.receiveText()
         val sessionId = call.request.queryParameters[McpConstants.SESSION_ID_PARAM]
 
         if (sessionId.isNullOrBlank()) {
-            // Streamable HTTP mode - immediate JSON response
-            handleStatelessHttpRequest(call, body)
+            // Legacy stateless mode on the pre-2025 endpoint.
+            handleStatelessHttpRequest(call, body, McpConstants.LEGACY_MCP_PROTOCOL_VERSION)
         } else {
             // SSE transport mode - response via SSE stream
             handleSsePostRequest(call, sessionId, body)
@@ -229,6 +235,8 @@ class KtorMcpServer(
      * - requests (has id): validates session, returns JSON response
      */
     private suspend fun handleStreamableHttpPostRequest(call: ApplicationCall) {
+        if (!validateOrigin(call)) return
+
         val body = call.receiveText()
 
         if (body.isBlank()) {
@@ -253,11 +261,7 @@ class KtorMcpServer(
         }
 
         if (element is JsonArray) {
-            call.respondText(
-                createJsonRpcError(null as JsonElement?, -32600, "JSON-RPC batching is not supported"),
-                ContentType.Application.Json,
-                HttpStatusCode.BadRequest
-            )
+            handleStreamableHttpBatchRequest(call, element)
             return
         }
 
@@ -274,30 +278,21 @@ class KtorMcpServer(
 
         // All non-initialize requests require a valid session
         val requestId = parsed["id"]
-        val sessionId = call.request.headers[McpConstants.MCP_SESSION_ID_HEADER]
-        if (sessionId.isNullOrBlank()) {
-            call.respondText(
-                createJsonRpcError(requestId, -32600, "Missing ${McpConstants.MCP_SESSION_ID_HEADER} header"),
-                ContentType.Application.Json,
-                HttpStatusCode.BadRequest
-            )
-            return
-        }
+        if (!validateStreamableSession(call, requestId)) return
 
-        if (streamableHttpSessionManager.getSession(sessionId) == null) {
-            call.respondText(
-                createJsonRpcError(requestId, -32600, "Session not found or expired"),
-                ContentType.Application.Json,
-                HttpStatusCode.NotFound
-            )
+        if (isJsonRpcResponseMessage(parsed)) {
+            call.respond(HttpStatusCode.Accepted)
             return
         }
 
         // Notifications (no id): fire-and-forget, return 202
         if (!hasId) {
             try {
-                withContext(ModalityState.any().asContextElement()) {
-                    jsonRpcHandler.handleRequest(body)
+                runWithIdeModality {
+                    jsonRpcHandler.handleRequest(
+                        body,
+                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                    )
                 }
             } catch (e: Exception) {
                 LOG.debug("Error processing notification: ${e.message}")
@@ -308,8 +303,11 @@ class KtorMcpServer(
 
         // Regular request: process and return JSON response
         try {
-            val response = withContext(ModalityState.any().asContextElement()) {
-                jsonRpcHandler.handleRequest(body)
+            val response = runWithIdeModality {
+                jsonRpcHandler.handleRequest(
+                    body,
+                    protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                )
             }
             if (response != null) {
                 call.respondText(response, ContentType.Application.Json)
@@ -325,14 +323,73 @@ class KtorMcpServer(
         }
     }
 
+    private suspend fun handleStreamableHttpBatchRequest(call: ApplicationCall, batch: JsonArray) {
+        if (batch.isEmpty()) {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "JSON-RPC batch requests must not be empty"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
+            return
+        }
+
+        if (batch.any { (it as? JsonObject)?.get("method")?.jsonPrimitive?.contentOrNull == "initialize" }) {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Initialize requests must not be batched"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
+            return
+        }
+
+        if (!validateStreamableSession(call, null)) return
+
+        val responses = mutableListOf<JsonElement>()
+        for (message in batch) {
+            val parsed = message as? JsonObject
+            if (parsed != null && isJsonRpcResponseMessage(parsed)) {
+                continue
+            }
+
+            val response = try {
+                runWithIdeModality {
+                    jsonRpcHandler.handleRequest(
+                        message.toString(),
+                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                    )
+                }
+            } catch (e: Exception) {
+                LOG.error("Error processing MCP batch message (Streamable HTTP)", e)
+                createJsonRpcError(parsed?.get("id"), -32603, e.message ?: "Internal error")
+            }
+
+            if (response != null) {
+                responses += json.parseToJsonElement(response)
+            }
+        }
+
+        if (responses.isEmpty()) {
+            call.respond(HttpStatusCode.Accepted)
+            return
+        }
+
+        call.respondText(
+            json.encodeToString(JsonArray(responses)),
+            ContentType.Application.Json
+        )
+    }
+
     /**
      * Handles initialize request for Streamable HTTP transport.
      * Creates a session and returns Mcp-Session-Id header on the response.
      */
     private suspend fun handleStreamableHttpInitialize(call: ApplicationCall, body: String) {
         try {
-            val response = withContext(ModalityState.any().asContextElement()) {
-                jsonRpcHandler.handleRequest(body)
+            val response = runWithIdeModality {
+                jsonRpcHandler.handleRequest(
+                    body,
+                    protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                )
             }
             if (response != null) {
                 val isSuccess = try {
@@ -362,15 +419,25 @@ class KtorMcpServer(
      * Handles DELETE /index-mcp/streamable-http — Session termination.
      */
     private suspend fun handleStreamableHttpDeleteRequest(call: ApplicationCall) {
+        if (!validateOrigin(call)) return
+
         val sessionId = call.request.headers[McpConstants.MCP_SESSION_ID_HEADER]
 
         if (sessionId.isNullOrBlank()) {
-            call.respond(HttpStatusCode.BadRequest, "Missing ${McpConstants.MCP_SESSION_ID_HEADER} header")
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Missing ${McpConstants.MCP_SESSION_ID_HEADER} header"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
             return
         }
 
         if (streamableHttpSessionManager.getSession(sessionId) == null) {
-            call.respond(HttpStatusCode.NotFound, "Session not found")
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Session not found or expired"),
+                ContentType.Application.Json,
+                HttpStatusCode.NotFound
+            )
             return
         }
 
@@ -382,7 +449,11 @@ class KtorMcpServer(
      * Handles POST in Streamable HTTP mode (no sessionId).
      * Returns immediate JSON response.
      */
-    private suspend fun handleStatelessHttpRequest(call: ApplicationCall, body: String) {
+    private suspend fun handleStatelessHttpRequest(
+        call: ApplicationCall,
+        body: String,
+        protocolVersion: String
+    ) {
         if (body.isBlank()) {
             call.respondText(
                 createJsonRpcError(null as JsonElement?, -32700, "Empty request body"),
@@ -392,8 +463,8 @@ class KtorMcpServer(
         }
 
         try {
-            val response = withContext(ModalityState.any().asContextElement()) {
-                jsonRpcHandler.handleRequest(body)
+            val response = runWithIdeModality {
+                jsonRpcHandler.handleRequest(body, protocolVersion = protocolVersion)
             }
             if (response != null) {
                 call.respondText(response, ContentType.Application.Json)
@@ -437,7 +508,12 @@ class KtorMcpServer(
         // Process request asynchronously and send response via SSE
         coroutineScope.launch {
             try {
-                val response = jsonRpcHandler.handleRequest(body)
+                val response = runWithIdeModality {
+                    jsonRpcHandler.handleRequest(
+                        body,
+                        protocolVersion = McpConstants.LEGACY_MCP_PROTOCOL_VERSION
+                    )
+                }
                 if (response != null) {
                     val sent = sseSessionManager.sendEvent(sessionId, "message", response)
                     if (!sent) {
@@ -456,6 +532,102 @@ class KtorMcpServer(
     }
 
     private val json = Json { encodeDefaults = true; prettyPrint = false }
+
+    private suspend fun <T> runWithIdeModality(block: suspend () -> T): T {
+        val application = ApplicationManager.getApplication()
+        return if (application == null) {
+            block()
+        } else {
+            withContext(ModalityState.any().asContextElement()) {
+                block()
+            }
+        }
+    }
+
+    private suspend fun handleCorsPreflight(call: ApplicationCall) {
+        val origin = call.request.headers[HttpHeaders.Origin]
+        if (origin.isNullOrBlank() || !isAllowedOrigin(origin)) {
+            call.respondText("Origin not allowed", status = HttpStatusCode.Forbidden)
+            return
+        }
+
+        setCorsResponseHeaders(call, origin)
+        call.response.header(
+            HttpHeaders.AccessControlAllowMethods,
+            listOf(HttpMethod.Get, HttpMethod.Post, HttpMethod.Delete, HttpMethod.Options).joinToString(", ") { it.value }
+        )
+        call.response.header(
+            HttpHeaders.AccessControlAllowHeaders,
+            listOf(HttpHeaders.ContentType, HttpHeaders.Accept, McpConstants.MCP_SESSION_ID_HEADER).joinToString(", ")
+        )
+        call.respond(HttpStatusCode.NoContent)
+    }
+
+    private suspend fun validateOrigin(call: ApplicationCall): Boolean {
+        val origin = call.request.headers[HttpHeaders.Origin] ?: return true
+        if (isAllowedOrigin(origin)) {
+            setCorsResponseHeaders(call, origin)
+            return true
+        }
+
+        LOG.warn("Rejected MCP request with invalid Origin header: $origin")
+
+        if (call.request.httpMethod == HttpMethod.Get) {
+            call.respondText("Origin not allowed", status = HttpStatusCode.Forbidden)
+        } else {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Origin not allowed"),
+                ContentType.Application.Json,
+                HttpStatusCode.Forbidden
+            )
+        }
+        return false
+    }
+
+    private fun setCorsResponseHeaders(call: ApplicationCall, origin: String) {
+        call.response.header(HttpHeaders.AccessControlAllowOrigin, origin)
+        call.response.header(HttpHeaders.AccessControlExposeHeaders, McpConstants.MCP_SESSION_ID_HEADER)
+        call.response.header(HttpHeaders.Vary, HttpHeaders.Origin)
+    }
+
+    private fun isAllowedOrigin(origin: String): Boolean {
+        val uri = try {
+            URI(origin)
+        } catch (_: Exception) {
+            return false
+        }
+
+        val scheme = uri.scheme?.lowercase() ?: return false
+        val host = uri.host?.lowercase() ?: return false
+        return scheme in setOf("http", "https") && host in setOf("127.0.0.1", "localhost", "::1")
+    }
+
+    private suspend fun validateStreamableSession(call: ApplicationCall, requestId: JsonElement?): Boolean {
+        val sessionId = call.request.headers[McpConstants.MCP_SESSION_ID_HEADER]
+        if (sessionId.isNullOrBlank()) {
+            call.respondText(
+                createJsonRpcError(requestId, -32600, "Missing ${McpConstants.MCP_SESSION_ID_HEADER} header"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
+            return false
+        }
+
+        if (streamableHttpSessionManager.getSession(sessionId) == null) {
+            call.respondText(
+                createJsonRpcError(requestId, -32600, "Session not found or expired"),
+                ContentType.Application.Json,
+                HttpStatusCode.NotFound
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private fun isJsonRpcResponseMessage(parsed: JsonObject): Boolean {
+        return !parsed.containsKey("method") && (parsed.containsKey("result") || parsed.containsKey("error"))
+    }
 
     private fun createJsonRpcError(id: JsonElement?, code: Int, message: String): String {
         val response = JsonRpcResponse(
