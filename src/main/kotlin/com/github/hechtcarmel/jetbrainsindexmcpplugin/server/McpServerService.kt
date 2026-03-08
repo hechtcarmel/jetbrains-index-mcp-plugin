@@ -195,12 +195,23 @@ class McpServerService : Disposable {
     fun getSseSessionManager(): KtorSseSessionManager = sseSessionManager
 
     /**
-     * Returns the SSE endpoint URL for MCP connections.
-     * Clients should connect to this URL to establish SSE stream.
+     * Returns the Streamable HTTP endpoint URL for MCP connections (primary transport).
+     * Clients should use this URL for the MCP 2025-03-26 Streamable HTTP transport.
      *
      * @return The server URL, or null if server is not running
      */
     fun getServerUrl(): String? {
+        if (ktorServer == null || serverError != null) return null
+        val port = McpSettings.getInstance().serverPort
+        return "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}"
+    }
+
+    /**
+     * Returns the legacy SSE endpoint URL for older MCP clients (2024-11-05 transport).
+     *
+     * @return The SSE URL, or null if server is not running
+     */
+    fun getLegacySseUrl(): String? {
         if (ktorServer == null || serverError != null) return null
         val port = McpSettings.getInstance().serverPort
         return "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.SSE_ENDPOINT_PATH}"
@@ -221,7 +232,8 @@ class McpServerService : Disposable {
             name = McpConstants.SERVER_NAME,
             version = McpConstants.SERVER_VERSION,
             protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
-            sseUrl = if (isRunning) "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.SSE_ENDPOINT_PATH}" else "Server not running",
+            streamableHttpUrl = if (isRunning) "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}" else "Server not running",
+            legacySseUrl = if (isRunning) "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.SSE_ENDPOINT_PATH}" else "Server not running",
             postUrl = "http://${McpConstants.DEFAULT_SERVER_HOST}:$port${McpConstants.MCP_ENDPOINT_PATH}",
             port = port,
             registeredTools = toolRegistry.getAllTools().size,
@@ -256,6 +268,7 @@ class McpServerService : Disposable {
         LOG.info("Disposing MCP Server Service")
         stopServer()
         sseSessionManager.closeAllSessions()
+        streamableHttpSessionManager.closeAllSessions()
         coroutineScope.cancel("McpServerService disposed")
     }
 }
@@ -267,7 +280,8 @@ data class ServerStatusInfo(
     val name: String,
     val version: String,
     val protocolVersion: String,
-    val sseUrl: String,
+    val streamableHttpUrl: String,
+    val legacySseUrl: String,
     val postUrl: String,
     val port: Int,
     val registeredTools: Int,
