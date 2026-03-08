@@ -4,26 +4,8 @@
 
 ## [4.0.0] - 2026-03-08
 
-### Breaking
+### Added
 - **Primary transport changed** — Default server URL now points to Streamable HTTP endpoint (`/index-mcp/streamable-http`). Existing client configurations using the SSE URL continue to work but should be updated.
-
-### Changed
-- **`getServerUrl()` returns Streamable HTTP URL** — `McpServerService.getServerUrl()` now returns the Streamable HTTP endpoint. Use `getLegacySseUrl()` for the legacy SSE endpoint.
-- **Gemini CLI and Codex CLI use native Streamable HTTP** — Removed `mcp-remote` bridge. Codex CLI now uses `--url` natively. Gemini CLI now uses the `httpUrl` field in settings.json.
-- **`McpServerService` now uses the injected IntelliJ service coroutine scope** — The application service follows current SDK coroutine-scope guidance instead of creating and canceling a custom scope manually.
-
-### Fixed
-- **Legacy SSE negotiation stays legacy-compatible** — Requests handled on the pre-2025 transport continue to negotiate MCP `2024-11-05` instead of advertising Streamable HTTP protocol semantics on the old endpoint.
-- **Streamable HTTP now receives JSON-RPC batches** — Batch arrays are accepted on the 2025-03-26 endpoint, while batched `initialize` requests are rejected per spec.
-- **Streamable HTTP rejects invalid single-message payloads and mixed batches correctly** — Scalar JSON bodies, malformed envelope objects, and mixed request/response batches now return `400` with JSON-RPC `INVALID_REQUEST` instead of being accepted or surfacing as internal errors.
-- **Notification batches no longer leak JSON-RPC responses** — Batched notifications now correctly return `202 Accepted` with no response body.
-- **Localhost transport security is enforced** — Incoming `Origin` headers are validated against loopback hosts only, and CORS responses are restricted to approved local origins instead of `anyHost()`.
-- **IPv6 loopback origins are accepted again** — Origin validation now normalizes bracketed IPv6 loopback hosts such as `http://[::1]:3000`, preserving localhost-only protections without rejecting valid local clients.
-- **Session not created on failed initialize** — Streamable HTTP sessions are only created when `initialize` succeeds, not on error responses.
-- **Streamable sessions are cleared on server stop** — Old `Mcp-Session-Id` values no longer survive a server restart or port change.
-- **Consistent JSON-RPC error format** — All error responses from the Streamable HTTP endpoint, including `DELETE`, now use proper JSON-RPC error format instead of mixing plain text and JSON.
-- **Error responses include request id** — JSON-RPC error responses now include the request `id` when available, so clients can correlate errors to requests.
-- **Legacy SSE transport has explicit regression coverage** — Unit tests now verify the `/index-mcp/sse` handshake, advertised endpoint, and response delivery path after the transport routing changes.
 
 ## [3.13.0] - 2026-03-03
 
