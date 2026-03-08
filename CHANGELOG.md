@@ -11,13 +11,6 @@
 - **Updated client configurations** — Claude Code now uses `--transport http`, all client configs point to the Streamable HTTP endpoint as primary
 - **Generic config section** — "Streamable HTTP" (recommended) and "SSE (Legacy)" options replace the old "Standard SSE" and "mcp-remote" options
 
-### Changed
-- **Primary server URL** — The URL shown in the tool window, copied to clipboard, and used in install commands now points to `/index-mcp/streamable-http` instead of `/index-mcp/sse`
-- **Protocol version** — Updated from `2024-11-05` to `2025-03-26`
-
-### Fixed
-- **Legacy transport preserved** — The SSE transport at `/index-mcp/sse` remains fully functional for backwards compatibility with older clients
-
 ## [3.13.0] - 2026-03-03
 
 ### Added
