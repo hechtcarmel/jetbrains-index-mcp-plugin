@@ -27,9 +27,12 @@ class JsonRpcHandler(
         private val LOG = logger<JsonRpcHandler>()
     }
 
+    suspend fun handleRequest(jsonString: String): String? =
+        handleRequest(jsonString, McpConstants.MCP_PROTOCOL_VERSION)
+
     suspend fun handleRequest(
         jsonString: String,
-        protocolVersion: String = McpConstants.MCP_PROTOCOL_VERSION
+        protocolVersion: String
     ): String? {
         val request = try {
             json.decodeFromString<JsonRpcRequest>(jsonString)
