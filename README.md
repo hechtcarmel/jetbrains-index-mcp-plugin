@@ -77,7 +77,7 @@ Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/29174-ide-ind
 
 ### Manual Installation
 
-Download the [latest release](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/releases/latest) and install it manually:
+Download the [latest release](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server/versions) and install it manually:
 <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
 
 ## Quick Start
