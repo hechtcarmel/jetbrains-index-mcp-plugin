@@ -49,12 +49,12 @@ class McpSettingsConfigurable : Configurable {
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
 
-    private var lastValidationInfo: ValidationInfo? = null
+    private var lastHostValidation: ValidationInfo? = null
     private var hostValidationErrorLabel: JBLabel? = null
     private var hostValidationIcon: AsyncProcessIcon? = null
     private var hostValidIcon: JBLabel? = null
     private var hostWarningLabel: JBLabel? = null
-    private var isHostResolving = false
+    private var isHostValidationPending = false
 
     override fun getDisplayName(): String = McpBundle.message("settings.title")
 
@@ -178,7 +178,7 @@ class McpSettingsConfigurable : Configurable {
 
     @Throws(ConfigurationException::class)
     override fun apply() {
-        if (isHostResolving) {
+        if (isHostValidationPending) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverHost.validating"),
                 McpBundle.message("settings.validation.pending.title")
@@ -191,15 +191,22 @@ class McpSettingsConfigurable : Configurable {
         val newHost = serverHostField?.text?.trim() ?: McpConstants.DEFAULT_SERVER_HOST
         val newPort = serverPortSpinner?.value as? Int ?: McpConstants.getDefaultServerPort()
 
-        if (!isValidHost(newHost)) {
+        if (newHost.isEmpty()) {
+            throw ConfigurationException(
+                McpBundle.message("settings.serverHost.empty"),
+                McpBundle.message("settings.validation.host.title")
+            )
+        }
+
+        if (lastHostValidation != null) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverHost.invalid", newHost),
                 McpBundle.message("settings.validation.host.title")
             )
         }
 
-        // Validate port availability before applying (only if host/port changed)
-        if ((newHost != oldHost || newPort != oldPort) && !isServerAddressAvailable(newHost, newPort)) {
+        // Validate address availability before applying
+        if (!isServerAddressAvailable(newHost, newPort)) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverAddress.unavailable", "$newHost:$newPort"),
                 McpBundle.message("settings.validation.serverAddress.title")
@@ -237,7 +244,14 @@ class McpSettingsConfigurable : Configurable {
                             .notify(null)
                     }
                     is KtorMcpServer.StartResult.PortInUse -> {
-                        // This shouldn't happen since we validated above, but handle it anyway
+                        NotificationGroupManager.getInstance()
+                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                            .createNotification(
+                                McpBundle.message("notification.serverStartFailed.title"),
+                                McpBundle.message("notification.serverPortInUse.content", result.port, newHost),
+                                NotificationType.ERROR
+                            )
+                            .notify(null)
                     }
                     is KtorMcpServer.StartResult.Error -> {
                         NotificationGroupManager.getInstance()
@@ -260,8 +274,13 @@ class McpSettingsConfigurable : Configurable {
      */
     private fun isServerAddressAvailable(host: String, port: Int): Boolean {
         val mcpService = McpServerService.getInstance()
-        // If it's the current server port, it's "available" (we'll restart the server)
         val currentPort = McpSettings.getInstance().serverPort
+
+        // If the port matches our current server's port and it's running, we consider it available.
+        // We skip the bind check here because our own server is already occupying the port,
+        // which would cause a false "address in use" error (especially when switching 
+        // between 0.0.0.0 and 127.0.0.1). We trust that we will stop our server 
+        // before binding to the new address during restart.
         if (port == currentPort && mcpService.isInitialized && mcpService.isServerRunning()) {
             return true
         }
@@ -288,7 +307,8 @@ class McpSettingsConfigurable : Configurable {
         hostValidationIcon?.isVisible = false
         hostValidIcon?.isVisible = false
         updateHostWarning(settings.serverHost)
-        isHostResolving = false
+        isHostValidationPending = false
+        lastHostValidation = null
 
         for ((toolName, checkbox) in toolCheckBoxes) {
             checkbox.isSelected = settings.isToolEnabled(toolName)
@@ -303,23 +323,24 @@ class McpSettingsConfigurable : Configurable {
 
     private fun installHostValidator(field: JBTextField) {
         // We use an empty validation info initially so we can control when it appears
-        val validator = ComponentValidator(uiDisposable!!).withValidator(Supplier {
-            lastValidationInfo
-        }).installOn(field)
+        val validator = ComponentValidator(uiDisposable!!).withValidator {
+            lastHostValidation
+        }.installOn(field)
 
         field.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) {
-                // Clear validation state immediately on typing
+                // Clear validation state immediately on typing.
+                // Host validation runs only after focus is lost.
                 hostValidationErrorLabel?.isVisible = false
                 hostValidIcon?.isVisible = false
                 hostValidationIcon?.isVisible = false
-                isHostResolving = false
-                lastValidationInfo = null
-                
+                isHostValidationPending = true
+                lastHostValidation = null
+
                 // Update warning visibility
                 updateHostWarning(field.text)
-                
-                ComponentValidator.getInstance(field).ifPresent { it.updateInfo(null) }
+
+                ComponentValidator.getInstance(field).ifPresent { it.updateInfo(lastHostValidation) }
             }
         })
 
@@ -327,7 +348,7 @@ class McpSettingsConfigurable : Configurable {
             override fun focusLost(e: FocusEvent) {
                 val host = field.text.trim()
 
-                isHostResolving = true
+                isHostValidationPending = true
                 hostValidationErrorLabel?.isVisible = false
                 hostValidIcon?.isVisible = false
                 hostValidationIcon?.isVisible = true
@@ -347,8 +368,8 @@ class McpSettingsConfigurable : Configurable {
                         // Only update UI if the text hasn't changed since we started
                         if (field.text.trim() == host) {
                             hostValidationIcon?.isVisible = false
-                            isHostResolving = false
-                            lastValidationInfo = info
+                            isHostValidationPending = false
+                            lastHostValidation = info
 
                             ComponentValidator.getInstance(field).ifPresent { it.updateInfo(info) }
 
@@ -382,18 +403,26 @@ class McpSettingsConfigurable : Configurable {
     }
 
     companion object {
+        private val IPV4_PATTERN = Regex("^[0-9.]+\$")
+
+        @VisibleForTesting
+        fun isValidIpv4(host: String): Boolean {
+            if (!IPV4_PATTERN.matches(host)) return false
+            val parts = host.split(".")
+            // Check for exactly 4 non-empty parts with valid octet values (0-255)
+            return parts.size == 4 && parts.all { part ->
+                part.isNotEmpty() && part.toIntOrNull()?.let { it in 0..255 } == true
+            }
+        }
+
         @VisibleForTesting
         fun isValidHost(host: String): Boolean {
             val trimmedHost = host.trim()
             if (trimmedHost.isEmpty()) return false
 
             // Check if input consists only of numbers and dots (potential IPv4)
-            if (trimmedHost.matches(Regex("^[0-9.]+\$"))) {
-                val parts = trimmedHost.split(".")
-                // Check for exactly 4 non-empty parts with valid octet values (0-255)
-                return parts.size == 4 && parts.all { part ->
-                    part.isNotEmpty() && part.toIntOrNull()?.let { it in 0..255 } == true
-                }
+            if (IPV4_PATTERN.matches(trimmedHost)) {
+                return isValidIpv4(trimmedHost)
             }
 
             // Fallback for hostnames
