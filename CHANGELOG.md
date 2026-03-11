@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-03-11
+
+### Added
+- **Configurable server host** — Allows the user to configure the listening server host, making it possible to use the MCP server on another machine or WSL (Windows Subsystem for Linux).
+
 ## [3.13.0] - 2026-03-03
 
 ### Added
