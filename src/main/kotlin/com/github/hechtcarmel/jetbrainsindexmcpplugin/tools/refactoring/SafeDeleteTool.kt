@@ -18,8 +18,6 @@ import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -263,7 +261,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         var success = false
         var errorMessage: String? = null
 
-        withContext(Dispatchers.EDT) {
+        edtAction {
             WriteCommandAction.writeCommandAction(project)
                 .withName("Safe Delete: ${preparation.elementName}")
                 .withGroupId("MCP Refactoring")
@@ -309,7 +307,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         var success = false
         var errorMessage: String? = null
 
-        withContext(Dispatchers.EDT) {
+        edtAction {
             WriteCommandAction.writeCommandAction(project)
                 .withName("Safe Delete File: ${preparation.fileName}")
                 .withGroupId("MCP Refactoring")

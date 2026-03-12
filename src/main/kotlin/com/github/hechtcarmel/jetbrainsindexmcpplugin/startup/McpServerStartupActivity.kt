@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
@@ -17,6 +18,10 @@ class McpServerStartupActivity : ProjectActivity {
 
     override suspend fun execute(project: Project) {
         LOG.info("MCP Server startup activity executing for project: ${project.name}")
+
+        if (ApplicationManager.getApplication().isUnitTestMode) {
+            return
+        }
 
         try {
             // McpServerService self-initializes asynchronously from its constructor (see issue #73).
