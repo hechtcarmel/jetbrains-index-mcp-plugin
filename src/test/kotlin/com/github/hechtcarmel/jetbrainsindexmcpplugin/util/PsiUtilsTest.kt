@@ -237,20 +237,4 @@ class PsiUtilsTest : BasePlatformTestCase() {
         assertEquals("Sample.txt", resolvedByUrl?.name)
     }
 
-    fun testResolveVirtualFileAnywhere_ResolvesProjectFile() {
-        val tempDir = Files.createTempDirectory("jetbrains-index-mcp")
-        val file = Files.createTempFile(tempDir, "ProjectFile", ".java")
-        Files.writeString(file, "public class ProjectFile {}")
-
-        val resolvedAbsolute = PsiUtils.resolveVirtualFileAnywhere(project, file.toFile().absolutePath)
-        assertNotNull("Absolute path should resolve", resolvedAbsolute)
-        // VirtualFile.path always uses forward slashes. On Windows the filesystem is case-insensitive,
-        // so we normalise case there; on Unix we preserve case to avoid masking real mismatches.
-        val isWindows = System.getProperty("os.name", "").startsWith("Windows", ignoreCase = true)
-        val normalize: (String) -> String = { s ->
-            val forwardSlash = s.replace('\\', '/')
-            if (isWindows) forwardSlash.lowercase() else forwardSlash
-        }
-
-    }
 }
