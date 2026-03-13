@@ -25,25 +25,34 @@
 <ul>
     <li><b>Find References</b> - Locate all usages of any symbol across your project</li>
     <li><b>Go to Definition</b> - Jump to symbol declarations instantly</li>
+    <li><b>Find Class</b> - Fast class/interface search by name with camelCase/substring/wildcard matching</li>
+    <li><b>Find File</b> - Fast file search by name using IDE's file index</li>
+    <li><b>Search Text</b> - Text search using IDE's pre-built word index with context filtering</li>
     <li><b>Code Diagnostics</b> - Access errors, warnings, and available quick fixes</li>
     <li><b>Index Status</b> - Check if the IDE is ready for code intelligence</li>
     <li><b>Sync Files</b> - Force-sync IDE state with external file changes on demand</li>
+    <li><b>Build Project</b> - Trigger IDE build with structured error/warning output (disabled by default)</li>
+    <li><b>Read File</b> - Read file content by path or qualified name, including library sources (disabled by default)</li>
+    <li><b>Open File</b> - Open a file in the editor with optional navigation (disabled by default)</li>
+    <li><b>Get Active File</b> - Get currently active editor file(s) with cursor position (disabled by default)</li>
 </ul>
 
 <h3>Extended Tools (Language-Aware)</h3>
 <p>These tools activate based on available language plugins:</p>
 <ul>
-    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust)</li>
-    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust)</li>
-    <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods</li>
-    <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with fuzzy/camelCase matching</li>
-    <li><b>Find Super Methods</b> - Navigate through method override hierarchies</li>
+    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
+    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
+    <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods (Java, Kotlin, Python, JS/TS, PHP, Rust)</li>
+    <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with fuzzy/camelCase matching (disabled by default)</li>
+    <li><b>Find Super Methods</b> - Navigate through method override hierarchies (Java, Kotlin, Python, JS/TS, PHP)</li>
+    <li><b>File Structure</b> - View hierarchical file structure like IDE's Structure view (Java, Kotlin, Python, JS/TS) (disabled by default)</li>
 </ul>
 
-<h3>Refactoring Tools (Java/Kotlin)</h3>
+<h3>Refactoring Tools</h3>
 <ul>
-    <li><b>Rename Refactoring</b> - Safe symbol renaming with automatic reference updates</li>
-    <li><b>Safe Delete</b> - Remove code safely with usage checking</li>
+    <li><b>Rename Refactoring</b> - Safe symbol renaming with automatic reference updates - works across ALL languages, fully headless</li>
+    <li><b>Reformat Code</b> - Reformat using project code style with import optimization (disabled by default)</li>
+    <li><b>Safe Delete</b> - Remove code safely with usage checking (Java/Kotlin only)</li>
 </ul>
 
 <h3>Why This Plugin?</h3>
@@ -59,6 +68,7 @@
 <ul>
     <li>Claude Code (CLI)</li>
     <li>Claude Desktop</li>
+    <li>Codex CLI</li>
     <li>Cursor</li>
     <li>Windsurf</li>
     <li>VS Code with MCP extension</li>
