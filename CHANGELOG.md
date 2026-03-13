@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-03-13
+### Added
+- **Companion Skill** — New "Get Companion Skill" button in the tool window toolbar. Lets users install or export a companion skill that guides AI coding agents on when and how to use IDE MCP tools effectively. Supports direct installation to `.claude/skills/` for Claude Code projects, or export as `.skill`/`.zip` file for sharing.
+
 ## [4.1.0] - 2026-03-13
 ### Added
 - **`ide_build_project` tool** — Trigger project builds via the IDE's build system (JPS, Gradle, Maven). Returns structured error/warning messages with file locations. Supports workspace sub-projects, trusted-project security gate, optional timeout, and optional raw build output. Disabled by default — enable in Settings → Tools → Index MCP Server.

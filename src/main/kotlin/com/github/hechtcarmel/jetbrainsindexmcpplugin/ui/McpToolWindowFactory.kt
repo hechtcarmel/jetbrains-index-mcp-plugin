@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ClearHistoryAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyClientConfigAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyServerUrlAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ExportHistoryAction
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.InstallSkillAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.RefreshAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.icons.McpIcons
@@ -82,6 +83,28 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
             }
         }
 
+        val skillAction = InstallSkillAction()
+        val skillButton = JButton(McpBundle.message("toolWindow.getSkill")).apply {
+            icon = AllIcons.Actions.Download
+            toolTipText = McpBundle.message("toolWindow.getSkill.tooltip")
+            isFocusable = false
+            addActionListener {
+                val dataContext = com.intellij.openapi.actionSystem.DataContext { dataId ->
+                    when (dataId) {
+                        com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT.name -> project
+                        else -> null
+                    }
+                }
+                val event = AnActionEvent.createFromAnAction(
+                    skillAction,
+                    null,
+                    ActionPlaces.TOOLWINDOW_CONTENT,
+                    dataContext
+                )
+                skillAction.actionPerformed(event)
+            }
+        }
+
         // Right panel with external links + install button
         val rightPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
             border = JBUI.Borders.empty(2, 4)
@@ -104,6 +127,7 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
                 "https://buymeacoffee.com/hechtcarmel"
             ))
             add(createToolbarSeparator())
+            add(skillButton)
             add(installButton)
         }
 
