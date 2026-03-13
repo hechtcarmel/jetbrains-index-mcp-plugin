@@ -7,10 +7,7 @@
 ## [4.1.0] - 2026-03-13
 ### Added
 - **`ide_build_project` tool** — Trigger project builds via the IDE's build system (JPS, Gradle, Maven). Returns structured error/warning messages with file locations. Supports workspace sub-projects, trusted-project security gate, optional timeout, and optional raw build output. Disabled by default — enable in Settings → Tools → Index MCP Server.
-  - **Gradle/Maven support** — Uses `BuildProgressListener` via `BuildViewManager` to capture structured errors/warnings and raw output from Gradle and Maven builds (falls back gracefully when unavailable)
-  - **Partial results on timeout** — When a build is aborted via `timeoutSeconds`, any compiler messages and raw output accumulated before the abort are included in the response
-  - **`timeoutSeconds` validation** — Must be a positive integer; `0` or negative values return an error
-  - **Null vs 0 semantics** — `errors`/`warnings` fields are `null` when no compiler messages were captured (e.g. no-op incremental build), not `0`
+- **Plugin description updates** - Aligned with missing tools and features.
 
 ## [4.0.2] - 2026-03-13
 ### Changed
