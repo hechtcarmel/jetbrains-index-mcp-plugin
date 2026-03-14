@@ -51,7 +51,7 @@ class SearchTextTool : AbstractMcpTool() {
 
         Parameters: query (required), context (optional: "code", "comments", "strings", "all"), caseSensitive (optional, default: true), limit (optional, default: 100).
 
-        Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments"}
+        Example: {"query": "ConfigManager"} or {"query": "FIXME", "context": "comments"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()

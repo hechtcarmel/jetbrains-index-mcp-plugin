@@ -1,6 +1,7 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("java") // Java support
@@ -32,34 +33,8 @@ repositories {
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog
 dependencies {
-    // MCP Kotlin SDK - exclude kotlinx-coroutines to use IntelliJ Platform's bundled version
-    implementation(libs.mcp.kotlin.sdk) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-bom")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
-        exclude(group = "org.slf4j")
-    }
-
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)
-
-    // Ktor Server (for custom MCP server with configurable port)
-    implementation(libs.ktor.server.core) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
-    implementation(libs.ktor.server.cio) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
-    implementation(libs.ktor.server.cors) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
 
     // Testing
     testImplementation(libs.junit)
@@ -72,7 +47,7 @@ dependencies {
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
-        create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+        intellijIdea(providers.gradleProperty("platformVersion"))
 
         // Plugin Dependencies. Uses `platformBundledPlugins` property from the gradle.properties file for bundled IntelliJ Platform plugins.
         bundledPlugins(providers.gradleProperty("platformBundledPlugins").map { it.split(',') })
@@ -141,11 +116,8 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            recommended()
-//            // Additional IDEs for multi-language support verification
-//            create("PC", "2025.1.2") // PyCharm Community
-//            create("PY", "2025.1.2") // PyCharm Professional
-//            create("WS", "2025.1.2") // WebStorm
+            // Keep verifier targets aligned with the supported MCP baseline.
+            create("IU", providers.gradleProperty("platformVersion").get())
         }
     }
 }
@@ -170,6 +142,15 @@ kover {
 tasks {
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
+    }
+
+    test {
+        description = "Runs fast unit tests only."
+        useJUnit()
+        filter {
+            includeTestsMatching("*UnitTest*")
+            isFailOnNoMatchingTests = false
+        }
     }
 
     publishPlugin {

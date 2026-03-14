@@ -3,7 +3,6 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.ui
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ServerStatusListener
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeProductInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryListener
@@ -229,7 +228,6 @@ class ServerStatusPanel(private val project: Project) : JBPanel<ServerStatusPane
         settingsLink = JBLabel("Open Settings").apply {
             foreground = JBColor.BLUE
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            isVisible = false
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     com.intellij.openapi.options.ShowSettingsUtil.getInstance()
@@ -259,43 +257,29 @@ class ServerStatusPanel(private val project: Project) : JBPanel<ServerStatusPane
             val mcpService = McpServerService.getInstance()
 
             if (!mcpService.isInitialized) {
-                statusLabel.text = "MCP Server Initializing..."
+                statusLabel.text = "Native MCP Integration Initializing..."
                 statusLabel.foreground = JBColor(0xD9A343, 0xD9A343)
                 urlLabel.text = ""
-                settingsLink.isVisible = false
-                projectLabel.text = ""
+                projectLabel.text = "| Tools: 0"
                 return
             }
 
-            val error = mcpService.getServerError()
-
-            if (error != null) {
-                // Error state - show error message with settings link
-                statusLabel.text = "MCP Server Error"
-                statusLabel.foreground = JBColor.RED
-                urlLabel.text = error.message
-                urlLabel.foreground = JBColor.RED
-                settingsLink.isVisible = true
-                projectLabel.text = ""
-            } else if (mcpService.isServerRunning()) {
-                // Running state
-                val url = mcpService.getServerUrl()
-                statusLabel.text = "MCP Server Running"
+            val info = mcpService.getServerInfo()
+            if (info.isRunning) {
+                statusLabel.text = "Built-in MCP Server Running"
                 statusLabel.foreground = JBColor(0x59A869, 0x59A869)
-                urlLabel.text = url ?: ""
+                urlLabel.text = info.serverUrl ?: info.statusMessage
                 urlLabel.foreground = JBColor.BLUE
-                settingsLink.isVisible = false
-                projectLabel.text = "| Project: ${project.name}"
             } else {
-                // Stopped state
-                statusLabel.text = "MCP Server Stopped"
-                statusLabel.foreground = JBColor.GRAY
-                urlLabel.text = ""
-                settingsLink.isVisible = true
-                projectLabel.text = ""
+                statusLabel.text = "Built-in MCP Server Available"
+                statusLabel.foreground = JBColor(0xD9A343, 0xD9A343)
+                urlLabel.text = info.statusMessage
+                urlLabel.foreground = JBColor.GRAY
             }
+            settingsLink.isVisible = true
+            projectLabel.text = "| Enabled tools: ${info.enabledTools}/${info.registeredTools}"
         } catch (e: Exception) {
-            statusLabel.text = "MCP Server Error"
+            statusLabel.text = "Native MCP Integration Error"
             statusLabel.foreground = JBColor.RED
             urlLabel.text = e.message ?: ""
             urlLabel.foreground = JBColor.RED
@@ -419,11 +403,10 @@ class AgentRuleTipPanel(private val project: Project) : JBPanel<AgentRuleTipPane
 
     companion object {
         /**
-         * Returns the agent rule text with the IDE-specific server name.
+         * Returns the agent rule text for the plugin's MCP tools.
          */
         fun getAgentRuleText(): String {
-            val serverName = IdeProductInfo.getServerName()
-            return "IMPORTANT: When applicable, prefer using $serverName MCP tools for code navigation and refactoring."
+            return "IMPORTANT: When applicable, prefer using the IDE Index MCP tools exposed by JetBrains MCP Server for code navigation and refactoring."
         }
 
         val CONFIG_FILES_HINT = """

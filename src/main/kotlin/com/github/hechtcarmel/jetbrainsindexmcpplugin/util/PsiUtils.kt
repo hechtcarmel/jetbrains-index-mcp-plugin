@@ -109,7 +109,7 @@ object PsiUtils {
 
     fun getVirtualFile(project: Project, relativePath: String): VirtualFile? {
         val basePath = project.basePath ?: return null
-        return resolveLocalFile(relativePath, sequenceOf(basePath))
+        return resolveLocalFile(relativePath, listOf(basePath).asSequence())
     }
 
     fun resolveVirtualFileAnywhere(project: Project, path: String): VirtualFile? {

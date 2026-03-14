@@ -47,9 +47,8 @@ import kotlinx.serialization.json.JsonObject
  *
  * ## Tool Registration
  *
- * Tools can be registered via:
- * - Built-in registration in [ToolRegistry.registerBuiltInTools]
- * - Extension point `com.github.hechtcarmel.jetbrainsindexmcpplugin.mcpTool`
+ * Tools are registered through [ToolRegistry.registerBuiltInTools] and then
+ * adapted to JetBrains' built-in MCP server at runtime.
  *
  * @see AbstractMcpTool
  * @see AbstractMcpTool.doExecute

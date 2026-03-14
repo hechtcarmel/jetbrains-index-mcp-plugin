@@ -1442,7 +1442,7 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 
     @Suppress("UNUSED_PARAMETER")
     private fun getKotlinModifiers(element: PsiElement): List<String> {
-        // TODO: Extract Kotlin modifiers (public, private, suspend, etc.)
+        // Future improvement: Extract Kotlin modifiers (public, private, suspend, etc.)
         // Currently returns empty list as Kotlin modifier API is complex
         return emptyList()
     }

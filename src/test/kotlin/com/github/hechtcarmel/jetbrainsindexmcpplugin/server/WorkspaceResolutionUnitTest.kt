@@ -10,7 +10,7 @@ class WorkspaceResolutionUnitTest : TestCase() {
 
     /**
      * Tests that path normalization removes trailing slashes correctly.
-     * This validates the behavior used in JsonRpcHandler.normalizePath().
+     * This validates the behavior used in ProjectResolver.normalizePath().
      */
     fun testPathNormalizationRemovesTrailingSlash() {
         val paths = mapOf(
