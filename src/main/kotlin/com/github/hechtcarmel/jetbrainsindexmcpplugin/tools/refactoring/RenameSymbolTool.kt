@@ -564,7 +564,7 @@ class RenameSymbolTool : AbstractMcpTool() {
     }
 
     /**
-     * Dummy placeholder for error cases to satisfy non-null return type.
+     * Fallback element for error cases to satisfy the non-null return type.
      */
     @Suppress("DEPRECATION")
     private object DummyNamedElement : PsiNamedElement {

@@ -4,460 +4,193 @@
 [![Version](https://img.shields.io/jetbrains/plugin/v/29174.svg)](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/29174.svg)](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server)
 
-A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, enabling AI coding assistants like Claude, Codex, Cursor, and Windsurf to leverage the IDE's powerful indexing and refactoring capabilities.
+A JetBrains IDE plugin that adds IDE-backed MCP tools to JetBrains' built-in MCP Server.
 
-**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
-**May work** (untested): RubyMine, CLion, DataGrip
+Tested on IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, and PhpStorm.
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
+[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
 
 <!-- Plugin description -->
-**IDE Index MCP Server** provides AI coding assistants with access to the IDE's powerful code intelligence features through the Model Context Protocol (MCP).
+**IDE Index MCP Server** extends JetBrains' native MCP Server with code navigation, search, diagnostics, and refactoring tools powered by PSI and IDE indexes.
 
-### Features
+### Highlights
 
-**Multi-Language Support**
-Advanced tools work across multiple languages based on available plugins:
-- **Java & Kotlin** - IntelliJ IDEA, Android Studio
-- **Python** - PyCharm (all editions), IntelliJ with Python plugin
-- **JavaScript & TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
-- **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
-- **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
-- **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
-
-**Universal Tools (All JetBrains IDEs)**
-- **Find References** - Locate all usages of any symbol across the project
-- **Go to Definition** - Navigate to symbol declarations
-- **Code Diagnostics** - Access errors, warnings, and quick fixes
-- **Index Status** - Check if code intelligence is ready
-- **Sync Files** - Force sync VFS/PSI cache after external file changes
-- **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
-- **Find Class** - Fast class/interface search by name with camelCase matching
-- **Find File** - Fast file search by name using IDE's file index
-- **Search Text** - Text search using IDE's pre-built word index
-- **Read File** - Read file content by path or qualified name, including library sources (disabled by default)
-- **Open File** - Open a file in the editor with optional navigation (disabled by default)
-- **Get Active File** - Get currently active editor file(s) with cursor position (disabled by default)
-
-**Extended Tools (Language-Aware)**
-These tools activate based on installed language plugins:
-- **Type Hierarchy** - Explore class inheritance chains
-- **Call Hierarchy** - Trace method/function call relationships
-- **Find Implementations** - Discover interface/abstract implementations
-- **Symbol Search** - Find by name with fuzzy/camelCase matching (disabled by default)
-- **Find Super Methods** - Navigate method override hierarchies
-- **File Structure** - View hierarchical file structure like IDE's Structure view (disabled by default)
-
-**Refactoring Tools**
-- **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
-- **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
-- **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
-
-### Why Use This Plugin?
-
-Unlike simple text-based code analysis, this plugin gives AI assistants access to:
-- **True semantic understanding** through the IDE's AST and index
-- **Cross-project reference resolution** that works across files and modules
-- **Multi-language support** - automatically detects and uses language-specific handlers
-- **Safe refactoring operations** with automatic reference updates and undo support
-
-Perfect for AI-assisted development workflows where accuracy and safety matter.
+- **Native MCP integration**: JetBrains owns transport, sessions, host, and port.
+- **Real code intelligence**: Tools use PSI, indexes, and refactoring APIs directly.
+- **Stable tool contract**: Existing tool names and `project_path` are preserved.
+- **Plugin-side observability**: The tool window still shows status, enabled tools, and command history.
+- **Multi-language support**: Language-aware tools activate when the corresponding IDE plugin is available.
 <!-- Plugin description end -->
 
-## Table of Contents
+## Requirements
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Client Configuration](#client-configuration)
-- [Available Tools](#available-tools)
-- [Multi-Project Support](#multi-project-support)
-- [Tool Window](#tool-window)
-- [Error Codes](#error-codes)
-- [Requirements](#requirements)
-- [Contributing](#contributing)
+- JetBrains IDE based on the 2025.3 platform or newer
+- JetBrains built-in MCP Server available in the IDE
+- A project opened in the IDE
+
+JetBrains introduced the built-in MCP Server in 2025.2. This plugin currently targets 2025.3 APIs.
 
 ## Installation
 
-### Using the IDE built-in plugin system
+Install from JetBrains Marketplace or from disk, then restart the IDE.
 
-<kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>Marketplace</kbd> > <kbd>Search for "IDE Index MCP Server"</kbd> > <kbd>Install</kbd>
-
-### Using JetBrains Marketplace
-
-Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server) and install it by clicking the <kbd>Install to ...</kbd> button.
-
-### Manual Installation
-
-Download the [latest release](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server/versions) and install it manually:
-<kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
+- Marketplace: [IDE Index MCP Server](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server)
+- Manual install: `Settings/Preferences > Plugins > ⚙ > Install plugin from disk...`
 
 ## Quick Start
 
-1. **Install the plugin** and restart your JetBrains IDE
-2. **Open a project** - the MCP server starts automatically with IDE-specific defaults:
-   - IntelliJ IDEA: `intellij-index` on port **29170**
-   - PyCharm: `pycharm-index` on port **29172**
-   - WebStorm: `webstorm-index` on port **29173**
-   - Other IDEs: See [IDE-Specific Defaults](#ide-specific-defaults)
-3. **Configure your AI assistant** using the "Install on Coding Agents" button (easiest) or manually
-4. **Use the tool window** (bottom panel: "Index MCP Server") to copy configuration or monitor commands
-5. **Change port** (optional): Click "Change port, disable tools" in the toolbar or go to <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>
+1. Install the plugin and restart the IDE.
+2. Open a project.
+3. Enable JetBrains MCP Server in the IDE.
+4. Open the `Index MCP Server` tool window to verify native server status and registered tools.
+5. Use `Open Built-in MCP Setup` in the tool window if you need JetBrains MCP settings or setup help.
+6. Copy the MCP URL exposed by JetBrains MCP Server into your client configuration.
 
-### Using the "Install on Coding Agents" Button
-
-The easiest way to configure your AI assistant:
-1. Open the "Index MCP Server" tool window (bottom panel)
-2. Click the prominent **"Install on Coding Agents"** button on the right side of the toolbar
-3. A popup appears with two sections:
-   - **Install Now** - For Claude Code CLI and Codex CLI: Runs the installation command automatically
-   - **Copy Configuration** - For other clients: Copies the JSON config to your clipboard
-4. For "Copy Configuration" clients, paste the config into the appropriate config file
+This plugin no longer starts its own HTTP server or owns a custom endpoint path.
 
 ## Client Configuration
 
-### Claude Code (CLI)
+Use the URL shown by JetBrains MCP Server. Do not hardcode the legacy `/index-mcp/streamable-http` endpoint from older plugin versions.
 
-Use the "Install on Coding Agents" button in the tool window, or run this command (adjust name and port for your IDE):
+Examples:
+
+### Claude Code
 
 ```bash
-# IntelliJ IDEA
-claude mcp add --transport http intellij-index http://127.0.0.1:29170/index-mcp/streamable-http --scope user
-
-# PyCharm
-claude mcp add --transport http pycharm-index http://127.0.0.1:29172/index-mcp/streamable-http --scope user
-
-# WebStorm
-claude mcp add --transport http webstorm-index http://127.0.0.1:29173/index-mcp/streamable-http --scope user
+claude mcp add jetbrains-index --transport sse <jetbrains-mcp-url> --scope user
 ```
-
-Options:
-- `--scope user` - Adds globally for all projects
-- `--scope project` - Adds to current project only
-
-To remove: `claude mcp remove <server-name>` (e.g., `claude mcp remove intellij-index`)
 
 ### Codex CLI
 
-Use the "Install on Coding Agents" button in the tool window, or run this command (adjust name and port for your IDE):
-
 ```bash
-# IntelliJ IDEA
-codex mcp add intellij-index --url http://127.0.0.1:29170/index-mcp/streamable-http
-
-# PyCharm
-codex mcp add pycharm-index --url http://127.0.0.1:29172/index-mcp/streamable-http
-
-# WebStorm
-codex mcp add webstorm-index --url http://127.0.0.1:29173/index-mcp/streamable-http
+codex mcp add jetbrains-index --url <jetbrains-mcp-url>
 ```
-
-To remove: `codex mcp remove <server-name>` (e.g., `codex mcp remove intellij-index`)
 
 ### Cursor
 
-Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally (adjust name and port for your IDE):
-
 ```json
 {
   "mcpServers": {
-    "intellij-index": {
-      "url": "http://127.0.0.1:29170/index-mcp/streamable-http"
+    "jetbrains-index": {
+      "url": "<jetbrains-mcp-url>"
     }
   }
 }
 ```
 
-### Windsurf
-
-Add to `~/.codeium/windsurf/mcp_config.json` (adjust name and port for your IDE):
-
-```json
-{
-  "mcpServers": {
-    "intellij-index": {
-      "serverUrl": "http://127.0.0.1:29170/index-mcp/streamable-http"
-    }
-  }
-}
-```
-
-### VS Code (Generic MCP)
+### VS Code
 
 ```json
 {
   "mcp.servers": {
-    "intellij-index": {
-      "url": "http://127.0.0.1:29170/index-mcp/streamable-http"
+    "jetbrains-index": {
+      "url": "<jetbrains-mcp-url>"
     }
   }
 }
 ```
 
-> **Note**: Replace the server name and port with your IDE's defaults. See [IDE-Specific Defaults](#ide-specific-defaults) below.
-
-### IDE-Specific Defaults
-
-Each JetBrains IDE has a unique default port and server name to allow running multiple IDEs simultaneously without conflicts:
-
-| IDE | Server Name | Default Port |
-|-----|-------------|--------------|
-| IntelliJ IDEA | `intellij-index` | 29170 |
-| Android Studio | `android-studio-index` | 29171 |
-| PyCharm | `pycharm-index` | 29172 |
-| WebStorm | `webstorm-index` | 29173 |
-| GoLand | `goland-index` | 29174 |
-| PhpStorm | `phpstorm-index` | 29175 |
-| RubyMine | `rubymine-index` | 29176 |
-| CLion | `clion-index` | 29177 |
-| RustRover | `rustrover-index` | 29178 |
-| DataGrip | `datagrip-index` | 29179 |
-
-> **Tip**: Use the "Install on Coding Agents" button in the tool window - it automatically uses the correct server name and port for your IDE.
-
-## Available Tools
-
-The plugin provides **21 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
-
-### Universal Tools
-
-These tools work in all supported JetBrains IDEs.
-
-| Tool | Description |
-|------|-------------|
-| `ide_find_references` | Find all references to a symbol across the entire project |
-| `ide_find_definition` | Find the definition/declaration location of a symbol |
-| `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
-| `ide_find_file` | Search for files by name using IDE's file index |
-| `ide_search_text` | Text search using IDE's pre-built word index with context filtering |
-| `ide_diagnostics` | Analyze a file for problems (errors, warnings) and available intentions |
-| `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
-| `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |
-| `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
-| `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
-| `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
-| `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
-| `ide_refactor_rename` | Rename a symbol and update all references across the project (all languages) |
-| `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
-
-### Extended Tools (Language-Aware)
-
-These tools activate based on available language plugins:
-
-| Tool | Description | Languages |
-|------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_symbol` | Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS |
-
-### Java-Specific Refactoring Tools
-
-| Tool | Description |
-|------|-------------|
-| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
-
-> **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
-
-### Tool Availability by IDE
-
-**Fully Tested:**
-
-| IDE | Universal | Navigation | Refactoring |
-|-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete |
-| Android Studio | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete |
-| PyCharm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
-| WebStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
-| GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| RustRover | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| PhpStorm | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
-
-**May Work (Untested):**
-
-| IDE | Universal | Navigation | Refactoring |
-|-----|-----------|------------|-------------|
-| RubyMine | ✓ 14 tools | - | ✓ rename + reformat |
-| CLion | ✓ 14 tools | - | ✓ rename + reformat |
-| DataGrip | ✓ 14 tools | - | ✓ rename + reformat |
-
-> **Note**: Navigation tools activate when language plugins are present. GoLand and RustRover have 4 navigation tools (no `ide_find_implementations` or `ide_find_super_methods` due to language semantics). PhpStorm has 5 (no `ide_file_structure`). The rename and reformat tools work across all languages.
-
-For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
-
-## Multi-Project Support
-
-When multiple projects are open in a single IDE window, you must specify which project to use with the `project_path` parameter:
-
-```json
-{
-  "name": "ide_find_references",
-  "arguments": {
-    "project_path": "/Users/dev/myproject",
-    "file": "src/Main.kt",
-    "line": 10,
-    "column": 5
-  }
-}
-```
-
-If `project_path` is omitted:
-- **Single project open**: That project is used automatically
-- **Multiple projects open**: An error is returned with the list of available projects
-
-### Workspace Projects
-
-The plugin supports **workspace projects** where a single IDE window contains multiple sub-projects as modules with separate content roots. The `project_path` parameter accepts:
-
-- The **workspace root** path
-- A **sub-project path** (module content root)
-- A **subdirectory** of any open project
-
-When an error occurs, the response includes all available sub-projects so AI agents can discover the correct paths to use.
+If your client uses another field name, reuse the same JetBrains-provided URL in that field.
 
 ## Tool Window
 
-The plugin adds an "Index MCP Server" tool window (bottom panel) that shows:
+The `Index MCP Server` tool window keeps plugin-owned controls and visibility:
 
-- **Server Status**: Running indicator with server URL and port
-- **Project Name**: Currently active project
-- **Command History**: Log of all MCP tool calls with:
-  - Timestamp
-  - Tool name
-  - Status (Success/Error/Pending)
-  - Parameters and results (expandable)
-  - Execution duration
+- native MCP server status
+- native server URL when exposed by the IDE
+- registered tool count
+- enabled tool count
+- command history
 
-### Tool Window Actions
+Toolbar actions:
 
-| Action | Description |
-|--------|-------------|
-| Refresh | Refresh server status and command history |
-| Copy URL | Copy the MCP server URL to clipboard |
-| Clear History | Clear the command history |
-| Export History | Export history to JSON or CSV file |
-| **Install on Coding Agents** | Install MCP server on AI assistants (prominent button on right) |
-
-## Error Codes
-
-### JSON-RPC Standard Errors
-
-| Code | Name | Description |
-|------|------|-------------|
-| -32700 | Parse Error | Failed to parse JSON-RPC request |
-| -32600 | Invalid Request | Invalid JSON-RPC request format |
-| -32601 | Method Not Found | Unknown method name |
-| -32602 | Invalid Params | Invalid or missing parameters |
-| -32603 | Internal Error | Unexpected internal error |
-
-### Custom MCP Errors
-
-| Code | Name | Description |
-|------|------|-------------|
-| -32001 | Index Not Ready | IDE is in dumb mode (indexing in progress) |
-| -32002 | File Not Found | Specified file does not exist |
-| -32003 | Symbol Not Found | No symbol found at the specified position |
-| -32004 | Refactoring Conflict | Refactoring cannot be completed (e.g., name conflict) |
+- `Copy Server URL`
+- `Open Built-in MCP Setup`
+- `Settings`
+- `Get Companion Skill`
 
 ## Settings
 
-Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>:
+The plugin settings page now controls only plugin-owned behavior:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Server Port | IDE-specific | MCP server port (range: 1024-65535, auto-restart on change). See [IDE-Specific Defaults](#ide-specific-defaults) |
-| Server Host | `127.0.0.1` | Listening host. Change to `0.0.0.0` for remote/WSL access |
-| Max History Size | 100 | Maximum number of commands to keep in history |
-| Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
-| Disabled Tools | 7 tools | Per-tool enable/disable toggles. Some tools are disabled by default to keep the tool list focused |
+- maximum command history size
+- optional PSI sync before tool execution
+- tool enable/disable toggles
 
-## Requirements
+It does not manage host, port, transport, session lifecycle, or client configuration generation.
 
-- **JetBrains IDE** 2025.1 or later (any IDE based on IntelliJ Platform)
-- **JVM** 21 or later
-- **MCP Protocol** 2025-03-26 (primary Streamable HTTP), with 2024-11-05 legacy SSE compatibility
+## Available Tools
 
-### Supported IDEs
+Universal tools:
 
-**Fully Tested:**
-- IntelliJ IDEA (Community/Ultimate)
-- Android Studio
-- PyCharm (Community/Professional)
-- WebStorm
-- GoLand
-- RustRover
-- PhpStorm
+- `ide_find_references`
+- `ide_find_definition`
+- `ide_find_class`
+- `ide_find_file`
+- `ide_search_text`
+- `ide_diagnostics`
+- `ide_index_status`
+- `ide_sync_files`
+- `ide_build_project`
+- `ide_read_file`
+- `ide_open_file`
+- `ide_get_active_file`
+- `ide_refactor_rename`
+- `ide_reformat_code`
 
-**May Work (Untested):**
-- RubyMine
-- CLion
-- DataGrip
+Language-aware tools:
 
-> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE, but has only been tested on the IDEs listed above.
+- `ide_type_hierarchy`
+- `ide_call_hierarchy`
+- `ide_find_implementations`
+- `ide_find_symbol`
+- `ide_find_super_methods`
+- `ide_file_structure`
+
+Java/Kotlin-only refactoring:
+
+- `ide_refactor_safe_delete`
+
+Some tools remain disabled by default and can be enabled in plugin settings.
+
+## Multi-Project Support
+
+Workspace-style projects are still supported.
+
+- `project_path` is preserved as the public tool parameter
+- `ProjectResolver` still prefers explicit `project_path`
+- when `project_path` is absent, execution falls back to the project from the native MCP call context
 
 ## Architecture
 
-The plugin runs a **custom embedded Ktor CIO HTTP server** with **dual MCP transports**:
+Current architecture:
 
-### Streamable HTTP Transport (Primary, MCP 2025-03-26)
+- JetBrains built-in MCP Server owns transport and sessions
+- `NativeMcpToolsProvider` registers tools through `com.intellij.mcpServer.mcpToolsProvider`
+- `NativeMcpToolAdapter` bridges existing plugin tools to JetBrains native MCP descriptors and results
+- `McpServerService` is now a lightweight integration facade for registry initialization and UI status
+- command history is recorded in the native adapter layer
 
-```
-AI Assistant ──────► POST /index-mcp/streamable-http (initialize)
-                     ◄── HTTP 200 + Mcp-Session-Id
-             ──────► POST /index-mcp/streamable-http (requests/notifications)
-                     ◄── JSON-RPC response or HTTP 202 Accepted
-             ──────► DELETE /index-mcp/streamable-http
-                     ◄── HTTP 200                    (session terminated)
-```
-
-### Legacy SSE Transport (MCP Inspector, older clients)
-
-```
-AI Assistant ──────► GET /index-mcp/sse              (establish SSE stream)
-                     ◄── event: endpoint             (receive POST URL with sessionId)
-             ──────► POST /index-mcp?sessionId=x     (JSON-RPC requests)
-                     ◄── HTTP 202 Accepted
-                     ◄── event: message              (JSON-RPC response via SSE)
-```
-
-This dual approach:
-- **Primary MCP transport** - Streamable HTTP per MCP `2025-03-26`
-- **MCP Inspector compatible** - Legacy SSE transport per MCP `2024-11-05`
-- **Configurable port** - IDE-specific default port, changeable in settings
-- Works with any MCP-compatible client
-- Single server instance across all open projects
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `./gradlew test`
-5. Submit a pull request
-
-### Development Setup
+## Development
 
 ```bash
-# Build the plugin
 ./gradlew build
-
-# Run IDE with plugin installed
-./gradlew runIde
-
-# Run tests
 ./gradlew test
-
-# Run plugin verification
+./gradlew runIde
 ./gradlew runPluginVerifier
 ```
 
+The project now builds against JetBrains 2025.3 APIs and depends on the bundled `com.intellij.mcpServer` plugin.
+
+## Contributing
+
+Every PR should:
+
+1. Bump `pluginVersion` in `gradle.properties` when behavior changes.
+2. Update `CHANGELOG.md`.
+3. Add or update tests.
+4. Update `README.md` and `CLAUDE.md` when architecture or workflow changes.
+
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
-
-Plugin based on the [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
+Apache License 2.0. See [LICENSE](LICENSE).

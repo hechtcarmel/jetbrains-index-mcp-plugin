@@ -57,14 +57,14 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
         )
         leftToolbar.targetComponent = panel
 
-        // Settings link with label "Change port, disable tools"
+        // Settings link with label for plugin-side controls
         val settingsPanel = createSettingsPanel(project)
 
-        // Create prominent "Install on Coding Agents" button with text
+        // Create prominent native setup button
         val installAction = CopyClientConfigAction()
-        val installButton = JButton("Install on Coding Agents").apply {
+        val installButton = JButton("Open Built-in MCP Setup").apply {
             icon = AllIcons.FileTypes.Config
-            toolTipText = "Copy MCP client configuration to clipboard"
+            toolTipText = "Open JetBrains MCP Server setup"
             isFocusable = false
             addActionListener {
                 val dataContext = com.intellij.openapi.actionSystem.DataContext { dataId ->
@@ -105,7 +105,7 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
             }
         }
 
-        // Right panel with external links + install button
+        // Right panel with external links + setup button
         val rightPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
             border = JBUI.Borders.empty(2, 4)
             add(createExternalLink(

@@ -69,7 +69,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## Custom Tool Registration
  *
- * Custom tools can be registered programmatically using [register].
+ * Additional tools can be registered programmatically using [register].
  *
  * @see McpTool
  * @see McpServerService

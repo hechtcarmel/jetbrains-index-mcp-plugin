@@ -1,60 +1,27 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.ServerStatusListener
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorSseSessionManager
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.StreamableHttpSessionManager
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.McpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
-import com.intellij.notification.Notification
-import com.intellij.notification.NotificationAction
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
-import com.intellij.openapi.Disposable
-import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.mcpserver.impl.McpServerService as NativeMcpServerService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.options.ShowSettingsUtil
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 /**
- * Application-level service managing the MCP server infrastructure.
+ * Application-level facade for plugin-managed MCP integration.
  *
- * This service manages:
- * - Embedded Ktor CIO server with configurable port
- * - Tool registry for MCP tools
- * - JSON-RPC handler for message processing
- * - SSE session management for client connections
- * - Coroutine scope for non-blocking tool execution
- *
- * Uses HTTP+SSE transport for compatibility with MCP clients.
+ * JetBrains' built-in MCP server owns transport, authentication, and session lifecycle.
+ * This service only manages the plugin's tool registry and exposes native server state
+ * to the rest of the plugin UI.
  */
 @Service(Service.Level.APP)
-class McpServerService(
-    private val coroutineScope: CoroutineScope
-) : Disposable {
+class McpServerService {
 
-    private val toolRegistry: ToolRegistry = ToolRegistry()
-    private val jsonRpcHandler: JsonRpcHandler
-    private val sseSessionManager: KtorSseSessionManager = KtorSseSessionManager()
-    private val streamableHttpSessionManager: StreamableHttpSessionManager = StreamableHttpSessionManager()
-    private var ktorServer: KtorMcpServer? = null
-    private var serverError: ServerError? = null
-
-    /**
-     * Represents a server error state.
-     */
-    data class ServerError(
-        val message: String,
-        val port: Int? = null
-    )
+    private val toolRegistry = ToolRegistry()
 
     @Volatile
     var isInitialized: Boolean = false
@@ -67,89 +34,61 @@ class McpServerService(
     }
 
     init {
-        LOG.info("Initializing MCP Server Service (Protocol: ${McpConstants.MCP_PROTOCOL_VERSION})")
-        jsonRpcHandler = JsonRpcHandler(toolRegistry)
-        // Self-initialize asynchronously so the server starts even if postStartupActivity
-        // doesn't fire (see issue #73). initialize() is idempotent (@Synchronized + isInitialized
-        // guard), so the redundant call from McpServerStartupActivity is a safe no-op.
-        coroutineScope.launch { initialize() }
+        initialize()
     }
 
     @Synchronized
     fun initialize() {
-        if (isInitialized) return
-
-        LOG.info("Performing deferred MCP Server initialization")
-
-        toolRegistry.registerBuiltInTools()
-
-        val settings = McpSettings.getInstance()
-        val port = settings.serverPort
-        val host = settings.serverHost
-        isInitialized = true
-        startServer(host, port)
-
-        LOG.info("MCP Server Service initialized with Ktor CIO server")
-    }
-
-    /**
-     * Starts the MCP server on the specified port.
-     *
-     * @param host The host to bind to
-     * @param port The port to listen on
-     * @return The result of the start operation
-     */
-    fun startServer(host: String, port: Int): KtorMcpServer.StartResult {
-        // Stop existing server if running
-        stopServer()
-
-        LOG.info("Starting MCP Server on $host:$port")
-
-        val server = KtorMcpServer(
-            port = port,
-            host = host,
-            jsonRpcHandler = jsonRpcHandler,
-            sseSessionManager = sseSessionManager,
-            streamableHttpSessionManager = streamableHttpSessionManager,
-            coroutineScope = coroutineScope
-        )
-
-        val result = when (val startResult = server.start()) {
-            is KtorMcpServer.StartResult.Success -> {
-                ktorServer = server
-                serverError = null
-                LOG.info("MCP Server started successfully on $host:$port")
-                startResult
-            }
-            is KtorMcpServer.StartResult.PortInUse -> {
-                serverError = ServerError("Port $port is already in use", port)
-                showErrorNotification(
-                    McpBundle.message("notification.serverPortInUse.title"),
-                    McpBundle.message("notification.serverPortInUse.content", port, host)
-                )
-                startResult
-            }
-            is KtorMcpServer.StartResult.Error -> {
-                serverError = ServerError(startResult.message)
-                LOG.warn("Failed to start MCP Server: ${startResult.message}", startResult.cause)
-                showErrorNotification(
-                    McpBundle.message("notification.serverStartFailed.title"),
-                    McpBundle.message("notification.serverStartFailed.content", startResult.message)
-                )
-                startResult
-            }
+        if (isInitialized) {
+            return
         }
 
-        // Notify listeners that server status changed
+        toolRegistry.registerBuiltInTools()
+        isInitialized = true
         notifyStatusChanged()
-
-        return result
+        LOG.info("Initialized native MCP integration with ${toolRegistry.getAllTools().size} tools")
     }
 
-    /**
-     * Notifies all listeners that the server status has changed.
-     */
-    private fun notifyStatusChanged() {
+    fun getToolRegistry(): ToolRegistry {
+        initialize()
+        return toolRegistry
+    }
+
+    fun getEnabledTools(): List<McpTool> {
+        val settings = McpSettings.getInstance()
+        return getToolRegistry().getAllTools().filter { settings.isToolEnabled(it.name) }
+    }
+
+    fun isServerRunning(): Boolean = nativeServerService()?.isRunning ?: false
+
+    fun getServerUrl(): String? {
+        val nativeService = nativeServerService() ?: return null
+        return nativeService.serverSseUrl.takeIf { nativeService.isRunning }
+    }
+
+    fun isNativeServerAvailable(): Boolean = nativeServerService() != null
+
+    fun getServerInfo(): ServerStatusInfo {
+        val nativeService = nativeServerService()
+        val serverUrl = nativeService?.serverSseUrl
+        val isRunning = nativeService?.isRunning ?: false
+        val statusMessage = when {
+            nativeService == null -> "JetBrains MCP Server dependency is unavailable."
+            isRunning && !serverUrl.isNullOrBlank() -> "JetBrains built-in MCP Server is running."
+            else -> "JetBrains built-in MCP Server is available but currently not running."
+        }
+
+        return ServerStatusInfo(
+            version = McpConstants.SERVER_VERSION,
+            serverUrl = serverUrl,
+            registeredTools = toolRegistry.getAllTools().size,
+            enabledTools = getEnabledTools().size,
+            isRunning = isRunning,
+            statusMessage = statusMessage
+        )
+    }
+
+    fun notifyStatusChanged() {
         ApplicationManager.getApplication().invokeLater({
             ApplicationManager.getApplication().messageBus
                 .syncPublisher(McpConstants.SERVER_STATUS_TOPIC)
@@ -157,138 +96,18 @@ class McpServerService(
         }, ModalityState.any())
     }
 
-    /**
-     * Stops the MCP server.
-     */
-    fun stopServer() {
-        ktorServer?.stop()
-        ktorServer = null
-    }
-
-    /**
-     * Restarts the MCP server on a new host/port.
-     *
-     * @param newHost The new host to bind to
-     * @param newPort The new port to listen on
-     * @return The result of the restart operation
-     */
-    fun restartServer(newHost: String, newPort: Int): KtorMcpServer.StartResult {
-        LOG.info("Restarting MCP Server on $newHost:$newPort")
-        return startServer(newHost, newPort)
-    }
-
-    /**
-     * Returns whether the server is currently running.
-     */
-    fun isServerRunning(): Boolean = ktorServer?.isRunning() == true
-
-    /**
-     * Returns the current server error, if any.
-     */
-    fun getServerError(): ServerError? = serverError
-
-    fun getToolRegistry(): ToolRegistry = toolRegistry
-
-    fun getJsonRpcHandler(): JsonRpcHandler = jsonRpcHandler
-
-    fun getSseSessionManager(): KtorSseSessionManager = sseSessionManager
-
-    /**
-     * Returns the Streamable HTTP endpoint URL for MCP connections (primary transport).
-     * Clients should use this URL for the MCP 2025-03-26 Streamable HTTP transport.
-     *
-     * @return The server URL, or null if server is not running
-     */
-    fun getServerUrl(): String? {
-        if (ktorServer == null || serverError != null) return null
-        val settings = McpSettings.getInstance()
-        val port = settings.serverPort
-        val host = settings.serverHost
-        return "http://$host:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}"
-    }
-
-    /**
-     * Returns the legacy SSE endpoint URL for older MCP clients (2024-11-05 transport).
-     *
-     * @return The SSE URL, or null if server is not running
-     */
-    fun getLegacySseUrl(): String? {
-        if (ktorServer == null || serverError != null) return null
-        val settings = McpSettings.getInstance()
-        val port = settings.serverPort
-        val host = settings.serverHost
-        return "http://$host:$port${McpConstants.SSE_ENDPOINT_PATH}"
-    }
-
-    /**
-     * Returns the configured server port.
-     */
-    fun getServerPort(): Int = McpSettings.getInstance().serverPort
-
-    /**
-     * Returns information about the server status.
-     */
-    fun getServerInfo(): ServerStatusInfo {
-        val settings = McpSettings.getInstance()
-        val port = settings.serverPort
-        val host = settings.serverHost
-        val isRunning = isServerRunning()
-        return ServerStatusInfo(
-            name = McpConstants.SERVER_NAME,
-            version = McpConstants.SERVER_VERSION,
-            protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
-            streamableHttpUrl = if (isRunning) "http://$host:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}" else "Server not running",
-            legacySseUrl = if (isRunning) "http://$host:$port${McpConstants.SSE_ENDPOINT_PATH}" else "Server not running",
-            postUrl = "http://$host:$port${McpConstants.MCP_ENDPOINT_PATH}",
-            port = port,
-            registeredTools = toolRegistry.getAllTools().size,
-            error = serverError?.message,
-            isRunning = isRunning
-        )
-    }
-
-    /**
-     * Shows an error notification with an action to open settings.
-     */
-    private fun showErrorNotification(title: String, content: String) {
-        ApplicationManager.getApplication().invokeLater({
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                .createNotification(
-                    title,
-                    content,
-                    NotificationType.ERROR
-                )
-                .addAction(object : NotificationAction(McpBundle.message("notification.action.openSettings")) {
-                    override fun actionPerformed(e: AnActionEvent, notification: Notification) {
-                        ShowSettingsUtil.getInstance().showSettingsDialog(null, McpSettingsConfigurable::class.java)
-                        notification.expire()
-                    }
-                })
-                .notify(null)
-        }, ModalityState.any())
-    }
-
-    override fun dispose() {
-        LOG.info("Disposing MCP Server Service")
-        stopServer()
-        sseSessionManager.closeAllSessions()
-        streamableHttpSessionManager.closeAllSessions()
+    private fun nativeServerService(): NativeMcpServerService? {
+        return runCatching { NativeMcpServerService.Companion.getInstance() }
+            .onFailure { LOG.debug("Failed to access JetBrains MCP server service", it) }
+            .getOrNull()
     }
 }
 
-/**
- * Data class containing server status information.
- */
 data class ServerStatusInfo(
-    val name: String,
     val version: String,
-    val protocolVersion: String,
-    val streamableHttpUrl: String,
-    val legacySseUrl: String,
-    val postUrl: String,
-    val port: Int,
+    val serverUrl: String?,
     val registeredTools: Int,
-    val error: String? = null,
-    val isRunning: Boolean = true
+    val enabledTools: Int,
+    val isRunning: Boolean,
+    val statusMessage: String
 )

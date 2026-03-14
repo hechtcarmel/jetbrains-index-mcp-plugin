@@ -1,6 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.settings
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -16,15 +15,19 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
 
     /**
      * Persistent state for MCP settings.
-     * Note: serverPort defaults to -1 (unset), which means "use IDE-specific default".
-     * This allows different IDEs to have different default ports.
      */
     data class State(
         var maxHistorySize: Int = 100,
         var syncExternalChanges: Boolean = false,
-        var disabledTools: MutableSet<String> = mutableSetOf("ide_build_project", "ide_file_structure", "ide_find_symbol", "ide_read_file", "ide_get_active_file", "ide_open_file", "ide_reformat_code"),
-        var serverPort: Int = -1, // -1 means use IDE-specific default
-        var serverHost: String = McpConstants.DEFAULT_SERVER_HOST
+        var disabledTools: MutableSet<String> = mutableSetOf(
+            "ide_build_project",
+            "ide_file_structure",
+            "ide_find_symbol",
+            "ide_read_file",
+            "ide_get_active_file",
+            "ide_open_file",
+            "ide_reformat_code"
+        )
     )
 
     private var state = State()
@@ -46,14 +49,6 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var disabledTools: Set<String>
         get() = state.disabledTools.toSet()
         set(value) { state.disabledTools = value.toMutableSet() }
-
-    var serverPort: Int
-        get() = if (state.serverPort == -1) McpConstants.getDefaultServerPort() else state.serverPort
-        set(value) { state.serverPort = value }
-
-    var serverHost: String
-        get() = state.serverHost
-        set(value) { state.serverHost = value }
 
     fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools
 

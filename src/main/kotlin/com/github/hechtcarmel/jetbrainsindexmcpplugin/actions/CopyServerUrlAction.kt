@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.ide.CopyPasteManager
@@ -16,8 +17,25 @@ class CopyServerUrlAction : AnAction(
     "Copy the MCP server URL to clipboard",
     AllIcons.Actions.Copy
 ) {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = McpServerService.getInstance().getServerUrl() != null
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         val url = McpServerService.getInstance().getServerUrl()
+            ?: run {
+                NotificationGroupManager.getInstance()
+                    .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                    .createNotification(
+                        "MCP Server URL Unavailable",
+                        "JetBrains' built-in MCP Server is not currently running.",
+                        NotificationType.WARNING
+                    )
+                    .notify(e.project)
+                return
+            }
         CopyPasteManager.getInstance().setContents(StringSelection(url))
 
         NotificationGroupManager.getInstance()

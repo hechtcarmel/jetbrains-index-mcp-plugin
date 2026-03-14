@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-03-13
+### Changed
+- **Native MCP migration** — Replaced the plugin-owned Ktor/JSON-RPC/SSE server stack with JetBrains' built-in MCP Server integration.
+- **Server facade role** — `McpServerService` now initializes the tool registry and exposes native MCP status for the plugin UI instead of owning transport lifecycle.
+- **Tool execution bridge** — Existing plugin tools are now exposed through `NativeMcpToolsProvider` and `NativeMcpToolAdapter`, which preserve the public `project_path` parameter and convert schemas/results to JetBrains native MCP types.
+- **Settings scope** — Plugin settings now control only command history, PSI sync, and tool enablement.
+
+### Removed
+- **Custom transport stack** — Removed the embedded Ktor server, JSON-RPC request router, streamable HTTP transport layer, and legacy SSE transport layer.
+- **Plugin-owned networking settings** — Removed custom host/port persistence, validation, restart handling, and transport-specific UI messaging.
+- **Client config generation for custom endpoints** — The plugin no longer generates URLs for `/index-mcp/streamable-http`.
+
+### Breaking
+- **Minimum platform raised** — The plugin now targets JetBrains 2025.3 platform APIs and requires the bundled `com.intellij.mcpServer` plugin.
+- **Built-in MCP ownership** — MCP transport, URL shape, host, port, and session management are now fully owned by JetBrains MCP Server. Existing client configs that target the plugin's legacy HTTP endpoints must be replaced with the native JetBrains MCP URL.
+
 ## [4.2.0] - 2026-03-13
 ### Added
 - **Companion Skill** — New "Get Companion Skill" button in the tool window toolbar. Lets users install or export a companion skill that guides AI coding agents on when and how to use IDE MCP tools effectively. Supports direct installation to `.claude/skills/` for Claude Code projects, or export as `.skill`/`.zip` file for sharing.
