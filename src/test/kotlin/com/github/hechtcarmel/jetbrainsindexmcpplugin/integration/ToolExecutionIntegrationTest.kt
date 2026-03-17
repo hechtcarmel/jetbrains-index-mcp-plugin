@@ -313,6 +313,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
             ToolNames.REFORMAT_CODE,
+            ToolNames.OPTIMIZE_IMPORTS,
             // Editor tools
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE
