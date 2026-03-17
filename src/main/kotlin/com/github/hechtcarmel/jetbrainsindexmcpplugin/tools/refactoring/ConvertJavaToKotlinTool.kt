@@ -13,7 +13,6 @@ import com.intellij.psi.PsiManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flatMapMerge
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -248,7 +247,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             val relativePath = getRelativePath(project, virtualFile)
 
             val lineCount = suspendingReadAction {
-                (ktFile as? com.intellij.psi.PsiFile)?.text?.lines()?.size ?: 0
+                ktFile.containingFile.text?.lines()?.size ?: 0
             }
 
             val originalJavaPath = preparation.javaFiles.getOrNull(index)
@@ -278,8 +277,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             JavaToKotlinConversionResult(
                 success = true,
                 convertedFiles = convertedInfoList,
-                warnings = emptyList(),
-                message = "Successfully converted ${convertedInfoList.size} Java file(s) to Kotlin (headless mode)"
+                message = "Successfully converted ${convertedInfoList.size} Java file(s) to Kotlin"
             )
         )
     }
@@ -293,7 +291,6 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
 data class JavaToKotlinConversionResult(
     val success: Boolean,
     val convertedFiles: List<ConvertedFileInfo>,
-    val warnings: List<String>,
     val message: String
 )
 

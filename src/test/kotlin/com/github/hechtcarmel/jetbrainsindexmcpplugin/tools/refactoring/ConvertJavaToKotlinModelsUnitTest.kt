@@ -76,7 +76,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         val result = JavaToKotlinConversionResult(
             success = true,
             convertedFiles = files,
-            warnings = emptyList(),
             message = "Successfully converted 2 Java file(s) to Kotlin"
         )
 
@@ -85,38 +84,13 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
 
         assertTrue("Conversion should succeed", deserialized.success)
         assertEquals(2, deserialized.convertedFiles.size)
-        assertTrue("Warnings should be empty", deserialized.warnings.isEmpty())
         assertTrue("Message should mention success", deserialized.message.contains("Successfully"))
-    }
-
-    fun testJavaToKotlinConversionResultWithWarnings() {
-        val warnings = listOf(
-            "Warning: Static initializer block may need manual adjustment",
-            "Warning: Raw type usage detected"
-        )
-
-        val result = JavaToKotlinConversionResult(
-            success = true,
-            convertedFiles = listOf(ConvertedFileInfo("Test.java", "Test.kt", 50, false)),
-            warnings = warnings,
-            message = "Converted with warnings"
-        )
-
-        val serialized = json.encodeToString(result)
-        val deserialized = json.decodeFromString<JavaToKotlinConversionResult>(serialized)
-
-        assertEquals(2, deserialized.warnings.size)
-        assertTrue("Should contain static initializer warning",
-            deserialized.warnings[0].contains("Static initializer"))
-        assertTrue("Should contain raw type warning",
-            deserialized.warnings[1].contains("Raw type"))
     }
 
     fun testJavaToKotlinConversionResultIncludesAllFields() {
         val result = JavaToKotlinConversionResult(
             success = true,
             convertedFiles = listOf(ConvertedFileInfo("X.java", "X.kt", 5, true)),
-            warnings = listOf("warning1"),
             message = "Done"
         )
 
@@ -124,7 +98,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
 
         assertTrue("Should contain success", serialized.contains("\"success\""))
         assertTrue("Should contain convertedFiles", serialized.contains("\"convertedFiles\""))
-        assertTrue("Should contain warnings", serialized.contains("\"warnings\""))
         assertTrue("Should contain message", serialized.contains("\"message\""))
     }
 
@@ -150,7 +123,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         val result = JavaToKotlinConversionResult(
             success = true,
             convertedFiles = emptyList(),
-            warnings = emptyList(),
             message = "No files converted"
         )
 
@@ -158,7 +130,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         val deserialized = json.decodeFromString<JavaToKotlinConversionResult>(serialized)
 
         assertTrue("Files should be empty", deserialized.convertedFiles.isEmpty())
-        assertTrue("Warnings should be empty", deserialized.warnings.isEmpty())
     }
 
     fun testJavaToKotlinConversionResultMultipleFiles() {
@@ -169,7 +140,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         val result = JavaToKotlinConversionResult(
             success = true,
             convertedFiles = files,
-            warnings = emptyList(),
             message = "Converted 10 files"
         )
 
@@ -192,7 +162,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         val result = JavaToKotlinConversionResult(
             success = true,
             convertedFiles = listOf(info),
-            warnings = listOf("Warning: \$variable name"),
             message = "Converted with \$pecial characters"
         )
 
@@ -200,8 +169,6 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         val deserialized = json.decodeFromString<JavaToKotlinConversionResult>(serialized)
 
         assertEquals("My\$Special-Class.java", deserialized.convertedFiles[0].originalJavaFile)
-        assertTrue("Warning should preserve special chars",
-            deserialized.warnings[0].contains("\$variable"))
     }
 
     fun testConvertedFileInfoZeroLines() {
