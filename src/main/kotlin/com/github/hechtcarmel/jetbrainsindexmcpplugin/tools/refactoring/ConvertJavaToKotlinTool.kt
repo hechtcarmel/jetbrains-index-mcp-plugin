@@ -4,14 +4,21 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.jetbrains.kotlin.idea.actions.JavaToKotlinAction
+import org.jetbrains.kotlin.idea.configuration.hasKotlinPluginEnabled
 import org.jetbrains.kotlin.psi.KtFile
 
 /**
@@ -177,25 +184,38 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
      * Phase 2: Invokes the J2K converter `JavaToKotlinAction.Handler.convertFiles()`
      * directly, bypassing the UI action system to avoid dialogs.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun performConversion(
         project: Project,
         preparation: ConversionPreparation
     ): ToolCallResult {
         try {
-            val module = getModuleForConversion(preparation.javaFiles)
-                ?: return createErrorResult(
-                    "Could not determine module for file. Ensure the file is part of a module in the project."
-                )
+            val filesByModule = preparation.javaFiles.mapNotNull { file ->
+                getModuleForConversion(file)?.let { module -> module to file }
+            }.groupBy({ it.first }, { it.second })
 
-            val ktFiles = edtAction {
-                JavaToKotlinAction.Handler.convertFiles(
-                    files = preparation.javaFiles,
-                    project = project,
-                    module = module,
-                    enableExternalCodeProcessing = true,
-                    askExternalCodeProcessing = false
-                )
+            if (filesByModule.isEmpty()) {
+                return createErrorResult("No valid modules found for the specified files")
             }
+
+            val ktFiles = filesByModule.entries.asFlow()
+                .flatMapMerge { (module, files) ->
+                    if (!module.hasKotlinPluginEnabled()) {
+                        throw IllegalStateException("No Kotlin plugin enabled for module: ${module.name}")
+                    }
+                    
+                    edtAction {
+                        JavaToKotlinAction.Handler.convertFiles(
+                            files = files,
+                            project = project,
+                            module = module,
+                            enableExternalCodeProcessing = true,
+                            askExternalCodeProcessing = false
+                        ).asFlow()
+                    }
+                }
+                .toList()
+
             return processConversionResults(project, ktFiles, preparation)
         } catch (e: Exception) {
             LOG.error("Conversion failed", e)
@@ -206,10 +226,9 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
     /**
      * Gets the module for the files to be converted.
      */
-    private suspend fun getModuleForConversion(javaFiles: List<Any>): com.intellij.openapi.module.Module? {
-        val firstFile = javaFiles.firstOrNull() ?: return null
+    private suspend fun getModuleForConversion(javaFile: PsiJavaFile): Module? {
         return suspendingReadAction {
-            ModuleUtilCore.findModuleForPsiElement(firstFile as com.intellij.psi.PsiElement)
+            ModuleUtilCore.findModuleForPsiElement(javaFile)
         }
     }
 
