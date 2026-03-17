@@ -393,6 +393,9 @@ These activate based on available language plugins (Java, Python, JavaScript/Typ
 **Java/Kotlin-Only Refactoring Tools:**
 - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
 
+**Kotlin Conversion Tools:**
+- `ide_convert_java_to_kotlin` - Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Supports full file conversion with automatic formatting and import optimization. Handles classes, interfaces, methods, generics, Java 8+ features (lambdas, streams). Returns list of created .kt files and conversion warnings. Requires both Java and Kotlin plugins. (disabled by default)
+
 ### Multi-Language Architecture
 
 The plugin uses a language handler pattern for multi-IDE support:

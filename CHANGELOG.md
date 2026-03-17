@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **`ide_convert_java_to_kotlin` tool** — Convert Java files to Kotlin using IntelliJ's built-in J2K (Java-to-Kotlin) converter. Supports full file conversion with automatic formatting, import optimization, and code cleanup. Handles classes, interfaces, enums, methods, fields, generics, and Java 8+ features (lambdas, streams, method references). Optional parameters: `deleteOriginal` (default: true) to remove original .java files, `formatCode` (default: true) for automatic formatting. Returns list of created .kt files with line counts and any conversion warnings. Requires both Java and Kotlin plugins. Disabled by default — enable in Settings → Tools → Index MCP Server.
 
 ## [4.3.0] - 2026-03-17
 ### Added

@@ -69,6 +69,10 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
  *
+ * ### Kotlin Conversion Tools (IntelliJ IDEA with Java & Kotlin Plugins)
+ *
+ * - `ide_convert_java_to_kotlin` - Convert Java files to Kotlin (requires both Java and Kotlin plugins, disabled by default)
+ *
  * ## Custom Tool Registration
  *
  * Custom tools can be registered programmatically using [register].
@@ -183,6 +187,11 @@ class ToolRegistry {
         // Java-specific refactoring tools - only available when Java plugin is present
         if (PluginDetectors.java.isAvailable) {
             registerJavaRefactoringTools()
+        }
+
+        // Kotlin conversion tools - only available when both Java and Kotlin plugins are present
+        if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
+            registerKotlinConversionTools()
         }
 
         LOG.info("Registered ${tools.size} built-in MCP tools")
@@ -301,6 +310,31 @@ class ToolRegistry {
                 register(tool)
             } catch (e: Exception) {
                 LOG.warn("Failed to register Java refactoring tool $className: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Registers Kotlin conversion tools.
+     *
+     * These tools use the Kotlin plugin's J2K (Java-to-Kotlin) converter APIs
+     * and are only available when both Java and Kotlin plugins are present.
+     *
+     * IMPORTANT: This method must only be called after checking that both
+     * [PluginDetectors.java.isAvailable] and [PluginDetectors.kotlin.isAvailable] are true.
+     */
+    private fun registerKotlinConversionTools() {
+        val conversionToolClasses = listOf(
+            "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ConvertJavaToKotlinTool"
+        )
+
+        for (className in conversionToolClasses) {
+            try {
+                val toolClass = Class.forName(className)
+                val tool = toolClass.getDeclaredConstructor().newInstance() as McpTool
+                register(tool)
+            } catch (e: Exception) {
+                LOG.warn("Failed to register Kotlin conversion tool $className: ${e.message}")
             }
         }
     }
