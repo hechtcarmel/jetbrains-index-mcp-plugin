@@ -17,11 +17,11 @@ import org.jetbrains.kotlin.psi.KtFile
 /**
  * Tool for converting Java files to Kotlin using IntelliJ's built-in J2K (Java-to-Kotlin) converter.
  *
- * This tool uses reflection to access the Kotlin plugin's conversion handler (`JavaToKotlinAction.Handler`)
+ * This tool uses he Kotlin plugin's conversion handler (`JavaToKotlinAction.Handler`)
  * to avoid compile-time dependencies and UI dialogs. It follows a two-phase approach:
  *
  * 1. **Phase 1 (Background - Read Action)**: Resolve and validate Java files
- * 2. **Phase 2 (Headless Conversion)**: Invoke the handler's `convertFiles()` method via reflection
+ * 2. **Phase 2 (Headless Conversion)**: Invoke the handler's `convertFiles()`
  *
  * The converter handles:
  * - Classes, interfaces, enums, annotations
@@ -81,14 +81,13 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
      * Data class holding validated Java files from Phase 1.
      */
     private data class ConversionPreparation(
-        val javaFiles: List<PsiJavaFile>, // PsiJavaFile instances (accessed via reflection)
+        val javaFiles: List<PsiJavaFile>,
         val filePaths: List<String> // Relative paths for tracking
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 
-        // Extract parameters
         val singleFile = arguments["file"]?.jsonPrimitive?.content
         val filesList = arguments["files"]?.jsonArray?.map { it.jsonPrimitive.content }
 
@@ -110,8 +109,6 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         // PHASE 1: BACKGROUND - Resolve and validate Java files
         // Note: File resolution happens outside read action to avoid VFS refresh under read lock
         // ═══════════════════════════════════════════════════════════════════════
-
-        // Step 1a: Resolve virtual files (outside read action to allow VFS refresh)
         val virtualFiles = filesToConvert.mapNotNull { path ->
             PsiUtils.resolveVirtualFileAnywhere(project, path)?.let { path to it }
         }.toMap()
@@ -120,7 +117,6 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             return createErrorResult("No valid files found at specified paths: ${filesToConvert.joinToString(", ")}")
         }
 
-        // Step 1b: Validate Java files (inside read action)
         val preparation = suspendingReadAction {
             prepareJavaFiles(project, virtualFiles)
         }
@@ -162,7 +158,6 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
                 continue
             }
 
-            // Check if it's a Java file using reflection (avoid PsiJavaFile compile dependency)
             if (psiFile !is PsiJavaFile) {
                 LOG.warn("Not a Java file: $filePath")
                 continue
@@ -179,21 +174,14 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
     }
 
     /**
-     * Phase 2: Invokes the J2K converter via reflection to call `JavaToKotlinAction.Handler.convertFiles()`
+     * Phase 2: Invokes the J2K converter `JavaToKotlinAction.Handler.convertFiles()`
      * directly, bypassing the UI action system to avoid dialogs.
-     *
-     * Signature: fun convertFiles(files: List<PsiJavaFile>, project: Project, module: Module,
-     *                              enableExternalCodeProcessing: Boolean = true,
-     *                              askExternalCodeProcessing: Boolean = true,
-     *                              forceUsingOldJ2k: Boolean = false,
-     *                              settings: ConverterSettings = defaultSettings): List<KtFile>
      */
     private suspend fun performConversion(
         project: Project,
         preparation: ConversionPreparation
     ): ToolCallResult {
         try {
-            // Get the module for the first file (required parameter)
             val module = getModuleForConversion(preparation.javaFiles)
                 ?: return createErrorResult(
                     "Could not determine module for file. Ensure the file is part of a module in the project."
