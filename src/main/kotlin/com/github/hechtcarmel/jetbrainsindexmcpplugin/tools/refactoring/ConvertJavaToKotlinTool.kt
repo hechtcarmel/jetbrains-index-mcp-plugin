@@ -60,9 +60,9 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         Returns: List of created .kt files, conversion warnings, success status.
 
         Note: Requires both Java and Kotlin plugins. The converter automatically formats
-        and optimizes imports. Java files are deleted after successful conversion.
+        and optimizes imports. Original Java files are deleted after successful conversion.
 
-        Example: {"file": "src/Main.java", "deleteOriginal": true}
+        Example: {"file": "src/Main.java"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()

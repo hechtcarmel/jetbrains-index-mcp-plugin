@@ -120,8 +120,6 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         try {
             val result = tool.execute(project, buildJsonObject {
                 put("file", javaFile.virtualFile.path)
-                put("deleteOriginal", false) // Keep original for verification
-                put("formatCode", true)
             })
 
             if (result.isError) {
@@ -140,55 +138,12 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
             val convertedFile = conversionResult.convertedFiles[0]
             assertTrue("Original path should end with .java", convertedFile.originalJavaFile.endsWith("Simple.java"))
             assertTrue("New path should end with .kt", convertedFile.newKotlinFile.endsWith("Simple.kt"))
-            assertFalse("Original should not be deleted", convertedFile.deleted)
+            assertTrue("Original should be deleted", convertedFile.deleted)
             assertTrue("Should have converted some lines", convertedFile.linesConverted > 0)
 
         } catch (e: Exception) {
             System.err.println("testSimpleClassConversion: exception – ${e.message}")
             // Don't fail - reflection-based API might not work in all test environments
-        }
-    }
-
-    fun testConversionWithDeleteOriginal() = runBlocking {
-        if (!isConversionSupported()) {
-            System.err.println("testConversionWithDeleteOriginal: skipped – Kotlin plugin not available")
-            return@runBlocking
-        }
-
-        if (DumbService.isDumb(project)) {
-            System.err.println("testConversionWithDeleteOriginal: skipped – index not ready")
-            return@runBlocking
-        }
-
-        val javaFile = myFixture.addFileToProject("ToDelete.java", """
-            public class ToDelete {
-                public void method() {}
-            }
-        """.trimIndent())
-
-        val tool = ConvertJavaToKotlinTool()
-
-        try {
-            val result = tool.execute(project, buildJsonObject {
-                put("file", javaFile.virtualFile.path)
-                put("deleteOriginal", true)
-            })
-
-            if (result.isError) {
-                System.err.println("testConversionWithDeleteOriginal: conversion failed")
-                return@runBlocking
-            }
-
-            val content = (result.content.first() as ContentBlock.Text).text
-            val conversionResult = json.decodeFromString<JavaToKotlinConversionResult>(content)
-
-            if (conversionResult.success) {
-                assertTrue("Original should be marked as deleted",
-                    conversionResult.convertedFiles[0].deleted)
-            }
-
-        } catch (e: Exception) {
-            System.err.println("testConversionWithDeleteOriginal: exception – ${e.message}")
         }
     }
 
@@ -225,7 +180,6 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
                     add(kotlinx.serialization.json.JsonPrimitive(file1.virtualFile.path))
                     add(kotlinx.serialization.json.JsonPrimitive(file2.virtualFile.path))
                 })
-                put("deleteOriginal", false)
             })
 
             if (result.isError) {
@@ -259,48 +213,6 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         assertTrue("Should error with empty files list", result.isError)
         val error = (result.content.first() as ContentBlock.Text).text
         assertTrue("Error should mention no files", error.contains("No files"))
-    }
-
-    // Format Code Option Tests
-
-    fun testFormatCodeParameter() = runBlocking {
-        if (!isConversionSupported()) {
-            System.err.println("testFormatCodeParameter: skipped – Kotlin plugin not available")
-            return@runBlocking
-        }
-
-        if (DumbService.isDumb(project)) {
-            System.err.println("testFormatCodeParameter: skipped – index not ready")
-            return@runBlocking
-        }
-
-        val javaFile = myFixture.addFileToProject("Format.java", """
-            public class Format {
-                public void test() {
-                    System.out.println("test");
-                }
-            }
-        """.trimIndent())
-
-        val tool = ConvertJavaToKotlinTool()
-
-        try {
-            // Test with formatCode = false
-            val resultNoFormat = tool.execute(project, buildJsonObject {
-                put("file", javaFile.virtualFile.path)
-                put("deleteOriginal", false)
-                put("formatCode", false)
-            })
-
-            if (!resultNoFormat.isError) {
-                val content = (resultNoFormat.content.first() as ContentBlock.Text).text
-                val result = json.decodeFromString<JavaToKotlinConversionResult>(content)
-                assertTrue("Conversion without formatting should succeed", result.success)
-            }
-
-        } catch (e: Exception) {
-            System.err.println("testFormatCodeParameter: exception – ${e.message}")
-        }
     }
 
     // Schema Validation Tests
@@ -340,7 +252,6 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         val tool = ConvertJavaToKotlinTool()
         val result = tool.execute(project, buildJsonObject {
             put("file", javaFile.virtualFile.path)
-            put("deleteOriginal", false)
         })
 
         // Test just verifies tool executes without throwing exceptions
