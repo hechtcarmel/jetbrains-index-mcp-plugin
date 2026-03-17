@@ -99,8 +99,13 @@ class OptimizeImportsTool : AbstractMcpTool() {
     /**
      * Executes import optimization using IntelliJ's [OptimizeImportsProcessor].
      * Must run on EDT.
+     *
+     * Uses [OptimizeImportsProcessor.runWithoutProgress] instead of [OptimizeImportsProcessor.run]
+     * because `run()` dispatches via `ProgressManager` as a background task in non-headless mode,
+     * returning before processing completes. `runWithoutProgress()` executes synchronously,
+     * ensuring the document is fully updated before we commit and save.
      */
     private fun executeOptimizeImports(project: Project, psiFile: PsiFile) {
-        OptimizeImportsProcessor(project, psiFile).run()
+        OptimizeImportsProcessor(project, psiFile).runWithoutProgress()
     }
 }
