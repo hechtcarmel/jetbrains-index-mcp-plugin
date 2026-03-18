@@ -57,26 +57,25 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         Some advanced constructs may need manual adjustment after conversion.
 
         Parameters:
-        - file or files: Java file(s) to convert (required)
+        - files: Java files to convert (required)
 
         Returns: List of created .kt files, conversion warnings, success status.
 
         Note: Requires both Java and Kotlin plugins. The converter automatically formats
         and optimizes imports. Original Java files are deleted after successful conversion.
 
-        Example: {"file": "src/Main.java"}
+        Example: {"files": ["src/Main.java"]}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .file(description = "Java file to convert (relative to project root).")
         .property("files", buildJsonObject {
             put("type", "array")
             putJsonObject("items") {
                 put("type", "string")
             }
-            put("description", "Multiple Java files to convert. Alternative to 'file' parameter.")
-        })
+            put("description", "Java files to convert (relative to project root).")
+        }, required = true)
         .build()
 
     /**
@@ -104,20 +103,13 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 
-        val singleFile = arguments["file"]?.jsonPrimitive?.content
         val filesList = arguments["files"]?.jsonArray?.map { it.jsonPrimitive.content }
 
-        if (singleFile == null && filesList == null) {
-            return createErrorResult("Missing required parameter: 'file' or 'files'")
+        if (filesList == null) {
+            return createErrorResult("Missing required parameter: 'files'")
         }
 
-        val filesToConvert = when {
-            filesList != null -> filesList
-            singleFile != null -> listOf(singleFile)
-            else -> emptyList()
-        }
-
-        if (filesToConvert.isEmpty()) {
+        if (filesList.isEmpty()) {
             return createErrorResult("No files specified for conversion")
         }
 
@@ -125,12 +117,12 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         // PHASE 1: BACKGROUND - Resolve and validate Java files
         // Note: File resolution happens outside read action to avoid VFS refresh under read lock
         // ═══════════════════════════════════════════════════════════════════════
-        val virtualFiles = filesToConvert.mapNotNull { path ->
+        val virtualFiles = filesList.mapNotNull { path ->
             PsiUtils.resolveVirtualFileAnywhere(project, path)?.let { path to it }
         }.toMap()
 
         val preparation = suspendingReadAction {
-            prepareJavaFiles(project, virtualFiles, filesToConvert)
+            prepareJavaFiles(project, virtualFiles, filesList)
         }
 
         // If no files can be converted, return structured results immediately.

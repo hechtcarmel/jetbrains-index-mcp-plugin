@@ -7,7 +7,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /**
  * Platform tests for ConvertJavaToKotlinTool.
@@ -29,16 +28,18 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         val tool = ConvertJavaToKotlinTool()
         val result = tool.execute(project, buildJsonObject { })
 
-        assertTrue("Should error with missing file parameter", result.isError)
+        assertTrue("Should error with missing files parameter", result.isError)
         val error = (result.content.first() as ContentBlock.Text).text
         assertTrue("Error should mention missing parameter",
-            error.contains("Missing required parameter") || error.contains("file"))
+            error.contains("Missing required parameter") || error.contains("files"))
     }
 
-    fun testInvalidFileParameter() = runBlocking {
+    fun testInvalidFilesParameter() = runBlocking {
         val tool = ConvertJavaToKotlinTool()
         val result = tool.execute(project, buildJsonObject {
-            put("file", "nonexistent.java")
+            put("files", buildJsonArray {
+                add(JsonPrimitive("nonexistent.java"))
+            })
         })
 
         assertFalse("Structured per-file skips should not be top-level errors", result.isError)
@@ -110,8 +111,8 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         val tool = ConvertJavaToKotlinTool()
         val schema = tool.inputSchema.toString()
 
-        assertTrue("Schema should include 'file' parameter", schema.contains("file"))
         assertTrue("Schema should include 'files' parameter", schema.contains("files"))
+        assertFalse("Schema should not include 'file' parameter", schema.contains("\"file\""))
     }
 
     private fun decodeResult(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult):
