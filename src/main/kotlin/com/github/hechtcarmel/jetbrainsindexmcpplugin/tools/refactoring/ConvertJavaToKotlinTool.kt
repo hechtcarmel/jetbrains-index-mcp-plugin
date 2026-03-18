@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
@@ -132,7 +133,12 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         // The handler converts files, creates .kt files, and optionally deletes .java files
         // ═══════════════════════════════════════════════════════════════════════
         return try {
-            performConversion(project, preparation)
+            performConversion(project, preparation).also {
+                if(!it.isError) {
+                    commitDocuments(project)
+                    edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+                }
+            }
         } catch (e: Exception) {
             LOG.error("Conversion failed", e)
             createErrorResult("Conversion failed: ${e.message}")
