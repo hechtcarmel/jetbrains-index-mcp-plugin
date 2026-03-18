@@ -8,7 +8,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
 import kotlinx.serialization.Serializable
@@ -81,11 +80,25 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         .build()
 
     /**
-     * Data class holding validated Java files from Phase 1.
+     * Mutable per-request state carried through the conversion pipeline.
      */
+    private data class ConversionTarget(
+        val requestedPath: String,
+        var javaVirtualFilePath: String? = null,
+        var psiJavaFile: PsiJavaFile? = null,
+        var module: Module? = null,
+        var result: FileConversionResult = FileConversionResult(
+            requestedPath = requestedPath,
+            status = ConversionStatus.SKIPPED,
+            reason = "File not found"
+        )
+    ) {
+        val expectedKotlinPath: String?
+            get() = javaVirtualFilePath?.let { it.removeSuffix(".java") + ".kt" }
+    }
+
     private data class ConversionPreparation(
-        val javaFiles: List<PsiJavaFile>,
-        val filePaths: List<String> // Relative paths for tracking
+        val targets: List<ConversionTarget>
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -116,16 +129,13 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             PsiUtils.resolveVirtualFileAnywhere(project, path)?.let { path to it }
         }.toMap()
 
-        if (virtualFiles.isEmpty()) {
-            return createErrorResult("No valid files found at specified paths: ${filesToConvert.joinToString(", ")}")
-        }
-
         val preparation = suspendingReadAction {
-            prepareJavaFiles(project, virtualFiles)
+            prepareJavaFiles(project, virtualFiles, filesToConvert)
         }
 
-        if (preparation.javaFiles.isEmpty()) {
-            return createErrorResult("No valid Java files found. Ensure files have .java extension.")
+        // If no files can be converted, return structured results immediately.
+        if (preparation.targets.none { it.psiJavaFile != null }) {
+            return createFinalResult(preparation.targets).result
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -134,11 +144,11 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         // ═══════════════════════════════════════════════════════════════════════
         return try {
             performConversion(project, preparation).also {
-                if(!it.isError) {
+                if (it.summary.converted > 0) {
                     commitDocuments(project)
                     edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
                 }
-            }
+            }.result
         } catch (e: Exception) {
             LOG.error("Conversion failed", e)
             createErrorResult("Conversion failed: ${e.message}")
@@ -150,35 +160,39 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
      * Must run in read action.
      *
      * @param virtualFiles Map of original path -> VirtualFile (pre-resolved outside read action)
+     * @param allRequestedFiles List of all requested file paths for tracking
      */
     private fun prepareJavaFiles(
         project: Project,
         virtualFiles: Map<String, com.intellij.openapi.vfs.VirtualFile>,
+        allRequestedFiles: List<String>
     ): ConversionPreparation {
         val psiManager = PsiManager.getInstance(project)
-        val javaFiles = mutableListOf<PsiJavaFile>()
-        val validPaths = mutableListOf<String>()
+        val targets = allRequestedFiles.map { requestedPath -> ConversionTarget(requestedPath = requestedPath) }
+        val targetsByPath = targets.associateBy { it.requestedPath }
 
-        for ((filePath, virtualFile) in virtualFiles) {
+        // Validate each found file
+        for ((requestedPath, virtualFile) in virtualFiles) {
+            val target = targetsByPath[requestedPath] ?: continue
             val psiFile = psiManager.findFile(virtualFile)
             if (psiFile == null) {
-                LOG.warn("PSI file not found: $filePath")
+                LOG.warn("PSI file not found: $requestedPath")
+                target.result = skippedResult(requestedPath, "PSI file not found")
                 continue
             }
 
             if (psiFile !is PsiJavaFile) {
-                LOG.warn("Not a Java file: $filePath")
+                LOG.warn("Not a Java file: $requestedPath")
+                target.result = skippedResult(requestedPath, "Not a Java file (.java extension required)")
                 continue
             }
 
-            javaFiles.add(psiFile)
-            validPaths.add(filePath)
+            target.javaVirtualFilePath = virtualFile.path
+            target.psiJavaFile = psiFile
+            target.result = failedResult(requestedPath, "Conversion did not produce a Kotlin file")
         }
 
-        return ConversionPreparation(
-            javaFiles = javaFiles,
-            filePaths = validPaths
-        )
+        return ConversionPreparation(targets = targets)
     }
 
     /**
@@ -188,30 +202,75 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
     private suspend fun performConversion(
         project: Project,
         preparation: ConversionPreparation
-    ): ToolCallResult {
-        val filesByModule = preparation.javaFiles.mapNotNull { file ->
-            getModuleForConversion(file)?.let { module -> module to file }
-        }.groupBy({ it.first }, { it.second })
+    ): ConversionExecutionResult {
+        // Group files by module and track files without modules
+        val targetsByModule = mutableMapOf<Module, MutableList<ConversionTarget>>()
+        for (target in preparation.targets) {
+            val javaFile = target.psiJavaFile ?: continue
+            val module = getModuleForConversion(javaFile)
+            target.module = module
 
-        if (filesByModule.isEmpty()) {
-            return createErrorResult("No valid modules found for the specified files")
-        }
+            if (module == null) {
+                target.result = skippedResult(target.requestedPath, "No module found for file")
+                continue
+            }
 
-        val ktFiles = mutableListOf<KtFile>()
-        for ((module, files) in filesByModule) {
             if (!module.hasKotlinPluginEnabled()) {
-                return createErrorResult("No Kotlin plugin enabled for module: ${module.name}")
-            }
-            val converted = edtAction {
-                JavaToKotlinAction.Handler.convertFiles(
-                    files = files, project = project, module = module,
-                    enableExternalCodeProcessing = true, askExternalCodeProcessing = false
+                target.result = skippedResult(
+                    target.requestedPath,
+                    "Module '${module.name}' does not have Kotlin plugin enabled"
                 )
+                continue
             }
-            ktFiles.addAll(converted)
+
+            targetsByModule.computeIfAbsent(module) { mutableListOf() }.add(target)
         }
 
-        return processConversionResults(project, ktFiles, preparation)
+        // Convert files module by module
+        for ((module, targets) in targetsByModule) {
+            try {
+                val javaFiles = targets.mapNotNull { it.psiJavaFile }
+                val converted = edtAction {
+                    JavaToKotlinAction.Handler.convertFiles(
+                        files = javaFiles, project = project, module = module,
+                        enableExternalCodeProcessing = true, askExternalCodeProcessing = false
+                    )
+                }
+
+                val targetsByExpectedKotlinPath = targets.mapNotNull { target ->
+                    target.expectedKotlinPath?.let {
+                        it to target
+                    }
+                }.toMap()
+
+                val remainingConverted = converted.toMutableList()
+                for ((expectedKotlinPath, target) in targetsByExpectedKotlinPath) {
+                    val matchingKtFile = remainingConverted.firstOrNull { ktFile ->
+                        ktFile.virtualFile?.path == expectedKotlinPath
+                    } ?: continue
+
+                    updateSuccessfulResult(project, target, matchingKtFile)
+                    remainingConverted.remove(matchingKtFile)
+                }
+
+                for (target in targets) {
+                    if (target.result.status != ConversionStatus.CONVERTED) {
+                        target.result = failedResult(
+                            target.requestedPath,
+                            "Conversion did not produce a Kotlin file"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                LOG.error("Conversion failed for module ${module.name}", e)
+                // Mark all files in this module as failed
+                for (target in targets) {
+                    target.result = failedResult(target.requestedPath, "Conversion error: ${e.message}")
+                }
+            }
+        }
+
+        return createFinalResult(preparation.targets)
     }
 
     /**
@@ -223,73 +282,113 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         }
     }
 
-    /**
-     * Processes the conversion results and creates the tool response.
-     */
-    private suspend fun processConversionResults(
+    private suspend fun updateSuccessfulResult(
         project: Project,
-        ktFiles: List<KtFile>,
-        preparation: ConversionPreparation
-    ): ToolCallResult {
-        val convertedInfoList = mutableListOf<ConvertedFileInfo>()
+        target: ConversionTarget,
+        ktFile: KtFile
+    ) {
+        val virtualFile = ktFile.virtualFile ?: return
+        val kotlinRelativePath = getRelativePath(project, virtualFile)
 
-        for ((index, ktFile) in ktFiles.withIndex()) {
-            val virtualFile = ktFile.virtualFile ?: continue
-            val originalPath = preparation.filePaths.getOrNull(index) ?: "unknown"
-            val relativePath = getRelativePath(project, virtualFile)
-
-            val lineCount = suspendingReadAction {
-                ktFile.containingFile.text?.lines()?.size ?: 0
-            }
-
-            val originalJavaPath = preparation.javaFiles.getOrNull(index)
-                ?.let { it.virtualFile?.path }
-
-            val javaStillExists = originalJavaPath?.let {
-                VirtualFileManager.getInstance().findFileByUrl("file://$it") != null
-            } ?: false
-
-            convertedInfoList.add(
-                ConvertedFileInfo(
-                    originalJavaFile = originalPath,
-                    newKotlinFile = relativePath,
-                    linesConverted = lineCount,
-                    deleted = !javaStillExists
-                )
-            )
-
-            LOG.info("Successfully converted $originalPath to $relativePath")
+        val lineCount = suspendingReadAction {
+            ktFile.containingFile.text?.lines()?.size ?: 0
         }
 
-        if (convertedInfoList.isEmpty()) {
-            return createErrorResult("Conversion completed but no Kotlin files were created")
-        }
+        // Check if original Java file was deleted (use the requested path to resolve the original input).
+        val javaVirtualFile = PsiUtils.resolveVirtualFileAnywhere(project, target.requestedPath)
+        val javaStillExists = javaVirtualFile != null
 
-        return createJsonResult(
-            JavaToKotlinConversionResult(
-                success = true,
-                convertedFiles = convertedInfoList,
-                message = "Successfully converted ${convertedInfoList.size} Java file(s) to Kotlin"
+        target.result = FileConversionResult(
+            requestedPath = target.requestedPath,
+            status = ConversionStatus.CONVERTED,
+            kotlinFile = kotlinRelativePath,
+            linesConverted = lineCount,
+            javaFileDeleted = !javaStillExists
+        )
+
+        LOG.info("Successfully converted ${target.requestedPath} to $kotlinRelativePath")
+    }
+
+    /**
+     * Creates the final result with summary statistics.
+     */
+    private fun createFinalResult(
+        targets: List<ConversionTarget>
+    ): ConversionExecutionResult {
+        val fileResults = targets.map { it.result }
+        val converted = fileResults.count { it.status == ConversionStatus.CONVERTED }
+        val skipped = fileResults.count { it.status == ConversionStatus.SKIPPED }
+        val failed = fileResults.count { it.status == ConversionStatus.FAILED }
+
+        val result = JavaToKotlinConversionResult(
+            files = fileResults,
+            summary = ConversionSummary(
+                totalRequested = targets.size,
+                converted = converted,
+                skipped = skipped,
+                failed = failed
             )
         )
+
+        return ConversionExecutionResult(
+            result = createJsonResult(result),
+            summary = result.summary
+        )
     }
+
+    private fun skippedResult(requestedPath: String, reason: String) = FileConversionResult(
+        requestedPath = requestedPath,
+        status = ConversionStatus.SKIPPED,
+        reason = reason
+    )
+
+    private fun failedResult(requestedPath: String, reason: String) = FileConversionResult(
+        requestedPath = requestedPath,
+        status = ConversionStatus.FAILED,
+        reason = reason
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RESULT DATA CLASSES
 // ═══════════════════════════════════════════════════════════════════════════
 
-@Serializable
-data class JavaToKotlinConversionResult(
-    val success: Boolean,
-    val convertedFiles: List<ConvertedFileInfo>,
-    val message: String
+private data class ConversionExecutionResult(
+    val result: ToolCallResult,
+    val summary: ConversionSummary
 )
 
 @Serializable
-data class ConvertedFileInfo(
-    val originalJavaFile: String,
-    val newKotlinFile: String,
-    val linesConverted: Int,
-    val deleted: Boolean
+enum class ConversionStatus {
+    CONVERTED,  // Successfully converted to Kotlin
+    SKIPPED,    // Validation failed (not found, not Java, no module, etc.)
+    FAILED      // Conversion attempted but threw exception
+}
+
+@Serializable
+data class FileConversionResult(
+    val requestedPath: String,              // Original path from request
+    val status: ConversionStatus,
+
+    // Success fields (only when status == CONVERTED)
+    val kotlinFile: String? = null,         // Relative path to new .kt file
+    val linesConverted: Int? = null,        // Line count
+    val javaFileDeleted: Boolean? = null,   // Whether .java was deleted
+
+    // Failure fields (only when status != CONVERTED)
+    val reason: String? = null              // Why it failed/was skipped
+)
+
+@Serializable
+data class JavaToKotlinConversionResult(
+    val files: List<FileConversionResult>,
+    val summary: ConversionSummary
+)
+
+@Serializable
+data class ConversionSummary(
+    val totalRequested: Int,
+    val converted: Int,
+    val skipped: Int,
+    val failed: Int
 )
