@@ -19,7 +19,7 @@ import org.jetbrains.kotlin.psi.KtFile
 /**
  * Tool for converting Java files to Kotlin using IntelliJ's built-in J2K (Java-to-Kotlin) converter.
  *
- * This tool uses he Kotlin plugin's conversion handler (`JavaToKotlinAction.Handler`)
+ * This tool uses the Kotlin plugin's conversion handler (`JavaToKotlinAction.Handler`)
  * to avoid compile-time dependencies and UI dialogs. It follows a two-phase approach:
  *
  * 1. **Phase 1 (Background - Read Action)**: Resolve and validate Java files
