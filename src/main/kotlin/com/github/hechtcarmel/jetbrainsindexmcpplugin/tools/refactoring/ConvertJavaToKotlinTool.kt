@@ -10,10 +10,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.flatMapMerge
-import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.jetbrains.kotlin.idea.actions.JavaToKotlinAction
@@ -183,43 +179,33 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
      * Phase 2: Invokes the J2K converter `JavaToKotlinAction.Handler.convertFiles()`
      * directly, bypassing the UI action system to avoid dialogs.
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun performConversion(
         project: Project,
         preparation: ConversionPreparation
     ): ToolCallResult {
-        try {
-            val filesByModule = preparation.javaFiles.mapNotNull { file ->
-                getModuleForConversion(file)?.let { module -> module to file }
-            }.groupBy({ it.first }, { it.second })
+        val filesByModule = preparation.javaFiles.mapNotNull { file ->
+            getModuleForConversion(file)?.let { module -> module to file }
+        }.groupBy({ it.first }, { it.second })
 
-            if (filesByModule.isEmpty()) {
-                return createErrorResult("No valid modules found for the specified files")
-            }
-
-            val ktFiles = filesByModule.entries.asFlow()
-                .flatMapMerge { (module, files) ->
-                    if (!module.hasKotlinPluginEnabled()) {
-                        throw IllegalStateException("No Kotlin plugin enabled for module: ${module.name}")
-                    }
-                    
-                    edtAction {
-                        JavaToKotlinAction.Handler.convertFiles(
-                            files = files,
-                            project = project,
-                            module = module,
-                            enableExternalCodeProcessing = true,
-                            askExternalCodeProcessing = false
-                        ).asFlow()
-                    }
-                }
-                .toList()
-
-            return processConversionResults(project, ktFiles, preparation)
-        } catch (e: Exception) {
-            LOG.error("Conversion failed", e)
-            return createErrorResult("Conversion failed: ${e.message}")
+        if (filesByModule.isEmpty()) {
+            return createErrorResult("No valid modules found for the specified files")
         }
+
+        val ktFiles = mutableListOf<KtFile>()
+        for ((module, files) in filesByModule) {
+            if (!module.hasKotlinPluginEnabled()) {
+                return createErrorResult("No Kotlin plugin enabled for module: ${module.name}")
+            }
+            val converted = edtAction {
+                JavaToKotlinAction.Handler.convertFiles(
+                    files = files, project = project, module = module,
+                    enableExternalCodeProcessing = true, askExternalCodeProcessing = false
+                )
+            }
+            ktFiles.addAll(converted)
+        }
+
+        return processConversionResults(project, ktFiles, preparation)
     }
 
     /**
