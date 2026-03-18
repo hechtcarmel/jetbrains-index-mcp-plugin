@@ -238,6 +238,25 @@ class ConvertJavaToKotlinModelsUnitTest : TestCase() {
         assertEquals(50, deserialized.files[4].linesConverted)
     }
 
+    fun testJavaToKotlinConversionResultPreservesDuplicateRequestedPaths() {
+        val files = listOf(
+            FileConversionResult("Duplicate.java", ConversionStatus.SKIPPED, reason = "File not found"),
+            FileConversionResult("Duplicate.java", ConversionStatus.SKIPPED, reason = "File not found")
+        )
+        val summary = ConversionSummary(2, 0, 2, 0)
+
+        val result = JavaToKotlinConversionResult(files = files, summary = summary)
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<JavaToKotlinConversionResult>(serialized)
+
+        assertEquals(2, deserialized.files.size)
+        assertEquals("Duplicate.java", deserialized.files[0].requestedPath)
+        assertEquals("Duplicate.java", deserialized.files[1].requestedPath)
+        assertEquals(2, deserialized.summary.totalRequested)
+        assertEquals(2, deserialized.summary.skipped)
+    }
+
     fun testJavaToKotlinConversionResultWithSpecialCharacters() {
         val fileResult = FileConversionResult(
             requestedPath = "My\$Special-Class.java",

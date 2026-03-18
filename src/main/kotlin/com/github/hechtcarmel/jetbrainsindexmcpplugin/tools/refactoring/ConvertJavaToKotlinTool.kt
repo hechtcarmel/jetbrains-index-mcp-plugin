@@ -100,6 +100,11 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         val targets: List<ConversionTarget>
     )
 
+    private data class ResolvedInput(
+        val requestedPath: String,
+        val virtualFile: com.intellij.openapi.vfs.VirtualFile?
+    )
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 
@@ -117,12 +122,15 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         // PHASE 1: BACKGROUND - Resolve and validate Java files
         // Note: File resolution happens outside read action to avoid VFS refresh under read lock
         // ═══════════════════════════════════════════════════════════════════════
-        val virtualFiles = filesList.mapNotNull { path ->
-            PsiUtils.resolveVirtualFileAnywhere(project, path)?.let { path to it }
-        }.toMap()
+        val resolvedInputs = filesList.map { path ->
+            ResolvedInput(
+                requestedPath = path,
+                virtualFile = PsiUtils.resolveVirtualFileAnywhere(project, path)
+            )
+        }
 
         val preparation = suspendingReadAction {
-            prepareJavaFiles(project, virtualFiles, filesList)
+            prepareJavaFiles(project, resolvedInputs)
         }
 
         // If no files can be converted, return structured results immediately.
@@ -151,21 +159,19 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
      * Phase 1: Validates Java files from pre-resolved virtual files.
      * Must run in read action.
      *
-     * @param virtualFiles Map of original path -> VirtualFile (pre-resolved outside read action)
-     * @param allRequestedFiles List of all requested file paths for tracking
+     * @param resolvedInputs Request inputs paired with pre-resolved virtual files.
      */
     private fun prepareJavaFiles(
         project: Project,
-        virtualFiles: Map<String, com.intellij.openapi.vfs.VirtualFile>,
-        allRequestedFiles: List<String>
+        resolvedInputs: List<ResolvedInput>
     ): ConversionPreparation {
         val psiManager = PsiManager.getInstance(project)
-        val targets = allRequestedFiles.map { requestedPath -> ConversionTarget(requestedPath = requestedPath) }
-        val targetsByPath = targets.associateBy { it.requestedPath }
+        val targets = resolvedInputs.map { input -> ConversionTarget(requestedPath = input.requestedPath) }
 
         // Validate each found file
-        for ((requestedPath, virtualFile) in virtualFiles) {
-            val target = targetsByPath[requestedPath] ?: continue
+        for ((target, input) in targets.zip(resolvedInputs)) {
+            val requestedPath = target.requestedPath
+            val virtualFile = input.virtualFile ?: continue
             val psiFile = psiManager.findFile(virtualFile)
             if (psiFile == null) {
                 LOG.warn("PSI file not found: $requestedPath")

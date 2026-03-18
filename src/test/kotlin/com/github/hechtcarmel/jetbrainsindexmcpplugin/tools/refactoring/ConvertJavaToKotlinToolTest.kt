@@ -11,9 +11,8 @@ import kotlinx.serialization.json.buildJsonObject
 /**
  * Platform tests for ConvertJavaToKotlinTool.
  *
- * These tests verify the tool's behavior with actual Java files and require
- * both Java and Kotlin plugins to be available. Tests are skipped gracefully
- * if the Kotlin plugin is not present.
+ * These tests focus on request validation, schema shape, and structured result
+ * behavior that can be verified without requiring a full successful J2K conversion.
  */
 class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
     private val json = Json {
@@ -93,6 +92,28 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         assertEquals("File not found", payload.files[1].reason)
         assertEquals(ConversionStatus.SKIPPED, payload.files[2].status)
         assertEquals("File not found", payload.files[2].reason)
+    }
+
+    fun testDuplicateMissingFilesAreReportedSeparately() = runBlocking {
+        val tool = ConvertJavaToKotlinTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("files", buildJsonArray {
+                add(JsonPrimitive("duplicate.java"))
+                add(JsonPrimitive("duplicate.java"))
+            })
+        })
+
+        assertFalse("Duplicate skipped entries should still return structured results", result.isError)
+
+        val payload = decodeResult(result)
+        assertEquals(2, payload.summary.totalRequested)
+        assertEquals(0, payload.summary.converted)
+        assertEquals(2, payload.summary.skipped)
+        assertEquals(0, payload.summary.failed)
+        assertEquals(2, payload.files.size)
+        assertEquals(listOf("duplicate.java", "duplicate.java"), payload.files.map { it.requestedPath })
+        assertTrue(payload.files.all { it.status == ConversionStatus.SKIPPED })
+        assertTrue(payload.files.all { it.reason == "File not found" })
     }
 
     // Schema Validation Tests
