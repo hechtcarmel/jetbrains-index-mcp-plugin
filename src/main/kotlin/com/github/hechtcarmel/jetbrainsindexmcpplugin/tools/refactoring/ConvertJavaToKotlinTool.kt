@@ -295,19 +295,40 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         module: Module,
         targets: List<ConversionTarget>
     ) {
-        val defaultMethod = api.handlerClass.declaredMethods.firstOrNull {
+        val defaultMethods = api.handlerClass.declaredMethods.filter {
             it.name == "convertFiles\$default"
-        } ?: throw IllegalStateException("convertFiles\$default not found on ${api.handlerClass.name}")
+        }
+
+        if (defaultMethods.isEmpty()) {
+            throw IllegalStateException("convertFiles\$default not found on ${api.handlerClass.name}")
+        }
+
+        // The Handler class has two convertFiles() overloads:
+        //   - 7 real params (with forceUsingOldJ2k) → $default has 10 params
+        //   - 6 real params (without forceUsingOldJ2k) → $default has 9 params
+        // Prefer the 10-param variant; fall back to 9-param if absent.
+        val tenParamMethod = defaultMethods.firstOrNull { it.parameterCount == 10 }
+        val nineParamMethod = defaultMethods.firstOrNull { it.parameterCount == 9 }
 
         val converted = edtAction {
             try {
-                // $default params: instance, files, project, module, enableExternal, askExternal,
-                //   forceUsingOldJ2k(defaulted), settings(defaulted), mask, marker
-                defaultMethod.invoke(
-                    null, api.instance, javaFiles, project, module,
-                    true, false, false, null,
-                    96, null // mask: bit 5 | bit 6 (forceUsingOldJ2k, settings)
-                ) as? List<*> ?: emptyList<Any>()
+                if (tenParamMethod != null) {
+                    // $default params: instance, files, project, module, enableExternal, askExternal,
+                    //   forceUsingOldJ2k(defaulted), settings(defaulted), mask, marker
+                    tenParamMethod.invoke(
+                        null, api.instance, javaFiles, project, module,
+                        true, false, false, null,
+                        96, null // mask: bit 5 | bit 6 (forceUsingOldJ2k, settings)
+                    ) as? List<*> ?: emptyList<Any>()
+                } else {
+                    // $default params: instance, files, project, module, enableExternal, askExternal,
+                    //   settings(defaulted), mask, marker
+                    nineParamMethod!!.invoke(
+                        null, api.instance, javaFiles, project, module,
+                        true, false, null,
+                        32, null // mask: bit 5 (settings)
+                    ) as? List<*> ?: emptyList<Any>()
+                }
             } catch (e: InvocationTargetException) {
                 throw e.cause ?: e
             }
@@ -375,15 +396,16 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         module: Module,
         targets: List<ConversionTarget>
     ) {
+        // 13 params: instance, files, project, module, enableExternal, askExternal,
+        //   bodyFilter, settings, pre, post, continuation, mask, marker
         val defaultMethod = api.handlerClass.declaredMethods.firstOrNull {
-            it.name == "convertFiles\$default"
-        } ?: throw IllegalStateException("convertFiles\$default not found on ${api.handlerClass.name}")
+            it.name == "convertFiles\$default" && it.parameterCount == 13
+        } ?: throw IllegalStateException(
+            "convertFiles\$default with 13 params not found on ${api.handlerClass.name}"
+        )
 
         suspendCoroutineUninterceptedOrReturn<Any?> { uCont ->
             try {
-                // $default params: instance, files, project, module, enableExternal, askExternal,
-                //   bodyFilter(defaulted), settings(defaulted), pre(defaulted), post(defaulted),
-                //   continuation, mask, marker
                 defaultMethod.invoke(
                     null, api.instance, javaFiles, project, module,
                     true, false, null, null, null, null,
