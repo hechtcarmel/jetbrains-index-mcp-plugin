@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-03-19
+### Fixed
+- **`ide_convert_java_to_kotlin` — IntelliJ 2026.1 compatibility** — The `JavaToKotlinAction.Handler` class was extracted to a top-level `JavaToKotlinActionHandler` in IntelliJ 2026.1 (KTIJ-37205), causing `NoClassDefFoundError` at runtime. The converter now uses reflection to detect and call the appropriate API: new `JavaToKotlinActionHandler` (2026.1+, suspend) or old `JavaToKotlinAction.Handler` (2025.x, synchronous). This follows the same reflection pattern used by all language-specific handlers in the plugin.
+
 ## [4.4.0] - 2026-03-18
 ### Added
 - **`ide_convert_java_to_kotlin` tool** — Convert Java files to Kotlin using IntelliJ's built-in J2K (Java-to-Kotlin) converter. Supports full file conversion with automatic formatting, import optimization, and code cleanup. Handles classes, interfaces, enums, methods, fields, generics, and Java 8+ features (lambdas, streams, method references). Returns list of created .kt files with line counts and any conversion warnings. Original Java files are automatically deleted after successful conversion. Requires both Java and Kotlin plugins. Disabled by default — enable in Settings → Tools → Index MCP Server.
