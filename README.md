@@ -52,6 +52,7 @@ These tools activate based on installed language plugins:
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
+- **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
 
 ### Why Use This Plugin?
 
