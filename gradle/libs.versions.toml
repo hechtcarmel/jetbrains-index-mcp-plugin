@@ -16,7 +16,7 @@ mockk = "1.14.6"
 changelog = "2.4.0"
 intelliJPlatform = "2.10.5"
 kotlin = "2.1.20"
-kotlinSerialization = "2.1.20"
+kotlinSerialization = "2.2.21"
 kover = "0.9.3"
 qodana = "2025.2.2"
 
