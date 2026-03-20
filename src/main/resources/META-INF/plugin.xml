@@ -52,6 +52,7 @@
 <ul>
     <li><b>Rename Refactoring</b> - Safe symbol renaming with automatic reference updates - works across ALL languages, fully headless</li>
     <li><b>Reformat Code</b> - Reformat using project code style with import optimization (disabled by default)</li>
+    <li><b>Optimize Imports</b> - Remove unused imports and organize remaining imports without reformatting (disabled by default)</li>
     <li><b>Safe Delete</b> - Remove code safely with usage checking (Java/Kotlin only)</li>
 </ul>
 
@@ -112,10 +113,7 @@ for detailed documentation and examples.</p>
     <depends optional="true" config-file="php-features.xml">com.jetbrains.php</depends>
 
     <!-- Optional Rust support (RustRover, IntelliJ Ultimate with Rust plugin, CLion) -->
-    <!-- Supports RustRover bundled plugin, official JetBrains plugin, and deprecated community plugin -->
     <depends optional="true" config-file="rust-features.xml">com.jetbrains.rust</depends>
-    <depends optional="true" config-file="rust-features-alt.xml">org.jetbrains.rust</depends>
-    <depends optional="true" config-file="rust-features-legacy.xml">org.rust.lang</depends>
 
     <resource-bundle>messages.McpBundle</resource-bundle>
 

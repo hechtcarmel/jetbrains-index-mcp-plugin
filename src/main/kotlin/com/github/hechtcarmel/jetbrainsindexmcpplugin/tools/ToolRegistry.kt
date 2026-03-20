@@ -16,6 +16,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTex
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
@@ -62,10 +63,15 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * - `ide_refactor_rename` - Rename symbol (works across ALL languages via RenameProcessor)
  * - `ide_reformat_code` - Reformat code using project code style (disabled by default)
+ * - `ide_optimize_imports` - Optimize imports without reformatting (disabled by default)
  *
  * ### Java-Specific Refactoring Tools (IntelliJ IDEA & Android Studio Only)
  *
  * - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
+ *
+ * ### Kotlin Conversion Tools (IntelliJ IDEA with Java & Kotlin Plugins)
+ *
+ * - `ide_convert_java_to_kotlin` - Convert Java files to Kotlin (requires both Java and Kotlin plugins, disabled by default)
  *
  * ## Custom Tool Registration
  *
@@ -183,6 +189,11 @@ class ToolRegistry {
             registerJavaRefactoringTools()
         }
 
+        // Kotlin conversion tools - only available when both Java and Kotlin plugins are present
+        if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
+            registerKotlinConversionTools()
+        }
+
         LOG.info("Registered ${tools.size} built-in MCP tools")
         logAvailableLanguages()
     }
@@ -225,6 +236,7 @@ class ToolRegistry {
         // Refactoring tools (universal - uses platform RenameProcessor)
         register(RenameSymbolTool())
         register(ReformatCodeTool())
+        register(OptimizeImportsTool())
 
         // Fast search tools (universal)
         register(FindClassTool())
@@ -298,6 +310,31 @@ class ToolRegistry {
                 register(tool)
             } catch (e: Exception) {
                 LOG.warn("Failed to register Java refactoring tool $className: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Registers Kotlin conversion tools.
+     *
+     * These tools use the Kotlin plugin's J2K (Java-to-Kotlin) converter APIs
+     * and are only available when both Java and Kotlin plugins are present.
+     *
+     * IMPORTANT: This method must only be called after checking that both
+     * [PluginDetectors.java.isAvailable] and [PluginDetectors.kotlin.isAvailable] are true.
+     */
+    private fun registerKotlinConversionTools() {
+        val conversionToolClasses = listOf(
+            "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ConvertJavaToKotlinTool"
+        )
+
+        for (className in conversionToolClasses) {
+            try {
+                val toolClass = Class.forName(className)
+                val tool = toolClass.getDeclaredConstructor().newInstance() as McpTool
+                register(tool)
+            } catch (e: Exception) {
+                LOG.warn("Failed to register Kotlin conversion tool $className: ${e.message}")
             }
         }
     }

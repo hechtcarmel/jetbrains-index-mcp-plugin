@@ -52,6 +52,7 @@ These tools activate based on installed language plugins:
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
+- **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
 
 ### Why Use This Plugin?
 
@@ -256,6 +257,7 @@ These tools activate based on available language plugins:
 
 | Tool | Description |
 |------|-------------|
+| `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
 | `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
@@ -266,8 +268,8 @@ These tools activate based on available language plugins:
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete |
-| Android Studio | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete |
+| IntelliJ IDEA | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete + Java→Kotlin |
+| Android Studio | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete + Java→Kotlin |
 | PyCharm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 | WebStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 | GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
@@ -282,7 +284,7 @@ These tools activate based on available language plugins:
 | CLion | ✓ 14 tools | - | ✓ rename + reformat |
 | DataGrip | ✓ 14 tools | - | ✓ rename + reformat |
 
-> **Note**: Navigation tools activate when language plugins are present. GoLand and RustRover have 4 navigation tools (no `ide_find_implementations` or `ide_find_super_methods` due to language semantics). PhpStorm has 5 (no `ide_file_structure`). The rename and reformat tools work across all languages.
+> **Note**: Navigation tools activate when language plugins are present. GoLand and RustRover have 4 navigation tools (no `ide_find_implementations` or `ide_find_super_methods` due to language semantics). PhpStorm has 5 (no `ide_file_structure`). The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 

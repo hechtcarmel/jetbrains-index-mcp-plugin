@@ -376,6 +376,7 @@ Tools are organized by IDE availability.
 - `ide_build_project` - Build project using IDE's build system (JPS, Gradle, Maven). Returns structured errors/warnings with file locations when available (null counts = no messages captured, not 0). Uses CompilationStatusListener for JPS builds and BuildProgressListener for Gradle/Maven builds. Supports workspace sub-project targeting via `project_path`. (disabled by default)
 - `ide_refactor_rename` - Rename a symbol across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages.
 - `ide_reformat_code` - Reformat code using project code style (.editorconfig, IDE settings). Supports optional import optimization and code rearrangement. (disabled by default)
+- `ide_optimize_imports` - Optimize imports (remove unused, organize) without reformatting code. Equivalent to IDE's Ctrl+Alt+O. (disabled by default)
 - `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
 - `ide_open_file` - Open a file in the editor with optional line/column navigation (disabled by default)
 
@@ -391,6 +392,9 @@ These activate based on available language plugins (Java, Python, JavaScript/Typ
 
 **Java/Kotlin-Only Refactoring Tools:**
 - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
+
+**Kotlin Conversion Tools:**
+- `ide_convert_java_to_kotlin` - Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Supports full file conversion with automatic formatting and import optimization. Handles classes, interfaces, methods, generics, Java 8+ features (lambdas, streams). Returns list of created .kt files and conversion warnings. Requires both Java and Kotlin plugins. (disabled by default)
 
 ### Multi-Language Architecture
 

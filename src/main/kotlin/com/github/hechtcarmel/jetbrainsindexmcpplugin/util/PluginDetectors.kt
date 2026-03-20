@@ -28,7 +28,12 @@ object PluginDetectors {
 
     val rust = PluginDetector(
         name = "Rust",
-        pluginIds = listOf("com.jetbrains.rust", "org.jetbrains.rust", "org.rust.lang", "com.intellij.rust"),
+        pluginIds = listOf("com.jetbrains.rust"),
         fallbackClass = "org.rust.lang.core.psi.RsFile"
+    )
+
+    val kotlin = PluginDetector(
+        name = "Kotlin",
+        pluginIds = listOf("org.jetbrains.kotlin")
     )
 }

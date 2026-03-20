@@ -39,8 +39,7 @@ import com.intellij.util.Processor
  *
  * ## Supported Plugin IDs
  *
- * - `org.jetbrains.rust` - New official JetBrains plugin (RustRover, IDEA Ultimate, CLion)
- * - `org.rust.lang` - Deprecated community intellij-rust plugin
+ * - `com.jetbrains.rust` - Official JetBrains Rust plugin (RustRover, IDEA Ultimate, CLion)
  */
 object RustHandlers {
 

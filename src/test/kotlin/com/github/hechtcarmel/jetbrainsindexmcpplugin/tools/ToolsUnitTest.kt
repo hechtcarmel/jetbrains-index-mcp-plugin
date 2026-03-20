@@ -20,6 +20,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHiera
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
@@ -439,6 +440,35 @@ class ToolsUnitTest : TestCase() {
         val required = schema[SchemaConstants.REQUIRED]
         assertNotNull("Should have required array", required)
         assertTrue("Required should include 'file'", required.toString().contains("file"))
+    }
+
+    fun testOptimizeImportsToolSchema() {
+        val tool = OptimizeImportsTool()
+
+        assertEquals(ToolNames.OPTIMIZE_IMPORTS, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+        assertTrue("Required should include 'file'", required.toString().contains("file"))
+    }
+
+    fun testOptimizeImportsToolIsRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val tool = registry.getTool(ToolNames.OPTIMIZE_IMPORTS)
+        assertNotNull("ide_optimize_imports should be registered", tool)
+        assertEquals(ToolNames.OPTIMIZE_IMPORTS, tool?.name)
     }
 
     fun testReformatCodeToolIsRegistered() {

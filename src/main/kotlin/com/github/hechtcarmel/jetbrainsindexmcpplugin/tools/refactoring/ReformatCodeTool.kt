@@ -195,8 +195,11 @@ class ReformatCodeTool : AbstractMcpTool() {
      * Executes the reformat operation using IntelliJ's processor chaining.
      * Must run on EDT.
      *
-     * Note: [ReformatCodeProcessor.run] internally handles [WriteCommandAction],
-     * so explicit wrapping is unnecessary. Undo (Ctrl+Z) works automatically.
+     * Uses [AbstractLayoutCodeProcessor.runWithoutProgress] instead of
+     * [AbstractLayoutCodeProcessor.run] because `run()` dispatches via `ProgressManager`
+     * as a background task in non-headless mode, returning before processing completes.
+     * `runWithoutProgress()` executes synchronously, ensuring the document is fully
+     * updated before we commit and save. Undo (Ctrl+Z) works automatically.
      */
     private fun executeReformat(
         project: Project,
@@ -218,6 +221,6 @@ class ReformatCodeTool : AbstractMcpTool() {
             processor = RearrangeCodeProcessor(processor)
         }
 
-        processor.run()
+        processor.runWithoutProgress()
     }
 }

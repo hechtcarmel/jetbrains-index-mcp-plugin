@@ -44,6 +44,7 @@ These tools activate based on available language plugins:
 
 | Tool | Description |
 |------|-------------|
+| `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using the IDE converter *(disabled by default)* |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
 ---
@@ -75,6 +76,7 @@ These tools activate based on available language plugins:
   - [ide_find_super_methods](#ide_find_super_methods)
   - [ide_file_structure](#ide_file_structure)
 - [Java-Specific Refactoring Tools](#java-specific-refactoring-tools)
+  - [ide_convert_java_to_kotlin](#ide_convert_java_to_kotlin)
   - [ide_refactor_safe_delete](#ide_refactor_safe_delete)
 - [Error Handling](#error-handling)
 
@@ -1399,6 +1401,91 @@ Get the hierarchical structure of a source file, similar to the IDE's Structure 
 ## Java-Specific Refactoring Tools
 
 These tools require the Java plugin and are only available in **IntelliJ IDEA** and **Android Studio**.
+
+`ide_convert_java_to_kotlin` also requires the Kotlin plugin and is disabled by default.
+
+### ide_convert_java_to_kotlin
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Convert one or more Java files to Kotlin using IntelliJ's built-in J2K (Java-to-Kotlin) converter.
+
+**Use when:**
+- Migrating Java source files to Kotlin
+- Converting a batch of related Java files in one request
+- Letting the IDE handle syntax conversion, formatting, and import cleanup
+
+**Features:**
+- Supports batch conversion via a `files` array
+- Uses the IDE's built-in converter instead of text transformation
+- Automatically formats converted Kotlin files and optimizes imports
+- Deletes original `.java` files after successful conversion
+- Returns per-file results plus a summary of converted, skipped, and failed files
+
+**Requirements:**
+- Java plugin available
+- Kotlin plugin enabled
+- Files must belong to a module with Kotlin support enabled
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | array of strings | Yes | Java file paths relative to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_convert_java_to_kotlin",
+    "arguments": {
+      "files": [
+        "src/main/java/com/example/User.java",
+        "src/main/java/com/example/UserService.java"
+      ]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "files": [
+    {
+      "requestedPath": "src/main/java/com/example/User.java",
+      "status": "CONVERTED",
+      "kotlinFile": "src/main/java/com/example/User.kt",
+      "linesConverted": 42,
+      "javaFileDeleted": true
+    },
+    {
+      "requestedPath": "src/main/java/com/example/UserService.java",
+      "status": "SKIPPED",
+      "reason": "Module 'app' does not have Kotlin plugin enabled"
+    }
+  ],
+  "summary": {
+    "totalRequested": 2,
+    "converted": 1,
+    "skipped": 1,
+    "failed": 0
+  }
+}
+```
+
+**Status Values:**
+- `CONVERTED` - Successfully converted to a new `.kt` file
+- `SKIPPED` - File could not be attempted (for example not found, not a Java file, or no Kotlin-enabled module)
+- `FAILED` - Conversion was attempted but did not produce a Kotlin file or hit a converter error
+
+**Notes:**
+- The tool returns structured per-file results in the same order as the input list
+- Duplicate paths are reported separately
+- Some advanced Java constructs may still need manual cleanup after conversion
 
 ### ide_refactor_safe_delete
 
