@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-03-21
+### Added
+- **`ide_move_file` tool** — Move files to a new directory using the IDE's refactoring engine. Enabled by default.
+
 ## [4.4.1] - 2026-03-19
 ### Fixed
 - **2026.1 compatability issues** 

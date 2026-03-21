@@ -28,6 +28,7 @@ class ConstantsUnitTest : TestCase() {
     fun testToolNamesRefactoringTools() {
         assertEquals("ide_refactor_rename", ToolNames.REFACTOR_RENAME)
         assertEquals("ide_refactor_safe_delete", ToolNames.REFACTOR_SAFE_DELETE)
+        assertEquals("ide_move_file", ToolNames.REFACTOR_MOVE)
         assertEquals("ide_reformat_code", ToolNames.REFORMAT_CODE)
     }
 
@@ -62,6 +63,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.BUILD_PROJECT,
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
+            ToolNames.REFACTOR_MOVE,
             ToolNames.REFORMAT_CODE,
             ToolNames.OPTIMIZE_IMPORTS,
             ToolNames.CONVERT_JAVA_TO_KOTLIN,
@@ -104,6 +106,8 @@ class ConstantsUnitTest : TestCase() {
     }
 
     fun testParamNamesRefactoring() {
+        assertEquals("destination", ParamNames.DESTINATION)
+        assertEquals("search_for_references", ParamNames.SEARCH_FOR_REFERENCES)
         assertEquals("newName", ParamNames.NEW_NAME)
         assertEquals("methodName", ParamNames.METHOD_NAME)
         assertEquals("variableName", ParamNames.VARIABLE_NAME)

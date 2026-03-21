@@ -4,13 +4,13 @@ description: >
   Guide for using JetBrains IDE Index MCP tools for code navigation, refactoring, and analysis.
   TRIGGER: When ANY of these MCP tools are available in the current session: ide_find_references,
   ide_find_definition, ide_find_class, ide_find_file, ide_search_text, ide_diagnostics,
-  ide_index_status, ide_sync_files, ide_refactor_rename, ide_type_hierarchy, ide_call_hierarchy,
-  ide_find_implementations, ide_find_symbol, ide_find_super_methods, ide_file_structure,
-  ide_refactor_safe_delete, ide_reformat_code, ide_build_project, ide_read_file,
-  ide_get_active_file, ide_open_file.
+  ide_index_status, ide_sync_files, ide_refactor_rename, ide_move_file, ide_type_hierarchy,
+  ide_call_hierarchy, ide_find_implementations, ide_find_symbol, ide_find_super_methods,
+  ide_file_structure, ide_refactor_safe_delete, ide_reformat_code, ide_build_project,
+  ide_read_file, ide_get_active_file, ide_open_file.
   Use when performing code navigation (find usages, go to definition, find class),
   code analysis (diagnostics, type hierarchy, call hierarchy),
-  refactoring (rename, safe delete, reformat),
+  refactoring (rename, move, safe delete, reformat),
   or searching code (text search, symbol search, file search).
   Prefer IDE tools over grep/find/sed for ALL semantic code operations.
 ---
@@ -33,6 +33,7 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 | Find a file by name | `ide_find_file` | `Glob` is fine for simple patterns |
 | Search for a word in code | `ide_search_text` | `Grep` is fine for regex patterns (IDE tool is exact-word only) |
 | Rename a symbol across project | `ide_refactor_rename` | Never - sed/replace breaks code |
+| Move a file to another directory | `ide_move_file` | Never - mv/git mv breaks imports |
 | Check for errors in a file | `ide_diagnostics` | Never - no equivalent |
 | Understand class hierarchy | `ide_type_hierarchy` | Never - no equivalent |
 | Find who calls a method | `ide_call_hierarchy` | Never - grep misses indirect calls |
@@ -87,8 +88,9 @@ Omit `paths` to sync the entire project.
 
 ### "I need to refactor"
 1. `ide_refactor_rename` - rename symbol + all references atomically
-2. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin only)
-3. `ide_reformat_code` - apply project code style (disabled by default)
+2. `ide_move_file` - move file + update all imports/references
+3. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin only)
+4. `ide_reformat_code` - apply project code style (disabled by default)
 
 ### "I need to check for problems"
 1. `ide_diagnostics` - compiler errors, warnings, quick fixes
@@ -106,11 +108,13 @@ Omit `paths` to sync the entire project.
 
 2. **Using sed/replace instead of `ide_refactor_rename`**: Text replacement breaks code. IDE rename updates all references, getters/setters, overrides, test classes, imports.
 
-3. **Forgetting to check index status**: If IDE is indexing (dumb mode), most tools error. Check `ide_index_status` first if a tool fails unexpectedly.
+3. **Using mv/git mv instead of `ide_move_file`**: File system moves don't update imports, package declarations, or references. IDE move handles all of this automatically.
 
-4. **Using 0-based line/column**: All IDE tools use **1-based**. Line 5 in file = `line: 5`.
+4. **Forgetting to check index status**: If IDE is indexing (dumb mode), most tools error. Check `ide_index_status` first if a tool fails unexpectedly.
 
-5. **Passing absolute file paths**: Use relative paths. `src/main/App.java`, not `/Users/me/project/src/main/App.java`.
+5. **Using 0-based line/column**: All IDE tools use **1-based**. Line 5 in file = `line: 5`.
+
+6. **Passing absolute file paths**: Use relative paths. `src/main/App.java`, not `/Users/me/project/src/main/App.java`.
 
 6. **Not syncing after external file changes**: After creating files via Write tool, call `ide_sync_files` before searching.
 

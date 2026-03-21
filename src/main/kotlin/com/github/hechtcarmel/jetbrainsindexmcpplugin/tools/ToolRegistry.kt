@@ -16,6 +16,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTex
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
@@ -62,6 +63,7 @@ import java.util.concurrent.ConcurrentHashMap
  * ### Universal Refactoring Tools
  *
  * - `ide_refactor_rename` - Rename symbol (works across ALL languages via RenameProcessor)
+ * - `ide_move_file` - Move file to a new directory with reference updates
  * - `ide_reformat_code` - Reformat code using project code style (disabled by default)
  * - `ide_optimize_imports` - Optimize imports without reformatting (disabled by default)
  *
@@ -233,8 +235,9 @@ class ToolRegistry {
         register(SyncFilesTool())
         register(BuildProjectTool())
 
-        // Refactoring tools (universal - uses platform RenameProcessor)
+        // Refactoring tools (universal - uses platform APIs)
         register(RenameSymbolTool())
+        register(MoveFileTool())
         register(ReformatCodeTool())
         register(OptimizeImportsTool())
 

@@ -20,6 +20,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHiera
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
@@ -662,6 +663,49 @@ class ToolsUnitTest : TestCase() {
         assertEquals(ToolNames.SEARCH_TEXT, searchTextTool?.name)
     }
 
+
+    // ── MoveFileTool tests ──────────────────────────────────────────────────────
+
+    fun testMoveFileToolSchema() {
+        val tool = MoveFileTool()
+
+        assertEquals(ToolNames.REFACTOR_MOVE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have destination property", properties?.get(ParamNames.DESTINATION))
+        assertNotNull("Should have search_for_references property", properties?.get(ParamNames.SEARCH_FOR_REFERENCES))
+
+        val required = schema[SchemaConstants.REQUIRED]
+        assertNotNull("Should have required array", required)
+        assertTrue("Required should include 'file'", required.toString().contains("file"))
+        assertTrue("Required should include 'destination'", required.toString().contains("destination"))
+    }
+
+    fun testMoveFileToolIsRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val tool = registry.getTool(ToolNames.REFACTOR_MOVE)
+        assertNotNull("ide_move_file should be registered", tool)
+        assertEquals(ToolNames.REFACTOR_MOVE, tool?.name)
+    }
+
+    fun testMoveFileToolDescriptionIncludesExamples() {
+        val tool = MoveFileTool()
+        val description = tool.description
+
+        assertTrue("Description should mention file parameter", description.contains("file"))
+        assertTrue("Description should mention destination parameter", description.contains("destination"))
+        assertTrue("Description should mention references", description.contains("references"))
+    }
 
     // ── matchMode enum schema tests ────────────────────────────────────────────
 

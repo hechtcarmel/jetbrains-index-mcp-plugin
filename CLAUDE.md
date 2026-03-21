@@ -375,6 +375,7 @@ Tools are organized by IDE availability.
 - `ide_sync_files` - Force sync IDE's virtual file system and PSI cache with external file changes
 - `ide_build_project` - Build project using IDE's build system (JPS, Gradle, Maven). Returns structured errors/warnings with file locations when available (null counts = no messages captured, not 0). Uses CompilationStatusListener for JPS builds and BuildProgressListener for Gradle/Maven builds. Supports workspace sub-project targeting via `project_path`. (disabled by default)
 - `ide_refactor_rename` - Rename a symbol across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages.
+- `ide_move_file` - Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project. Supports automatic directory creation and optional reference search toggle.
 - `ide_reformat_code` - Reformat code using project code style (.editorconfig, IDE settings). Supports optional import optimization and code rearrangement. (disabled by default)
 - `ide_optimize_imports` - Optimize imports (remove unused, organize) without reformatting code. Equivalent to IDE's Ctrl+Alt+O. (disabled by default)
 - `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
