@@ -25,6 +25,7 @@ These tools work in **every** JetBrains IDE:
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
 | `ide_refactor_rename` | Rename symbol with reference updates (all languages) | Enabled |
+| `ide_move_file` | Move file to new directory with reference updates (all languages) | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
 
 ### Extended Tools (Language-Aware)
@@ -67,6 +68,7 @@ These tools activate based on available language plugins:
   - [ide_open_file](#ide_open_file)
 - [Refactoring Tools](#refactoring-tools)
   - [ide_refactor_rename](#ide_refactor_rename)
+  - [ide_move_file](#ide_move_file)
   - [ide_reformat_code](#ide_reformat_code)
 - [Extended Tools (Language-Aware)](#extended-tools-language-aware)
   - [ide_type_hierarchy](#ide_type_hierarchy)
@@ -782,6 +784,7 @@ Renames a symbol and updates all references across the project. This tool uses I
 | `column` | integer | Yes | 1-based column number |
 | `newName` | string | Yes | The new name for the symbol |
 | `overrideStrategy` | string | No | How to handle overriding methods: `"rename_base"` (default), `"rename_only_current"`, or `"ask"` |
+| `relatedRenamingStrategy` | string | No | How to handle automatic renaming of related symbols: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"` |
 
 **Example Request (Java):**
 
@@ -859,6 +862,79 @@ Related elements are automatically renamed without any prompts or dialogs:
 | All Languages | Method implementations in subclasses, interface method implementations |
 
 All renames happen in a single atomic operation, so one undo (Ctrl/Cmd+Z) reverts everything.
+
+---
+
+### ide_move_file
+
+Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project.
+
+**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and any language with IntelliJ plugin support.
+
+**Features:**
+- Updates all imports and references across the entire project
+- Updates package declarations (Java/Kotlin)
+- Automatically creates destination directory if it doesn't exist
+- Detects name conflicts at the destination
+- Optional reference search toggle for non-code files
+
+**Use when:**
+- Reorganizing project structure
+- Moving classes to different packages
+- Relocating files while maintaining correct imports
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the source file to move, relative to project root |
+| `destination` | string | Yes | Target directory path relative to project root |
+| `update_references` | boolean | No | Whether to update references (default: `true`) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_move_file",
+    "arguments": {
+      "file": "src/main/java/com/old/MyService.java",
+      "destination": "src/main/java/com/new/services"
+    }
+  }
+}
+```
+
+**Example Request (skip reference updates):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_move_file",
+    "arguments": {
+      "file": "config/old-config.yml",
+      "destination": "config/archive",
+      "update_references": false
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "affectedFiles": [
+    "src/main/java/com/old/MyService.java",
+    "src/main/java/com/new/services/MyService.java"
+  ],
+  "changesCount": 2,
+  "message": "Successfully moved 'src/main/java/com/old/MyService.java' to 'src/main/java/com/new/services/MyService.java' (references updated)"
+}
+```
 
 ---
 

@@ -12,6 +12,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.refactoring.rename.RenameProcessor
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.refactoring.rename.naming.AutomaticRenamerFactory
 import com.intellij.util.containers.MultiMap
@@ -52,9 +53,15 @@ class RenameSymbolTool : AbstractMcpTool() {
         - "rename_only_current": Renames only the current method, leaving the base and other overrides unchanged.
         - "ask": Shows the IDE's built-in dialog to let the user choose interactively.
 
+        The `relatedRenamingStrategy` parameter controls automatic renaming of related symbols (e.g., same-named properties on unrelated classes, getters/setters, test classes, variables):
+        - "all" (default): Automatically rename all related symbols. Current behavior.
+        - "none": Rename only the targeted symbol. Skip all automatic related renames.
+        - "accessors_and_tests": Only rename getters/setters and test classes/methods. Skip variables, inheritors, overloads, and parameters on unrelated classes.
+        - "ask": Show the IDE dialog for each related rename for interactive choice.
+
         Returns: affected files list and change count. Modifies source files.
 
-        Parameters: file + line + column + newName (all required), overrideStrategy (optional).
+        Parameters: file + line + column + newName (all required), overrideStrategy + relatedRenamingStrategy (optional).
 
         Example: {"file": "src/UserService.java", "line": 15, "column": 18, "newName": "CustomerService"}
     """.trimIndent()
@@ -71,6 +78,15 @@ class RenameSymbolTool : AbstractMcpTool() {
                 "'rename_only_current': rename only the current method. " +
                 "'ask': show the IDE dialog for interactive choice.",
             listOf("rename_base", "rename_only_current", "ask")
+        )
+        .enumProperty(
+            "relatedRenamingStrategy",
+            "Strategy for automatic renaming of related symbols (same-named properties, getters/setters, test classes, variables). " +
+                "'all' (default): automatically rename all related symbols. " +
+                "'none': rename only the targeted symbol, skip all automatic related renames. " +
+                "'accessors_and_tests': only rename getters/setters and test classes/methods. " +
+                "'ask': show the IDE dialog for each related rename for interactive choice.",
+            listOf("all", "none", "accessors_and_tests", "ask")
         )
         .build()
 
@@ -96,6 +112,11 @@ class RenameSymbolTool : AbstractMcpTool() {
         val overrideStrategy = arguments["overrideStrategy"]?.jsonPrimitive?.content ?: "rename_base"
         if (overrideStrategy !in listOf("rename_base", "rename_only_current", "ask")) {
             return createErrorResult("Invalid overrideStrategy: '$overrideStrategy'. Must be 'rename_base', 'rename_only_current', or 'ask'.")
+        }
+
+        val relatedRenamingStrategy = arguments["relatedRenamingStrategy"]?.jsonPrimitive?.content ?: "all"
+        if (relatedRenamingStrategy !in listOf("all", "none", "accessors_and_tests", "ask")) {
+            return createErrorResult("Invalid relatedRenamingStrategy: '$relatedRenamingStrategy'. Must be 'all', 'none', 'accessors_and_tests', or 'ask'.")
         }
 
         if (newName.isBlank()) {
@@ -128,7 +149,7 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         edtAction {
             try {
-                val result = executeRename(project, element, newName, overrideStrategy, affectedFiles)
+                val result = executeRename(project, element, newName, overrideStrategy, relatedRenamingStrategy, affectedFiles)
                 changesCount = result.first
                 relatedRenamesCount = result.second
             } catch (e: Exception) {
@@ -290,6 +311,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         element: PsiNamedElement,
         newName: String,
         overrideStrategy: String,
+        relatedRenamingStrategy: String,
         affectedFiles: MutableSet<String>
     ): Pair<Int, Int> {
         // Resolve the actual target element to rename based on override strategy.
@@ -301,21 +323,23 @@ class RenameSymbolTool : AbstractMcpTool() {
         // - "ask": delegate to substituteElementToRename (shows dialog)
         val targetElement = resolveRenameTarget(element, overrideStrategy)
 
-        // Create the RenameProcessor with language-appropriate settings
+        // Create the RenameProcessor with language-appropriate settings.
         // NOTE: We intentionally DON'T search in comments/text occurrences to avoid
         // non-code usage dialogs. The basic rename is more predictable for agents.
-        val renameProcessor = HeadlessRenameProcessor(
-            project,
-            targetElement,
-            newName,
-            false,  // searchInComments = false (avoid dialogs)
-            false   // searchTextOccurrences = false (avoid dialogs)
-        )
+        // When relatedRenamingStrategy is "ask", use a standard RenameProcessor so the
+        // IDE shows its built-in dialog for each automatic renamer.
+        val renameProcessor = if (relatedRenamingStrategy == "ask") {
+            RenameProcessor(project, targetElement, newName, false, false)
+        } else {
+            HeadlessRenameProcessor(project, targetElement, newName, false, false)
+        }
 
-        // Register automatic renamers that the platform would normally gate behind UI prompts.
+        // Register automatic renamers based on the relatedRenamingStrategy.
         // Factories with null option names are already handled automatically by RenameProcessor.
-        for (factory in AutomaticRenamerFactory.EP_NAME.extensionList) {
-            if (factory.optionName != null) {
+        if (relatedRenamingStrategy != "none") {
+            for (factory in AutomaticRenamerFactory.EP_NAME.extensionList) {
+                if (factory.optionName == null) continue
+                if (relatedRenamingStrategy == "accessors_and_tests" && !isAccessorOrTestFactory(factory)) continue
                 renameProcessor.addRenamerFactory(factory)
             }
         }
@@ -337,6 +361,19 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         return Pair(affectedFiles.size, relatedRenamesCount)
+    }
+
+    /**
+     * Checks if an [AutomaticRenamerFactory] is an accessor (getter/setter) or test renamer.
+     *
+     * Used by the "accessors_and_tests" related renaming strategy to filter factories.
+     * Matches by class name suffix to remain language-agnostic (works for Java, Kotlin, etc.).
+     */
+    private fun isAccessorOrTestFactory(factory: AutomaticRenamerFactory): Boolean {
+        val className = factory.javaClass.simpleName
+        return className.contains("GetterSetter") ||
+            className.contains("Accessor") ||
+            className.contains("Test")
     }
 
     /**
@@ -461,7 +498,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         project: Project,
         element: PsiNamedElement,
         newName: String,
-        renameProcessor: HeadlessRenameProcessor
+        renameProcessor: RenameProcessor
     ): Int {
         var count = 0
 

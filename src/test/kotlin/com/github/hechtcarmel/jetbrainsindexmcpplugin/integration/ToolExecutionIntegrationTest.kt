@@ -311,6 +311,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.SYNC_FILES,
             // Refactoring tools
             ToolNames.REFACTOR_RENAME,
+            ToolNames.REFACTOR_MOVE,
             ToolNames.REFACTOR_SAFE_DELETE,
             ToolNames.REFORMAT_CODE,
             ToolNames.OPTIMIZE_IMPORTS,

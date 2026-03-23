@@ -223,6 +223,19 @@ Rename a symbol and update ALL references (semantic rename, not find-replace). W
 **Auto-renames**: getters/setters, overriding methods, constructor params <-> fields, test classes.
 **Supports IDE undo** (Ctrl+Z).
 
+### ide_move_file
+Move a file to a new directory, updating all references, imports, and package declarations. Works across ALL languages.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Relative path of file to move |
+| `destination` | string | yes | Target directory (relative to project root, created if needed) |
+| `update_references` | boolean | no | Update references (default true) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
+**Supports IDE undo** (Ctrl+Z).
+
 ### ide_refactor_safe_delete (Java/Kotlin only)
 Delete a symbol or file, checking for usages first.
 

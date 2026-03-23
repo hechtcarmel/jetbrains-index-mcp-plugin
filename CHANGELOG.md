@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-03-21
+### Added
+- **`ide_refactor_rename`: `relatedRenamingStrategy` parameter** — Controls automatic renaming of related symbols (same-named properties on unrelated classes, getters/setters, test classes, variables). Options: `"all"` (default, current behavior), `"none"` (rename only the targeted symbol), `"accessors_and_tests"` (only rename getters/setters and test classes/methods), `"ask"` (show IDE dialog for interactive choice). Fixes [#101](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/101).
+
+## [4.5.0] - 2026-03-21
+### Added
+- **`ide_move_file` tool** — Move files to a new directory using the IDE's refactoring engine. Enabled by default.
+
 ## [4.4.1] - 2026-03-19
 ### Fixed
 - **2026.1 compatability issues** 

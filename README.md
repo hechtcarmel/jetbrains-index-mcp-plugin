@@ -238,6 +238,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
 | `ide_refactor_rename` | Rename a symbol and update all references across the project (all languages) |
+| `ide_move_file` | Move a file to a new directory with automatic reference, import, and package updates |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
 
 ### Extended Tools (Language-Aware)
