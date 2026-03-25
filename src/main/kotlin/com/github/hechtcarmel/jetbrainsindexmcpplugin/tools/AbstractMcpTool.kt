@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
@@ -26,11 +28,14 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Abstract base class for MCP tools providing common functionality.
@@ -437,6 +442,29 @@ abstract class AbstractMcpTool : McpTool {
      */
     protected fun findClassByName(project: Project, qualifiedName: String): PsiElement? {
         return ClassResolver.findClassByName(project, qualifiedName)
+    }
+
+    /**
+     * Gets a page from the pagination cache.
+     * Extracts project basePath and PSI mod count, delegates to PaginationService.
+     * Returns GetPageResult — caller maps Success/Error into tool-specific ToolCallResult.
+     */
+    protected suspend fun getPageFromCache(cursorToken: String, pageSize: Int, project: Project): PaginationService.GetPageResult {
+        val service = ApplicationManager.getApplication().getService(PaginationService::class.java)
+        val basePath = ProjectResolver.normalizePath(project.basePath ?: "")
+        val modCount = PsiModificationTracker.getInstance(project).modificationCount
+        return service.getPage(cursorToken, pageSize, basePath, modCount)
+    }
+
+    /**
+     * Resolves pageSize from arguments, checking pageSize first, then legacy aliases.
+     */
+    protected fun resolvePageSize(arguments: JsonObject, defaultPageSize: Int, vararg aliases: String): Int {
+        arguments["pageSize"]?.jsonPrimitive?.int?.let { return it }
+        for (alias in aliases) {
+            arguments[alias]?.jsonPrimitive?.int?.let { return it }
+        }
+        return defaultPageSize
     }
 
     /**
