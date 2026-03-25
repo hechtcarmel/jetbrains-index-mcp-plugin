@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonElement
 import java.time.Instant
 import java.util.Base64
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 @Service(Service.Level.APP)
@@ -82,14 +83,36 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
 
     fun createCursor(
         toolName: String,
-        results: MutableList<SerializedResult>,
-        seenKeys: MutableSet<String>,
+        results: List<SerializedResult>,
+        seenKeys: Set<String>,
         searchExtender: (suspend (Set<String>, Int) -> List<SerializedResult>)?,
         psiModCount: Long,
         projectBasePath: String
-    ): String = ""
+    ): String {
+        val entryId = UUID.randomUUID().toString().replace("-", "")
+        val now = Instant.now()
+        val entry = CursorEntry(
+            id = entryId,
+            toolName = toolName,
+            results = ArrayList(results),
+            seenKeys = HashSet(seenKeys),
+            searchExtender = searchExtender,
+            psiModCount = psiModCount,
+            projectBasePath = projectBasePath,
+            createdAt = now,
+            lastAccessedAt = now
+        )
+        if (cursors.size >= MAX_CURSORS) {
+            val oldest = cursors.entries.minByOrNull { it.value.lastAccessedAt }
+            if (oldest != null) {
+                cursors.remove(oldest.key)
+            }
+        }
+        cursors[entryId] = entry
+        return encodeCursor(entryId, 0)
+    }
 
-    fun getPage(
+    suspend fun getPage(
         cursorToken: String,
         pageSize: Int,
         projectBasePath: String,
