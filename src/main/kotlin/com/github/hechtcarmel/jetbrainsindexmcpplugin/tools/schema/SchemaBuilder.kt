@@ -7,6 +7,7 @@ import kotlinx.serialization.json.*
 class SchemaBuilder private constructor() {
     private val properties = linkedMapOf<String, JsonObject>()
     private val requiredFields = mutableListOf<String>()
+    private var anyOfGroups: List<List<String>>? = null
 
     fun projectPath() = apply {
         properties[ParamNames.PROJECT_PATH] = buildJsonObject {
@@ -74,6 +75,10 @@ class SchemaBuilder private constructor() {
         if (required) requiredFields.add(name)
     }
 
+    fun anyOfRequired(vararg groups: List<String>) = apply {
+        this.anyOfGroups = groups.toList()
+    }
+
     fun build(): JsonObject = buildJsonObject {
         put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
         putJsonObject(SchemaConstants.PROPERTIES) {
@@ -81,7 +86,18 @@ class SchemaBuilder private constructor() {
                 put(name, schema)
             }
         }
-        if (requiredFields.isNotEmpty()) {
+        val groups = anyOfGroups
+        if (groups != null) {
+            putJsonArray("anyOf") {
+                for (group in groups) {
+                    add(buildJsonObject {
+                        putJsonArray(SchemaConstants.REQUIRED) {
+                            for (field in group) { add(JsonPrimitive(field)) }
+                        }
+                    })
+                }
+            }
+        } else if (requiredFields.isNotEmpty()) {
             putJsonArray(SchemaConstants.REQUIRED) {
                 for (field in requiredFields) {
                     add(JsonPrimitive(field))

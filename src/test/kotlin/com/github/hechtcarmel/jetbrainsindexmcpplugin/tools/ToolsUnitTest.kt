@@ -26,6 +26,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.Reformat
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -822,5 +823,38 @@ class ToolsUnitTest : TestCase() {
         assertFalse("nested bin path should not match",   isExcludedPath("src/bin/config.txt"))
         assertFalse("nested build path should not match", isExcludedPath("src/build/notes.md"))
         assertFalse("root file should not be excluded",   isExcludedPath("README.md"))
+    }
+
+    // ── SchemaBuilder anyOfRequired tests ─────────────────────────────────────
+
+    fun testSchemaBuilderAnyOfRequired() {
+        val schema = SchemaBuilder.tool()
+            .stringProperty("cursor", "Pagination cursor")
+            .intProperty("pageSize", "Page size")
+            .file()
+            .lineAndColumn()
+            .anyOfRequired(
+                listOf("cursor"),
+                listOf("file", "line", "column")
+            )
+            .build()
+
+        assertNotNull(schema["anyOf"])
+        assertNull(schema["required"])
+
+        val anyOf = schema["anyOf"]!!.jsonArray
+        assertEquals(2, anyOf.size)
+        assertEquals("cursor", anyOf[0].jsonObject["required"]!!.jsonArray[0].jsonPrimitive.content)
+        assertEquals(3, anyOf[1].jsonObject["required"]!!.jsonArray.size)
+    }
+
+    fun testSchemaBuilderWithoutAnyOfPreservesRequired() {
+        val schema = SchemaBuilder.tool()
+            .file()
+            .lineAndColumn()
+            .build()
+
+        assertNotNull(schema["required"])
+        assertNull(schema["anyOf"])
     }
 }
