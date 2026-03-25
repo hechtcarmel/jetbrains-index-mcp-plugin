@@ -23,7 +23,13 @@ data class UsageLocation(
 data class FindUsagesResult(
     val usages: List<UsageLocation>,
     val totalCount: Int,
-    val truncated: Boolean = false
+    val truncated: Boolean = false,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val totalCollected: Int = 0,
+    val offset: Int = 0,
+    val pageSize: Int = 0,
+    val stale: Boolean = false
 )
 
 // find_definition output
@@ -87,7 +93,13 @@ data class CallElement(
 @Serializable
 data class ImplementationResult(
     val implementations: List<ImplementationLocation>,
-    val totalCount: Int
+    val totalCount: Int,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val totalCollected: Int = 0,
+    val offset: Int = 0,
+    val pageSize: Int = 0,
+    val stale: Boolean = false
 )
 
 @Serializable
@@ -180,7 +192,13 @@ data class BuildProjectResult(
 data class FindSymbolResult(
     val symbols: List<SymbolMatch>,
     val totalCount: Int,
-    val query: String
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val totalCollected: Int = 0,
+    val offset: Int = 0,
+    val pageSize: Int = 0,
+    val stale: Boolean = false
 )
 
 @Serializable
@@ -233,7 +251,13 @@ data class SuperMethodInfo(
 data class FindClassResult(
     val classes: List<SymbolMatch>,
     val totalCount: Int,
-    val query: String
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val totalCollected: Int = 0,
+    val offset: Int = 0,
+    val pageSize: Int = 0,
+    val stale: Boolean = false
 )
 
 // ide_find_file output
@@ -241,7 +265,13 @@ data class FindClassResult(
 data class FindFileResult(
     val files: List<FileMatch>,
     val totalCount: Int,
-    val query: String
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val totalCollected: Int = 0,
+    val offset: Int = 0,
+    val pageSize: Int = 0,
+    val stale: Boolean = false
 )
 
 @Serializable
@@ -280,7 +310,13 @@ data class OpenFileResult(
 data class SearchTextResult(
     val matches: List<TextMatch>,
     val totalCount: Int,
-    val query: String
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val totalCollected: Int = 0,
+    val offset: Int = 0,
+    val pageSize: Int = 0,
+    val stale: Boolean = false
 )
 
 @Serializable
