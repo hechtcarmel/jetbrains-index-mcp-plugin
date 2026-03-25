@@ -3,9 +3,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
+import org.jetbrains.annotations.VisibleForTesting
 import java.time.Duration
 import java.time.Instant
 import java.util.Base64
@@ -64,6 +67,15 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
     }
 
     private val cursors = ConcurrentHashMap<String, CursorEntry>()
+
+    init {
+        coroutineScope.launch {
+            while (true) {
+                delay(SWEEP_INTERVAL_MINUTES * 60 * 1000)
+                sweepExpired()
+            }
+        }
+    }
 
     fun encodeCursor(entryId: String, offset: Int): String {
         val raw = "$entryId:$offset"
@@ -198,5 +210,19 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
         }
     }
 
-    override fun dispose() {}
+    private fun sweepExpired() {
+        val now = Instant.now()
+        cursors.entries.removeIf { (_, entry) ->
+            Duration.between(entry.lastAccessedAt, now).toMinutes() >= TTL_MINUTES
+        }
+    }
+
+    @VisibleForTesting
+    internal fun expireEntryForTesting(entryId: String) {
+        cursors[entryId]?.lastAccessedAt = Instant.MIN
+    }
+
+    override fun dispose() {
+        cursors.clear()
+    }
 }

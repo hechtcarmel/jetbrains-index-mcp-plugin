@@ -209,6 +209,27 @@ class PaginationServiceUnitTest : TestCase() {
         assertEquals(PaginationService.CursorError.SEARCH_INVALIDATED, (result as PaginationService.GetPageResult.Error).reason)
     }
 
+    // --- Task 5: Periodic sweep, TTL expiry, and dispose ---
+
+    fun testExpiredCursorReturnsError() = runBlocking {
+        val service = createTestService()
+        val results = listOf(PaginationService.SerializedResult("k", JsonPrimitive("v")))
+        val token = service.createCursor("tool", results, emptySet(), null, 0L, "/project")
+        service.expireEntryForTesting(service.decodeCursor(token)!!.first)
+        val result = service.getPage(token, 10, "/project", 0L)
+        assertTrue(result is PaginationService.GetPageResult.Error)
+        assertEquals(PaginationService.CursorError.EXPIRED, (result as PaginationService.GetPageResult.Error).reason)
+    }
+
+    fun testDisposeClearsAllEntries() = runBlocking {
+        val service = createTestService()
+        val token = service.createCursor("tool", emptyList(), emptySet(), null, 0L, "/project")
+        service.dispose()
+        val result = service.getPage(token, 10, "/project", 0L)
+        assertTrue(result is PaginationService.GetPageResult.Error)
+        assertEquals(PaginationService.CursorError.NOT_FOUND, (result as PaginationService.GetPageResult.Error).reason)
+    }
+
     // --- Helper ---
 
     private fun createTestService(): PaginationService {
