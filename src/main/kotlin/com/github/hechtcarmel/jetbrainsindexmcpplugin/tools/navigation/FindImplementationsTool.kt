@@ -48,13 +48,10 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
         .file(required = false, description = "Path to file relative to project root. Required for fresh search, ignored when cursor is provided.")
-        .lineAndColumn()
+        .intProperty("line", "1-based line number. Required for fresh search, ignored when cursor is provided.")
+        .intProperty("column", "1-based column number. Required for fresh search, ignored when cursor is provided.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. All other search parameters are ignored.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
-        .anyOfRequired(
-            listOf("cursor"),
-            listOf("file", "line", "column")
-        )
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

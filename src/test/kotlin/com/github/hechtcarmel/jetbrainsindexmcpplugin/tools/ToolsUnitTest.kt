@@ -117,9 +117,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
-        val anyOf = schema["anyOf"]?.jsonArray
-        assertNotNull("Should have anyOf array for pagination support", anyOf)
-        assertEquals("Should have two anyOf groups", 2, anyOf?.size)
+        assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
+        assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testFindDefinitionToolSchema() {
@@ -192,9 +191,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
-        val anyOf = schema["anyOf"]?.jsonArray
-        assertNotNull("Should have anyOf array for pagination support", anyOf)
-        assertEquals("Should have two anyOf groups", 2, anyOf?.size)
+        assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
+        assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testGetDiagnosticsToolSchema() {
@@ -413,9 +411,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
-        val anyOf = schema["anyOf"]?.jsonArray
-        assertNotNull("Should have anyOf array for pagination support", anyOf)
-        assertEquals("Should have two anyOf groups", 2, anyOf?.size)
+        assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
+        assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testFindSuperMethodsToolSchema() {
@@ -568,9 +565,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
-        val anyOf = schema["anyOf"]?.jsonArray
-        assertNotNull("Should have anyOf array for pagination support", anyOf)
-        assertEquals("Should have two anyOf groups", 2, anyOf?.size)
+        assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
+        assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testFindFileToolSchema() {
@@ -592,9 +588,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
-        val anyOf = schema["anyOf"]?.jsonArray
-        assertNotNull("Should have anyOf array for pagination support", anyOf)
-        assertEquals("Should have two anyOf groups", 2, anyOf?.size)
+        assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
+        assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testSearchTextToolSchema() {
@@ -617,9 +612,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
-        val anyOf = schema["anyOf"]?.jsonArray
-        assertNotNull("Should have anyOf array for pagination support", anyOf)
-        assertEquals("Should have two anyOf groups", 2, anyOf?.size)
+        assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
+        assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
     }
 
     fun testGetActiveFileToolSchema() {
