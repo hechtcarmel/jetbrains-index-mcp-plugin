@@ -443,7 +443,7 @@ The plugin supports cursor-based pagination for search tools that return flat re
 
 **Key components:**
 - `PaginationService` (`server/PaginationService.kt`): Application-level light service managing cursor cache
-- Cursor tokens are opaque, immutable, base64url-encoded strings containing `{entryId}:{offset}`
+- Cursor tokens are opaque, immutable, base64url-encoded strings containing `{entryId}:{offset}:{pageSize}`
 - Same cursor token always returns the same page (idempotent, safe for retries)
 - Each response includes `nextCursor` for the next page
 
@@ -462,7 +462,7 @@ The plugin supports cursor-based pagination for search tools that return flat re
 
 **Schema:** All parameters are optional in the schema (no `required` array) because the Anthropic API does not support `anyOf`/`oneOf` at the top level. Validation is done at runtime — if `cursor` is absent, the tool checks for its required search params and returns an error if missing.
 
-**Backward compatibility:** Old `limit`/`maxResults` parameters work as aliases for `pageSize`.
+**Backward compatibility:** Old `limit`/`maxResults` parameters work as aliases for `pageSize`. Legacy cursors (without embedded pageSize) are still decodable but require an explicit `pageSize` parameter.
 
 ### Search Collection Pattern (Processor)
 

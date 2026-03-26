@@ -449,8 +449,10 @@ abstract class AbstractMcpTool : McpTool {
      * Gets a page from the pagination cache.
      * Extracts project basePath and PSI mod count, delegates to PaginationService.
      * Returns GetPageResult — caller maps Success/Error into tool-specific ToolCallResult.
+     *
+     * @param pageSize Explicit pageSize from request, or null to use the cursor-embedded value.
      */
-    protected suspend fun getPageFromCache(cursorToken: String, pageSize: Int, project: Project): PaginationService.GetPageResult {
+    protected suspend fun getPageFromCache(cursorToken: String, pageSize: Int?, project: Project): PaginationService.GetPageResult {
         val service = ApplicationManager.getApplication().getService(PaginationService::class.java)
         val basePath = ProjectResolver.normalizePath(project.basePath ?: "")
         val modCount = PsiModificationTracker.getInstance(project).modificationCount
@@ -491,6 +493,21 @@ abstract class AbstractMcpTool : McpTool {
         val raw = arguments["pageSize"]?.jsonPrimitive?.int
             ?: aliases.firstNotNullOfOrNull { arguments[it]?.jsonPrimitive?.int }
             ?: defaultPageSize
+        return raw.coerceIn(1, maxPageSize)
+    }
+
+    /**
+     * Returns the explicitly provided pageSize from arguments, or null if not specified.
+     * Used in cursor paths so the cursor-embedded pageSize is used as fallback.
+     */
+    protected fun resolveExplicitPageSize(
+        arguments: JsonObject,
+        maxPageSize: Int = PaginationService.MAX_PAGE_SIZE,
+        vararg aliases: String
+    ): Int? {
+        val raw = arguments["pageSize"]?.jsonPrimitive?.int
+            ?: aliases.firstNotNullOfOrNull { arguments[it]?.jsonPrimitive?.int }
+            ?: return null
         return raw.coerceIn(1, maxPageSize)
     }
 

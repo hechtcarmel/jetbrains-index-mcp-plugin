@@ -40,7 +40,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: file + line + column (required for fresh search), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces all other params).
+        Parameters: file + line + column (required for fresh search), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
     """.trimIndent()
@@ -50,14 +50,14 @@ class FindImplementationsTool : AbstractMcpTool() {
         .file(required = false, description = "Path to file relative to project root. Required for fresh search, ignored when cursor is provided.")
         .intProperty("line", "1-based line number. Required for fresh search, ignored when cursor is provided.")
         .intProperty("column", "1-based column number. Required for fresh search, ignored when cursor is provided.")
-        .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. All other search parameters are ignored.")
+        .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
-            val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
+            val pageSize = resolveExplicitPageSize(arguments)
             return buildPaginatedResult<ImplementationLocation, ImplementationResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 ImplementationResult(
                     implementations = items,

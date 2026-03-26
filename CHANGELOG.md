@@ -10,10 +10,16 @@
 - `PaginationService` for server-side result caching with LRU eviction, inactivity-based TTL, and staleness detection
 - `SchemaBuilder.anyOfRequired()` for conditional JSON Schema required fields
 - `nextCursor`, `hasMore`, `totalCollected`, `offset`, `pageSize`, `stale` fields in paginated tool responses
+- `pageSize` is now encoded in cursor tokens — subsequent pages preserve the original page size without re-specifying it (explicit `pageSize` still overrides)
+
+### Fixed
+- `hasMore` incorrectly returned `true` when all results fit in the requested page (affected all paginated tools except `ide_find_implementations`). Clients no longer make an extra round-trip to discover there are no more results.
+- Serialization error (`Serializer for class 'Any' is not found`) on all paginated tools due to missing reified type parameter on `buildPaginatedResult`
 
 ### Changed
 - `maxResults` (FindUsagesTool) and `limit` (other tools) are now deprecated aliases for `pageSize`
 - Default page sizes preserved per tool for backward compatibility (find_class/find_file/find_symbol: 25, others: 100)
+- Tool descriptions clarify that `cursor` replaces search params but `project_path` may still be required in multi-project setups
 
 ## [4.6.0] - 2026-03-21
 ### Added

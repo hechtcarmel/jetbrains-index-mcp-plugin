@@ -54,7 +54,7 @@ class SearchTextTool : AbstractMcpTool() {
         Returns: matching locations with file, line, column, context snippet, and context type.
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: query (required for fresh search), context (optional: "code", "comments", "strings", "all"), caseSensitive (optional, default: true), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces all other params).
+        Parameters: query (required for fresh search), context (optional: "code", "comments", "strings", "all"), caseSensitive (optional, default: true), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
         Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments"}
     """.trimIndent()
@@ -65,14 +65,14 @@ class SearchTextTool : AbstractMcpTool() {
         .enumProperty(ParamNames.CONTEXT, "Where to search: \"code\", \"comments\", \"strings\", \"all\". Default: \"all\".", listOf("code", "comments", "strings", "all"))
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case sensitive search. Default: true.")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
-        .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. All other search parameters are ignored.")
+        .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
-            val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
+            val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
             return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 SearchTextResult(
                     matches = items,

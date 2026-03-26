@@ -11,15 +11,26 @@ import kotlinx.serialization.json.JsonPrimitive
 
 class PaginationServiceUnitTest : TestCase() {
 
-    // --- Task 1: Encoding tests ---
+    // --- Encoding tests ---
 
     fun testEncodeCursorRoundTrip() {
         val service = createTestService()
         val token = service.encodeCursor("entry123", 200)
         val decoded = service.decodeCursor(token)
         assertNotNull(decoded)
-        assertEquals("entry123", decoded!!.first)
-        assertEquals(200, decoded.second)
+        assertEquals("entry123", decoded!!.entryId)
+        assertEquals(200, decoded.offset)
+        assertNull(decoded.pageSize)
+    }
+
+    fun testEncodeCursorWithPageSizeRoundTrip() {
+        val service = createTestService()
+        val token = service.encodeCursor("entry123", 200, 25)
+        val decoded = service.decodeCursor(token)
+        assertNotNull(decoded)
+        assertEquals("entry123", decoded!!.entryId)
+        assertEquals(200, decoded.offset)
+        assertEquals(25, decoded.pageSize)
     }
 
     fun testDecodeMalformedToken() {
@@ -34,7 +45,7 @@ class PaginationServiceUnitTest : TestCase() {
         val token = service.encodeCursor("id", 0)
         val decoded = service.decodeCursor(token)
         assertNotNull(decoded)
-        assertEquals(0, decoded!!.second)
+        assertEquals(0, decoded!!.offset)
     }
 
     fun testEncodeCursorWithUuidLikeId() {
@@ -43,11 +54,22 @@ class PaginationServiceUnitTest : TestCase() {
         val token = service.encodeCursor(uuid, 500)
         val decoded = service.decodeCursor(token)
         assertNotNull(decoded)
-        assertEquals(uuid, decoded!!.first)
-        assertEquals(500, decoded.second)
+        assertEquals(uuid, decoded!!.entryId)
+        assertEquals(500, decoded.offset)
     }
 
-    // --- Task 2: createCursor & LRU eviction ---
+    fun testLegacyCursorWithoutPageSizeStillDecodes() {
+        val service = createTestService()
+        // Legacy format: entryId:offset (no pageSize)
+        val token = service.encodeCursor("abc123", 42)
+        val decoded = service.decodeCursor(token)
+        assertNotNull(decoded)
+        assertEquals("abc123", decoded!!.entryId)
+        assertEquals(42, decoded.offset)
+        assertNull(decoded.pageSize)
+    }
+
+    // --- createCursor & LRU eviction ---
 
     fun testCreateCursorReturnsToken() {
         val service = createTestService()
@@ -60,7 +82,7 @@ class PaginationServiceUnitTest : TestCase() {
         assertTrue(token.isNotEmpty())
         val decoded = service.decodeCursor(token)
         assertNotNull(decoded)
-        assertEquals(0, decoded!!.second)
+        assertEquals(0, decoded!!.offset)
     }
 
     fun testLruEvictionWhenAtCapacity() {
@@ -75,7 +97,7 @@ class PaginationServiceUnitTest : TestCase() {
         assertTrue(newToken.isNotEmpty())
     }
 
-    // --- Task 3: getPage core logic ---
+    // --- getPage core logic ---
 
     fun testGetPageSuccess() = runBlocking {
         val service = createTestService()
@@ -161,21 +183,23 @@ class PaginationServiceUnitTest : TestCase() {
         )
     }
 
-    // --- Task 4: Cache extension via searchExtender ---
+    // --- Cache extension via searchExtender ---
 
     fun testExtenderCalledWhenCacheExhausted() = runBlocking {
         val service = createTestService()
         val initial = (1..5).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
-        var extenderCalled = false
+        var extenderCallCount = 0
         val extender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seen, _ ->
-            extenderCalled = true
-            assertEquals(5, seen.size)
+            extenderCallCount++
+            // Return new results that aren't already seen
             (6..10).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+                .filter { it.key !in seen }
         }
         val token = service.createCursor("tool", initial, initial.map { it.key }.toSet(), extender, 42L, "/project")
         val p1 = service.getPage(token, 5, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertTrue(extenderCallCount > 0)
+        assertTrue(p1.page.hasMore)
         val p2 = service.getPage(p1.page.nextCursor!!, 5, "/project", 42L) as PaginationService.GetPageResult.Success
-        assertTrue(extenderCalled)
         assertEquals(5, p2.page.items.size)
     }
 
@@ -190,7 +214,7 @@ class PaginationServiceUnitTest : TestCase() {
         }
         val token = service.createCursor("tool", results, results.map { it.key }.toSet(), extender, 42L, "/project")
         val lastOffset = max - 10
-        val cursor = service.encodeCursor(service.decodeCursor(token)!!.first, lastOffset)
+        val cursor = service.encodeCursor(service.decodeCursor(token)!!.entryId, lastOffset)
         val result = service.getPage(cursor, 100, "/project", 42L) as PaginationService.GetPageResult.Success
         assertFalse(extenderCalled)
         assertFalse(result.page.hasMore)
@@ -198,24 +222,125 @@ class PaginationServiceUnitTest : TestCase() {
 
     fun testExtenderFailureReturnsSearchInvalidated() = runBlocking {
         val service = createTestService()
-        val initial = (1..3).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        // Use more results than pageSize so extension is NOT triggered on first page
+        val initial = (1..5).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
         val extender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { _, _ ->
             throw IllegalStateException("Target element no longer valid")
         }
         val token = service.createCursor("tool", initial, initial.map { it.key }.toSet(), extender, 42L, "/project")
+        // First page: offset=0, pageSize=3 → 0+3 < 5 → no extension
         val p1 = service.getPage(token, 3, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(3, p1.page.items.size)
+        // Second page: offset=3, pageSize=3 → 3+3 >= 5 → extension triggered → fails
         val result = service.getPage(p1.page.nextCursor!!, 3, "/project", 42L)
         assertTrue(result is PaginationService.GetPageResult.Error)
         assertEquals(PaginationService.CursorError.SEARCH_INVALIDATED, (result as PaginationService.GetPageResult.Error).reason)
     }
 
-    // --- Task 5: Periodic sweep, TTL expiry, and dispose ---
+    // --- BUG-1: hasMore=false when extender is exhausted ---
+
+    fun testHasMoreFalseWhenExtenderExhaustedOnSinglePage() = runBlocking {
+        val service = createTestService()
+        val initial = (1..10).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val extender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { _, _ ->
+            emptyList() // No more results
+        }
+        val token = service.createCursor("tool", initial, initial.map { it.key }.toSet(), extender, 42L, "/project")
+        // Request all results in one page — extender returns empty
+        val result = service.getPage(token, 500, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(10, result.page.items.size)
+        assertFalse("hasMore should be false when extender is exhausted", result.page.hasMore)
+        assertNull(result.page.nextCursor)
+    }
+
+    fun testHasMoreFalseOnLastPageWithExtender() = runBlocking {
+        val service = createTestService()
+        val initial = (1..10).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val extender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { _, _ ->
+            emptyList()
+        }
+        val token = service.createCursor("tool", initial, initial.map { it.key }.toSet(), extender, 42L, "/project")
+        // First page: 5 results
+        val p1 = service.getPage(token, 5, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(5, p1.page.items.size)
+        assertTrue(p1.page.hasMore)
+        // Second page: remaining 5 — extender probed and returns empty
+        val p2 = service.getPage(p1.page.nextCursor!!, 5, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(5, p2.page.items.size)
+        assertFalse("hasMore should be false on last page when extender is exhausted", p2.page.hasMore)
+        assertNull(p2.page.nextCursor)
+    }
+
+    fun testHasMoreTrueWhenExtenderReturnsResults() = runBlocking {
+        val service = createTestService()
+        val initial = (1..5).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val extender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seen, _ ->
+            (6..15).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+                .filter { it.key !in seen }
+        }
+        val token = service.createCursor("tool", initial, initial.map { it.key }.toSet(), extender, 42L, "/project")
+        // Request exactly 5 → extension probed → finds 10 more → hasMore=true
+        val result = service.getPage(token, 5, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(5, result.page.items.size)
+        assertTrue("hasMore should be true when extender added results", result.page.hasMore)
+    }
+
+    // --- BUG-3: pageSize preserved in cursor ---
+
+    fun testPageSizePreservedInNextCursor() = runBlocking {
+        val service = createTestService()
+        val results = (1..50).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val token = service.createCursor("tool", results, results.map { it.key }.toSet(), null, 42L, "/project")
+        // Request with pageSize=7
+        val p1 = service.getPage(token, 7, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(7, p1.page.items.size)
+        // Decode nextCursor — should have pageSize=7 embedded
+        val decoded = service.decodeCursor(p1.page.nextCursor!!)
+        assertNotNull(decoded)
+        assertEquals(7, decoded!!.pageSize)
+    }
+
+    fun testCursorPageSizeUsedWhenNoExplicitPageSize() = runBlocking {
+        val service = createTestService()
+        val results = (1..50).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val token = service.createCursor("tool", results, results.map { it.key }.toSet(), null, 42L, "/project")
+        // First request: pageSize=7
+        val p1 = service.getPage(token, 7, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(7, p1.page.items.size)
+        // Second request: null pageSize → uses cursor-embedded 7
+        val p2 = service.getPage(p1.page.nextCursor!!, null, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(7, p2.page.items.size)
+        assertEquals(7, p2.page.offset)
+    }
+
+    fun testExplicitPageSizeOverridesCursorPageSize() = runBlocking {
+        val service = createTestService()
+        val results = (1..50).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val token = service.createCursor("tool", results, results.map { it.key }.toSet(), null, 42L, "/project")
+        // First request: pageSize=7
+        val p1 = service.getPage(token, 7, "/project", 42L) as PaginationService.GetPageResult.Success
+        // Second request: explicit pageSize=3 overrides cursor's 7
+        val p2 = service.getPage(p1.page.nextCursor!!, 3, "/project", 42L) as PaginationService.GetPageResult.Success
+        assertEquals(3, p2.page.items.size)
+    }
+
+    fun testNullPageSizeWithLegacyCursorReturnsMalformed() = runBlocking {
+        val service = createTestService()
+        val results = (1..10).map { PaginationService.SerializedResult("key$it", JsonPrimitive("data$it")) }
+        val token = service.createCursor("tool", results, results.map { it.key }.toSet(), null, 42L, "/project")
+        // createCursor returns a legacy cursor (no pageSize) — passing null should fail gracefully
+        val result = service.getPage(token, null, "/project", 42L)
+        assertTrue(result is PaginationService.GetPageResult.Error)
+        assertEquals(PaginationService.CursorError.MALFORMED, (result as PaginationService.GetPageResult.Error).reason)
+    }
+
+    // --- Periodic sweep, TTL expiry, and dispose ---
 
     fun testExpiredCursorReturnsError() = runBlocking {
         val service = createTestService()
         val results = listOf(PaginationService.SerializedResult("k", JsonPrimitive("v")))
         val token = service.createCursor("tool", results, emptySet(), null, 0L, "/project")
-        service.expireEntryForTesting(service.decodeCursor(token)!!.first)
+        service.expireEntryForTesting(service.decodeCursor(token)!!.entryId)
         val result = service.getPage(token, 10, "/project", 0L)
         assertTrue(result is PaginationService.GetPageResult.Error)
         assertEquals(PaginationService.CursorError.EXPIRED, (result as PaginationService.GetPageResult.Error).reason)
@@ -230,7 +355,7 @@ class PaginationServiceUnitTest : TestCase() {
         assertEquals(PaginationService.CursorError.NOT_FOUND, (result as PaginationService.GetPageResult.Error).reason)
     }
 
-    // --- Task 6: Metadata round-trip ---
+    // --- Metadata round-trip ---
 
     fun testMetadataRoundTrip() = runBlocking {
         val service = createTestService()

@@ -79,20 +79,34 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
         }
     }
 
-    fun encodeCursor(entryId: String, offset: Int): String {
-        val raw = "$entryId:$offset"
+    data class DecodedCursor(val entryId: String, val offset: Int, val pageSize: Int? = null)
+
+    fun encodeCursor(entryId: String, offset: Int, pageSize: Int? = null): String {
+        val raw = if (pageSize != null) "$entryId:$offset:$pageSize" else "$entryId:$offset"
         return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.toByteArray(Charsets.UTF_8))
     }
 
-    fun decodeCursor(token: String): Pair<String, Int>? {
+    fun decodeCursor(token: String): DecodedCursor? {
         if (token.isEmpty()) return null
         return try {
             val decoded = Base64.getUrlDecoder().decode(token).toString(Charsets.UTF_8)
+            // Format: "entryId:offset" (legacy) or "entryId:offset:pageSize"
+            // entryId is a 32-char hex string (no colons), so we split from the right.
             val lastColon = decoded.lastIndexOf(':')
             if (lastColon < 0) return null
-            val entryId = decoded.substring(0, lastColon)
-            val offset = decoded.substring(lastColon + 1).toInt()
-            Pair(entryId, offset)
+            val beforeLast = decoded.substring(0, lastColon)
+            val afterLast = decoded.substring(lastColon + 1).toInt()
+
+            val secondLastColon = beforeLast.lastIndexOf(':')
+            if (secondLastColon < 0) {
+                // Legacy format: entryId:offset
+                DecodedCursor(beforeLast, afterLast)
+            } else {
+                // New format: entryId:offset:pageSize
+                val entryId = beforeLast.substring(0, secondLastColon)
+                val offset = beforeLast.substring(secondLastColon + 1).toInt()
+                DecodedCursor(entryId, offset, pageSize = afterLast)
+            }
         } catch (_: Exception) {
             null
         }
@@ -135,13 +149,16 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
 
     suspend fun getPage(
         cursorToken: String,
-        pageSize: Int,
+        requestedPageSize: Int?,
         projectBasePath: String,
         currentModCount: Long
     ): GetPageResult {
         val decoded = decodeCursor(cursorToken)
             ?: return GetPageResult.Error(CursorError.MALFORMED, "Invalid cursor format. Please re-search.")
 
+        val pageSize = requestedPageSize
+            ?: decoded.pageSize
+            ?: return GetPageResult.Error(CursorError.MALFORMED, "No pageSize provided and cursor does not contain one. Please re-search.")
         val (entryId, offset) = decoded
 
         val entry = cursors[entryId]
@@ -160,8 +177,10 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
         return entry.mutex.withLock {
             val stale = entry.psiModCount != currentModCount
 
-            // Extend cache if needed and possible
-            if (offset + pageSize > entry.results.size
+            // Extend cache if needed and possible.
+            // Use >= so that when we're exactly at the boundary we still probe the extender,
+            // allowing an accurate hasMore answer without an extra client round-trip.
+            if (offset + pageSize >= entry.results.size
                 && entry.searchExtender != null
                 && entry.results.size < MAX_CACHED_RESULTS_PER_CURSOR
             ) {
@@ -199,9 +218,10 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
 
             val items = entry.results.subList(offset, end).map { it.data }
             val actualPageSize = items.size
-            val hasMore = end < entry.results.size ||
-                    (entry.searchExtender != null && entry.results.size < MAX_CACHED_RESULTS_PER_CURSOR)
-            val nextCursor = if (hasMore && actualPageSize > 0) encodeCursor(entryId, offset + actualPageSize) else null
+            // After extension (if triggered), the cache reflects the true result set.
+            // hasMore is simply whether more items exist beyond this page.
+            val hasMore = end < entry.results.size
+            val nextCursor = if (hasMore && actualPageSize > 0) encodeCursor(entryId, offset + actualPageSize, pageSize) else null
 
             GetPageResult.Success(
                 PaginationPage(

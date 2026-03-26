@@ -55,7 +55,7 @@ class FindFileTool : AbstractMcpTool() {
         Returns: matching files with name, path, and containing directory.
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: query (required for fresh search), includeLibraries (optional, default: false), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces all other params).
+        Parameters: query (required for fresh search), includeLibraries (optional, default: false), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
         Example: {"query": "UserService.java"} or {"query": "*Test.kt"} or {"query": "BG"} (matches build.gradle)
     """.trimIndent()
@@ -65,14 +65,14 @@ class FindFileTool : AbstractMcpTool() {
         .stringProperty(ParamNames.QUERY, "File name pattern. Supports substring and fuzzy matching. Required for fresh search, ignored when cursor is provided.")
         .booleanProperty(ParamNames.INCLUDE_LIBRARIES, "Include files from library dependencies. Default: false.")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
-        .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. All other search parameters are ignored.")
+        .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
-            val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
+            val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
             return buildPaginatedResult<FileMatch, FindFileResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 FindFileResult(
                     files = items,
