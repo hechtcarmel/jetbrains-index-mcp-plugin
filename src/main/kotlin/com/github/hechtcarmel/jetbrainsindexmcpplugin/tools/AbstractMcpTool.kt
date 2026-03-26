@@ -461,12 +461,13 @@ abstract class AbstractMcpTool : McpTool {
      * Builds a paginated tool result from a GetPageResult.
      * Handles error mapping and JSON deserialization of page items.
      * @param T The item type to deserialize from JSON
+     * @param R The result model type to serialize (must be @Serializable)
      * @param result The pagination result from getPageFromCache
      * @param builder Constructs the tool-specific result model from deserialized items and page metadata
      */
-    protected inline fun <reified T> buildPaginatedResult(
+    protected inline fun <reified T, reified R> buildPaginatedResult(
         result: PaginationService.GetPageResult,
-        builder: (items: List<T>, page: PaginationService.PaginationPage) -> Any
+        builder: (items: List<T>, page: PaginationService.PaginationPage) -> R
     ): ToolCallResult {
         return when (result) {
             is PaginationService.GetPageResult.Error -> createErrorResult(result.message)

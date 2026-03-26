@@ -73,7 +73,7 @@ class SearchTextTool : AbstractMcpTool() {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
             val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
-            return buildPaginatedResult<TextMatch>(getPageFromCache(cursor, pageSize, project)) { items, page ->
+            return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 SearchTextResult(
                     matches = items,
                     totalCount = page.totalCollected,
@@ -132,7 +132,7 @@ class SearchTextTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult<TextMatch>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
+        return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
             SearchTextResult(
                 matches = items,
                 totalCount = page.totalCollected,

@@ -73,7 +73,7 @@ class FindFileTool : AbstractMcpTool() {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
             val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
-            return buildPaginatedResult<FileMatch>(getPageFromCache(cursor, pageSize, project)) { items, page ->
+            return buildPaginatedResult<FileMatch, FindFileResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 FindFileResult(
                     files = items,
                     totalCount = page.totalCollected,
@@ -134,7 +134,7 @@ class FindFileTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult<FileMatch>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
+        return buildPaginatedResult<FileMatch, FindFileResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
             FindFileResult(
                 files = items,
                 totalCount = page.totalCollected,

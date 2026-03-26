@@ -63,7 +63,7 @@ class FindUsagesTool : AbstractMcpTool() {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
             val pageSize = resolvePageSize(arguments, DEFAULT_MAX_RESULTS)
-            return buildPaginatedResult<UsageLocation>(getPageFromCache(cursor, pageSize, project)) { items, page ->
+            return buildPaginatedResult<UsageLocation, FindUsagesResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 FindUsagesResult(
                     usages = items,
                     totalCount = page.totalCollected,
@@ -175,7 +175,7 @@ class FindUsagesTool : AbstractMcpTool() {
         val (token, errorResult) = cursorToken
         if (errorResult != null) return errorResult
 
-        return buildPaginatedResult<UsageLocation>(getPageFromCache(token!!, pageSize, project)) { items, page ->
+        return buildPaginatedResult<UsageLocation, FindUsagesResult>(getPageFromCache(token!!, pageSize, project)) { items, page ->
             FindUsagesResult(
                 usages = items,
                 totalCount = page.totalCollected,

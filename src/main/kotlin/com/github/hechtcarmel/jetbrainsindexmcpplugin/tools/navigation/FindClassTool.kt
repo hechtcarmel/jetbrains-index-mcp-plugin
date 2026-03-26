@@ -83,7 +83,7 @@ class FindClassTool : AbstractMcpTool() {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
             val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
-            return buildPaginatedResult<SymbolMatch>(getPageFromCache(cursor, pageSize, project)) { items, page ->
+            return buildPaginatedResult<SymbolMatch, FindClassResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 FindClassResult(
                     classes = items,
                     totalCount = page.totalCollected,
@@ -148,7 +148,7 @@ class FindClassTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult<SymbolMatch>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
+        return buildPaginatedResult<SymbolMatch, FindClassResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
             FindClassResult(
                 classes = items,
                 totalCount = page.totalCollected,

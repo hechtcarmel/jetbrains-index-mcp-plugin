@@ -65,7 +65,7 @@ class FindSymbolTool : AbstractMcpTool() {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
             val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
-            return buildPaginatedResult<SymbolMatch>(getPageFromCache(cursor, pageSize, project)) { items, page ->
+            return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 FindSymbolResult(
                     symbols = items,
                     totalCount = page.totalCollected,
@@ -155,7 +155,7 @@ class FindSymbolTool : AbstractMcpTool() {
         val (token, errorResult) = cursorToken
         if (errorResult != null) return errorResult
 
-        return buildPaginatedResult<SymbolMatch>(getPageFromCache(token!!, pageSize, project)) { items, page ->
+        return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(token!!, pageSize, project)) { items, page ->
             FindSymbolResult(
                 symbols = items,
                 totalCount = page.totalCollected,

@@ -58,7 +58,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         val cursor = arguments["cursor"]?.jsonPrimitive?.content
         if (cursor != null) {
             val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
-            return buildPaginatedResult<ImplementationLocation>(getPageFromCache(cursor, pageSize, project)) { items, page ->
+            return buildPaginatedResult<ImplementationLocation, ImplementationResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
                 ImplementationResult(
                     implementations = items,
                     totalCount = page.totalCollected,
@@ -133,7 +133,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         val (token, errorResult) = cursorToken
         if (errorResult != null) return errorResult
 
-        return buildPaginatedResult<ImplementationLocation>(getPageFromCache(token!!, pageSize, project)) { items, page ->
+        return buildPaginatedResult<ImplementationLocation, ImplementationResult>(getPageFromCache(token!!, pageSize, project)) { items, page ->
             ImplementationResult(
                 implementations = items,
                 totalCount = page.totalCollected,
