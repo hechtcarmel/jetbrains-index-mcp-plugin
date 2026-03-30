@@ -92,6 +92,10 @@ Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/29174-ide-ind
 Download the [latest release](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server/versions) and install it manually:
 <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/hechtcarmel-jetbrains-index-mcp-plugin).
+
 ## Quick Start
 
 1. **Install the plugin** and restart your JetBrains IDE
