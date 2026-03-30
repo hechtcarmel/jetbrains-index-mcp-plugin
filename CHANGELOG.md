@@ -16,7 +16,6 @@
 ### Added
 - **`ide_find_references` and `ide_find_definition`: `astPath` field** — Returns the chain of named AST ancestors (classes, methods, etc.) enclosing the target element, providing structural context for each result without requiring additional file reads.
 
-
 ## [4.7.0] - 2026-03-26
 ### Added
 - Cursor-based pagination for `ide_find_references`, `ide_search_text`, `ide_find_class`, `ide_find_file`, `ide_find_symbol`, and `ide_find_implementations`

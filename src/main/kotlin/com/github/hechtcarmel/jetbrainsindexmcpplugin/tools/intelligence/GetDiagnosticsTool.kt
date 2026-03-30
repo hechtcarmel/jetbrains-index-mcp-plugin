@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInf
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.intention.IntentionManager
@@ -53,6 +54,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class GetDiagnosticsTool : AbstractMcpTool() {
 
     companion object {
+        private val LOG = logger<GetDiagnosticsTool>()
         private const val MAX_PROBLEMS = 100
         private const val MAX_INTENTIONS = 50
         private const val DAEMON_ANALYSIS_WAIT_MS = 500L
@@ -222,10 +224,16 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         severity: String
     ): Pair<List<ProblemInfo>, List<IntentionInfo>> = suspendingReadAction {
         val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-            ?: return@suspendingReadAction Pair(emptyList(), emptyList())
+        if (psiFile == null) {
+            LOG.warn("Could not parse file for diagnostics: $filePath")
+            return@suspendingReadAction Pair(emptyList(), emptyList())
+        }
 
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
-            ?: return@suspendingReadAction Pair(emptyList(), emptyList())
+        if (document == null) {
+            LOG.warn("Could not get document for diagnostics: $filePath")
+            return@suspendingReadAction Pair(emptyList(), emptyList())
+        }
 
         val editor = fileEditorManager.getEditors(virtualFile)
             .filterIsInstance<TextEditor>()

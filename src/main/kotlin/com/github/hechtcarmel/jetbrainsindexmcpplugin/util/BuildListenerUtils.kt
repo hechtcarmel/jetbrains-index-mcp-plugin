@@ -107,7 +107,7 @@ object BuildListenerUtils {
                 listenerClass.classLoader,
                 arrayOf(listenerClass)
             ) { _, method, args ->
-                if (method.name == "compilationFinished" && args != null && args.size >= 3) {
+                if (method.name == "compilationFinished" && args != null && args.size >= 4) {
                     val compileContext = args.getOrNull(3) ?: return@newProxyInstance null
                     onCompilationFinished(compileContext)
                 }

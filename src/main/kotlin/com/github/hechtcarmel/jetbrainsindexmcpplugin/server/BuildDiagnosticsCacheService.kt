@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -25,11 +26,10 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
     private val cachedMessages = CopyOnWriteArrayList<BuildMessage>()
     private val buildTimestamp = AtomicLong(0L)
     private val currentBuildId = AtomicReference<Any?>(null)
-    private var initialized = false
+    private val initialized = AtomicBoolean(false)
 
     fun initialize() {
-        if (initialized) return
-        initialized = true
+        if (!initialized.compareAndSet(false, true)) return
 
         val serviceDisposable = Disposer.newDisposable(this, "BuildDiagnosticsCacheService-listeners")
 

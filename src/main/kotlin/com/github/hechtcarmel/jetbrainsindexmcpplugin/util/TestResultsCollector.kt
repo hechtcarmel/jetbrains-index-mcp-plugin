@@ -26,8 +26,8 @@ object TestResultsCollector {
         severity: String,
         maxTestResults: Int
     ): TestCollectionResult? {
-        val rootProxy = findTestRootProxy(project) ?: return null
-        val runConfigName = findRunConfigName(project)
+        val descriptors = RunContentManager.getInstance(project).allDescriptors
+        val (rootProxy, runConfigName) = findTestRootProxyAndName(descriptors) ?: return null
 
         val allLeafTests = rootProxy.getAllTests().filter { it.children.isEmpty() }
 
@@ -45,19 +45,12 @@ object TestResultsCollector {
         )
     }
 
-    private fun findTestRootProxy(project: Project): SMTestProxy.SMRootTestProxy? {
-        val descriptors = getAllRunContentDescriptors(project)
-
+    private fun findTestRootProxyAndName(descriptors: List<RunContentDescriptor>): Pair<SMTestProxy.SMRootTestProxy, String?>? {
         for (descriptor in descriptors) {
             val root = extractRootProxy(descriptor.executionConsole)
-            if (root != null) return root
+            if (root != null) return Pair(root, descriptor.displayName)
         }
-
         return null
-    }
-
-    private fun getAllRunContentDescriptors(project: Project): List<RunContentDescriptor> {
-        return RunContentManager.getInstance(project).allDescriptors
     }
 
     private fun extractRootProxy(console: Any?): SMTestProxy.SMRootTestProxy? {
@@ -73,11 +66,6 @@ object TestResultsCollector {
             LOG.debug("Failed to extract test root proxy", e)
             return null
         }
-    }
-
-    private fun findRunConfigName(project: Project): String? {
-        val descriptors = getAllRunContentDescriptors(project)
-        return descriptors.firstOrNull()?.displayName
     }
 
     private fun computeSummary(leafTests: List<SMTestProxy>, runConfigName: String?): TestSummary {
