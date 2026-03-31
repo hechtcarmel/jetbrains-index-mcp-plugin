@@ -1,10 +1,12 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.OrderEnumerator
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.toNioPathOrNull
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -117,6 +119,9 @@ object PsiUtils {
         
         // Handle already-formatted jar:// URLs
         if (path.startsWith("jar://")) {
+            val jarPath = path.removePrefix("jar://").substringBefore("!/")
+            val projectLibraryJars = project.getProjectLibraryJars()
+            if (projectLibraryJars.none { jarPath.startsWith(it) }) return null
             return virtualFileManager.findFileByUrl(path)
         }
 
@@ -130,6 +135,12 @@ object PsiUtils {
                 val homeExpandedJarPath = expandHome(jarPath)
                 val absoluteJarPath = resolveAbsolutePathString(homeExpandedJarPath, listOfNotNull(project.basePath).asSequence())
                     ?: homeExpandedJarPath
+
+                val projectLibraryJars = project.getProjectLibraryJars()
+
+                if (projectLibraryJars.none { absoluteJarPath.startsWith(it) }) {
+                    return null
+                }
                 
                 // Construct the jar URL: jar://absolute/path/to/file.jar!/internal/path
                 val jarUrl = "jar://$absoluteJarPath!/$internalPath"
@@ -267,3 +278,12 @@ object PsiUtils {
         return element.navigationElement ?: element
     }
 }
+
+private fun Project.getProjectLibraryJars(): List<String> = OrderEnumerator.orderEntries(this)
+    .librariesOnly()
+    .classes()
+    .roots
+    .mapNotNull { root ->
+        root.toNioPathOrNull()?.toString()
+            ?: root.path.takeIf { it.contains("!/") }?.substringBefore("!/")
+    }

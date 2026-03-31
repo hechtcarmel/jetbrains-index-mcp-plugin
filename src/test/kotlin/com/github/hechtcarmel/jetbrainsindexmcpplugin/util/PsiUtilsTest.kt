@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiClass
@@ -228,6 +229,8 @@ class PsiUtilsTest : BasePlatformTestCase() {
         // Ensure VFS sees the jar
         LocalFileSystem.getInstance().refreshAndFindFileByPath(jarFile.absolutePath)
 
+        ModuleRootModificationUtil.addModuleLibrary(module, "jar://${jarFile.absolutePath}!/")
+
         val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "${jarFile.absolutePath}!/$entryPath")
         assertNotNull("Jar entry should resolve to a VirtualFile", resolved)
         assertEquals("Sample.txt", resolved?.name)
@@ -237,4 +240,24 @@ class PsiUtilsTest : BasePlatformTestCase() {
         assertEquals("Sample.txt", resolvedByUrl?.name)
     }
 
+    fun testResolveVirtualFileAnywhere_BlocksJarNotInProjectLibraries() {
+        val tempDir = Files.createTempDirectory("jetbrains-index-mcp").toFile()
+        val jarFile = Files.createTempFile(tempDir.toPath(), "sample", ".jar").toFile()
+        val entryPath = "com/example/Sample.txt"
+
+        JarOutputStream(FileOutputStream(jarFile)).use { jarStream ->
+            jarStream.putNextEntry(JarEntry(entryPath))
+            jarStream.write("hello".toByteArray())
+            jarStream.closeEntry()
+        }
+
+        // Ensure VFS sees the jar
+        LocalFileSystem.getInstance().refreshAndFindFileByPath(jarFile.absolutePath)
+
+        val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "${jarFile.absolutePath}!/$entryPath")
+        assertNull("JAR not in project libraries should be blocked", resolved)
+
+        val resolvedByUrl = PsiUtils.resolveVirtualFileAnywhere(project, "jar://${jarFile.absolutePath}!/$entryPath")
+        assertNull("JAR URL not in project libraries should be blocked", resolvedByUrl)
+    }
 }
