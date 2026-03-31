@@ -22,6 +22,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
+import java.io.File
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
@@ -325,23 +326,35 @@ abstract class AbstractMcpTool : McpTool {
      * @return The VirtualFile, or null if not found
      */
     protected fun resolveFile(project: Project, relativePath: String): VirtualFile? {
-        // Absolute paths are resolved directly
+        // Absolute paths are validated against project roots before resolving
         if (relativePath.startsWith("/") || relativePath.startsWith("\\")) {
-            return LocalFileSystem.getInstance().refreshAndFindFileByPath(relativePath)
+            val canonical = File(relativePath).canonicalPath
+            val projectRoots = listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project)
+            val withinProject = projectRoots.any { root ->
+                canonical.startsWith(File(root).canonicalPath + File.separator)
+            }
+            if (!withinProject) return null
+            return LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
         }
 
         // Try project basePath first
         val basePath = project.basePath
         if (basePath != null) {
-            val file = LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")
-            if (file != null) return file
+            val canonical = File(basePath, relativePath).canonicalPath
+            if (canonical.startsWith(File(basePath).canonicalPath + File.separator)) {
+                val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+                if (file != null) return file
+            }
         }
 
         // Try module content roots (workspace sub-project support)
         for (rootPath in ProjectUtils.getModuleContentRoots(project)) {
             if (rootPath != basePath) {
-                val file = LocalFileSystem.getInstance().refreshAndFindFileByPath("$rootPath/$relativePath")
-                if (file != null) return file
+                val canonical = File(rootPath, relativePath).canonicalPath
+                if (canonical.startsWith(File(rootPath).canonicalPath + File.separator)) {
+                    val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+                    if (file != null) return file
+                }
             }
         }
 
