@@ -591,13 +591,34 @@ class RenameSymbolTool : AbstractMcpTool() {
     }
 
     /**
-     * Finds the named element from a PSI element (traverses up if needed).
+     * Finds the named element from a PSI element.
+     *
+     * First checks if the element itself is a named element (direct declaration hit).
+     * Then checks if the element or its close ancestors have PSI references that resolve
+     * to a named declaration — this handles cases like Android XML resource references
+     * (`@+id/Foo`) where the cursor is inside a reference, not on a declaration.
+     * Falls back to walking up the tree for the nearest [PsiNamedElement].
      */
     private fun findNamedElement(element: PsiElement): PsiNamedElement? {
         if (element is PsiNamedElement && element.name != null) {
             return element
         }
-        return PsiTreeUtil.getParentOfType(element, PsiNamedElement::class.java)
+
+        var current: PsiElement? = element
+        while (current != null) {
+            for (reference in current.references) {
+                val resolved = reference.resolve()
+                if (resolved is PsiNamedElement && resolved.name != null) {
+                    return resolved
+                }
+            }
+            if (current is PsiNamedElement && current.name != null) {
+                return current
+            }
+            current = current.parent
+        }
+
+        return null
     }
 
     /**

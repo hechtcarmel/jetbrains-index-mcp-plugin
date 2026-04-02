@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.9.2] - 2026-04-02
+### Fixed
+- **`ide_refactor_rename` renamed XML attribute name instead of referenced resource** — When renaming inside an XML attribute value (e.g., `android:id="@+id/XXTVProgress"`), the tool incorrectly renamed the attribute name (`android:id`) instead of the referenced resource ID. Now resolves PSI references before falling back to tree-walking, so the rename correctly targets the referenced declaration. Fixes [#113](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/113).
+
 ## [4.9.1] - 2026-04-01
 ### Fixed
 - **Path traversal protection for file operations** — All file-based tools now validate that resolved paths stay within project boundaries, preventing access to files outside the project via relative paths like `../../`.
