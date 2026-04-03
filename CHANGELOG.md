@@ -3,6 +3,15 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **Symbol reference resolution for position-based tools** — Five tools now accept `language` + `symbol` as an alternative to `file` + `line` + `column` for identifying the target element. The two parameter groups are mutually exclusive. Unlocks the ability to directly reference symbols from third-party libraries.
+
+  Currently supported for Java; extensible to other languages via `SymbolReferenceHandler`. Symbol format uses JavaDoc-style member references: `com.example.ClassName`, `com.example.ClassName#memberName`, or `com.example.ClassName#method(ParamType1, ParamType2)`.
+
+  - Affected tools: `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`
+  - New handler interface: `SymbolReferenceHandler` with `JavaSymbolReferenceHandler` implementation
+  - New `resolveElementFromArguments()` helper in `AbstractMcpTool` for unified element resolution
+  - New `languageAndSymbol()` builder method in `SchemaBuilder`
 
 ## [4.9.3] - 2026-04-04
 ### Added

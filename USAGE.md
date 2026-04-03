@@ -102,6 +102,21 @@ Most tools operate on a specific location in code and require these parameters:
 | `line` | integer | 1-based line number |
 | `column` | integer | 1-based column number |
 
+### Symbol Reference Parameters
+
+Some tools support identifying the target element by fully qualified symbol reference instead of file position. The following parameters are available as an alternative to `file` + `line` + `column`:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
+| `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
+
+**Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
+
+**Supported languages:** Java (more languages planned).
+
+**Tools that support symbol references:** `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`.
+
 ---
 
 ## Universal Tools
@@ -117,16 +132,20 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 - Understanding code dependencies
 - Preparing for refactoring
 
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `file` | string | Conditional | Path to the file relative to project root. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `maxResults` | integer | No | Maximum number of references to return (default: 100, max: 500) |
 
-**Example Request:**
+**Example Request (position-based):**
 
 ```json
 {
@@ -137,6 +156,21 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
       "file": "src/main/java/com/example/UserService.java",
       "line": 15,
       "column": 20
+    }
+  }
+}
+```
+
+**Example Request (symbol-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_find_references",
+    "arguments": {
+      "language": "Java",
+      "symbol": "com.example.UserService#findUser(String)"
     }
   }
 }
@@ -186,16 +220,20 @@ Finds the definition/declaration location of a symbol at a given source location
 - Understanding where a method, class, variable, or field is declared
 - Looking up the original definition from a usage site
 
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `file` | string | Conditional | Path to the file relative to project root. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `maxPreviewLines` | integer | No | Limit `fullElementPreview` output size (default: 50, max: 500) |
 
-**Example Request:**
+**Example Request (position-based):**
 
 ```json
 {
@@ -206,6 +244,21 @@ Finds the definition/declaration location of a symbol at a given source location
       "file": "src/main/java/com/example/App.java",
       "line": 25,
       "column": 12
+    }
+  }
+}
+```
+
+**Example Request (symbol-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_find_definition",
+    "arguments": {
+      "language": "Java",
+      "symbol": "com.example.UserService#findUser(String)"
     }
   }
 }
@@ -1119,17 +1172,21 @@ Analyzes method call relationships to find callers or callees.
 - Analyzing impact of method changes
 - Debugging to understand how a method is reached
 
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `file` | string | Conditional | Path to the file relative to project root. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `direction` | string | Yes | `"callers"` or `"callees"` |
 | `depth` | integer | No | How deep to traverse (default: 3, max: 5) |
 
-**Example Request:**
+**Example Request (position-based):**
 
 ```json
 {
@@ -1140,6 +1197,22 @@ Analyzes method call relationships to find callers or callees.
       "file": "src/main/java/com/example/UserService.java",
       "line": 20,
       "column": 10,
+      "direction": "callers"
+    }
+  }
+}
+```
+
+**Example Request (symbol-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_call_hierarchy",
+    "arguments": {
+      "language": "Java",
+      "symbol": "com.example.UserService#validateUser(String)",
       "direction": "callers"
     }
   }
@@ -1186,15 +1259,19 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 - Finding classes that extend an abstract class
 - Finding all overriding methods for polymorphic behavior analysis
 
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `file` | string | Conditional | Path to the file relative to project root. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 
-**Example Request:**
+**Example Request (position-based):**
 
 ```json
 {
@@ -1205,6 +1282,21 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
       "file": "src/main/java/com/example/Repository.java",
       "line": 8,
       "column": 10
+    }
+  }
+}
+```
+
+**Example Request (symbol-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_find_implementations",
+    "arguments": {
+      "language": "Java",
+      "symbol": "com.example.Repository"
     }
   }
 }
@@ -1356,15 +1448,19 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 **Position flexibility:** The position (line/column) can be anywhere within the method - on the name, inside the body, or on the @Override annotation. The tool automatically finds the enclosing method.
 
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
-| `line` | integer | Yes | 1-based line number (any line within the method) |
-| `column` | integer | Yes | 1-based column number (any position within the method) |
+| `file` | string | Conditional | Path to the file relative to project root. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number (any line within the method). Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number (any position within the method). Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 
-**Example Request:**
+**Example Request (position-based):**
 
 ```json
 {
@@ -1375,6 +1471,21 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
       "file": "src/main/java/com/example/UserServiceImpl.java",
       "line": 25,
       "column": 10
+    }
+  }
+}
+```
+
+**Example Request (symbol-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_find_super_methods",
+    "arguments": {
+      "language": "Java",
+      "symbol": "com.example.UserServiceImpl#findUser(String)"
     }
   }
 }
