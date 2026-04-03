@@ -32,26 +32,24 @@ class FindDefinitionTool : AbstractMcpTool() {
 
         Returns: file path, line/column of definition, code preview, and symbol name.
 
-        Parameters: file + line + column (required).
+        Target (mutually exclusive):
+        - file + line + column: position-based lookup
+        - language + symbol: fully qualified symbol reference
 
         Example: {"file": "src/Main.java", "line": 15, "column": 10}
+        Example: {"language": "Java", "symbol": "com.example.MyClass#processData(String)"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .file(description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). REQUIRED.")
-        .lineAndColumn()
+        .file(required = false)
+        .lineAndColumn(required = false)
+        .languageAndSymbol(required = false)
         .booleanProperty(ParamNames.FULL_ELEMENT_PREVIEW, "If true, returns the complete element code instead of a preview snippet. Optional, defaults to false.")
         .intProperty(ParamNames.MAX_PREVIEW_LINES, "Maximum lines for fullElementPreview. Truncates large classes/functions. Default: 50, Max: 500. Only used when fullElementPreview=true.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
-            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.FILE))
-        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
-            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
-        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
-            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
         val fullElementPreview = arguments[ParamNames.FULL_ELEMENT_PREVIEW]?.jsonPrimitive?.content?.toBoolean() ?: false
         val maxPreviewLines = (arguments[ParamNames.MAX_PREVIEW_LINES]?.jsonPrimitive?.int ?: DEFAULT_MAX_PREVIEW_LINES)
             .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
@@ -59,14 +57,15 @@ class FindDefinitionTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val element = findPsiElement(project, file, line, column)
-                ?: return@suspendingReadAction createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
+            val element = resolveElementFromArguments(project, arguments).getOrElse {
+                return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+            }
 
-            // Use semantic reference resolution to find what this position refers to.
-            // This correctly handles method calls (resolves to the called method)
-            // vs declarations (returns the declaration itself).
-            val resolvedElement = PsiUtils.resolveTargetElement(element)
-                ?: return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED)
+            // Symbol-based resolution returns the declaration directly (PsiNamedElement).
+            // Position-based resolution returns a leaf token that needs reference resolution.
+            val resolvedElement = element as? PsiNamedElement
+                ?: (PsiUtils.resolveTargetElement(element)
+                    ?: return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED))
 
             // Prefer source files (.java) over compiled files (.class) for library classes
             val targetElement = PsiUtils.getNavigationElement(resolvedElement)

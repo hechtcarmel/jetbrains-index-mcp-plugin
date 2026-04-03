@@ -25,14 +25,32 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.Optimize
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.mockk.every
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ToolsUnitTest : TestCase() {
+
+    override fun setUp() {
+        super.setUp()
+        mockkObject(LanguageHandlerRegistry)
+        every { LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference() } returns listOf("Java", "Kotlin")
+    }
+
+    override fun tearDown() {
+        try {
+            unmockkObject(LanguageHandlerRegistry)
+        } finally {
+            super.tearDown()
+        }
+    }
 
     fun testGetIndexStatusToolSchema() {
         val tool = GetIndexStatusTool()
@@ -114,6 +132,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+        assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
@@ -137,6 +157,10 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+        assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
+
+        assertNull("Should not have required array", schema[SchemaConstants.REQUIRED])
     }
 
     fun testTypeHierarchyToolSchema() {
@@ -171,6 +195,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull(properties)
 
         assertNotNull("Should have direction property", properties?.get(ParamNames.DIRECTION))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+        assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
     }
 
     fun testFindImplementationsToolSchema() {
@@ -188,6 +214,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+        assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
@@ -474,9 +502,10 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+        assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
 
-        val required = schema[SchemaConstants.REQUIRED]
-        assertNotNull("Should have required array", required)
+        assertNull("Should not have required array", schema[SchemaConstants.REQUIRED])
     }
 
     fun testReformatCodeToolSchema() {

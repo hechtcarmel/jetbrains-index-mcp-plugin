@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -33,15 +34,21 @@ class CallHierarchyTool : AbstractMcpTool() {
 
         Returns: recursive tree with method signatures, file locations (line/column), and nested call relationships.
 
-        Parameters: file + line + column + direction (required). direction: "callers" or "callees". depth (optional, default: 3, max: 5).
+        Target (mutually exclusive):
+        - file + line + column: position-based lookup
+        - language + symbol: fully qualified symbol reference
+
+        Parameters: direction (required): "callers" or "callees". depth (optional, default: 3, max: 5).
 
         Example: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callers"}
+        Example: {"language": "Java", "symbol": "com.example.Service#processRequest(String)", "direction": "callers"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .file()
-        .lineAndColumn()
+        .file(required = false)
+        .lineAndColumn(required = false)
+        .languageAndSymbol(required = false)
         .enumProperty("direction", "Direction: 'callers' (methods that call this method) or 'callees' (methods this method calls)", listOf("callers", "callees"), required = true)
         .intProperty("depth", "How many levels deep to traverse the call hierarchy (default: 3, max: 5)")
         .build()
@@ -52,12 +59,6 @@ class CallHierarchyTool : AbstractMcpTool() {
     }
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
-        val line = arguments["line"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: line")
-        val column = arguments["column"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: column")
         val direction = arguments["direction"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: direction")
         val depth = (arguments["depth"]?.jsonPrimitive?.int ?: DEFAULT_DEPTH).coerceIn(1, MAX_DEPTH)
@@ -71,8 +72,9 @@ class CallHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
-            val element = findPsiElement(project, file, line, column)
-                ?: return@suspendingReadAction createErrorResult("No element found at position $file:$line:$column")
+            val element = resolveElementFromArguments(project, arguments).getOrElse {
+                return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+            }
 
             // Find appropriate handler for this element's language
             val handler = LanguageHandlerRegistry.getCallHierarchyHandler(element)

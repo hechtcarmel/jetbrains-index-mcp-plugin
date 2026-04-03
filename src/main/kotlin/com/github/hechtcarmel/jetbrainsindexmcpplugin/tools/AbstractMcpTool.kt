@@ -1,6 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
@@ -30,6 +34,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiModificationTracker
+import com.intellij.util.concurrency.annotations.RequiresReadLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -393,6 +398,62 @@ abstract class AbstractMcpTool : McpTool {
 
         val offset = getOffset(document, line, column) ?: return null
         return psiFile.findElementAt(offset)
+    }
+
+    /**
+     * Resolves a PSI element from arguments using either `language`+`symbol` or `file`+`line`+`column`.
+     *
+     * These two parameter groups are mutually exclusive.
+     *
+     * The symbol path always returns a [com.intellij.psi.PsiNamedElement] (the declaration);
+     * the position path returns a leaf token that callers must resolve further.
+     *
+     * @param project The project context
+     * @param arguments The tool arguments
+     * @return [Result.success] with the resolved element, or [Result.failure] with an [IllegalArgumentException]
+     */
+    @RequiresReadLock
+    protected fun resolveElementFromArguments(
+        project: Project,
+        arguments: JsonObject
+    ): Result<PsiElement> {
+        val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
+        val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content
+        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
+        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
+        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
+
+        val hasSymbol = language != null || symbol != null
+        val hasPosition = file != null || line != null || column != null
+
+        if (hasSymbol && hasPosition) {
+            return ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE.toArgumentFailure()
+        }
+
+        if (hasSymbol) {
+            if (language == null) return ErrorMessages.missingParamForSymbol(ParamNames.LANGUAGE).toArgumentFailure()
+            if (symbol == null) return ErrorMessages.missingParamForSymbol(ParamNames.SYMBOL).toArgumentFailure()
+
+            val handler = LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName(language)
+                ?: return ErrorMessages.noSymbolReferenceHandler(
+                    language, LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference()
+                ).toArgumentFailure()
+
+            return handler.resolveSymbol(project, symbol)
+        }
+
+        if (hasPosition) {
+            if (file == null) return ErrorMessages.missingParamForPosition(ParamNames.FILE, "line or column").toArgumentFailure()
+            if (line == null) return ErrorMessages.missingParamForPosition(ParamNames.LINE, "file or column").toArgumentFailure()
+            if (column == null) return ErrorMessages.missingParamForPosition(ParamNames.COLUMN, "file or line").toArgumentFailure()
+
+            val element = findPsiElement(project, file, line, column)
+                ?: return ErrorMessages.noElementAtPosition(file, line, column).toArgumentFailure()
+
+            return Result.success(element)
+        }
+
+        return ErrorMessages.SYMBOL_OR_POSITION_REQUIRED.toArgumentFailure()
     }
 
     /**

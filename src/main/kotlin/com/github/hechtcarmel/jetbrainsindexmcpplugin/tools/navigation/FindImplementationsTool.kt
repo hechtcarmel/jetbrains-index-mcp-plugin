@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
@@ -13,7 +14,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -40,16 +40,23 @@ class FindImplementationsTool : AbstractMcpTool() {
         Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: file + line + column (required for fresh search), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+
+        Target (mutually exclusive):
+        - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
+        - language + symbol: fully qualified symbol reference (necessary for fresh search, ignored when cursor is provided)
+        - cursor: pagination cursor from a previous response
+
+        Parameters: pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
+        Example: {"language": "Java", "symbol": "com.example.Repository"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .file(required = false, description = "Path to file relative to project root. Required for fresh search, ignored when cursor is provided.")
-        .intProperty("line", "1-based line number. Required for fresh search, ignored when cursor is provided.")
-        .intProperty("column", "1-based column number. Required for fresh search, ignored when cursor is provided.")
+        .file(required = false)
+        .lineAndColumn(required = false)
+        .languageAndSymbol(required = false)
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
@@ -72,19 +79,14 @@ class FindImplementationsTool : AbstractMcpTool() {
             }
         }
 
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
-        val line = arguments["line"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: line")
-        val column = arguments["column"]?.jsonPrimitive?.int
-            ?: return createErrorResult("Missing required parameter: column")
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
 
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val element = findPsiElement(project, file, line, column)
-                ?: return@suspendingReadAction null to createErrorResult("No element found at position $file:$line:$column")
+            val element = resolveElementFromArguments(project, arguments).getOrElse {
+                return@suspendingReadAction null to createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+            }
 
             val handler = LanguageHandlerRegistry.getImplementationsHandler(element)
             if (handler == null) {

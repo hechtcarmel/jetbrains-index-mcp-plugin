@@ -1,7 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
@@ -18,6 +17,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.SmartPointerManager
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiModificationTracker
@@ -26,7 +26,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
 class FindUsagesTool : AbstractMcpTool() {
@@ -44,16 +43,23 @@ class FindUsagesTool : AbstractMcpTool() {
         Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.).
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: file + line + column (required for fresh search), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+
+        Target (mutually exclusive):
+        - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
+        - language + symbol: fully qualified symbol reference (necessary for fresh search, ignored when cursor is provided)
+        - cursor: pagination cursor from a previous response
+
+        Parameters: pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/UserService.java", "line": 25, "column": 18}
+        Example: {"language": "Java", "symbol": "com.example.UserService#findUser(String)"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .file(required = false, description = "Path to file relative to project root. Required for fresh search, ignored when cursor is provided.")
-        .intProperty("line", "1-based line number. Required for fresh search, ignored when cursor is provided.")
-        .intProperty("column", "1-based column number. Required for fresh search, ignored when cursor is provided.")
+        .file(required = false)
+        .lineAndColumn(required = false)
+        .languageAndSymbol(required = false)
         .intProperty("maxResults", "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
@@ -78,23 +84,21 @@ class FindUsagesTool : AbstractMcpTool() {
             }
         }
 
-        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
-            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.FILE))
-        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
-            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.LINE))
-        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
-            ?: return createErrorResult(ErrorMessages.missingRequiredParam(ParamNames.COLUMN))
         val pageSize = resolvePageSize(arguments, DEFAULT_MAX_RESULTS, aliases = arrayOf("maxResults"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
 
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val element = findPsiElement(project, file, line, column)
-                ?: return@suspendingReadAction null to createErrorResult(ErrorMessages.noElementAtPosition(file, line, column))
+            val element = resolveElementFromArguments(project, arguments).getOrElse {
+                return@suspendingReadAction null to createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+            }
 
-            val targetElement = PsiUtils.resolveTargetElement(element)
-                ?: return@suspendingReadAction null to createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
+            // Symbol-based resolution returns the declaration directly (PsiNamedElement).
+            // Position-based resolution returns a leaf token that needs reference resolution.
+            val targetElement = element as? PsiNamedElement
+                ?: (PsiUtils.resolveTargetElement(element)
+                    ?: return@suspendingReadAction null to createErrorResult(ErrorMessages.NO_NAMED_ELEMENT))
 
             val usages = ConcurrentLinkedQueue<UsageLocation>()
             val totalFound = AtomicInteger(0)
