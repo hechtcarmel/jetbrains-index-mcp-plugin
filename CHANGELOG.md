@@ -5,8 +5,11 @@
 ## [Unreleased]
 
 ## [4.9.3] - 2026-04-04
+### Added
+- **`ide_refactor_rename` file rename mode** — The `line` and `column` parameters are now optional. Omit them to rename the file itself instead of a symbol within it. Works for all file types including binary files (`.webp`, `.png`, `.jpg`). Especially useful for Android resource files where it updates all resource references across the project. Fixes [#115](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/115).
+
 ### Fixed
-- **`ide_refactor_rename` now supports file renames (binary files, Android resources)** — Previously, renaming binary files like `.webp`, `.png`, or `.jpg` failed with "No element found at the specified position" because binary files have no text PSI elements. The `line` and `column` parameters are now optional: omit them to rename the file itself instead of a symbol within it. This enables renaming Android resource files (drawables, mipmaps, etc.) with automatic reference updates across the project. Fixes [#115](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/115).
+- **`ide_refactor_rename` file rename correctly handles Android resource naming** — When renaming Android resource files (drawables, mipmaps, etc.), the tool now probes `RenamePsiElementProcessor.prepareRenaming()` to detect element substitution. If the `PsiFile` will be substituted for a resource element, the file extension is stripped from `newName` to match the SDK's resource naming convention. This prevents double extensions (e.g., `app_icon.webp.webp`) on related DPI variants and corrupted `R.drawable` references.
 
 ## [4.9.2] - 2026-04-02
 ### Fixed
