@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -66,8 +67,10 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
             val superMethodsData = handler.findSuperMethods(element, project)
             if (superMethodsData == null) {
+                val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
                 return@suspendingReadAction createErrorResult(
-                    "No method found at position. Ensure the position is within a method declaration or body."
+                    if (isSymbolMode) "No method found for the specified symbol. Ensure the symbol refers to a method declaration."
+                    else "No method found at position. Ensure the position is within a method declaration or body."
                 )
             }
 

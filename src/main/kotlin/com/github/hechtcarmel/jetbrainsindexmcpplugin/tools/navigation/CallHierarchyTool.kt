@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -89,7 +90,11 @@ class CallHierarchyTool : AbstractMcpTool() {
 
             val hierarchyData = handler.getCallHierarchy(element, project, direction, depth)
             if (hierarchyData == null) {
-                return@suspendingReadAction createErrorResult("No method/function found at position")
+                val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
+                return@suspendingReadAction createErrorResult(
+                    if (isSymbolMode) "No method/function found for the specified symbol"
+                    else "No method/function found at position"
+                )
             }
 
             // Convert handler result to tool result

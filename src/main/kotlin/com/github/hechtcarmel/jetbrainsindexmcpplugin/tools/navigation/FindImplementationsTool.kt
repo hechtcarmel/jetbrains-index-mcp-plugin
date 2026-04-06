@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
@@ -98,7 +99,11 @@ class FindImplementationsTool : AbstractMcpTool() {
 
             val implementations = handler.findImplementations(element, project)
             if (implementations == null) {
-                return@suspendingReadAction null to createErrorResult("No method or class found at position")
+                val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
+                return@suspendingReadAction null to createErrorResult(
+                    if (isSymbolMode) "No method or class found for the specified symbol"
+                    else "No method or class found at position"
+                )
             }
 
             val implementationLocations = implementations.map { impl ->
