@@ -806,6 +806,110 @@ class JavaSymbolReferenceHandlerTest : BasePlatformTestCase() {
         assertEquals(2, (element as PsiMethod).parameterList.parameters.size)
     }
 
+    fun testPackagePrivateFieldNotInheritedAcrossPackages() {
+        myFixture.addFileToProject(
+            "com/base/Base.java",
+            """
+            package com.base;
+            public class Base {
+                String hidden;
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "com/derived/Derived.java",
+            """
+            package com.derived;
+            import com.base.Base;
+            public class Derived extends Base {}
+            """.trimIndent()
+        )
+
+        // Package-private fields are not inherited across packages
+        val result = handler.resolveSymbol(project, "com.derived.Derived#hidden")
+        assertTrue("Should fail — package-private field not visible across packages", result.isFailure)
+        val message = result.exceptionOrNull()!!.message!!
+        assertTrue("Should mention member not found", message.contains("No member"))
+    }
+
+    fun testPackagePrivateMethodNotInheritedAcrossPackages() {
+        myFixture.addFileToProject(
+            "com/base/BaseService.java",
+            """
+            package com.base;
+            public class BaseService {
+                void internalProcess() {}
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "com/derived/DerivedService.java",
+            """
+            package com.derived;
+            import com.base.BaseService;
+            public class DerivedService extends BaseService {}
+            """.trimIndent()
+        )
+
+        // Package-private methods are not inherited across packages
+        val result = handler.resolveSymbol(project, "com.derived.DerivedService#internalProcess()")
+        assertTrue("Should fail — package-private method not visible across packages", result.isFailure)
+        val message = result.exceptionOrNull()!!.message!!
+        assertTrue("Should mention member not found", message.contains("No member"))
+    }
+
+    fun testPackagePrivateFieldInheritedWithinSamePackage() {
+        myFixture.addFileToProject(
+            "com/example/PkgBase.java",
+            """
+            package com.example;
+            public class PkgBase {
+                String shared;
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "com/example/PkgChild.java",
+            """
+            package com.example;
+            public class PkgChild extends PkgBase {}
+            """.trimIndent()
+        )
+
+        // Package-private fields ARE inherited within the same package
+        val result = handler.resolveSymbol(project, "com.example.PkgChild#shared")
+        assertTrue("Should succeed — package-private field visible within same package", result.isSuccess)
+        val element = result.getOrThrow()
+        assertTrue("Should be PsiField", element is PsiField)
+        assertEquals("shared", element.name)
+    }
+
+    fun testPackagePrivateMethodInheritedWithinSamePackage() {
+        myFixture.addFileToProject(
+            "com/example/PkgBaseService.java",
+            """
+            package com.example;
+            public class PkgBaseService {
+                void internalWork() {}
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "com/example/PkgChildService.java",
+            """
+            package com.example;
+            public class PkgChildService extends PkgBaseService {}
+            """.trimIndent()
+        )
+
+        // Package-private methods ARE inherited within the same package
+        val result = handler.resolveSymbol(project, "com.example.PkgChildService#internalWork()")
+        assertTrue("Should succeed — package-private method visible within same package", result.isSuccess)
+        val element = result.getOrThrow()
+        assertTrue("Should be PsiMethod", element is PsiMethod)
+        assertEquals("internalWork", element.name)
+    }
+
     fun testPrivateFieldNotInheritedByDerivedClass() {
         myFixture.addFileToProject(
             "com/example/PrivateBase.java",

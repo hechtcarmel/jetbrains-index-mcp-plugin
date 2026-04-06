@@ -1685,12 +1685,22 @@ class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolRef
     }
 
     /**
-     * Returns true when [member] is inherited by [queryClass] — i.e., it is either
-     * non-private or declared directly in [queryClass].
+     * Returns true when [member] is visible to [queryClass] through inheritance.
+     *
+     * Java visibility rules for inherited members:
+     * - **private**: visible only within the declaring class
+     * - **package-private** (default): visible only if [queryClass] is in the same package
+     * - **protected / public**: always inherited
      */
     private fun isInheritedBy(member: PsiMember, queryClass: PsiClass): Boolean {
-        if (!member.hasModifierProperty(PsiModifier.PRIVATE)) return true
-        return member.containingClass == queryClass
+        val declaringClass = member.containingClass ?: return false
+        if (declaringClass == queryClass) return true
+        if (member.hasModifierProperty(PsiModifier.PRIVATE)) return false
+        if (member.hasModifierProperty(PsiModifier.PUBLIC) || member.hasModifierProperty(PsiModifier.PROTECTED)) return true
+        // Package-private: visible only if both classes are in the same package
+        val memberPackage = (declaringClass.containingFile as? PsiJavaFile)?.packageName
+        val queryPackage = (queryClass.containingFile as? PsiJavaFile)?.packageName
+        return memberPackage != null && memberPackage == queryPackage
     }
 
     private fun matchesParameterTypes(method: PsiMethod, requestedTypes: List<String>): Boolean {
