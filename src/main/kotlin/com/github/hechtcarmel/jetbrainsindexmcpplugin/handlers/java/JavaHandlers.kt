@@ -1513,32 +1513,23 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolReferenceHandler {
 
     companion object {
-        // example: package_name
-        private const val PACKAGE_PART = """[a-z][a-z0-9_]*"""
+        // A valid Java identifier: starts with a letter, underscore, or dollar sign
+        private const val IDENTIFIER = """[a-zA-Z_$][a-zA-Z0-9_$]*"""
 
-        // example: ClassName
-        private const val CLASS_PART = """[A-Z][a-zA-Z0-9_$]*"""
-
-        // example: package_name, package_name.sub_package
-        private const val PACKAGE_NAME = """$PACKAGE_PART(\.$PACKAGE_PART)*"""
-
-        // example: ClassName, ClassName.InnerClass
-        private const val CLASS_NAME = """$CLASS_PART(\.$CLASS_PART)*"""
-
-        // example: fieldName, methodName
-        private const val MEMBER_NAME = """[a-zA-Z_$][a-zA-Z0-9_$]*"""
+        // Dotted qualified name: at least two segments (package + class) separated by dots
+        private const val QUALIFIED_NAME = """$IDENTIFIER(\.$IDENTIFIER)+"""
 
         // example: int, boolean
         private const val PRIMITIVE_TYPE = """(byte|short|int|long|float|double|boolean|char)"""
 
         // example: String, int[], Object..., package.ClassName, package.ClassName[]
-        private const val PARAMETER_TYPE = """\s*($PRIMITIVE_TYPE|($PACKAGE_NAME\.)?$CLASS_NAME)(\[\])*(\.\.\.)?\s*"""
+        private const val PARAMETER_TYPE = """\s*($PRIMITIVE_TYPE|$QUALIFIED_NAME|$IDENTIFIER)(\[\])*(\.\.\.)?\s*"""
 
         // example: (int, String[]), (List, java.util.Map)
         private const val PARAMETER_LIST = """\(($PARAMETER_TYPE(,$PARAMETER_TYPE)*)?\)"""
 
         // example: com.example.MyClass, com.example.MyClass#fieldName, com.example.MyClass#methodName(int, String)
-        internal val JAVA_SYMBOL_PATTERN = """^$PACKAGE_NAME\.$CLASS_NAME(#$MEMBER_NAME($PARAMETER_LIST)?)?$""".toRegex()
+        internal val JAVA_SYMBOL_PATTERN = """^$QUALIFIED_NAME(#$IDENTIFIER($PARAMETER_LIST)?)?$""".toRegex()
 
         private val SYMBOL_EXAMPLES = listOf(
             "'com.example.ClassName'",

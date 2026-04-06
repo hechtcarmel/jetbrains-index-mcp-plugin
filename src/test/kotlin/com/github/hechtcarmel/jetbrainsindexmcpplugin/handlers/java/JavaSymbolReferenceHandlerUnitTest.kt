@@ -85,14 +85,55 @@ class JavaSymbolReferenceHandlerUnitTest : TestCase() {
         }
     }
 
+    // ── JAVA_SYMBOL_PATTERN: unconventional but legal Java identifiers ─────────
+    // Java identifiers are not restricted to conventional casing.
+    // These tests guard against the regex rejecting valid symbols. (review.md issue #2)
+
+    fun testPatternMatchesLowercaseClassName() {
+        assertTrue("Lowercase class names are legal Java identifiers",
+            pattern.matches("com.example.myclass"))
+    }
+
+
+    fun testPatternMatchesCamelCaseClassSegment() {
+        assertTrue("camelCase class is a legal Java identifier",
+            pattern.matches("com.example.iPhone"))
+    }
+
+    fun testPatternMatchesPackageStartingWithUnderscore() {
+        assertTrue("Package starting with underscore is a legal Java identifier",
+            pattern.matches("_internal.MyClass"))
+    }
+
+    fun testPatternMatchesMixedCasePackageAndClass() {
+        assertTrue("Mixed-case package and class are legal Java identifiers",
+            pattern.matches("COM.Example.myClass#field"))
+    }
+
+    fun testPatternMatchesSingleCharIdentifiers() {
+        assertTrue("Single-char identifiers are legal",
+            pattern.matches("a.B"))
+    }
+
+    fun testPatternMatchesClassStartingWithDollarSign() {
+        assertTrue("Dollar-prefixed class names are legal Java identifiers",
+            pattern.matches("com.example.\$Generated"))
+    }
+
+    fun testPatternMatchesClassStartingWithUnderscore() {
+        assertTrue("Underscore-prefixed class names are legal Java identifiers",
+            pattern.matches("com.example._PrivateHelper"))
+    }
+
+    fun testPatternMatchesNumericSuffixInPackage() {
+        assertTrue("Package with numeric suffix after first char is legal",
+            pattern.matches("com.v2.MyClass"))
+    }
+
     // ── JAVA_SYMBOL_PATTERN: invalid symbols ───────────────────────────────────
 
     fun testPatternRejectsNoPackage() {
         assertFalse(pattern.matches("MyClass"))
-    }
-
-    fun testPatternRejectsLowercaseClassName() {
-        assertFalse(pattern.matches("com.example.myclass"))
     }
 
     fun testPatternRejectsEmptyString() {
