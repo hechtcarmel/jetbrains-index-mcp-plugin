@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.OrderEnumerator
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
@@ -115,8 +116,10 @@ object PsiUtils {
     }
 
     fun resolveVirtualFileAnywhere(project: Project, path: String): VirtualFile? {
-        // Normalize path separators upfront — Windows paths may use backslashes
-        val normalizedPath = path.replace('\\', '/')
+        // On Windows, \ is a path separator (and is forbidden in filenames), so normalizing is
+        // always safe and necessary. On POSIX, \ is a valid filename character and must not be
+        // treated as a separator.
+        val normalizedPath = if (SystemInfo.isWindows) path.replace('\\', '/') else path
         val virtualFileManager = VirtualFileManager.getInstance()
 
         // Handle already-formatted jar:// URLs
