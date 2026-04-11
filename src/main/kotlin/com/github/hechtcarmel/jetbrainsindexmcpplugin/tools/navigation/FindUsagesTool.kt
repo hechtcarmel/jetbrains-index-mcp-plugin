@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
@@ -31,8 +32,15 @@ import kotlinx.serialization.json.jsonPrimitive
 class FindUsagesTool : AbstractMcpTool() {
 
     companion object {
+        private val LOG = logger<FindUsagesTool>()
         private const val DEFAULT_MAX_RESULTS = 100
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
+
+        internal fun searchInfrastructureErrorMessage(error: Throwable): String {
+            val detail = error.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+            return "Reference search failed due to IDE/plugin API incompatibility (${error::class.simpleName}$detail). " +
+                "Try ide_search_text as a fallback and check plugin compatibility against the current IDE build."
+        }
     }
 
     override val name = ToolNames.FIND_REFERENCES
@@ -104,45 +112,50 @@ class FindUsagesTool : AbstractMcpTool() {
             val totalFound = AtomicInteger(0)
             val totalCountLimit = collectLimit * 10
 
-            ReferencesSearch.search(targetElement).forEach(Processor { reference ->
-                ProgressManager.checkCanceled()
+            try {
+                ReferencesSearch.search(targetElement).forEach(Processor { reference ->
+                    ProgressManager.checkCanceled()
 
-                val refElement = reference.element
-                val refFile = refElement.containingFile?.virtualFile
-                if (refFile != null) {
-                    val total = totalFound.incrementAndGet()
+                    val refElement = reference.element
+                    val refFile = refElement.containingFile?.virtualFile
+                    if (refFile != null) {
+                        val total = totalFound.incrementAndGet()
 
-                    if (total <= collectLimit) {
-                        val document = PsiDocumentManager.getInstance(project)
-                            .getDocument(refElement.containingFile)
-                        if (document != null) {
-                            val lineNumber = document.getLineNumber(refElement.textOffset) + 1
-                            val columnNumber = refElement.textOffset -
-                                document.getLineStartOffset(lineNumber - 1) + 1
+                        if (total <= collectLimit) {
+                            val document = PsiDocumentManager.getInstance(project)
+                                .getDocument(refElement.containingFile)
+                            if (document != null) {
+                                val lineNumber = document.getLineNumber(refElement.textOffset) + 1
+                                val columnNumber = refElement.textOffset -
+                                    document.getLineStartOffset(lineNumber - 1) + 1
 
-                            val lineText = document.getText(
-                                TextRange(
-                                    document.getLineStartOffset(lineNumber - 1),
-                                    document.getLineEndOffset(lineNumber - 1)
-                                )
-                            ).trim()
+                                val lineText = document.getText(
+                                    TextRange(
+                                        document.getLineStartOffset(lineNumber - 1),
+                                        document.getLineEndOffset(lineNumber - 1)
+                                    )
+                                ).trim()
 
-                            usages.add(UsageLocation(
-                                file = getRelativePath(project, refFile),
-                                line = lineNumber,
-                                column = columnNumber,
-                                context = lineText,
-                                type = classifyUsage(refElement),
-                                astPath = PsiUtils.getAstPath(refElement)
-                            ))
+                                usages.add(UsageLocation(
+                                    file = getRelativePath(project, refFile),
+                                    line = lineNumber,
+                                    column = columnNumber,
+                                    context = lineText,
+                                    type = classifyUsage(refElement),
+                                    astPath = PsiUtils.getAstPath(refElement)
+                                ))
+                            }
                         }
-                    }
 
-                    total < totalCountLimit
-                } else {
-                    true
-                }
-            })
+                        total < totalCountLimit
+                    } else {
+                        true
+                    }
+                })
+            } catch (e: LinkageError) {
+                LOG.warn("Reference search failed for ${targetElement.javaClass.name}", e)
+                return@suspendingReadAction null to createErrorResult(searchInfrastructureErrorMessage(e))
+            }
 
             val usagesList = usages.toList()
                 .distinctBy { "${it.file}:${it.line}:${it.column}" }
@@ -210,40 +223,45 @@ class FindUsagesTool : AbstractMcpTool() {
         val newResults = ConcurrentLinkedQueue<PaginationService.SerializedResult>()
         val count = AtomicInteger(0)
 
-        ReferencesSearch.search(targetElement).forEach(Processor { reference ->
-            ProgressManager.checkCanceled()
-            val refElement = reference.element
-            val refFile = refElement.containingFile?.virtualFile
-            if (refFile != null) {
-                val document = PsiDocumentManager.getInstance(project).getDocument(refElement.containingFile)
-                if (document != null) {
-                    val lineNumber = document.getLineNumber(refElement.textOffset) + 1
-                    val columnNumber = refElement.textOffset - document.getLineStartOffset(lineNumber - 1) + 1
-                    val key = "${getRelativePath(project, refFile)}:$lineNumber:$columnNumber"
+        try {
+            ReferencesSearch.search(targetElement).forEach(Processor { reference ->
+                ProgressManager.checkCanceled()
+                val refElement = reference.element
+                val refFile = refElement.containingFile?.virtualFile
+                if (refFile != null) {
+                    val document = PsiDocumentManager.getInstance(project).getDocument(refElement.containingFile)
+                    if (document != null) {
+                        val lineNumber = document.getLineNumber(refElement.textOffset) + 1
+                        val columnNumber = refElement.textOffset - document.getLineStartOffset(lineNumber - 1) + 1
+                        val key = "${getRelativePath(project, refFile)}:$lineNumber:$columnNumber"
 
-                    if (key !in seenKeys) {
-                        val slot = count.incrementAndGet()
-                        if (slot <= limit) {
-                            val lineText = document.getText(
-                                TextRange(document.getLineStartOffset(lineNumber - 1), document.getLineEndOffset(lineNumber - 1))
-                            ).trim()
-                            val usage = UsageLocation(
-                                file = getRelativePath(project, refFile),
-                                line = lineNumber,
-                                column = columnNumber,
-                                context = lineText,
-                                type = classifyUsage(refElement),
-                                astPath = PsiUtils.getAstPath(refElement)
-                            )
-                            newResults.add(PaginationService.SerializedResult(key, json.encodeToJsonElement(usage)))
+                        if (key !in seenKeys) {
+                            val slot = count.incrementAndGet()
+                            if (slot <= limit) {
+                                val lineText = document.getText(
+                                    TextRange(document.getLineStartOffset(lineNumber - 1), document.getLineEndOffset(lineNumber - 1))
+                                ).trim()
+                                val usage = UsageLocation(
+                                    file = getRelativePath(project, refFile),
+                                    line = lineNumber,
+                                    column = columnNumber,
+                                    context = lineText,
+                                    type = classifyUsage(refElement),
+                                    astPath = PsiUtils.getAstPath(refElement)
+                                )
+                                newResults.add(PaginationService.SerializedResult(key, json.encodeToJsonElement(usage)))
+                            }
+                            slot < limit
+                        } else {
+                            true
                         }
-                        slot < limit
-                    } else {
-                        true
-                    }
+                    } else true
                 } else true
-            } else true
-        })
+            })
+        } catch (e: LinkageError) {
+            LOG.warn("Reference search pagination failed for ${targetElement.javaClass.name}", e)
+            throw IllegalStateException(searchInfrastructureErrorMessage(e), e)
+        }
 
         return newResults.toList()
     }

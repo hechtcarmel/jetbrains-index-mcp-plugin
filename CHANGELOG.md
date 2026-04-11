@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [4.10.2] - 2026-04-11
+### Fixed
+- **`ide_find_references` search failure handling** — Added defensive handling for `LinkageError` / `NoSuchMethodError` failures coming from IDE search infrastructure so affected calls return a structured error with fallback guidance instead of hanging indefinitely.
+- **Plugin verification baseline** — Added explicit Plugin Verifier coverage for IntelliJ IDEA Ultimate `2026.1` build `IU-261.22158.277` to keep this release line checked against the exact IDE version reported in [#122](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/122).
+
 ## [4.10.1] - 2026-04-07
 ### Fixed
 - **`resolveVirtualFileAnywhere` Windows path handling** — Fixed path comparison failures on Windows caused by backslash path separators and case-insensitive VFS normalization. Uses NIO Path-based `isPathPrefixOf` for case-insensitive library JAR validation, and normalizes paths before comparison. Fixes issues where `Z:/Temp` paths were rejected due to VFS normalizing to `Z:/temp`.

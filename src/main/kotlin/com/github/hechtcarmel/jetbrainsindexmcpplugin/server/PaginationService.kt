@@ -192,6 +192,11 @@ class PaginationService(private val coroutineScope: CoroutineScope) : Disposable
                     }
                 } catch (e: CancellationException) {
                     throw e
+                } catch (_: LinkageError) {
+                    return@withLock GetPageResult.Error(
+                        CursorError.SEARCH_INVALIDATED,
+                        "Search context invalidated due to IDE/plugin API incompatibility. Please re-search."
+                    )
                 } catch (_: Exception) {
                     return@withLock GetPageResult.Error(
                         CursorError.SEARCH_INVALIDATED,
