@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
@@ -358,6 +359,74 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with blank name", result.isError)
+    }
+
+    fun testRenameSymbolToolGuidesMoveClassWhenGivenQualifiedTarget() = runBlocking {
+        val tool = RenameSymbolTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.java")
+            put("line", 1)
+            put("column", 1)
+            put("newName", "com.example.moved.UserService")
+        })
+
+        assertTrue("Should error with package-like rename target", result.isError)
+        assertTrue("Should mention move_class guidance", errorText(result).contains("ide_move_class"))
+    }
+
+    fun testRenameSymbolToolGuidesMoveFileWhenGivenPathLikeTarget() = runBlocking {
+        val tool = RenameSymbolTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.java")
+            put("line", 1)
+            put("column", 1)
+            put("newName", "src/com/example/moved")
+        })
+
+        assertTrue("Should error with path-like rename target", result.isError)
+        assertTrue("Should mention move_file guidance", errorText(result).contains("ide_move_file"))
+    }
+
+    fun testMoveClassToolMissingTargetPackage() = runBlocking {
+        val tool = MoveClassTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/com/example/Test.java")
+            put("line", 1)
+            put("column", 1)
+        })
+
+        assertTrue("Should error when targetPackage missing", result.isError)
+        assertTrue("Should mention targetPackage", errorText(result).contains("targetPackage"))
+    }
+
+    fun testMoveClassToolRequiresSymbolOrPosition() = runBlocking {
+        val tool = MoveClassTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("targetPackage", "com.example.moved")
+        })
+
+        assertTrue("Should error when neither symbol nor position provided", result.isError)
+        assertTrue("Should mention symbol or position requirement", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
+    }
+
+    fun testMoveClassToolLanguageAndPositionExclusive() = runBlocking {
+        val tool = MoveClassTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "Java")
+            put("symbol", "com.example.Test")
+            put("file", "src/com/example/Test.java")
+            put("line", 1)
+            put("column", 1)
+            put("targetPackage", "com.example.moved")
+        })
+
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
     fun testSafeDeleteToolMissingParams() = runBlocking {

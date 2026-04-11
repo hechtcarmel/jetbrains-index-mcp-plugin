@@ -50,6 +50,8 @@ These tools activate based on installed language plugins:
 
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
+- **Move File Refactoring** - IntelliJ Move refactoring for files/directories with automatic reference, import, and package updates
+- **Move Class Refactoring** - Java-only class/package move by target package name using IntelliJ's class move engine
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
 - **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
@@ -217,7 +219,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **21 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides MCP tools organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -237,8 +239,8 @@ These tools work in all supported JetBrains IDEs.
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
-| `ide_refactor_rename` | Rename a symbol and update all references across the project (all languages) |
-| `ide_move_file` | Move a file to a new directory with automatic reference, import, and package updates |
+| `ide_refactor_rename` | Rename an identifier or file and update references. Use move tools, not rename, for package relocation |
+| `ide_move_file` | IntelliJ Move refactoring for files/directories with automatic reference, import, and package updates |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
 
 ### Extended Tools (Language-Aware)
@@ -258,6 +260,7 @@ These tools activate based on available language plugins:
 
 | Tool | Description |
 |------|-------------|
+| `ide_move_class` | Move a Java class to another package using IntelliJ's class move refactoring |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
 | `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
 
@@ -269,23 +272,23 @@ These tools activate based on available language plugins:
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete + Java→Kotlin |
-| Android Studio | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete + Java→Kotlin |
-| PyCharm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
-| WebStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
-| GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| RustRover | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| PhpStorm | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
+| IntelliJ IDEA | ✓ 14 tools | ✓ 6 tools | ✓ rename + move file + move class + reformat + safe delete + Java→Kotlin |
+| Android Studio | ✓ 14 tools | ✓ 6 tools | ✓ rename + move file + move class + reformat + safe delete + Java→Kotlin |
+| PyCharm | ✓ 14 tools | ✓ 6 tools | ✓ rename + move file + reformat |
+| WebStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + move file + reformat |
+| GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + move file + reformat |
+| RustRover | ✓ 14 tools | ✓ 4 tools | ✓ rename + move file + reformat |
+| PhpStorm | ✓ 14 tools | ✓ 5 tools | ✓ rename + move file + reformat |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 14 tools | - | ✓ rename + reformat |
-| CLion | ✓ 14 tools | - | ✓ rename + reformat |
-| DataGrip | ✓ 14 tools | - | ✓ rename + reformat |
+| RubyMine | ✓ 14 tools | - | ✓ rename + move file + reformat |
+| CLion | ✓ 14 tools | - | ✓ rename + move file + reformat |
+| DataGrip | ✓ 14 tools | - | ✓ rename + move file + reformat |
 
-> **Note**: Navigation tools activate when language plugins are present. GoLand and RustRover have 4 navigation tools (no `ide_find_implementations` or `ide_find_super_methods` due to language semantics). PhpStorm has 5 (no `ide_file_structure`). The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. GoLand and RustRover have 4 navigation tools (no `ide_find_implementations` or `ide_find_super_methods` due to language semantics). PhpStorm has 5 (no `ide_file_structure`). `ide_move_file` is the universal Move refactoring. `ide_move_class`, `ide_refactor_safe_delete`, and `ide_convert_java_to_kotlin` are available only in IntelliJ IDEA and Android Studio and require the Java plugin.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 

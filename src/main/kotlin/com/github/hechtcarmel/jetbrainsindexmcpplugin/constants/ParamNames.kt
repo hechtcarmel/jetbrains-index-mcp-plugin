@@ -21,6 +21,7 @@ object ParamNames {
     const val START_COLUMN = "startColumn"
     const val END_COLUMN = "endColumn"
     const val TARGET_PACKAGE = "targetPackage"
+    const val TARGET_SOURCE_ROOT = "targetSourceRoot"
     const val TARGET_CLASS = "targetClass"
     const val TARGET_DIRECTORY = "targetDirectory"
     const val REPLACE_ALL = "replaceAll"

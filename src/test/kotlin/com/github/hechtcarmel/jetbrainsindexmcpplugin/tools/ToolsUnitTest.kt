@@ -21,6 +21,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStat
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
@@ -346,7 +347,8 @@ class ToolsUnitTest : TestCase() {
         // Java-specific refactoring tools
         val refactoringTools = listOf(
             ToolNames.REFACTOR_RENAME,
-            ToolNames.REFACTOR_SAFE_DELETE
+            ToolNames.REFACTOR_SAFE_DELETE,
+            ToolNames.REFACTOR_MOVE_CLASS
         )
 
         // Check if language navigation tools are registered (depends on platform initialization)
@@ -365,9 +367,9 @@ class ToolsUnitTest : TestCase() {
         }
 
         if (safeDeleteRegistered) {
-            // If SafeDeleteTool is registered, Java plugin is available and both refactoring tools should be registered
-            assertEquals("When Java plugin available, both refactoring tools should be registered",
-                2, registeredRefTools)
+            // If SafeDeleteTool is registered, Java plugin is available and all Java refactoring tools should be registered
+            assertEquals("When Java plugin available, all Java refactoring tools should be registered",
+                3, registeredRefTools)
         } else {
             // SafeDeleteTool requires Java plugin, but RenameSymbolTool is universal and should always be registered
             assertTrue("RenameSymbolTool should always be registered (universal tool)",
@@ -800,6 +802,48 @@ class ToolsUnitTest : TestCase() {
         assertTrue("Description should mention file parameter", description.contains("file"))
         assertTrue("Description should mention destination parameter", description.contains("destination"))
         assertTrue("Description should mention references", description.contains("references"))
+        assertTrue("Description should mention moving classes or packages", description.contains("class"))
+        assertTrue("Description should mention package relocation guidance", description.contains("package"))
+    }
+
+    fun testMoveClassToolSchema() {
+        val tool = MoveClassTool()
+
+        assertEquals(ToolNames.REFACTOR_MOVE_CLASS, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
+        assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
+        assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
+        assertNotNull("Should have targetPackage property", properties?.get(ParamNames.TARGET_PACKAGE))
+        assertNotNull("Should have targetSourceRoot property", properties?.get(ParamNames.TARGET_SOURCE_ROOT))
+
+        val required = schema[SchemaConstants.REQUIRED]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+        assertTrue("targetPackage should be required", required.contains(ParamNames.TARGET_PACKAGE))
+        assertFalse("file should not be required (supports language+symbol)", required.contains(ParamNames.FILE))
+        assertFalse("language should not be required (supports file+line+column)", required.contains(ParamNames.LANGUAGE))
+    }
+
+    fun testMoveClassToolIsRegisteredWhenJavaRefactoringsAvailable() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val safeDeleteRegistered = registry.getTool(ToolNames.REFACTOR_SAFE_DELETE) != null
+        val moveClassTool = registry.getTool(ToolNames.REFACTOR_MOVE_CLASS)
+
+        if (safeDeleteRegistered) {
+            assertNotNull("ide_move_class should be registered when Java refactoring tools are available", moveClassTool)
+            assertEquals(ToolNames.REFACTOR_MOVE_CLASS, moveClassTool?.name)
+        }
     }
 
     // ── matchMode enum schema tests ────────────────────────────────────────────

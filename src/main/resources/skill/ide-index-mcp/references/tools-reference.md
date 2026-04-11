@@ -232,9 +232,11 @@ Analyze a file for errors, warnings, and available quick fixes/intentions.
 ## Refactoring Tools
 
 ### ide_refactor_rename
-Rename a symbol and update ALL references (semantic rename, not find-replace). Works across ALL languages.
+Rename a symbol or file and update ALL references (semantic rename, not find-replace). Works across ALL languages. This is for name changes only, not package relocation.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target (mutually exclusive):**
+- Symbol rename: `file`+`line`+`column` OR `language`+`symbol`
+- File rename: `file` + `newName`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -249,10 +251,11 @@ Rename a symbol and update ALL references (semantic rename, not find-replace). W
 
 **Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
 **Auto-renames**: getters/setters, overriding methods, constructor params <-> fields, test classes.
+**Do not use for**: moving Java classes between packages or moving files/directories. Use `ide_move_class` or `ide_move_file`.
 **Supports IDE undo** (Ctrl+Z).
 
 ### ide_move_file
-Move a file to a new directory, updating all references, imports, and package declarations. Works across ALL languages.
+Move a file to a new directory using IntelliJ's Move refactoring, updating all references, imports, and package declarations. Works across ALL languages.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -262,7 +265,30 @@ Move a file to a new directory, updating all references, imports, and package de
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
+**Prefer `ide_move_class`** when the intent is "move Java class `A` to package `B`" and you know the target package name.
 **Supports IDE undo** (Ctrl+Z).
+
+### ide_move_class
+Move a Java class to a target package using IntelliJ's class/package move refactoring. Available only when the Java plugin is enabled.
+
+**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | conditional | Relative file path. Required for position-based lookup. |
+| `line` | integer | conditional | 1-based line. Required for position-based lookup. |
+| `column` | integer | conditional | 1-based column. Required for position-based lookup. |
+| `language` | string | conditional | Symbol language. Currently `"Java"`. |
+| `symbol` | string | conditional | Fully qualified Java class reference. Required for symbol-based lookup. |
+| `targetPackage` | string | yes | Destination Java package name, e.g. `com.example.services` |
+| `targetSourceRoot` | string | no | Optional project-relative or absolute directory under which the target package should be created |
+| `searchInComments` | boolean | no | Update textual matches in comments (default false) |
+| `searchInNonJavaFiles` | boolean | no | Update textual matches in non-Java files (default false) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
+**Use for**: Java class/package moves by package FQN.
+**Do not use for**: generic file moves across non-Java projects. Use `ide_move_file`.
 
 ### ide_refactor_safe_delete (Java/Kotlin only)
 Delete a symbol or file, checking for usages first.

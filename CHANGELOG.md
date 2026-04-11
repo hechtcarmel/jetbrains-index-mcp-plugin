@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-04-08
+### Added
+- **`ide_move_class` tool** — Added a Java-first class/package move refactoring that accepts a target package name and uses IntelliJ's class move engine. Supports targeting by `file` + `line` + `column` or `language` + `symbol`, optional `targetSourceRoot`, and updates imports/references across the project.
+
+### Changed
+- **Move/rename tool guidance** — `ide_move_file` now explicitly presents itself as IntelliJ's semantic Move refactoring and calls out Java/Kotlin package moves. `ide_refactor_rename` now clearly states that rename is for identifier/file-name changes only and redirects package relocation attempts to move tools.
+- **Companion skill/docs updated** — The bundled `ide-index-mcp` skill now document the move-vs-rename decision rule and the new `ide_move_class` tool.
+
+### Fixed
+- **`ide_move_class` headless execution** — Fixed the move processor integration so it only aborts when IntelliJ reports actual conflicts. The previous headless conflict hook aborted every move during preprocessing, causing the tool to report success without applying the refactoring.
+
 ## [4.10.1] - 2026-04-07
 ### Fixed
 - **`resolveVirtualFileAnywhere` Windows path handling** — Fixed path comparison failures on Windows caused by backslash path separators and case-insensitive VFS normalization. Uses NIO Path-based `isPathPrefixOf` for case-insensitive library JAR validation, and normalizes paths before comparison. Fixes issues where `Z:/Temp` paths were rejected due to VFS normalizing to `Z:/temp`.

@@ -24,8 +24,8 @@ These tools work in **every** JetBrains IDE:
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
-| `ide_refactor_rename` | Rename symbol with reference updates (all languages) | Enabled |
-| `ide_move_file` | Move file to new directory with reference updates (all languages) | Enabled |
+| `ide_refactor_rename` | Rename identifiers or files with reference updates. Not for package relocation | Enabled |
+| `ide_move_file` | IntelliJ Move refactoring for files/directories with reference updates (all languages) | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
 
 ### Extended Tools (Language-Aware)
@@ -45,6 +45,7 @@ These tools activate based on available language plugins:
 
 | Tool | Description |
 |------|-------------|
+| `ide_move_class` | Move a Java class to a different package using IntelliJ's class move refactoring |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using the IDE converter *(disabled by default)* |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
@@ -78,6 +79,7 @@ These tools activate based on available language plugins:
   - [ide_find_super_methods](#ide_find_super_methods)
   - [ide_file_structure](#ide_file_structure)
 - [Java-Specific Refactoring Tools](#java-specific-refactoring-tools)
+  - [ide_move_class](#ide_move_class)
   - [ide_convert_java_to_kotlin](#ide_convert_java_to_kotlin)
   - [ide_refactor_safe_delete](#ide_refactor_safe_delete)
 - [Error Handling](#error-handling)
@@ -815,7 +817,7 @@ Open a file in the IDE editor with optional line/column navigation.
 
 ### ide_refactor_rename (Universal - All Languages)
 
-Renames a symbol and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
+Renames a symbol or file and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` and is for **name changes only**. Do not use it for package relocation or moving files/classes between directories or packages; use `ide_move_class` for Java package moves or `ide_move_file` for path-based file moves.
 
 **Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Ruby, and any language with IntelliJ plugin support.
 
@@ -829,18 +831,24 @@ Renames a symbol and updates all references across the project. This tool uses I
 **Use when:**
 - Renaming identifiers to improve code clarity
 - Following naming conventions
-- Refactoring code structure
+- Renaming a file without changing its directory/package
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file containing the symbol |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `file` | string | Conditional | Path to the file containing the symbol, or the file itself when doing a file rename |
+| `line` | integer | Conditional | 1-based line number. Required for symbol rename by position |
+| `column` | integer | Conditional | 1-based column number. Required for symbol rename by position |
+| `language` | string | Conditional | Symbol language (e.g. `"Java"`). Required for symbol-based lookup |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup |
 | `newName` | string | Yes | The new name for the symbol |
 | `overrideStrategy` | string | No | How to handle overriding methods: `"rename_base"` (default), `"rename_only_current"`, or `"ask"` |
 | `relatedRenamingStrategy` | string | No | How to handle automatic renaming of related symbols: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"` |
+
+**Targeting modes:**
+- Symbol rename: `file` + `line` + `column` or `language` + `symbol`
+- File rename: `file` + `newName` only
 
 **Example Request (Java):**
 
@@ -923,7 +931,7 @@ All renames happen in a single atomic operation, so one undo (Ctrl/Cmd+Z) revert
 
 ### ide_move_file
 
-Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project.
+Move a file to a new directory using IntelliJ's Move refactoring engine. This is a semantic move, not a raw filesystem rename: it updates references, imports, and package declarations across the project.
 
 **Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and any language with IntelliJ plugin support.
 
@@ -936,8 +944,13 @@ Move a file to a new directory using the IDE's refactoring engine. Automatically
 
 **Use when:**
 - Reorganizing project structure
-- Moving classes to different packages
+- Moving a file or directory path you already know
+- Moving a Java/Kotlin class by moving its file to the destination package directory
 - Relocating files while maintaining correct imports
+
+**Do not use when:**
+- You want to change a Java class from package `com.old` to package `com.new` by package name. Prefer `ide_move_class`.
+- You only want to rename an identifier. Use `ide_refactor_rename`.
 
 **Parameters:**
 
@@ -957,6 +970,21 @@ Move a file to a new directory using the IDE's refactoring engine. Automatically
     "arguments": {
       "file": "src/main/java/com/old/MyService.java",
       "destination": "src/main/java/com/new/services"
+    }
+  }
+}
+```
+
+**Example Request (move a class file to another package directory):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_move_file",
+    "arguments": {
+      "file": "src/main/java/com/oldpkg/MyService.java",
+      "destination": "src/main/java/com/newpkg"
     }
   }
 }
@@ -1593,6 +1621,79 @@ Get the hierarchical structure of a source file, similar to the IDE's Structure 
 These tools require the Java plugin and are only available in **IntelliJ IDEA** and **Android Studio**.
 
 `ide_convert_java_to_kotlin` also requires the Kotlin plugin and is disabled by default.
+
+### ide_move_class
+
+Move a Java class to another package using IntelliJ's class/package move refactoring. Prefer this over `ide_refactor_rename` when the goal is "move class X to package Y" rather than "rename class X to Y".
+
+**Use when:**
+- Moving a Java class to a different package by package name
+- Reorganizing Java packages without manually deriving the destination directory
+- You know the target package FQN but do not want the agent to guess the source-root-relative path
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Conditional | Relative file path. Required for position-based lookup |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup |
+| `language` | string | Conditional | Symbol language. Currently `"Java"` |
+| `symbol` | string | Conditional | Fully qualified Java class reference |
+| `targetPackage` | string | Yes | Destination Java package name, e.g. `"com.example.services"` |
+| `targetSourceRoot` | string | No | Optional project-relative or absolute directory under which to create the target package. Defaults to the source root containing the class |
+| `searchInComments` | boolean | No | Update textual matches in comments (default `false`) |
+| `searchInNonJavaFiles` | boolean | No | Update textual matches in non-Java files (default `false`) |
+
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
+**Example Request (position-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_move_class",
+    "arguments": {
+      "file": "src/main/java/com/oldpkg/Service.java",
+      "line": 3,
+      "column": 14,
+      "targetPackage": "com.newpkg"
+    }
+  }
+}
+```
+
+**Example Request (symbol-based):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_move_class",
+    "arguments": {
+      "language": "Java",
+      "symbol": "com.oldpkg.Service",
+      "targetPackage": "com.newpkg"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "affectedFiles": [
+    "src/main/java/com/oldpkg/Service.java",
+    "src/main/java/com/newpkg/Service.java",
+    "src/main/java/com/app/UseService.java"
+  ],
+  "changesCount": 3,
+  "message": "Successfully moved 'com.oldpkg.Service' to package 'com.newpkg'"
+}
+```
 
 ### ide_convert_java_to_kotlin
 

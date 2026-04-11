@@ -4,7 +4,7 @@ description: >
   Guide for using JetBrains IDE Index MCP tools for code navigation, refactoring, and analysis.
   TRIGGER: When ANY of these MCP tools are available in the current session: ide_find_references,
   ide_find_definition, ide_find_class, ide_find_file, ide_search_text, ide_diagnostics,
-  ide_index_status, ide_sync_files, ide_refactor_rename, ide_move_file, ide_type_hierarchy,
+  ide_index_status, ide_sync_files, ide_refactor_rename, ide_move_file, ide_move_class, ide_type_hierarchy,
   ide_call_hierarchy, ide_find_implementations, ide_find_symbol, ide_find_super_methods,
   ide_file_structure, ide_refactor_safe_delete, ide_reformat_code, ide_build_project,
   ide_read_file, ide_get_active_file, ide_open_file.
@@ -33,6 +33,7 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 | Find a file by name | `ide_find_file` | `Glob` is fine for simple patterns |
 | Search for a word in code | `ide_search_text` | `Grep` is fine for regex patterns (IDE tool is exact-word only) |
 | Rename a symbol across project | `ide_refactor_rename` | Never - sed/replace breaks code |
+| Move a Java class to another package | `ide_move_class` when available | Never - rename and mv both pick the wrong abstraction |
 | Move a file to another directory | `ide_move_file` | Never - mv/git mv breaks imports |
 | Check for errors in a file | `ide_diagnostics` | Never - no equivalent |
 | Understand class hierarchy | `ide_type_hierarchy` | Never - no equivalent |
@@ -87,10 +88,11 @@ Omit `paths` to sync the entire project.
 3. `ide_search_text` - exact word occurrences across project
 
 ### "I need to refactor"
-1. `ide_refactor_rename` - rename symbol + all references atomically
-2. `ide_move_file` - move file + update all imports/references
-3. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin only)
-4. `ide_reformat_code` - apply project code style (disabled by default)
+1. `ide_refactor_rename` - rename an identifier or file name only
+2. `ide_move_class` - move a Java class to a target package by package name
+3. `ide_move_file` - move a file/directory path and update imports/references
+4. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin only)
+5. `ide_reformat_code` - apply project code style (disabled by default)
 
 ### "I need to check for problems"
 1. `ide_diagnostics` - compiler errors, warnings, quick fixes
@@ -108,19 +110,21 @@ Omit `paths` to sync the entire project.
 
 2. **Using sed/replace instead of `ide_refactor_rename`**: Text replacement breaks code. IDE rename updates all references, getters/setters, overrides, test classes, imports.
 
-3. **Using mv/git mv instead of `ide_move_file`**: File system moves don't update imports, package declarations, or references. IDE move handles all of this automatically.
+3. **Trying to move a class by passing a package/path into `ide_refactor_rename`**: Rename is for identifier changes only. For Java package moves use `ide_move_class`; for file/directory moves use `ide_move_file`.
 
-4. **Forgetting to check index status**: If IDE is indexing (dumb mode), most tools error. Check `ide_index_status` first if a tool fails unexpectedly.
+4. **Using mv/git mv instead of `ide_move_file`**: File system moves don't update imports, package declarations, or references. IDE move handles all of this automatically.
 
-5. **Using 0-based line/column**: All IDE tools use **1-based**. Line 5 in file = `line: 5`.
+5. **Forgetting to check index status**: If IDE is indexing (dumb mode), most tools error. Check `ide_index_status` first if a tool fails unexpectedly.
 
-6. **Passing absolute file paths**: Use relative paths. `src/main/App.java`, not `/Users/me/project/src/main/App.java`.
+6. **Using 0-based line/column**: All IDE tools use **1-based**. Line 5 in file = `line: 5`.
 
-6. **Not syncing after external file changes**: After creating files via Write tool, call `ide_sync_files` before searching.
+7. **Passing absolute file paths**: Use relative paths. `src/main/App.java`, not `/Users/me/project/src/main/App.java`.
 
-7. **Using `ide_search_text` for regex**: This tool is exact-word only (uses word index). Use `Grep` for regex.
+8. **Not syncing after external file changes**: After creating files via Write tool, call `ide_sync_files` before searching.
 
-8. **Using `ide_find_class` for methods/functions**: It searches classes only. Use `ide_search_text` for a quick word lookup.
+9. **Using `ide_search_text` for regex**: This tool is exact-word only (uses word index). Use `Grep` for regex.
+
+10. **Using `ide_find_class` for methods/functions**: It searches classes only. Use `ide_search_text` for a quick word lookup.
 
 ## Disabled-by-Default Tools
 

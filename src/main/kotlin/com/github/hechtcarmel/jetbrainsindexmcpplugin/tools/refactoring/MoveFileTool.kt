@@ -37,9 +37,11 @@ class MoveFileTool : AbstractRefactoringTool() {
     override val name = "ide_move_file"
 
     override val description = """
-        Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project.
+        Move a file to a new directory using IntelliJ's Move refactoring engine. This is a semantic refactoring, not a raw filesystem move: it updates references, imports, and package declarations across the project.
 
-        Use when relocating files to maintain correct imports and references.
+        Use when relocating whole files or reorganizing directories while maintaining correct imports and references.
+        For Java class/package moves, prefer ide_move_class when available. If you are moving a Java/Kotlin class by moving its file to the package directory, this tool will also update the package declaration and imports correctly.
+        Do not use ide_refactor_rename for package relocation: rename changes identifiers, while this tool changes the file's location.
 
         Parameters:
         - file (REQUIRED): Source file path relative to project root
@@ -50,6 +52,7 @@ class MoveFileTool : AbstractRefactoringTool() {
 
         Examples:
         - Move file: {"file": "src/main/java/com/old/MyClass.java", "destination": "src/main/java/com/new"}
+        - Move class file to a different package directory: {"file": "src/main/java/com/oldpkg/MyService.java", "destination": "src/main/java/com/newpkg"}
         - Move without updating refs: {"file": "config/old.yml", "destination": "config/archive", "update_references": false}
     """.trimIndent()
 

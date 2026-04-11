@@ -16,6 +16,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTex
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
@@ -69,6 +70,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ### Java-Specific Refactoring Tools (IntelliJ IDEA & Android Studio Only)
  *
+ * - `ide_move_class` - Move a Java class to a different package using IntelliJ's class move refactoring
  * - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
  *
  * ### Kotlin Conversion Tools (IntelliJ IDEA with Java & Kotlin Plugins)
@@ -174,7 +176,7 @@ class ToolRegistry {
      * Tools are registered conditionally based on IDE capabilities:
      * - Universal tools are always registered
      * - Language-specific navigation tools are registered when any language handler is available
-     * - Refactoring tools are only registered when the Java plugin is available
+     * - Java-specific refactoring tools are only registered when the Java plugin is available
      */
     fun registerBuiltInTools() {
         // Initialize language handlers first
@@ -305,6 +307,7 @@ class ToolRegistry {
      */
     private fun registerJavaRefactoringTools() {
         val refactoringToolClasses = listOf(
+            MoveClassTool::class.java.name,
             "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool"
         )
 

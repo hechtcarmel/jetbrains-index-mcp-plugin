@@ -47,6 +47,8 @@ class RenameSymbolTool : AbstractMcpTool() {
     override val description = """
         Rename a symbol or file and update all references across the project. Use instead of find-and-replace for safe, semantic renaming that handles all usages correctly. Supports undo (Ctrl+Z).
 
+        Use this for identifier changes only. To move a Java class to another package, use ide_move_class. To move a file or directory, use ide_move_file.
+
         Two modes:
         - **Symbol rename** (file + line + column + newName): Rename a symbol at a specific position.
         - **File rename** (file + newName, WITHOUT line/column): Rename the file itself. Works for all file types including binary files (images, etc.). Especially useful for Android resource files (.webp, .png, .xml in res/) where it updates all resource references across the project.
@@ -133,6 +135,12 @@ class RenameSymbolTool : AbstractMcpTool() {
         val isFileRename = line == null && column == null
         if (!isFileRename && (line == null || column == null)) {
             return createErrorResult("Both 'line' and 'column' must be provided for symbol rename, or both omitted for file rename.")
+        }
+
+        if (!isFileRename) {
+            detectLikelyMoveTarget(newName)?.let { guidance ->
+                return createErrorResult(guidance)
+            }
         }
 
         requireSmartMode(project)
@@ -343,6 +351,22 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         if (validator.isKeyword(newName, project)) {
             return "'$newName' is a reserved keyword in ${language.displayName}"
+        }
+
+        return null
+    }
+
+    private fun detectLikelyMoveTarget(newName: String): String? {
+        if (newName.contains('/') || newName.contains('\\')) {
+            return "newName looks like a path or destination. Use ide_move_file to move files/directories, or ide_move_class to move a Java class to another package."
+        }
+
+        val segments = newName.split('.')
+        val looksLikeQualifiedTarget = segments.size > 1 &&
+            segments.all { segment -> segment.isNotBlank() && segment.all { it.isLetterOrDigit() || it == '_' || it == '$' } }
+
+        if (looksLikeQualifiedTarget) {
+            return "newName looks like a qualified package/class target. Use ide_move_class to move a Java class to another package, or ide_move_file to move a file to a new directory."
         }
 
         return null
