@@ -12,6 +12,31 @@ import com.intellij.openapi.roots.ModuleRootManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
+internal data class AvailableProjectEntry(
+    val name: String,
+    val path: String,
+    val workspace: String? = null
+)
+
+/**
+ * Builds the `available_projects` payload and applies top-level filtering when requested.
+ */
+internal fun buildAvailableProjectsJson(
+    entries: List<AvailableProjectEntry>,
+    includeWorkspaceSubProjects: Boolean
+): JsonArray {
+    return buildJsonArray {
+        for (entry in entries) {
+            if (!includeWorkspaceSubProjects && entry.workspace != null) continue
+            add(buildJsonObject {
+                put("name", entry.name)
+                put("path", entry.path)
+                entry.workspace?.let { put("workspace", it) }
+            })
+        }
+    }
+}
+
 object ProjectResolver {
 
     private val LOG = logger<ProjectResolver>()
@@ -139,36 +164,36 @@ object ProjectResolver {
      * so AI agents can discover the correct paths to use.
      */
     private fun buildAvailableProjectsArray(openProjects: List<Project>, includeWorkspaceSubProjects: Boolean): JsonArray {
-        return buildJsonArray {
-            for (proj in openProjects) {
-                add(buildJsonObject {
-                    put("name", proj.name)
-                    put("path", proj.basePath ?: "")
-                })
+        val entries = mutableListOf<AvailableProjectEntry>()
+        for (proj in openProjects) {
+            entries += AvailableProjectEntry(
+                name = proj.name,
+                path = proj.basePath ?: ""
+            )
 
-                if (!includeWorkspaceSubProjects) continue
+            if (!includeWorkspaceSubProjects) continue
 
-                // Include workspace sub-projects (module content roots)
-                try {
-                    val modules = ModuleManager.getInstance(proj).modules
-                    for (module in modules) {
-                        val contentRoots = ModuleRootManager.getInstance(module).contentRoots
-                        for (root in contentRoots) {
-                            val rootPath = root.path
-                            if (rootPath != proj.basePath) {
-                                add(buildJsonObject {
-                                    put("name", module.name)
-                                    put("path", rootPath)
-                                    put("workspace", proj.name)
-                                })
-                            }
+            // Include workspace sub-projects (module content roots)
+            try {
+                val modules = ModuleManager.getInstance(proj).modules
+                for (module in modules) {
+                    val contentRoots = ModuleRootManager.getInstance(module).contentRoots
+                    for (root in contentRoots) {
+                        val rootPath = root.path
+                        if (rootPath != proj.basePath) {
+                            entries += AvailableProjectEntry(
+                                name = module.name,
+                                path = rootPath,
+                                workspace = proj.name
+                            )
                         }
                     }
-                } catch (e: Exception) {
-                    LOG.debug("Failed to list module content roots for project ${proj.name}", e)
                 }
+            } catch (e: Exception) {
+                LOG.debug("Failed to list module content roots for project ${proj.name}", e)
             }
         }
+        return buildAvailableProjectsJson(entries, includeWorkspaceSubProjects)
     }
 
     private fun shouldReturnTopLevelProjectsOnly(): Boolean {

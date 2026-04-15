@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- Added `availableProjectsTopLevelOnly` setting to keep `available_projects` errors focused on top-level open projects, with optional workspace sub-project expansion.
 
 ## [4.10.5] - 2026-04-15
 ### Changed
