@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.intellij.openapi.diagnostic.logger
@@ -29,6 +30,7 @@ object ProjectResolver {
     fun resolve(projectPath: String?): Result {
         val openProjects = ProjectManager.getInstance().openProjects
             .filter { !it.isDefault }
+        val includeWorkspaceSubProjects = !shouldReturnTopLevelProjectsOnly()
 
         // No projects open
         if (openProjects.isEmpty()) {
@@ -78,7 +80,7 @@ object ProjectResolver {
                         text = json.encodeToString(buildJsonObject {
                             put("error", ErrorMessages.ERROR_PROJECT_NOT_FOUND)
                             put("message", ErrorMessages.msgProjectNotFound(projectPath))
-                            put("available_projects", buildAvailableProjectsArray(openProjects))
+                            put("available_projects", buildAvailableProjectsArray(openProjects, includeWorkspaceSubProjects))
                         })
                     )),
                     isError = true
@@ -99,7 +101,7 @@ object ProjectResolver {
                     text = json.encodeToString(buildJsonObject {
                         put("error", ErrorMessages.ERROR_MULTIPLE_PROJECTS)
                         put("message", ErrorMessages.MSG_MULTIPLE_PROJECTS)
-                        put("available_projects", buildAvailableProjectsArray(openProjects))
+                        put("available_projects", buildAvailableProjectsArray(openProjects, includeWorkspaceSubProjects))
                     })
                 )),
                 isError = true
@@ -136,13 +138,15 @@ object ProjectResolver {
      * For workspace projects, lists each module's content root as a separate entry
      * so AI agents can discover the correct paths to use.
      */
-    private fun buildAvailableProjectsArray(openProjects: List<Project>): JsonArray {
+    private fun buildAvailableProjectsArray(openProjects: List<Project>, includeWorkspaceSubProjects: Boolean): JsonArray {
         return buildJsonArray {
             for (proj in openProjects) {
                 add(buildJsonObject {
                     put("name", proj.name)
                     put("path", proj.basePath ?: "")
                 })
+
+                if (!includeWorkspaceSubProjects) continue
 
                 // Include workspace sub-projects (module content roots)
                 try {
@@ -165,5 +169,10 @@ object ProjectResolver {
                 }
             }
         }
+    }
+
+    private fun shouldReturnTopLevelProjectsOnly(): Boolean {
+        return runCatching { McpSettings.getInstance().availableProjectsTopLevelOnly }
+            .getOrDefault(false)
     }
 }

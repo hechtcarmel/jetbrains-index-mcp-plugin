@@ -10,6 +10,7 @@ class McpSettingsUnitTest : TestCase() {
         val state = McpSettings.State()
 
         assertEquals("Default maxHistorySize should be 100", 100, state.maxHistorySize)
+        assertFalse("Default availableProjectsTopLevelOnly should be false", state.availableProjectsTopLevelOnly)
         assertFalse("Default syncExternalChanges should be false", state.syncExternalChanges)
         assertEquals("Default serverHost should be 127.0.0.1", "127.0.0.1", state.serverHost)
     }
@@ -37,15 +38,24 @@ class McpSettingsUnitTest : TestCase() {
         assertTrue(state.syncExternalChanges)
     }
 
+    fun testStateAvailableProjectsTopLevelOnlyMutable() {
+        val state = McpSettings.State()
+        state.availableProjectsTopLevelOnly = true
+
+        assertTrue(state.availableProjectsTopLevelOnly)
+    }
+
     // State custom constructor tests
 
     fun testStateCustomConstructor() {
         val state = McpSettings.State(
             maxHistorySize = 500,
+            availableProjectsTopLevelOnly = true,
             syncExternalChanges = true
         )
 
         assertEquals(500, state.maxHistorySize)
+        assertTrue(state.availableProjectsTopLevelOnly)
         assertTrue(state.syncExternalChanges)
     }
 
@@ -57,6 +67,7 @@ class McpSettingsUnitTest : TestCase() {
 
         assertEquals(50, original.maxHistorySize)
         assertEquals(150, copy.maxHistorySize)
+        assertEquals(original.availableProjectsTopLevelOnly, copy.availableProjectsTopLevelOnly)
         assertEquals(original.syncExternalChanges, copy.syncExternalChanges)
     }
 
@@ -97,9 +108,11 @@ class McpSettingsUnitTest : TestCase() {
         val settings = McpSettings()
 
         settings.maxHistorySize = 250
+        settings.availableProjectsTopLevelOnly = true
         settings.syncExternalChanges = true
 
         assertEquals(250, settings.maxHistorySize)
+        assertTrue(settings.availableProjectsTopLevelOnly)
         assertTrue(settings.syncExternalChanges)
     }
 
@@ -107,12 +120,14 @@ class McpSettingsUnitTest : TestCase() {
         val settings = McpSettings()
         val newState = McpSettings.State(
             maxHistorySize = 75,
+            availableProjectsTopLevelOnly = true,
             syncExternalChanges = true
         )
 
         settings.loadState(newState)
 
         assertEquals(75, settings.maxHistorySize)
+        assertTrue(settings.availableProjectsTopLevelOnly)
         assertTrue(settings.syncExternalChanges)
     }
 

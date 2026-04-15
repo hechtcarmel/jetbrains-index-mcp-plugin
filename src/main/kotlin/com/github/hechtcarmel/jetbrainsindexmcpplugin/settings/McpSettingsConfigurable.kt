@@ -45,6 +45,7 @@ class McpSettingsConfigurable : Configurable {
     private var serverHostField: JBTextField? = null
     private var maxHistorySizeSpinner: JSpinner? = null
     private var serverPortSpinner: JSpinner? = null
+    private var availableProjectsTopLevelOnlyCheckBox: JBCheckBox? = null
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
@@ -92,12 +93,19 @@ class McpSettingsConfigurable : Configurable {
         serverPortSpinner = JSpinner(SpinnerNumberModel(McpConstants.getDefaultServerPort(), 1024, 65535, 1)).apply {
             toolTipText = McpBundle.message("settings.serverPort.tooltip")
         }
+        availableProjectsTopLevelOnlyCheckBox = JBCheckBox(McpBundle.message("settings.availableProjectsTopLevelOnly")).apply {
+            toolTipText = McpBundle.message("settings.availableProjectsTopLevelOnly.tooltip")
+        }
         syncExternalChangesCheckBox = JBCheckBox(McpBundle.message("settings.syncExternalChanges")).apply {
             toolTipText = McpBundle.message("settings.syncExternalChanges.tooltip")
         }
 
         val warningLabel = JBLabel(McpBundle.message("settings.syncExternalChanges.warning")).apply {
             foreground = JBColor.RED
+        }
+
+        val availableProjectsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            add(availableProjectsTopLevelOnlyCheckBox)
         }
 
         val syncPanel = JPanel().apply {
@@ -119,6 +127,7 @@ class McpSettingsConfigurable : Configurable {
             .addComponentToRightColumn(hostWarningLabel!!)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.serverPort") + ":"), serverPortSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
+            .addComponent(availableProjectsPanel, 1)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
@@ -163,6 +172,7 @@ class McpSettingsConfigurable : Configurable {
         if (serverHostField?.text?.trim() != settings.serverHost ||
             serverPortSpinner?.value != settings.serverPort ||
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
+            availableProjectsTopLevelOnlyCheckBox?.isSelected != settings.availableProjectsTopLevelOnly ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges) {
             return true
         }
@@ -216,6 +226,7 @@ class McpSettingsConfigurable : Configurable {
         settings.serverHost = newHost
         settings.serverPort = newPort
         settings.maxHistorySize = maxHistorySizeSpinner?.value as? Int ?: 100
+        settings.availableProjectsTopLevelOnly = availableProjectsTopLevelOnlyCheckBox?.isSelected ?: false
         settings.syncExternalChanges = syncExternalChangesCheckBox?.isSelected ?: false
 
         val disabledTools = mutableSetOf<String>()
@@ -301,6 +312,7 @@ class McpSettingsConfigurable : Configurable {
         serverHostField?.text = settings.serverHost
         serverPortSpinner?.value = settings.serverPort
         maxHistorySizeSpinner?.value = settings.maxHistorySize
+        availableProjectsTopLevelOnlyCheckBox?.isSelected = settings.availableProjectsTopLevelOnly
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
         
         hostValidationErrorLabel?.isVisible = false
@@ -396,6 +408,7 @@ class McpSettingsConfigurable : Configurable {
         hostValidIcon = null
         serverPortSpinner = null
         maxHistorySizeSpinner = null
+        availableProjectsTopLevelOnlyCheckBox = null
         syncExternalChangesCheckBox = null
         toolCheckBoxes.clear()
         uiDisposable?.let { Disposer.dispose(it) }

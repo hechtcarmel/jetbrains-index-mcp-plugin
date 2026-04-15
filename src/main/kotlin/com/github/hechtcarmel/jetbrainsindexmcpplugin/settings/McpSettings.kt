@@ -21,6 +21,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
      */
     data class State(
         var maxHistorySize: Int = 100,
+        var availableProjectsTopLevelOnly: Boolean = false,
         var syncExternalChanges: Boolean = false,
         var disabledTools: MutableSet<String> = mutableSetOf("ide_build_project", "ide_file_structure", "ide_find_symbol", "ide_read_file", "ide_get_active_file", "ide_open_file", "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin"),
         var serverPort: Int = -1, // -1 means use IDE-specific default
@@ -38,6 +39,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var maxHistorySize: Int
         get() = state.maxHistorySize
         set(value) { state.maxHistorySize = value }
+
+    var availableProjectsTopLevelOnly: Boolean
+        get() = state.availableProjectsTopLevelOnly
+        set(value) { state.availableProjectsTopLevelOnly = value }
 
     var syncExternalChanges: Boolean
         get() = state.syncExternalChanges
