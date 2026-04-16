@@ -126,31 +126,19 @@ class McpSettingsUnitTest : TestCase() {
     }
 
     fun testAvailableProjectsModeDefaultsAndDelegation() {
-        val stateField = McpSettings.State::class.java.declaredFields.find { it.name == "availableProjectsMode" }
-        assertNotNull("State should persist availableProjectsMode", stateField)
-
-        stateField!!.isAccessible = true
-        val defaultState = McpSettings.State()
-        assertEquals("EXPANDED", (stateField.get(defaultState) as Enum<*>).name)
+        assertEquals(
+            "Default availableProjectsMode should be EXPANDED",
+            McpSettings.AvailableProjectsMode.EXPANDED,
+            McpSettings.State().availableProjectsMode
+        )
 
         val settings = McpSettings()
-        val getter = settings.javaClass.methods.find {
-            it.name == "getAvailableProjectsMode" && it.parameterCount == 0
-        }
-        val setter = settings.javaClass.methods.find {
-            it.name == "setAvailableProjectsMode" && it.parameterCount == 1
-        }
+        assertEquals(McpSettings.AvailableProjectsMode.EXPANDED, settings.availableProjectsMode)
 
-        assertNotNull("McpSettings should expose availableProjectsMode getter", getter)
-        assertNotNull("McpSettings should expose availableProjectsMode setter", setter)
-        assertEquals("EXPANDED", (getter!!.invoke(settings) as Enum<*>).name)
+        settings.availableProjectsMode = McpSettings.AvailableProjectsMode.COMPACT
 
-        val enumClass = setter!!.parameterTypes.single().asSubclass(Enum::class.java)
-        val compactValue = java.lang.Enum.valueOf(enumClass, "COMPACT")
-        setter.invoke(settings, compactValue)
-
-        assertEquals("COMPACT", (getter.invoke(settings) as Enum<*>).name)
-        assertEquals("COMPACT", (stateField.get(settings.state) as Enum<*>).name)
+        assertEquals(McpSettings.AvailableProjectsMode.COMPACT, settings.availableProjectsMode)
+        assertEquals(McpSettings.AvailableProjectsMode.COMPACT, settings.state.availableProjectsMode)
     }
 
     // Edge case tests

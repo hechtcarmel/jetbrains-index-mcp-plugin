@@ -12,6 +12,34 @@ import com.intellij.openapi.roots.ModuleRootManager
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
+internal data class AvailableProjectEntry(
+    val name: String,
+    val path: String,
+    val workspace: String? = null
+)
+
+/**
+ * Builds the `available_projects` JSON array from the given entries.
+ * When [includeWorkspaceSubProjects] is false, sub-project entries
+ * (those with a non-null `workspace`) are filtered out.
+ *
+ * Pure function — extracted so it can be unit-tested without the IntelliJ
+ * Platform or `McpSettings`.
+ */
+internal fun buildAvailableProjectsJson(
+    entries: List<AvailableProjectEntry>,
+    includeWorkspaceSubProjects: Boolean
+): JsonArray = buildJsonArray {
+    for (entry in entries) {
+        if (!includeWorkspaceSubProjects && entry.workspace != null) continue
+        add(buildJsonObject {
+            put("name", entry.name)
+            put("path", entry.path)
+            entry.workspace?.let { put("workspace", it) }
+        })
+    }
+}
+
 object ProjectResolver {
 
     private val LOG = logger<ProjectResolver>()
@@ -133,42 +161,60 @@ object ProjectResolver {
     }
 
     /**
-     * Builds the available_projects JSON array including workspace sub-project paths.
-     * In expanded mode, lists each module's content root as a separate entry
-     * so AI agents can discover the correct paths to use.
+     * Builds the available_projects JSON array, optionally including workspace
+     * sub-project paths so AI agents can discover the correct paths to use.
+     *
+     * Collection of entries (touches the IntelliJ Platform) is separated from
+     * JSON serialization (pure, unit-testable via [buildAvailableProjectsJson]).
      */
     private fun buildAvailableProjectsArray(openProjects: List<Project>): JsonArray {
-        val mode = McpSettings.getInstance().availableProjectsMode
+        val includeWorkspaceSubProjects = isExpandedMode()
+        val entries = collectAvailableProjectEntries(openProjects, includeWorkspaceSubProjects)
+        return buildAvailableProjectsJson(entries, includeWorkspaceSubProjects)
+    }
 
-        return buildJsonArray {
-            for (proj in openProjects) {
-                add(buildJsonObject {
-                    put("name", proj.name)
-                    put("path", proj.basePath ?: "")
-                })
+    private fun collectAvailableProjectEntries(
+        openProjects: List<Project>,
+        includeWorkspaceSubProjects: Boolean
+    ): List<AvailableProjectEntry> {
+        val entries = mutableListOf<AvailableProjectEntry>()
+        for (proj in openProjects) {
+            entries += AvailableProjectEntry(
+                name = proj.name,
+                path = proj.basePath ?: ""
+            )
 
-                if (mode == McpSettings.AvailableProjectsMode.EXPANDED) {
-                    // Include workspace sub-projects (module content roots)
-                    try {
-                        val modules = ModuleManager.getInstance(proj).modules
-                        for (module in modules) {
-                            val contentRoots = ModuleRootManager.getInstance(module).contentRoots
-                            for (root in contentRoots) {
-                                val rootPath = root.path
-                                if (rootPath != proj.basePath) {
-                                    add(buildJsonObject {
-                                        put("name", module.name)
-                                        put("path", rootPath)
-                                        put("workspace", proj.name)
-                                    })
-                                }
-                            }
+            if (!includeWorkspaceSubProjects) continue
+
+            try {
+                val modules = ModuleManager.getInstance(proj).modules
+                for (module in modules) {
+                    val contentRoots = ModuleRootManager.getInstance(module).contentRoots
+                    for (root in contentRoots) {
+                        val rootPath = root.path
+                        if (rootPath != proj.basePath) {
+                            entries += AvailableProjectEntry(
+                                name = module.name,
+                                path = rootPath,
+                                workspace = proj.name
+                            )
                         }
-                    } catch (e: Exception) {
-                        LOG.debug("Failed to list module content roots for project ${proj.name}", e)
                     }
                 }
+            } catch (e: Exception) {
+                LOG.debug("Failed to list module content roots for project ${proj.name}", e)
             }
         }
+        return entries
     }
+
+    /**
+     * Reads the `availableProjectsMode` setting defensively so callers don't
+     * fail if the application service is unavailable (e.g. when invoked from
+     * a unit-test context where settings aren't registered).
+     */
+    private fun isExpandedMode(): Boolean =
+        runCatching { McpSettings.getInstance().availableProjectsMode }
+            .getOrDefault(McpSettings.AvailableProjectsMode.EXPANDED) ==
+            McpSettings.AvailableProjectsMode.EXPANDED
 }

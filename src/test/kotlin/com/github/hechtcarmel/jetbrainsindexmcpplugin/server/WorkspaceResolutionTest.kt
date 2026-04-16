@@ -28,7 +28,7 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
 
     private lateinit var handler: JsonRpcHandler
     private lateinit var toolRegistry: ToolRegistry
-    private var originalAvailableProjectsMode: String? = null
+    private var originalAvailableProjectsMode: McpSettings.AvailableProjectsMode? = null
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -40,12 +40,12 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
         toolRegistry = ToolRegistry()
         toolRegistry.registerBuiltInTools()
         handler = JsonRpcHandler(toolRegistry)
-        originalAvailableProjectsMode = getAvailableProjectsModeName()
+        originalAvailableProjectsMode = McpSettings.getInstance().availableProjectsMode
     }
 
     override fun tearDown() {
         try {
-            originalAvailableProjectsMode?.let { setAvailableProjectsMode(it) }
+            originalAvailableProjectsMode?.let { McpSettings.getInstance().availableProjectsMode = it }
         } finally {
             super.tearDown()
         }
@@ -126,7 +126,7 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
 
     fun testCompactAvailableProjectsModeOmitsWorkspaceSubProjects() = runBlocking {
         val extraContentRoot = addWorkspaceSubProjectContentRoot()
-        setAvailableProjectsMode("COMPACT")
+        McpSettings.getInstance().availableProjectsMode = McpSettings.AvailableProjectsMode.COMPACT
 
         val errorJson = requestInvalidPathErrorJson()
         val availableProjects = errorJson["available_projects"]!!.jsonArray
@@ -201,25 +201,5 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
         val contentRoot = myFixture.tempDirFixture.findOrCreateDir("workspace-subproject")
         PsiTestUtil.addContentRoot(module, contentRoot)
         return contentRoot
-    }
-
-    private fun getAvailableProjectsModeName(): String? {
-        val getter = McpSettings.getInstance().javaClass.methods.find {
-            it.name == "getAvailableProjectsMode" && it.parameterCount == 0
-        } ?: return null
-
-        return (getter.invoke(McpSettings.getInstance()) as? Enum<*>)?.name
-    }
-
-    private fun setAvailableProjectsMode(modeName: String) {
-        val settings = McpSettings.getInstance()
-        val setter = settings.javaClass.methods.find {
-            it.name == "setAvailableProjectsMode" && it.parameterCount == 1
-        }
-        assertNotNull("McpSettings should expose availableProjectsMode", setter)
-
-        val enumClass = setter!!.parameterTypes.single().asSubclass(Enum::class.java)
-        val enumValue = java.lang.Enum.valueOf(enumClass, modeName)
-        setter.invoke(settings, enumValue)
     }
 }
