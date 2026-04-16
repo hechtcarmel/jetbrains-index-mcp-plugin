@@ -389,6 +389,7 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         private const val MAX_RESULTS_PER_LEVEL = 20
         private const val MAX_STACK_DEPTH = 50
         private const val MAX_SUPER_METHODS = 10
+        private val LOG = logger<PythonCallHierarchyHandler>()
     }
 
     override val languageId = "Python"
@@ -479,39 +480,67 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         if (functionKey in visited) return emptyList()
         visited.add(functionKey)
 
-        return try {
-            // Collect all methods to search: current method + all super methods it overrides
-            // This handles polymorphism - callers of base methods could dispatch to this method
-            val methodsToSearch = mutableSetOf(pyFunction)
-            methodsToSearch.addAll(findAllSuperMethods(project, pyFunction))
+        return findDirectCallers(pyFunction)
+            .take(MAX_RESULTS_PER_LEVEL)
+            .mapNotNull { directCaller ->
+                if (directCaller == pyFunction) return@mapNotNull null
 
-            // Search for references to all methods in the hierarchy
-            val referencesSearchClass = Class.forName("com.intellij.psi.search.searches.ReferencesSearch")
-            val searchMethod = referencesSearchClass.getMethod("search", PsiElement::class.java, GlobalSearchScope::class.java)
-            val scope = GlobalSearchScope.projectScope(project)
-
-            val allReferences = mutableListOf<com.intellij.psi.PsiReference>()
-            for (methodToSearch in methodsToSearch) {
-                val query = searchMethod.invoke(null, methodToSearch, scope)
-                val findAllMethod = query.javaClass.getMethod("findAll")
-                val references = findAllMethod.invoke(query) as? Collection<*> ?: continue
-                references.filterIsInstance<com.intellij.psi.PsiReference>().forEach { allReferences.add(it) }
+                val children = if (depth > 1) {
+                    findCallersRecursive(project, directCaller, depth - 1, visited, stackDepth + 1)
+                } else null
+                createCallElement(project, directCaller, children)
             }
+            .distinctBy { it.name + it.file + it.line }
+    }
 
-            allReferences.take(MAX_RESULTS_PER_LEVEL)
-                .mapNotNull { reference ->
-                    val refElement = reference.element
-                    val containingFunction = findContainingPyFunction(refElement)
-                    if (containingFunction != null && containingFunction != pyFunction && !methodsToSearch.contains(containingFunction)) {
-                        val children = if (depth > 1) {
-                            findCallersRecursive(project, containingFunction, depth - 1, visited, stackDepth + 1)
-                        } else null
-                        createCallElement(project, containingFunction, children)
-                    } else null
+    private fun findDirectCallers(pyFunction: PsiElement): List<PsiElement> {
+        return findCallersUsingPyStaticHierarchy(pyFunction)
+    }
+
+    /**
+     * Mirrors PyCharm's own Python caller hierarchy implementation when the API is available.
+     * This uses Python-specific find-usages semantics rather than generic ReferencesSearch.
+     */
+    private fun findCallersUsingPyStaticHierarchy(pyFunction: PsiElement): List<PsiElement> {
+        return try {
+            val pyElementClass = Class.forName("com.jetbrains.python.psi.PyElement")
+            val hierarchyUtilClass = Class.forName("com.jetbrains.python.hierarchy.call.PyStaticCallHierarchyUtil")
+            val getCallersMethod = hierarchyUtilClass.getMethod("getCallers", pyElementClass)
+
+            val callers = getCallersMethod.invoke(null, pyFunction) as? Map<*, *> ?: return emptyList()
+            callers.keys.asSequence()
+                .filterIsInstance<PsiElement>()
+                .mapNotNull { caller ->
+                    when {
+                        isPyFunction(caller) -> caller
+                        else -> findContainingPyFunction(caller)
+                    }
                 }
-                .distinctBy { it.name + it.file + it.line }
+                .filter { it != pyFunction }
+                .distinctBy { getFunctionKey(it) }
+                .toList()
+        } catch (e: ClassNotFoundException) {
+            throw IllegalStateException(
+                "Python caller hierarchy requires PyCharm's call hierarchy API, but it is unavailable in this IDE/Python plugin build.",
+                e
+            )
+        } catch (e: NoSuchMethodException) {
+            throw IllegalStateException(
+                "Python caller hierarchy requires PyCharm's call hierarchy API signature, but the current IDE/Python plugin build is incompatible.",
+                e
+            )
+        } catch (e: LinkageError) {
+            LOG.warn("Python call hierarchy API linkage failed", e)
+            throw IllegalStateException(
+                "Python caller hierarchy is unavailable because the IDE/Python plugin API is incompatible with this plugin build.",
+                e
+            )
         } catch (e: Exception) {
-            emptyList()
+            LOG.warn("Python call hierarchy API failed", e)
+            throw IllegalStateException(
+                "Python caller hierarchy failed inside the IDE's Python call hierarchy API.",
+                e
+            )
         }
     }
 
@@ -948,4 +977,3 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
         }
     }
 }
-

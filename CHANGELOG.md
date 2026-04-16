@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [4.11.1] - 2026-04-16
+### Fixed
+- **`ide_call_hierarchy` callers for Python functions in PyCharm** — Replaced the generic `ReferencesSearch`-based incoming call path with PyCharm's own Python call hierarchy API (`PyStaticCallHierarchyUtil.getCallers()`), so Python caller results now match the IDE's native behavior. Fixes [#133](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/133).
+- **Python caller hierarchy compatibility failures are now explicit** — If the required PyCharm Python call hierarchy API is missing or incompatible in the current IDE/Python plugin build, the tool now returns a clear error instead of silently degrading to potentially incorrect results.
+
 ## [4.11.0] - 2026-04-15
 ### Added
 - Added a **Project list in error responses** setting with `Expanded` and `Compact` modes. Workspace sub-project/module content roots remain valid `project_path` targets, while compact mode limits invalid/missing `project_path` errors to top-level project roots only.
