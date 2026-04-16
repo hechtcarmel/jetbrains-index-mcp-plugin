@@ -317,7 +317,7 @@ The plugin supports **workspace projects** where a single IDE window contains mu
 - A **sub-project path** (module content root)
 - A **subdirectory** of any open project
 
-When an error occurs, the response includes all available sub-projects so AI agents can discover the correct paths to use.
+When an error occurs, the response returns `available_projects`. By default this includes workspace sub-projects so AI agents can discover valid module content roots. If you want smaller error payloads, switch **Project list in error responses** to **Compact** in plugin settings to return only top-level project roots.
 
 ## Tool Window
 
@@ -372,6 +372,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Server Port | IDE-specific | MCP server port (range: 1024-65535, auto-restart on change). See [IDE-Specific Defaults](#ide-specific-defaults) |
 | Server Host | `127.0.0.1` | Listening host. Change to `0.0.0.0` for remote/WSL access |
 | Max History Size | 100 | Maximum number of commands to keep in history |
+| Project List in Error Responses | Expanded | Controls `available_projects` detail for invalid/missing `project_path` errors. `Expanded` includes workspace sub-projects; `Compact` returns only top-level project roots |
 | Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
 | Disabled Tools | 7 tools | Per-tool enable/disable toggles. Some tools are disabled by default to keep the tool list focused |
 

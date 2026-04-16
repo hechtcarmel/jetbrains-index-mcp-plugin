@@ -14,6 +14,11 @@ import com.intellij.openapi.components.service
 )
 class McpSettings : PersistentStateComponent<McpSettings.State> {
 
+    enum class AvailableProjectsMode {
+        EXPANDED,
+        COMPACT
+    }
+
     /**
      * Persistent state for MCP settings.
      * Note: serverPort defaults to -1 (unset), which means "use IDE-specific default".
@@ -22,6 +27,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     data class State(
         var maxHistorySize: Int = 100,
         var syncExternalChanges: Boolean = false,
+        var availableProjectsMode: AvailableProjectsMode = AvailableProjectsMode.EXPANDED,
         var disabledTools: MutableSet<String> = mutableSetOf("ide_build_project", "ide_file_structure", "ide_find_symbol", "ide_read_file", "ide_get_active_file", "ide_open_file", "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin"),
         var serverPort: Int = -1, // -1 means use IDE-specific default
         var serverHost: String = McpConstants.DEFAULT_SERVER_HOST
@@ -42,6 +48,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var syncExternalChanges: Boolean
         get() = state.syncExternalChanges
         set(value) { state.syncExternalChanges = value }
+
+    var availableProjectsMode: AvailableProjectsMode
+        get() = state.availableProjectsMode
+        set(value) { state.availableProjectsMode = value }
 
     var disabledTools: Set<String>
         get() = state.disabledTools.toSet()

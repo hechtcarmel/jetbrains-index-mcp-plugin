@@ -126,7 +126,7 @@ represented as modules with separate content roots:
 - **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath, then module content roots
 - **Relative path computation** (`ProjectUtils.getRelativePath`): Strips the matching content root prefix
 - **VFS/PSI sync** (`AbstractMcpTool.ensurePsiUpToDate`): Refreshes all content roots, not just basePath
-- **Error responses**: `available_projects` array includes workspace sub-projects with their `workspace` parent name
+- **Error responses**: `available_projects` detail is configurable. Expanded mode includes workspace sub-projects with their `workspace` parent name; compact mode returns only top-level project roots.
 
 Key utility: `ProjectUtils.getModuleContentRoots(project)` returns all module content root paths.
 

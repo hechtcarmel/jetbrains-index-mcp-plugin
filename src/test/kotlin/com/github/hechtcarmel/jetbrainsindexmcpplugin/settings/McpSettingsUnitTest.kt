@@ -125,6 +125,22 @@ class McpSettingsUnitTest : TestCase() {
         assertEquals(300, state.maxHistorySize)
     }
 
+    fun testAvailableProjectsModeDefaultsAndDelegation() {
+        assertEquals(
+            "Default availableProjectsMode should be EXPANDED",
+            McpSettings.AvailableProjectsMode.EXPANDED,
+            McpSettings.State().availableProjectsMode
+        )
+
+        val settings = McpSettings()
+        assertEquals(McpSettings.AvailableProjectsMode.EXPANDED, settings.availableProjectsMode)
+
+        settings.availableProjectsMode = McpSettings.AvailableProjectsMode.COMPACT
+
+        assertEquals(McpSettings.AvailableProjectsMode.COMPACT, settings.availableProjectsMode)
+        assertEquals(McpSettings.AvailableProjectsMode.COMPACT, settings.state.availableProjectsMode)
+    }
+
     // Edge case tests
 
     fun testMaxHistorySizeZero() {

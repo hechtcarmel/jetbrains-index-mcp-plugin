@@ -1,11 +1,14 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcRequest
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.intellij.testFramework.PsiTestUtil
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -25,6 +28,7 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
 
     private lateinit var handler: JsonRpcHandler
     private lateinit var toolRegistry: ToolRegistry
+    private var originalAvailableProjectsMode: McpSettings.AvailableProjectsMode? = null
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -36,6 +40,15 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
         toolRegistry = ToolRegistry()
         toolRegistry.registerBuiltInTools()
         handler = JsonRpcHandler(toolRegistry)
+        originalAvailableProjectsMode = McpSettings.getInstance().availableProjectsMode
+    }
+
+    override fun tearDown() {
+        try {
+            originalAvailableProjectsMode?.let { McpSettings.getInstance().availableProjectsMode = it }
+        } finally {
+            super.tearDown()
+        }
     }
 
     /**
@@ -102,38 +115,29 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
      * Tests that an invalid path still returns a proper error with available_projects.
      */
     fun testInvalidPathReturnsAvailableProjects() = runBlocking {
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(3),
-            method = "tools/call",
-            params = buildJsonObject {
-                put("name", ToolNames.INDEX_STATUS)
-                put("arguments", buildJsonObject {
-                    put("project_path", "/completely/invalid/path")
-                })
-            }
-        )
-
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
-
-        assertNull("Should not return JSON-RPC level error", response.error)
-        assertNotNull("Should return result", response.result)
-
-        val result = json.decodeFromJsonElement(ToolCallResult.serializer(), response.result!!)
-        assertTrue("Tool should return error for completely invalid path", result.isError)
-
-        val content = result.content.firstOrNull()
-        assertNotNull("Should have error content", content)
-
-        val errorJson = json.parseToJsonElement(
-            (content as? com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock.Text)?.text ?: ""
-        ).jsonObject
+        val errorJson = requestInvalidPathErrorJson()
 
         assertEquals("project_not_found", errorJson["error"]?.jsonPrimitive?.content)
         assertNotNull("Should include available_projects", errorJson["available_projects"])
 
         val availableProjects = errorJson["available_projects"]!!.jsonArray
         assertTrue("available_projects should not be empty", availableProjects.isNotEmpty())
+    }
+
+    fun testCompactAvailableProjectsModeOmitsWorkspaceSubProjects() = runBlocking {
+        val extraContentRoot = addWorkspaceSubProjectContentRoot()
+        McpSettings.getInstance().availableProjectsMode = McpSettings.AvailableProjectsMode.COMPACT
+
+        val errorJson = requestInvalidPathErrorJson()
+        val availableProjects = errorJson["available_projects"]!!.jsonArray
+        val availableProjectPaths = availableProjects.mapNotNull { it.jsonObject["path"]?.jsonPrimitive?.content }
+
+        assertTrue("Top-level project root should still be returned", availableProjectPaths.contains(project.basePath))
+        assertFalse("Compact mode should omit workspace sub-project entries", availableProjectPaths.contains(extraContentRoot.path))
+        assertTrue(
+            "Compact mode should omit workspace metadata from project entries",
+            availableProjects.none { it.jsonObject.containsKey("workspace") }
+        )
     }
 
     /**
@@ -162,5 +166,40 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
             "File under content root should be recognized as project file",
             ProjectUtils.isProjectFile(project, virtualFile)
         )
+    }
+
+    private fun requestInvalidPathErrorJson() = runBlocking {
+        val request = JsonRpcRequest(
+            id = JsonPrimitive(3),
+            method = "tools/call",
+            params = buildJsonObject {
+                put("name", ToolNames.INDEX_STATUS)
+                put("arguments", buildJsonObject {
+                    put("project_path", "/completely/invalid/path")
+                })
+            }
+        )
+
+        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertNull("Should not return JSON-RPC level error", response.error)
+        assertNotNull("Should return result", response.result)
+
+        val result = json.decodeFromJsonElement(ToolCallResult.serializer(), response.result!!)
+        assertTrue("Tool should return error for completely invalid path", result.isError)
+
+        val content = result.content.firstOrNull()
+        assertNotNull("Should have error content", content)
+
+        return@runBlocking json.parseToJsonElement(
+            (content as? com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock.Text)?.text ?: ""
+        ).jsonObject
+    }
+
+    private fun addWorkspaceSubProjectContentRoot(): VirtualFile {
+        val contentRoot = myFixture.tempDirFixture.findOrCreateDir("workspace-subproject")
+        PsiTestUtil.addContentRoot(module, contentRoot)
+        return contentRoot
     }
 }
