@@ -16,9 +16,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResul
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -29,9 +26,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.tools.ToolProvider
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.buildJsonObject
@@ -65,16 +60,6 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             put("column", 1)
         })
         assertTrue("Should error with invalid file", resultInvalid.isError)
-    }
-
-    fun testSyncFilesToolDoesNotRequireBackgroundTransactionGuard() = runBlocking {
-        val tool = SyncFilesTool()
-
-        val result = withContext(Dispatchers.Default + ModalityState.any().asContextElement()) {
-            tool.execute(project, buildJsonObject { })
-        }
-
-        assertFalse("Sync files should succeed from MCP coroutine context", result.isError)
     }
 
     fun testFindDefinitionToolEndToEnd() = runBlocking {

@@ -536,7 +536,7 @@ class KtorMcpServer(
         return if (application == null) {
             block()
         } else {
-            withContext(ModalityState.defaultModalityState().asContextElement()) {
+            withContext(ModalityState.any().asContextElement()) {
                 block()
             }
         }
