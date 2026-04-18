@@ -7,7 +7,6 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -23,7 +22,9 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             project.getService(BuildDiagnosticsCacheService::class.java)
     }
 
-    private val cachedMessages = CopyOnWriteArrayList<BuildMessage>()
+    private var buildEventMessages = AtomicReference<List<BuildMessage>>(emptyList())
+    private var compilerMessages = AtomicReference<List<BuildMessage>>(emptyList())
+    private var publishedMessages = AtomicReference<List<BuildMessage>>(emptyList())
     private val buildTimestamp = AtomicLong(0L)
     private val currentBuildId = AtomicReference<Any?>(null)
     private val initialized = AtomicBoolean(false)
@@ -40,10 +41,11 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
         val connection = project.messageBus.connect(serviceDisposable)
         BuildListenerUtils.subscribeToCompilationStatus(connection) { compileContext ->
             val messages = BuildListenerUtils.extractCompilerMessages(compileContext, project)
-            if (messages.isNotEmpty()) {
-                addMessagesInternal(messages)
-                buildTimestamp.set(System.currentTimeMillis())
+            if (currentBuildId.get() == null) {
+                buildEventMessages.set(emptyList())
             }
+            compilerMessages.set(messages.take(MAX_CACHED_MESSAGES))
+            publishActiveMessages()
         }
 
         LOG.debug("BuildDiagnosticsCacheService initialized for project: ${project.name}")
@@ -53,37 +55,42 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
         val previousBuildId = currentBuildId.get()
         if (previousBuildId == null || previousBuildId != buildId) {
             currentBuildId.set(buildId)
-            cachedMessages.clear()
+            buildEventMessages.set(emptyList())
+            compilerMessages.set(emptyList())
+            publishedMessages.set(emptyList())
             buildTimestamp.set(0L)
         }
 
         val message = BuildListenerUtils.extractBuildMessage(event, project)
         if (message != null) {
-            addMessagesInternal(listOf(message))
+            addBuildEventMessage(message)
         }
 
         val eventClassName = event.javaClass.simpleName
         if (eventClassName.contains("Finish") || eventClassName.contains("Success") || eventClassName.contains("Failure")) {
-            buildTimestamp.set(System.currentTimeMillis())
+            publishActiveMessages()
         }
     }
 
-    private fun addMessagesInternal(messages: List<BuildMessage>) {
-        if (cachedMessages.size + messages.size <= MAX_CACHED_MESSAGES) {
-            cachedMessages.addAll(messages)
-        } else {
-            for (msg in messages) {
-                if (cachedMessages.size >= MAX_CACHED_MESSAGES) break
-                cachedMessages.add(msg)
+    private fun addBuildEventMessage(message: BuildMessage) {
+        buildEventMessages.updateAndGet { existing ->
+            if (existing.size >= MAX_CACHED_MESSAGES) {
+                existing
+            } else {
+                existing + message
             }
         }
     }
 
-    fun getLastBuildDiagnostics(severity: String?): List<BuildMessage> {
+    private fun publishActiveMessages() {
+        val activeMessages = compilerMessages.get().ifEmpty { buildEventMessages.get() }
+        publishedMessages.set(activeMessages)
+        buildTimestamp.set(System.currentTimeMillis())
+    }
+
+    fun getLastBuildDiagnostics(): List<BuildMessage> {
         initialize()
-        val all = ArrayList(cachedMessages)
-        if (severity == null || severity == "all") return all
-        return all.filter { it.category == severity.uppercase() }
+        return ArrayList(publishedMessages.get())
     }
 
     fun getLastBuildTimestamp(): Long? {
@@ -93,6 +100,8 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
     }
 
     override fun dispose() {
-        cachedMessages.clear()
+        buildEventMessages.set(emptyList())
+        compilerMessages.set(emptyList())
+        publishedMessages.set(emptyList())
     }
 }

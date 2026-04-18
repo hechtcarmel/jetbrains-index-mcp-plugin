@@ -173,7 +173,7 @@ abstract class AbstractMcpTool : McpTool {
      * Uses non-blocking coroutine approach to avoid EDT freezes.
      */
     private suspend fun ensurePsiUpToDate(project: Project) {
-        // 1. Force VFS to see external changes (async refresh)
+        // 1. Force VFS to see external changes before PSI work proceeds.
         // Refresh all content roots (includes workspace sub-project directories)
         val dirsToRefresh = mutableListOf<VirtualFile>()
         val projectDir = project.basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) }
@@ -186,7 +186,7 @@ abstract class AbstractMcpTool : McpTool {
             }
         }
         if (dirsToRefresh.isNotEmpty()) {
-            VfsUtil.markDirtyAndRefresh(true, true, true, *dirsToRefresh.toTypedArray())
+            VfsUtil.markDirtyAndRefresh(false, true, true, *dirsToRefresh.toTypedArray())
         }
 
         // 2. Commit Documents in a write-safe context

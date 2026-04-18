@@ -8,6 +8,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.fileChooser.FileChooserFactory
 import com.intellij.openapi.fileChooser.FileSaverDescriptor
 import com.intellij.openapi.project.Project
@@ -58,9 +59,12 @@ class InstallSkillAction : AnAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project
+        showPopup(e.project, e.dataContext)
+    }
+
+    fun showPopup(project: Project?, dataContext: DataContext) {
         val popup = createPopup(project)
-        popup.showInBestPositionFor(e.dataContext)
+        popup.showInBestPositionFor(dataContext)
     }
 
     private fun createPopup(project: Project?) = JBPopupFactory.getInstance()

@@ -132,6 +132,9 @@ for detailed documentation and examples.</p>
         <!-- Project-level Build Diagnostics Cache Service -->
         <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService"/>
 
+        <!-- Project-level diagnostics analysis service -->
+        <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.DiagnosticsAnalysisService"/>
+
         <!-- Tool Window -->
         <toolWindow id="Index MCP Server" anchor="bottom" icon="com.github.hechtcarmel.jetbrainsindexmcpplugin.icons.McpIcons.ToolWindow" factoryClass="com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowFactory"/>
 

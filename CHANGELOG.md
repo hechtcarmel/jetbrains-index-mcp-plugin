@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.11.3] - 2026-04-17
+### Changed
+- Completely reworked `ide_diagnostics` for better reliability and multi-project support.
+
 ## [4.11.2] - 2026-04-17
 ### Fixed
 - **External library path round-tripping in read-only navigation tools** — Search results now preserve dependency/library paths, and read-only position-based navigation tools accept those returned absolute paths or `jar://` URLs. Fixes [#135](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/135).

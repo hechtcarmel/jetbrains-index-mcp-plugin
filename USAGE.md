@@ -17,7 +17,7 @@ These tools work in **every** JetBrains IDE:
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
 | `ide_search_text` | Text search using word index | Enabled |
-| `ide_diagnostics` | Analyze code for problems and intentions | Enabled |
+| `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
@@ -454,13 +454,20 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
 
 > **Availability**: Universal Tool - works in all JetBrains IDEs
 
-Analyzes a file for code problems (errors, warnings) and available intentions/quick fixes.
+Analyzes code diagnostics from three sources:
+- fresh per-file IDE analysis for problems (errors, warnings),
+- optional build output from the last build,
+- optional test results from open test run tabs.
+
+File problems are collected through explicit daemon analysis, so they do not depend on the target project window being active. Intentions/quick fixes are best-effort and require the file to already be open in an editor.
 
 **Use when:**
 - Finding code issues in a file
 - Checking code quality
 - Identifying potential bugs
 - Discovering available code improvements
+- Reading recent build errors without parsing console output
+- Inspecting failing tests from open test run tabs
 
 **Parameters:**
 
@@ -471,6 +478,12 @@ Analyzes a file for code problems (errors, warnings) and available intentions/qu
 | `column` | integer | No | 1-based column number for intention lookup (default: 1) |
 | `startLine` | integer | No | Filter problems to start from this line |
 | `endLine` | integer | No | Filter problems to end at this line |
+| `includeBuildErrors` | boolean | No | Include errors/warnings from the last build (default: `false`) |
+| `includeTestResults` | boolean | No | Include test results from open test run tabs (default: `false`) |
+| `severity` | string | No | Filter diagnostics by `all`, `errors`, or `warnings` (default: `all`) |
+| `testResultFilter` | string | No | Filter test results by `failed` or `all` (default: `failed`) |
+| `maxBuildErrors` | integer | No | Maximum build messages to return (default: 100, max: 500) |
+| `maxTestResults` | integer | No | Maximum test results to return (default: 100, max: 500) |
 
 **Example Request:**
 
@@ -492,38 +505,29 @@ Analyzes a file for code problems (errors, warnings) and available intentions/qu
 {
   "problems": [
     {
-      "message": "Field 'logger' can be made final",
-      "severity": "WARNING",
+      "message": "Cannot resolve symbol 'UnknownType'",
+      "severity": "ERROR",
       "file": "src/main/java/com/example/UserService.java",
-      "line": 8,
-      "column": 12,
-      "endLine": 8,
-      "endColumn": 18
-    },
-    {
-      "message": "Unused import 'java.util.Date'",
-      "severity": "WARNING",
-      "file": "src/main/java/com/example/UserService.java",
-      "line": 3,
-      "column": 1,
-      "endLine": 3,
-      "endColumn": 22
+      "line": 12,
+      "column": 9,
+      "endLine": 12,
+      "endColumn": 20
     }
   ],
-  "intentions": [
-    {
-      "name": "Add 'final' modifier",
-      "description": "Makes the field final"
-    },
-    {
-      "name": "Optimize imports",
-      "description": "Removes unused imports"
-    }
-  ],
-  "problemCount": 2,
-  "intentionCount": 2
+  "intentions": [],
+  "problemCount": 1,
+  "intentionCount": 0,
+  "analysisFresh": true,
+  "analysisTimedOut": false,
+  "analysisMessage": "Intentions are unavailable because the file is not open in an editor."
 }
 ```
+
+**Response Notes:**
+- `analysisFresh = true` means the file problems came from a fresh explicit IDE analysis pass instead of cached editor highlights.
+- `analysisTimedOut = true` means the file analysis budget was exceeded; build/test sections may still be returned.
+- `analysisMessage` explains degraded cases such as timeouts or missing live editor context for intentions.
+- `line` and `column` affect intention lookup only; file problems are collected for the whole file, then filtered by `startLine` / `endLine` if provided.
 
 **Severity Values:**
 - `ERROR` - Compilation error

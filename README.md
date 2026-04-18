@@ -230,7 +230,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
 | `ide_search_text` | Text search using IDE's pre-built word index with context filtering |
-| `ide_diagnostics` | Analyze a file for problems (errors, warnings) and available intentions |
+| `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results; intentions are best-effort |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |

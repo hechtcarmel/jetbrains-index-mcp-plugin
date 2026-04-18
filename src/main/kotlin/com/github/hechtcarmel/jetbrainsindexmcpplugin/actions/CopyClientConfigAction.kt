@@ -13,6 +13,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.ide.CopyPasteManager
@@ -63,9 +64,12 @@ class CopyClientConfigAction : AnAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project
+        showInstallPopup(e.project, e.dataContext)
+    }
+
+    fun showInstallPopup(project: Project?, dataContext: DataContext) {
         val popup = createInstallPopup(project)
-        popup.showInBestPositionFor(e.dataContext)
+        popup.showInBestPositionFor(dataContext)
     }
 
     private fun createInstallPopup(project: Project?) = JBPopupFactory.getInstance()

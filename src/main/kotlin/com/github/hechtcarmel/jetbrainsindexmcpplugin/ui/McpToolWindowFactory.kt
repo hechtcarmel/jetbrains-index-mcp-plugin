@@ -11,9 +11,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfig
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.icons.McpIcons
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.ActionUiKind
-import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.ShowSettingsUtil
@@ -74,15 +71,7 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
                         else -> null
                     }
                 }
-                val event = AnActionEvent.createEvent(
-                    installAction,
-                    dataContext,
-                    null,
-                    ActionPlaces.TOOLWINDOW_CONTENT,
-                    ActionUiKind.NONE,
-                    null
-                )
-                installAction.actionPerformed(event)
+                installAction.showInstallPopup(project, dataContext)
             }
         }
 
@@ -98,15 +87,7 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
                         else -> null
                     }
                 }
-                val event = AnActionEvent.createEvent(
-                    skillAction,
-                    dataContext,
-                    null,
-                    ActionPlaces.TOOLWINDOW_CONTENT,
-                    ActionUiKind.NONE,
-                    null
-                )
-                skillAction.actionPerformed(event)
+                skillAction.showPopup(project, dataContext)
             }
         }
 

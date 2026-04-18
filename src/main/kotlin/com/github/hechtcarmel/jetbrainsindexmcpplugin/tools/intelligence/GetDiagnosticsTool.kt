@@ -7,17 +7,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.IntentionInfo
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
-import com.intellij.openapi.diagnostic.logger
-import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -27,9 +23,6 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.int
@@ -48,16 +41,14 @@ import kotlinx.serialization.json.jsonPrimitive
  * - Build errors/warnings from the last build
  * - Test results from open test run tabs
  *
- * For files not currently open in the editor, the tool temporarily opens them
- * to trigger daemon analysis, then closes them after collecting results.
+ * File diagnostics run through explicit daemon main passes so they work
+ * even when the target project window is not active.
  */
 class GetDiagnosticsTool : AbstractMcpTool() {
 
     companion object {
-        private val LOG = logger<GetDiagnosticsTool>()
         private const val MAX_PROBLEMS = 100
         private const val MAX_INTENTIONS = 50
-        private const val DAEMON_ANALYSIS_WAIT_MS = 500L
     }
 
     override val name = "ide_diagnostics"
@@ -114,8 +105,11 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         }
 
         // File diagnostics
-        var problems: List<ProblemInfo>? = null
+        var problems: List<com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo>? = null
         var intentions: List<IntentionInfo>? = null
+        var analysisFresh: Boolean? = null
+        var analysisTimedOut: Boolean? = null
+        var analysisMessage: String? = null
 
         if (filePath != null) {
             requireSmartMode(project)
@@ -124,22 +118,32 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                 ?: return createErrorResult("File not found: $filePath")
 
             val fileEditorManager = FileEditorManager.getInstance(project)
-            val wasAlreadyOpen = fileEditorManager.isFileOpen(virtualFile)
+            val analysisResult = DiagnosticsAnalysisService.getInstance(project).analyzeFile(
+                virtualFile = virtualFile,
+                filePath = filePath,
+                severity = severity,
+                startLine = startLine,
+                endLine = endLine,
+                maxProblems = MAX_PROBLEMS
+            )
+            problems = analysisResult.problems
+            analysisFresh = analysisResult.analysisFresh
+            analysisTimedOut = analysisResult.analysisTimedOut
+            analysisMessage = analysisResult.analysisMessage
+            intentions = analyzeIntentions(
+                project = project,
+                fileEditorManager = fileEditorManager,
+                virtualFile = virtualFile,
+                line = line,
+                column = column,
+                highlights = analysisResult.highlights
+            )
 
-            if (!wasAlreadyOpen) {
-                openFileForAnalysis(fileEditorManager, virtualFile)
-            }
-
-            try {
-                val (fileProblems, fileIntentions) = analyzeFile(
-                    project, fileEditorManager, virtualFile, filePath, line, column, startLine, endLine, severity
+            if (intentions.isNullOrEmpty() && fileEditorManager.getEditors(virtualFile).filterIsInstance<TextEditor>().firstOrNull()?.editor == null) {
+                analysisMessage = appendAnalysisMessage(
+                    analysisMessage,
+                    "Intentions are unavailable because the file is not open in an editor."
                 )
-                problems = fileProblems
-                intentions = fileIntentions
-            } finally {
-                if (!wasAlreadyOpen) {
-                    closeFile(fileEditorManager, virtualFile)
-                }
             }
         }
 
@@ -152,11 +156,12 @@ class GetDiagnosticsTool : AbstractMcpTool() {
 
         if (includeBuildErrors) {
             val cacheService = BuildDiagnosticsCacheService.getInstance(project)
-            val allBuildMessages = cacheService.getLastBuildDiagnostics(severity)
-            buildErrorsTruncated = allBuildMessages.size > maxBuildErrors
-            buildErrors = allBuildMessages.take(maxBuildErrors)
-            buildErrorCount = allBuildMessages.count { it.category == "ERROR" }
-            buildWarningCount = allBuildMessages.count { it.category == "WARNING" }
+            val allBuildMessages = cacheService.getLastBuildDiagnostics()
+            val filteredBuildMessages = filterBuildMessagesBySeverity(allBuildMessages, severity)
+            buildErrorsTruncated = filteredBuildMessages.size > maxBuildErrors
+            buildErrors = filteredBuildMessages.take(maxBuildErrors)
+            buildErrorCount = filteredBuildMessages.count { it.category == "ERROR" }
+            buildWarningCount = filteredBuildMessages.count { it.category == "WARNING" }
             buildTimestamp = cacheService.getLastBuildTimestamp()
         }
 
@@ -183,6 +188,9 @@ class GetDiagnosticsTool : AbstractMcpTool() {
             intentions = intentions,
             problemCount = problems?.size,
             intentionCount = intentions?.size,
+            analysisFresh = analysisFresh,
+            analysisTimedOut = analysisTimedOut,
+            analysisMessage = analysisMessage,
             buildErrors = buildErrors,
             buildErrorCount = buildErrorCount,
             buildWarningCount = buildWarningCount,
@@ -194,45 +202,22 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         ))
     }
 
-    // ========== File Management ==========
-
-    private suspend fun openFileForAnalysis(fileEditorManager: FileEditorManager, virtualFile: VirtualFile) {
-        withContext(Dispatchers.EDT) {
-            fileEditorManager.openFile(virtualFile, false)
-        }
-        // Wait for daemon to start analyzing
-        delay(DAEMON_ANALYSIS_WAIT_MS)
-    }
-
-    private suspend fun closeFile(fileEditorManager: FileEditorManager, virtualFile: VirtualFile) {
-        withContext(Dispatchers.EDT) {
-            fileEditorManager.closeFile(virtualFile)
-        }
-    }
-
-    // ========== Analysis ==========
-
-    private suspend fun analyzeFile(
+    private suspend fun analyzeIntentions(
         project: Project,
         fileEditorManager: FileEditorManager,
         virtualFile: VirtualFile,
-        filePath: String,
         line: Int,
         column: Int,
-        startLine: Int?,
-        endLine: Int?,
-        severity: String
-    ): Pair<List<ProblemInfo>, List<IntentionInfo>> = suspendingReadAction {
+        highlights: List<HighlightInfo>
+    ): List<IntentionInfo> = suspendingReadAction {
         val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
         if (psiFile == null) {
-            LOG.warn("Could not parse file for diagnostics: $filePath")
-            return@suspendingReadAction Pair(emptyList(), emptyList())
+            return@suspendingReadAction emptyList()
         }
 
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
         if (document == null) {
-            LOG.warn("Could not get document for diagnostics: $filePath")
-            return@suspendingReadAction Pair(emptyList(), emptyList())
+            return@suspendingReadAction emptyList()
         }
 
         val editor = fileEditorManager.getEditors(virtualFile)
@@ -240,81 +225,19 @@ class GetDiagnosticsTool : AbstractMcpTool() {
             .firstOrNull()
             ?.editor
 
-        val problems = collectProblems(project, document, filePath, startLine, endLine, severity)
-        val intentions = collectIntentions(project, psiFile, document, editor, line, column)
-
-        Pair(problems, intentions)
-    }
-
-    // ========== Problem Collection ==========
-
-    private fun collectProblems(
-        project: Project,
-        document: Document,
-        filePath: String,
-        startLine: Int?,
-        endLine: Int?,
-        severity: String
-    ): List<ProblemInfo> {
-        val problems = mutableListOf<ProblemInfo>()
-
-        try {
-            DaemonCodeAnalyzerEx.processHighlights(
-                document,
-                project,
-                HighlightSeverity.INFORMATION,
-                0,
-                document.textLength
-            ) { highlightInfo ->
-                if (highlightInfo.severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal) {
-                    val matchesSeverity = when (severity) {
-                        "errors" -> highlightInfo.severity.myVal >= HighlightSeverity.ERROR.myVal
-                        "warnings" -> highlightInfo.severity.myVal < HighlightSeverity.ERROR.myVal
-                        else -> true
-                    }
-                    if (matchesSeverity) {
-                        val problem = highlightInfo.toProblemInfo(document, filePath)
-
-                        // Apply line filter
-                        val inRange = (startLine == null || problem.line >= startLine) &&
-                                      (endLine == null || problem.line <= endLine)
-
-                        if (inRange) {
-                            problems.add(problem)
-                        }
-                    }
-                }
-                problems.size < MAX_PROBLEMS
-            }
-        } catch (_: Exception) {
-            // Daemon analysis might not be available
+        if (editor == null) {
+            return@suspendingReadAction emptyList()
         }
 
-        return problems.distinctBy { "${it.line}:${it.column}:${it.message}" }
+        collectIntentions(project, psiFile, document, editor, line, column, highlights)
     }
 
-    private fun HighlightInfo.toProblemInfo(document: Document, filePath: String): ProblemInfo {
-        val problemLine = document.getLineNumber(startOffset) + 1
-        val problemColumn = startOffset - document.getLineStartOffset(problemLine - 1) + 1
-        val endLineNum = document.getLineNumber(endOffset) + 1
-        val endColumnNum = endOffset - document.getLineStartOffset(endLineNum - 1) + 1
-
-        val severityString = when {
-            severity.myVal >= HighlightSeverity.ERROR.myVal -> "ERROR"
-            severity.myVal >= HighlightSeverity.WARNING.myVal -> "WARNING"
-            severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal -> "WEAK_WARNING"
-            else -> "INFO"
+    private fun filterBuildMessagesBySeverity(messages: List<BuildMessage>, severity: String): List<BuildMessage> {
+        return when (severity) {
+            "errors" -> messages.filter { it.category == "ERROR" }
+            "warnings" -> messages.filter { it.category == "WARNING" }
+            else -> messages
         }
-
-        return ProblemInfo(
-            message = description ?: "Unknown problem",
-            severity = severityString,
-            file = filePath,
-            line = problemLine,
-            column = problemColumn,
-            endLine = endLineNum,
-            endColumn = endColumnNum
-        )
     }
 
     // ========== Intention Collection ==========
@@ -323,9 +246,10 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         project: Project,
         psiFile: PsiFile,
         document: Document,
-        editor: Editor?,
+        editor: Editor,
         line: Int,
-        column: Int
+        column: Int,
+        highlights: List<HighlightInfo>
     ): List<IntentionInfo> {
         val intentions = mutableListOf<IntentionInfo>()
 
@@ -333,9 +257,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
             val offset = getOffset(document, line, column) ?: 0
 
             // Collect quick fixes from highlights at this position
-            if (editor != null) {
-                collectQuickFixes(project, document, editor, psiFile, offset, intentions)
-            }
+            collectQuickFixes(project, editor, psiFile, offset, highlights, intentions)
 
             // Collect general intention actions
             if (psiFile.findElementAt(offset) != null) {
@@ -350,19 +272,16 @@ class GetDiagnosticsTool : AbstractMcpTool() {
 
     private fun collectQuickFixes(
         project: Project,
-        document: Document,
         editor: Editor,
         psiFile: PsiFile,
         offset: Int,
+        highlights: List<HighlightInfo>,
         intentions: MutableList<IntentionInfo>
     ) {
-        DaemonCodeAnalyzerEx.processHighlights(
-            document,
-            project,
-            HighlightSeverity.INFORMATION,
-            offset,
-            offset + 1
-        ) { highlightInfo ->
+        highlights
+            .asSequence()
+            .filter { it.startOffset <= offset && it.endOffset >= offset }
+            .forEach { highlightInfo ->
             highlightInfo.findRegisteredQuickFix<Any> { descriptor, _ ->
                 val action = descriptor.action
                 try {
@@ -377,13 +296,12 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                 }
                 null
             }
-            true
-        }
+            }
     }
 
     private fun collectGeneralIntentions(
         project: Project,
-        editor: Editor?,
+        editor: Editor,
         psiFile: PsiFile,
         intentions: MutableList<IntentionInfo>
     ) {
@@ -403,5 +321,11 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     // Individual intention check might fail
                 }
             }
+    }
+
+    private fun appendAnalysisMessage(existing: String?, additional: String): String {
+        if (existing.isNullOrBlank()) return additional
+        if (existing.contains(additional)) return existing
+        return "$existing $additional"
     }
 }
