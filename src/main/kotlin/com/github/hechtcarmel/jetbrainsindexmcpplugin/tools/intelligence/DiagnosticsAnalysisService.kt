@@ -31,8 +31,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.annotations.TestOnly
@@ -46,7 +44,7 @@ import kotlin.coroutines.resume
 class DiagnosticsAnalysisService(private val project: Project) {
 
     companion object {
-        private const val DEFAULT_ANALYSIS_TIMEOUT_MS = 15_000L
+        private const val DEFAULT_ANALYSIS_TIMEOUT_MS = 30_000L
         private const val MAX_RETRIES = 100
         private val runInsideHighlightingSessionMethod: Method by lazy {
             HighlightingSessionImpl::class.java.methods.firstOrNull { method ->
@@ -89,8 +87,6 @@ class DiagnosticsAnalysisService(private val project: Project) {
         }
     }
 
-    private val analysisMutex = Mutex()
-
     @TestOnly
     internal var analysisTimeoutMsOverride: Long? = null
 
@@ -129,19 +125,20 @@ class DiagnosticsAnalysisService(private val project: Project) {
             )
         }
 
-        return analysisMutex.withLock {
-            val timeoutMs = analysisTimeoutMsOverride ?: DEFAULT_ANALYSIS_TIMEOUT_MS
-            val minSeverity = minimumSeverityFor(severity)
-            val inspectionProfile = InspectionProjectProfileManager.getInstance(project).currentProfile
-            val codeAnalyzer = DaemonCodeAnalyzer.getInstance(project) as? DaemonCodeAnalyzerImpl
-                ?: return@withLock FileAnalysisResult(
-                    problems = emptyList(),
-                    highlights = emptyList(),
-                    analysisFresh = false,
-                    analysisTimedOut = false,
-                    analysisMessage = "IDE daemon code analyzer is not available."
-                )
-            val highlights = withTimeoutOrNull(timeoutMs) {
+        val timeoutMs = analysisTimeoutMsOverride ?: DEFAULT_ANALYSIS_TIMEOUT_MS
+        val minSeverity = minimumSeverityFor(severity)
+        val inspectionProfile = InspectionProjectProfileManager.getInstance(project).currentProfile
+        val codeAnalyzer = DaemonCodeAnalyzer.getInstance(project) as? DaemonCodeAnalyzerImpl
+            ?: return FileAnalysisResult(
+                problems = emptyList(),
+                highlights = emptyList(),
+                analysisFresh = false,
+                analysisTimedOut = false,
+                analysisMessage = "IDE daemon code analyzer is not available."
+            )
+
+        val highlights = DiagnosticsAnalysisCoordinator.getInstance().withMainPassLock {
+            withTimeoutOrNull(timeoutMs) {
                 runMainPassesWithRetries(
                     fileContext = fileContext,
                     minSeverity = minSeverity,
@@ -149,33 +146,33 @@ class DiagnosticsAnalysisService(private val project: Project) {
                     codeAnalyzer = codeAnalyzer
                 )
             }
+        }
 
-            if (highlights == null) {
-                return@withLock FileAnalysisResult(
-                    problems = emptyList(),
-                    highlights = emptyList(),
-                    analysisFresh = false,
-                    analysisTimedOut = true,
-                    analysisMessage = "File diagnostics analysis timed out after ${timeoutMs}ms."
-                )
-            }
-
-            FileAnalysisResult(
-                problems = toProblemInfoList(
-                    highlights = highlights,
-                    filePath = filePath,
-                    document = fileContext.document,
-                    severity = severity,
-                    startLine = startLine,
-                    endLine = endLine,
-                    maxProblems = maxProblems
-                ),
-                highlights = highlights,
-                analysisFresh = true,
-                analysisTimedOut = false,
-                analysisMessage = null
+        if (highlights == null) {
+            return FileAnalysisResult(
+                problems = emptyList(),
+                highlights = emptyList(),
+                analysisFresh = false,
+                analysisTimedOut = true,
+                analysisMessage = "File diagnostics analysis timed out after ${timeoutMs}ms."
             )
         }
+
+        return FileAnalysisResult(
+            problems = toProblemInfoList(
+                highlights = highlights,
+                filePath = filePath,
+                document = fileContext.document,
+                severity = severity,
+                startLine = startLine,
+                endLine = endLine,
+                maxProblems = maxProblems
+            ),
+            highlights = highlights,
+            analysisFresh = true,
+            analysisTimedOut = false,
+            analysisMessage = null
+        )
     }
 
     private suspend fun runMainPassesWithRetries(

@@ -1,8 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType
@@ -22,6 +24,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
     private var localSourceRootConfigured = false
@@ -237,6 +242,74 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         }
     }
 
+    fun testFiltersBuildDiagnosticsByRequestedSeverity() = runBlocking {
+        seedBuildDiagnostics(
+            compilerMessages = listOf(
+                BuildMessage(
+                    category = "ERROR",
+                    message = "Cannot resolve symbol MissingType",
+                    file = "src/Broken.java",
+                    line = 4,
+                    column = 9
+                ),
+                BuildMessage(
+                    category = "WARNING",
+                    message = "Unchecked assignment",
+                    file = "src/Broken.java",
+                    line = 6,
+                    column = 13
+                )
+            )
+        )
+
+        val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+            put("includeBuildErrors", true)
+            put("severity", "errors")
+        })
+
+        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isError)
+
+        val diagnostics = decodeDiagnostics(result)
+        assertEquals("Expected only error diagnostics", 1, diagnostics.buildErrors?.size)
+        assertEquals("Expected filtered error count", 1, diagnostics.buildErrorCount)
+        assertEquals("Expected filtered warning count", 0, diagnostics.buildWarningCount)
+        assertEquals("ERROR", diagnostics.buildErrors?.singleOrNull()?.category)
+    }
+
+    fun testPrefersCompilerMessagesOverDuplicateBuildEventMessages() = runBlocking {
+        seedBuildDiagnostics(
+            compilerMessages = listOf(
+                BuildMessage(
+                    category = "ERROR",
+                    message = "Cannot resolve symbol MissingType",
+                    file = "src/Broken.java",
+                    line = 4,
+                    column = 9
+                )
+            ),
+            buildEventMessages = listOf(
+                BuildMessage(
+                    category = "ERROR",
+                    message = "java: cannot find symbol\n  symbol:   class MissingType",
+                    file = "src/Broken.java",
+                    line = 4,
+                    column = 9
+                )
+            )
+        )
+
+        val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+            put("includeBuildErrors", true)
+        })
+
+        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isError)
+
+        val diagnostics = decodeDiagnostics(result)
+        assertEquals("Expected duplicated compiler/build event diagnostics to collapse to one entry", 1, diagnostics.buildErrors?.size)
+        assertEquals("Expected one error count after source preference", 1, diagnostics.buildErrorCount)
+        assertEquals("Cannot resolve symbol MissingType", diagnostics.buildErrors?.singleOrNull()?.message)
+    }
+
     private fun createProjectFile(relativePath: String, content: String): com.intellij.psi.PsiFile {
         val basePath = project.basePath ?: error("Project base path is required for diagnostics tests")
         val sourceRootPath = sourceRootPath()
@@ -267,6 +340,52 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         val basePath = project.basePath ?: error("Project base path is required for diagnostics tests")
         return Path.of(basePath).resolve("src")
     }
+
+    private fun seedBuildDiagnostics(
+        compilerMessages: List<BuildMessage> = emptyList(),
+        buildEventMessages: List<BuildMessage> = emptyList()
+    ) {
+        val cacheService = BuildDiagnosticsCacheService.getInstance(project)
+
+        setFieldIfPresent(cacheService, "compilerMessages", AtomicReference(compilerMessages))
+        setFieldIfPresent(cacheService, "buildEventMessages", AtomicReference(buildEventMessages))
+        setFieldIfPresent(
+            cacheService,
+            "publishedMessages",
+            AtomicReference(if (compilerMessages.isNotEmpty()) compilerMessages else buildEventMessages)
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val legacyCache = cacheService.javaClass.getDeclaredFieldOrNull("cachedMessages")
+            ?.apply { isAccessible = true }
+            ?.get(cacheService) as? CopyOnWriteArrayList<BuildMessage>
+        legacyCache?.apply {
+            clear()
+            addAll(compilerMessages + buildEventMessages)
+        }
+
+        val timestamp = System.currentTimeMillis()
+        @Suppress("UNCHECKED_CAST")
+        val timestampField = cacheService.javaClass.getDeclaredFieldOrNull("buildTimestamp")
+            ?.apply { isAccessible = true }
+            ?.get(cacheService)
+        when (timestampField) {
+            is AtomicLong -> timestampField.set(timestamp)
+            is AtomicReference<*> -> {
+                @Suppress("UNCHECKED_CAST")
+                (timestampField as AtomicReference<Any?>).set(timestamp)
+            }
+        }
+    }
+
+    private fun setFieldIfPresent(target: Any, fieldName: String, value: Any) {
+        val field = target.javaClass.getDeclaredFieldOrNull(fieldName) ?: return
+        field.isAccessible = true
+        field.set(target, value)
+    }
+
+    private fun Class<*>.getDeclaredFieldOrNull(name: String): java.lang.reflect.Field? =
+        runCatching { getDeclaredField(name) }.getOrNull()
 
     private fun decodeDiagnostics(result: ToolCallResult): DiagnosticsResult {
         val content = result.content.first() as ContentBlock.Text

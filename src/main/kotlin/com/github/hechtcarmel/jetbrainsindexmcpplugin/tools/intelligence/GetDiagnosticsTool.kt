@@ -156,11 +156,12 @@ class GetDiagnosticsTool : AbstractMcpTool() {
 
         if (includeBuildErrors) {
             val cacheService = BuildDiagnosticsCacheService.getInstance(project)
-            val allBuildMessages = cacheService.getLastBuildDiagnostics(severity)
-            buildErrorsTruncated = allBuildMessages.size > maxBuildErrors
-            buildErrors = allBuildMessages.take(maxBuildErrors)
-            buildErrorCount = allBuildMessages.count { it.category == "ERROR" }
-            buildWarningCount = allBuildMessages.count { it.category == "WARNING" }
+            val allBuildMessages = cacheService.getLastBuildDiagnostics()
+            val filteredBuildMessages = filterBuildMessagesBySeverity(allBuildMessages, severity)
+            buildErrorsTruncated = filteredBuildMessages.size > maxBuildErrors
+            buildErrors = filteredBuildMessages.take(maxBuildErrors)
+            buildErrorCount = filteredBuildMessages.count { it.category == "ERROR" }
+            buildWarningCount = filteredBuildMessages.count { it.category == "WARNING" }
             buildTimestamp = cacheService.getLastBuildTimestamp()
         }
 
@@ -229,6 +230,14 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         }
 
         collectIntentions(project, psiFile, document, editor, line, column, highlights)
+    }
+
+    private fun filterBuildMessagesBySeverity(messages: List<BuildMessage>, severity: String): List<BuildMessage> {
+        return when (severity) {
+            "errors" -> messages.filter { it.category == "ERROR" }
+            "warnings" -> messages.filter { it.category == "WARNING" }
+            else -> messages
+        }
     }
 
     // ========== Intention Collection ==========
