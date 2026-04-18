@@ -2,9 +2,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType
+import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -149,9 +151,95 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         }
     }
 
+    fun testRefreshesExternalDiskChangesWhenAutoSyncEnabled() = runBlocking {
+        createProjectFile(
+            "FreshnessExample.java",
+            """
+            class FreshnessExample {
+                void test() {
+                    String value = "";
+                }
+            }
+            """.trimIndent()
+        )
+
+        val settings = McpSettings.getInstance()
+        val originalSyncSetting = settings.syncExternalChanges
+        val filePath = sourceRootPath().resolve("FreshnessExample.java")
+
+        try {
+            Files.writeString(
+                filePath,
+                """
+                class FreshnessExample {
+                    void test() {
+                        UnknownType value = null;
+                    }
+                }
+                """.trimIndent()
+            )
+            settings.syncExternalChanges = true
+
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/FreshnessExample.java")
+            })
+
+            assertFalse("Diagnostics should succeed after external edit: ${renderResult(result)}", result.isError)
+
+            val diagnostics = decodeDiagnostics(result)
+            assertTrue("Expected fresh file analysis after external edit", diagnostics.analysisFresh == true)
+            assertTrue(
+                "Expected unresolved symbol diagnostics after external edit",
+                diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") || it.message.contains("Cannot resolve") }
+            )
+        } finally {
+            settings.syncExternalChanges = originalSyncSetting
+        }
+    }
+
+    fun testPassesErrorSeverityToFreshAnalysisRunner() = runBlocking {
+        createProjectFile(
+            "SeverityExample.java",
+            """
+            class SeverityExample {
+                void test() {}
+            }
+            """.trimIndent()
+        )
+
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        val originalRunner = service.mainPassesRunnerOverride
+        var capturedSeverity: HighlightSeverity? = null
+
+        try {
+            service.mainPassesRunnerOverride = { request ->
+                capturedSeverity = request.minSeverity
+                listOf(
+                    HighlightInfo.newHighlightInfo(HighlightInfoType.WARNING)
+                        .range(0, 1)
+                        .descriptionAndTooltip("Synthetic warning")
+                        .createUnconditionally()
+                )
+            }
+
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/SeverityExample.java")
+                put("severity", "errors")
+            })
+
+            assertFalse("Diagnostics should succeed for error-only severity: ${renderResult(result)}", result.isError)
+
+            val diagnostics = decodeDiagnostics(result)
+            assertEquals("Fresh analysis should request error severity", HighlightSeverity.ERROR, capturedSeverity)
+            assertEquals("Warning highlight should be filtered from error-only results", 0, diagnostics.problemCount)
+        } finally {
+            service.mainPassesRunnerOverride = originalRunner
+        }
+    }
+
     private fun createProjectFile(relativePath: String, content: String): com.intellij.psi.PsiFile {
         val basePath = project.basePath ?: error("Project base path is required for diagnostics tests")
-        val sourceRootPath = Path.of(basePath).resolve("src")
+        val sourceRootPath = sourceRootPath()
         Files.createDirectories(sourceRootPath)
         val sourceRoot = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(sourceRootPath)
             ?: error("Failed to refresh source root into LocalFileSystem")
@@ -173,6 +261,11 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         IndexingTestUtil.waitUntilIndexesAreReady(project)
         return PsiManager.getInstance(project).findFile(virtualFile)
             ?: error("Failed to create PSI for $relativePath")
+    }
+
+    private fun sourceRootPath(): Path {
+        val basePath = project.basePath ?: error("Project base path is required for diagnostics tests")
+        return Path.of(basePath).resolve("src")
     }
 
     private fun decodeDiagnostics(result: ToolCallResult): DiagnosticsResult {
