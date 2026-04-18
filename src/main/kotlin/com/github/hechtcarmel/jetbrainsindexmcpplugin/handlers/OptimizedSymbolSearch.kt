@@ -218,8 +218,6 @@ object OptimizedSymbolSearch {
         if (!scope.contains(file)) return null
         val relativePath = ProjectUtils.getToolFilePath(project, file)
 
-        if (isExcludedPath(relativePath)) return null
-
         val name = when (targetElement) {
             is PsiNamedElement -> targetElement.name
             else -> {

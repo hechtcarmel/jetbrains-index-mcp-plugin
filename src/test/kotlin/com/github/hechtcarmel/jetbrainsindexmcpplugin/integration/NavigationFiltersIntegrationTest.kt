@@ -4,12 +4,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
@@ -152,6 +154,51 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         assertFalse("Library methods should be filtered out by project_test_files", aggregatedFiles.any { it.endsWith("LibraryRepositoryImpl.java") })
     }
 
+    fun testFindSymbolDoesNotApplyLegacyExcludedPathFilteringWithinScope() = runBlocking {
+        val fixture = createExcludedPathScopeProbeFixture()
+        val classTool = FindClassTool()
+        val fileTool = FindFileTool()
+        val symbolTool = FindSymbolTool()
+
+        val classResult = classTool.execute(project, buildJsonObject {
+            put("query", fixture.className)
+            put("matchMode", "exact")
+            put("scope", "project_production_files")
+        })
+        assertFalse("Find class should succeed: ${classResult.content}", classResult.isError)
+        val classContent = classResult.content.first() as ContentBlock.Text
+        val classes = json.decodeFromString<FindClassResult>(classContent.text)
+        assertTrue(
+            "Class search should include the probe inside project_production_files",
+            classes.classes.any { it.name == fixture.className && it.file.endsWith(fixture.relativePath) }
+        )
+
+        val fileResult = fileTool.execute(project, buildJsonObject {
+            put("query", fixture.fileName)
+            put("scope", "project_production_files")
+        })
+        assertFalse("Find file should succeed: ${fileResult.content}", fileResult.isError)
+        val fileContent = fileResult.content.first() as ContentBlock.Text
+        val files = json.decodeFromString<FindFileResult>(fileContent.text)
+        assertTrue(
+            "File search should include the probe inside project_production_files",
+            files.files.any { it.name == fixture.fileName && it.path.endsWith(fixture.relativePath) }
+        )
+
+        val symbolResult = symbolTool.execute(project, buildJsonObject {
+            put("query", fixture.className)
+            put("matchMode", "exact")
+            put("scope", "project_production_files")
+        })
+        assertFalse("Find symbol should succeed: ${symbolResult.content}", symbolResult.isError)
+        val symbolContent = symbolResult.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString<FindSymbolResult>(symbolContent.text)
+        assertTrue(
+            "Symbol search should include files accepted by the selected built-in scope even under a venv path",
+            symbols.symbols.any { it.name == fixture.className && it.file.endsWith(fixture.relativePath) }
+        )
+    }
+
     fun testCallHierarchyRespectsProjectProductionFilesScope() = runBlocking {
         val fixture = createProjectMethodFixture()
         val tool = CallHierarchyTool()
@@ -233,6 +280,12 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val targetFile: Path,
         val targetLine: Int,
         val targetColumn: Int
+    )
+
+    private data class ExcludedPathScopeProbeFixture(
+        val className: String,
+        val fileName: String,
+        val relativePath: String
     )
 
     private fun createLibraryInterfaceFixture(): LibraryInterfaceFixture {
@@ -473,6 +526,35 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             targetFile = targetFile,
             targetLine = line,
             targetColumn = column
+        )
+    }
+
+    private fun createExcludedPathScopeProbeFixture(): ExcludedPathScopeProbeFixture {
+        val prodRootPath = createProjectDirectory("excluded-path-src")
+        val prodRoot = refreshVfsDirectory(prodRootPath)
+        PsiTestUtil.addSourceRoot(module, prodRoot, false)
+
+        val className = "VenvScopeProbe"
+        val relativePath = "excluded-path-src/venv/excludedpath/$className.java"
+        val source = """
+            package excludedpath;
+
+            public class $className {
+                public String marker() {
+                    return "scope-probe";
+                }
+            }
+        """.trimIndent()
+
+        val probeFile = writePathFile(prodRootPath, "venv/excludedpath/$className.java", source)
+        refreshVfsFile(probeFile)
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        return ExcludedPathScopeProbeFixture(
+            className = className,
+            fileName = "$className.java",
+            relativePath = relativePath
         )
     }
 
