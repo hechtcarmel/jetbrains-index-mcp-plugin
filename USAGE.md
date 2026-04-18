@@ -143,7 +143,11 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
-| `maxResults` | integer | No | Maximum number of references to return (default: 100, max: 500) |
+| `includeLibraries` | boolean | No | Include references from dependency/library code (default: `true`) |
+| `includeTests` | boolean | No | Include references from test sources (default: `true`) |
+| `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
+| `cursor` | string | No | Pagination cursor from a previous response |
+| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
 
 **Example Request (position-based):**
 
@@ -198,7 +202,14 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
       "astPath": ["UserServiceTest", "testFindUser"]
     }
   ],
-  "totalCount": 2
+  "totalCount": 2,
+  "truncated": false,
+  "nextCursor": null,
+  "hasMore": false,
+  "totalCollected": 2,
+  "offset": 0,
+  "pageSize": 100,
+  "stale": false
 }
 ```
 
@@ -1084,6 +1095,8 @@ Retrieves the complete type hierarchy for a class or interface.
 | `line` | integer | No* | 1-based line number |
 | `column` | integer | No* | 1-based column number |
 | `className` | string | No* | Fully qualified class name (alternative to position) |
+| `includeLibraries` | boolean | No | Include dependency/library hierarchy nodes (default: `true`) |
+| `includeTests` | boolean | No | Include test-source subtype nodes (default: `true`) |
 
 *Either `file`/`line`/`column` OR `className` must be provided.
 
@@ -1138,25 +1151,29 @@ Retrieves the complete type hierarchy for a class or interface.
   "element": {
     "name": "com.example.UserServiceImpl",
     "file": "src/main/java/com/example/UserServiceImpl.java",
-    "kind": "CLASS"
+    "kind": "CLASS",
+    "language": "Java"
   },
   "supertypes": [
     {
       "name": "com.example.UserService",
       "file": "src/main/java/com/example/UserService.java",
-      "kind": "INTERFACE"
+      "kind": "INTERFACE",
+      "language": "Java"
     },
     {
       "name": "com.example.BaseService",
       "file": "src/main/java/com/example/BaseService.java",
-      "kind": "ABSTRACT_CLASS"
+      "kind": "ABSTRACT_CLASS",
+      "language": "Java"
     }
   ],
   "subtypes": [
     {
       "name": "com.example.AdminUserServiceImpl",
       "file": "src/main/java/com/example/AdminUserServiceImpl.java",
-      "kind": "CLASS"
+      "kind": "CLASS",
+      "language": "Java"
     }
   ]
 }
@@ -1195,6 +1212,8 @@ Analyzes method call relationships to find callers or callees.
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `direction` | string | Yes | `"callers"` or `"callees"` |
 | `depth` | integer | No | How deep to traverse (default: 3, max: 5) |
+| `includeLibraries` | boolean | No | Include dependency/library callers or callees (default: `true`) |
+| `includeTests` | boolean | No | Include test-source callers or callees (default: `true`) |
 
 **Example Request (position-based):**
 
@@ -1237,20 +1256,23 @@ Analyzes method call relationships to find callers or callees.
     "name": "UserService.validateUser(String)",
     "file": "src/main/java/com/example/UserService.java",
     "line": 20,
-    "column": 17
+    "column": 17,
+    "language": "Java"
   },
   "calls": [
     {
       "name": "UserController.createUser(UserRequest)",
       "file": "src/main/java/com/example/UserController.java",
       "line": 45,
-      "column": 17
+      "column": 17,
+      "language": "Java"
     },
     {
       "name": "UserController.updateUser(String, UserRequest)",
       "file": "src/main/java/com/example/UserController.java",
       "line": 62,
-      "column": 17
+      "column": 17,
+      "language": "Java"
     }
   ]
 }
@@ -1280,6 +1302,10 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `includeLibraries` | boolean | No | Include dependency/library implementations (default: `true`) |
+| `includeTests` | boolean | No | Include test-source implementations (default: `true`) |
+| `cursor` | string | No | Pagination cursor from a previous response |
+| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
 
 **Example Request (position-based):**
 
@@ -1332,7 +1358,13 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
       "kind": "CLASS"
     }
   ],
-  "totalCount": 2
+  "totalCount": 2,
+  "nextCursor": null,
+  "hasMore": false,
+  "totalCollected": 2,
+  "offset": 0,
+  "pageSize": 100,
+  "stale": false
 }
 ```
 
