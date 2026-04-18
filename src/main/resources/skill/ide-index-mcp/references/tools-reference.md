@@ -7,7 +7,7 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `project_path` | string, optional | Absolute path to project root. Required for multi-project workspaces. Omit for single-project setups. |
-| `file` | string | For project files, path relative to project root (e.g., `src/main/App.java`). `ide_read_file` and read-only position-based navigation tools also accept dependency/library paths returned by the plugin as absolute paths or `jar://` URLs. |
+| `file` | string | For project files, path relative to project root (e.g., `src/main/App.java`). `ide_read_file` and some read-only position-based navigation tools also accept dependency/library paths returned by the plugin as absolute paths or `jar://` URLs; check each tool section because support is tool-specific. |
 | `line` | integer | **1-based** line number |
 | `column` | integer | **1-based** column number. Place on the symbol name, not whitespace. For dotted expressions like `json.dumps()` or `os.path.join()`, point to the member token (`dumps`, `join`) when targeting the member definition. |
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
@@ -37,10 +37,15 @@ Find all usages of a symbol (semantic, not text search).
 | `column` | integer | conditional | 1-based column. Required for position-based lookup. |
 | `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
-| `maxResults` | integer | no | Default 100, max 500 |
+| `includeLibraries` | boolean | no | Keep references from dependency/library code (default true) |
+| `includeTests` | boolean | no | Keep references from test sources (default true) |
+| `maxResults` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
+| `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
+| `pageSize` | integer | no | Results per page. Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ usages: [{ file, line, column, context, type, astPath }], totalCount, truncated }`
+**Returns**: `{ usages: [{ file, line, column, context, type, astPath }], totalCount, truncated, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
+**Pagination note**: `truncated` mirrors `hasMore`; when `hasMore` is `true`, pass `nextCursor` to fetch the next page.
 **type values**: `METHOD_CALL`, `FIELD_ACCESS`, `IMPORT`, `PARAMETER`, `VARIABLE`, `REFERENCE`
 
 ### ide_find_definition
@@ -116,9 +121,13 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `column` | integer | conditional | 1-based column. Required for position-based lookup. |
 | `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `includeLibraries` | boolean | no | Keep dependency/library implementations in results (default true) |
+| `includeTests` | boolean | no | Keep test-source implementations in results (default true) |
+| `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
+| `pageSize` | integer | no | Results per page. Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ implementations: [{file, line, column, name, containerName}], totalCount }`
+**Returns**: `{ implementations: [{name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
 **Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
 
 ### ide_find_symbol (disabled by default)
@@ -159,13 +168,15 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `className` | string | no | FQN (preferred, faster). E.g., `com.example.MyClass` |
-| `file` | string | no | Alternative: file path |
+| `file` | string | no | Alternative: project-relative file path. Unlike other read-only navigation tools, `ide_type_hierarchy` file mode does not resolve dependency/library absolute paths or `jar://` URLs. |
 | `line` | integer | no | Required with file |
 | `column` | integer | no | Required with file |
+| `includeLibraries` | boolean | no | Keep dependency/library supertypes and subtypes in results (default true) |
+| `includeTests` | boolean | no | Keep test-source subtypes in results (default true) |
 | `project_path` | string | no | Project root path |
 
 **Provide either** `className` **or** `file`+`line`+`column`.
-**Returns**: `{ element: {name, qualifiedName, file, line}, supertypes: [...], subtypes: [...] }`
+**Returns**: `{ element: {name, file, kind, language, supertypes?}, supertypes: [{name, file, kind, language, supertypes?}], subtypes: [{name, file, kind, language, supertypes?}] }`
 **Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust.
 
 ### ide_call_hierarchy
@@ -182,9 +193,11 @@ Build call tree showing who calls a method or what a method calls.
 | `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `direction` | enum | yes | `callers` or `callees` |
 | `depth` | integer | no | Recursion depth (default 3, max 5) |
+| `includeLibraries` | boolean | no | Keep dependency/library callers or callees in results (default true) |
+| `includeTests` | boolean | no | Keep test-source callers or callees in results (default true) |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ element: {name, file, line}, calls: [{name, file, line, children: [...]}] }`
+**Returns**: `{ element: {name, file, line, column, language}, calls: [{name, file, line, column, language, children: [...]}] }`
 
 ### ide_file_structure (disabled by default)
 Get hierarchical file structure like IDE's Structure panel.
