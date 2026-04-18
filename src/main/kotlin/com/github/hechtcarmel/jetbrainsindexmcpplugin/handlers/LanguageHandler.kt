@@ -75,7 +75,12 @@ interface TypeHierarchyHandler : LanguageHandler<TypeHierarchyData> {
      * @param project The project context
      * @return The type hierarchy data, or null if the element is not a type
      */
-    fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData?
+    fun getTypeHierarchy(
+        element: PsiElement,
+        project: Project,
+        includeLibraries: Boolean = true,
+        includeTests: Boolean = true
+    ): TypeHierarchyData?
 }
 
 /**
@@ -91,7 +96,12 @@ interface ImplementationsHandler : LanguageHandler<List<ImplementationData>> {
      * @param project The project context
      * @return List of implementations, or null if the element doesn't support implementations
      */
-    fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>?
+    fun findImplementations(
+        element: PsiElement,
+        project: Project,
+        includeLibraries: Boolean = true,
+        includeTests: Boolean = true
+    ): List<ImplementationData>?
 }
 
 /**
@@ -113,7 +123,9 @@ interface CallHierarchyHandler : LanguageHandler<CallHierarchyData> {
         element: PsiElement,
         project: Project,
         direction: String,
-        depth: Int
+        depth: Int,
+        includeLibraries: Boolean = true,
+        includeTests: Boolean = true
     ): CallHierarchyData?
 }
 

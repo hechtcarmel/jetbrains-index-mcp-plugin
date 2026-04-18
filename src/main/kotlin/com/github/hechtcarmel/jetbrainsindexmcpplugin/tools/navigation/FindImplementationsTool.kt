@@ -14,6 +14,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -47,6 +48,10 @@ class FindImplementationsTool : AbstractMcpTool() {
         - language + symbol: fully qualified symbol reference (currently supported for Java only; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
+        Filters:
+        - includeLibraries (optional, default: true): keep dependency/library implementations in results
+        - includeTests (optional, default: true): keep test-source implementations in results
+
         Parameters: pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
@@ -58,6 +63,8 @@ class FindImplementationsTool : AbstractMcpTool() {
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
+        .booleanProperty(ParamNames.INCLUDE_LIBRARIES, "Include implementations from dependency/library code. Default: true.")
+        .booleanProperty(ParamNames.INCLUDE_TESTS, "Include implementations from test sources. Default: true.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
@@ -81,6 +88,8 @@ class FindImplementationsTool : AbstractMcpTool() {
         }
 
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE)
+        val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: true
+        val includeTests = arguments[ParamNames.INCLUDE_TESTS]?.jsonPrimitive?.boolean ?: true
 
         requireSmartMode(project)
 
@@ -97,7 +106,7 @@ class FindImplementationsTool : AbstractMcpTool() {
                 )
             }
 
-            val implementations = handler.findImplementations(element, project)
+            val implementations = handler.findImplementations(element, project, includeLibraries, includeTests)
             if (implementations == null) {
                 val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
                 return@suspendingReadAction null to createErrorResult(

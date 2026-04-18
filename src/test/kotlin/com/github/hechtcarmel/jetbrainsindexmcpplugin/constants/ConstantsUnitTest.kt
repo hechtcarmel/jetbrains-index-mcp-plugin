@@ -121,6 +121,7 @@ class ConstantsUnitTest : TestCase() {
     fun testParamNamesNavigation() {
         assertEquals("className", ParamNames.CLASS_NAME)
         assertEquals("direction", ParamNames.DIRECTION)
+        assertEquals("includeTests", ParamNames.INCLUDE_TESTS)
     }
 
     fun testParamNamesSymbolSearch() {

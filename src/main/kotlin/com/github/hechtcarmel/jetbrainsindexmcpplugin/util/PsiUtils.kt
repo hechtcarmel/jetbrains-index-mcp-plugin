@@ -197,7 +197,7 @@ object PsiUtils {
         val expandedPath = expandHome(path)
         // resolveAbsolutePath handles both absolute paths and relative paths against each root candidate.
         val absolutePath = resolveAbsolutePath(expandedPath, rootCandidates) ?: return null
-        return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(absolutePath)
+        return LocalFileSystem.getInstance().findFileByNioFile(absolutePath)
     }
 
     fun resolveAbsolutePath(path: String, rootCandidates: Sequence<String> = emptySequence()): Path? {

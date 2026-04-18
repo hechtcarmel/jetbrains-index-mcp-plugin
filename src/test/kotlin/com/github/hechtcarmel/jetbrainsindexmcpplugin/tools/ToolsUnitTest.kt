@@ -134,6 +134,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
         assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
         assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
+        assertNotNull("Should have includeLibraries property", properties?.get(ParamNames.INCLUDE_LIBRARIES))
+        assertNotNull("Should have includeTests property", properties?.get(ParamNames.INCLUDE_TESTS))
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
@@ -180,6 +182,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
         assertNotNull("Should have className property", properties?.get(ParamNames.CLASS_NAME))
+        assertNotNull("Should have includeLibraries property", properties?.get(ParamNames.INCLUDE_LIBRARIES))
+        assertNotNull("Should have includeTests property", properties?.get(ParamNames.INCLUDE_TESTS))
     }
 
     fun testCallHierarchyToolSchema() {
@@ -197,6 +201,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have direction property", properties?.get(ParamNames.DIRECTION))
         assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
         assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
+        assertNotNull("Should have includeLibraries property", properties?.get(ParamNames.INCLUDE_LIBRARIES))
+        assertNotNull("Should have includeTests property", properties?.get(ParamNames.INCLUDE_TESTS))
     }
 
     fun testFindImplementationsToolSchema() {
@@ -216,6 +222,8 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
         assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
         assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
+        assertNotNull("Should have includeLibraries property", properties?.get(ParamNames.INCLUDE_LIBRARIES))
+        assertNotNull("Should have includeTests property", properties?.get(ParamNames.INCLUDE_TESTS))
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 

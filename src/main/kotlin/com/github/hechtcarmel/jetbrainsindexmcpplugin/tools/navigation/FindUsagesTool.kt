@@ -1,8 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.shouldIncludeNavigationElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -26,6 +28,7 @@ import com.intellij.util.Processor
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -57,6 +60,10 @@ class FindUsagesTool : AbstractMcpTool() {
         - language + symbol: fully qualified symbol reference (currently supported for Java only; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
+        Filters:
+        - includeLibraries (optional, default: true): keep references from dependency/library code
+        - includeTests (optional, default: true): keep references from test sources
+
         Parameters: pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/UserService.java", "line": 25, "column": 18}
@@ -68,6 +75,8 @@ class FindUsagesTool : AbstractMcpTool() {
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
+        .booleanProperty(ParamNames.INCLUDE_LIBRARIES, "Include references from dependency/library code. Default: true.")
+        .booleanProperty(ParamNames.INCLUDE_TESTS, "Include references from test sources. Default: true.")
         .intProperty("maxResults", "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
@@ -94,6 +103,8 @@ class FindUsagesTool : AbstractMcpTool() {
 
         val pageSize = resolvePageSize(arguments, DEFAULT_MAX_RESULTS, aliases = arrayOf("maxResults"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
+        val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: true
+        val includeTests = arguments[ParamNames.INCLUDE_TESTS]?.jsonPrimitive?.boolean ?: true
 
         requireSmartMode(project)
 
@@ -118,7 +129,7 @@ class FindUsagesTool : AbstractMcpTool() {
 
                     val refElement = reference.element
                     val refFile = refElement.containingFile?.virtualFile
-                    if (refFile != null) {
+                    if (refFile != null && shouldIncludeNavigationElement(project, refElement, includeLibraries, includeTests)) {
                         val total = totalFound.incrementAndGet()
 
                         if (total <= collectLimit) {
@@ -166,7 +177,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 suspendingReadAction {
                     val el = smartPointer.element
                         ?: throw IllegalStateException("Target element no longer valid")
-                    extendFindUsages(project, el, seenKeys, limit)
+                    extendFindUsages(project, el, seenKeys, limit, includeLibraries, includeTests)
                 }
             }
 
@@ -218,7 +229,9 @@ class FindUsagesTool : AbstractMcpTool() {
         project: Project,
         targetElement: PsiElement,
         seenKeys: Set<String>,
-        limit: Int
+        limit: Int,
+        includeLibraries: Boolean,
+        includeTests: Boolean
     ): List<PaginationService.SerializedResult> {
         val newResults = ConcurrentLinkedQueue<PaginationService.SerializedResult>()
         val count = AtomicInteger(0)
@@ -228,7 +241,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 ProgressManager.checkCanceled()
                 val refElement = reference.element
                 val refFile = refElement.containingFile?.virtualFile
-                if (refFile != null) {
+                if (refFile != null && shouldIncludeNavigationElement(project, refElement, includeLibraries, includeTests)) {
                     val document = PsiDocumentManager.getInstance(project).getDocument(refElement.containingFile)
                     if (document != null) {
                         val lineNumber = document.getLineNumber(refElement.textOffset) + 1

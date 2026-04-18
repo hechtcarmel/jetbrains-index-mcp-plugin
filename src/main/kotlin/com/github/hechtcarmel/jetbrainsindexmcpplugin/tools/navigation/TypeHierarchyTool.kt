@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -11,6 +12,7 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -34,6 +36,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
         Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
+        Filters:
+        - includeLibraries (optional, default: true): keep dependency/library supertypes and subtypes in results
+        - includeTests (optional, default: true): keep test-source subtypes in results
+
         Parameters: Either className (e.g., "com.example.MyClass") OR file + line + column.
 
         Example: {"className": "com.example.UserService"} or {"file": "src/MyClass.java", "line": 10, "column": 14}
@@ -45,6 +51,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
+        .booleanProperty(ParamNames.INCLUDE_LIBRARIES, "Include hierarchy nodes from dependency/library code. Default: true.")
+        .booleanProperty(ParamNames.INCLUDE_TESTS, "Include hierarchy nodes from test sources. Default: true.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -52,6 +60,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
         val className = arguments["className"]?.jsonPrimitive?.content
         val file = arguments["file"]?.jsonPrimitive?.content
+        val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: true
+        val includeTests = arguments[ParamNames.INCLUDE_TESTS]?.jsonPrimitive?.boolean ?: true
 
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
@@ -77,7 +87,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            val hierarchyData = handler.getTypeHierarchy(element, project)
+            val hierarchyData = handler.getTypeHierarchy(element, project, includeLibraries, includeTests)
             if (hierarchyData == null) {
                 return@suspendingReadAction createErrorResult("No class/type found at the specified position.")
             }

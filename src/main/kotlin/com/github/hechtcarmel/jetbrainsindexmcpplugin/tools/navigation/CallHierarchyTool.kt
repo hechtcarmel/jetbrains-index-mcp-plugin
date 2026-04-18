@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -39,6 +40,10 @@ class CallHierarchyTool : AbstractMcpTool() {
         - file + line + column: position-based lookup
         - language + symbol: fully qualified symbol reference (currently supported for Java only)
 
+        Filters:
+        - includeLibraries (optional, default: true): keep dependency/library callers or callees in results
+        - includeTests (optional, default: true): keep test-source callers or callees in results
+
         Parameters: direction (required): "callers" or "callees". depth (optional, default: 3, max: 5).
 
         Example: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callers"}
@@ -52,6 +57,8 @@ class CallHierarchyTool : AbstractMcpTool() {
         .languageAndSymbol(required = false)
         .enumProperty("direction", "Direction: 'callers' (methods that call this method) or 'callees' (methods this method calls)", listOf("callers", "callees"), required = true)
         .intProperty("depth", "How many levels deep to traverse the call hierarchy (default: 3, max: 5)")
+        .booleanProperty(ParamNames.INCLUDE_LIBRARIES, "Include callers/callees from dependency/library code. Default: true.")
+        .booleanProperty(ParamNames.INCLUDE_TESTS, "Include callers/callees from test sources. Default: true.")
         .build()
 
     companion object {
@@ -63,6 +70,8 @@ class CallHierarchyTool : AbstractMcpTool() {
         val direction = arguments["direction"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: direction")
         val depth = (arguments["depth"]?.jsonPrimitive?.int ?: DEFAULT_DEPTH).coerceIn(1, MAX_DEPTH)
+        val includeLibraries = arguments[ParamNames.INCLUDE_LIBRARIES]?.jsonPrimitive?.boolean ?: true
+        val includeTests = arguments[ParamNames.INCLUDE_TESTS]?.jsonPrimitive?.boolean ?: true
 
         if (direction !in listOf("callers", "callees")) {
             return createErrorResult("direction must be 'callers' or 'callees'")
@@ -88,7 +97,7 @@ class CallHierarchyTool : AbstractMcpTool() {
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            val hierarchyData = handler.getCallHierarchy(element, project, direction, depth)
+            val hierarchyData = handler.getCallHierarchy(element, project, direction, depth, includeLibraries, includeTests)
             if (hierarchyData == null) {
                 val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
                 return@suspendingReadAction createErrorResult(

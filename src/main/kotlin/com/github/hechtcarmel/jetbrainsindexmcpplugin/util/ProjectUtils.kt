@@ -45,6 +45,13 @@ object ProjectUtils {
     }
 
     fun isProjectFile(project: Project, virtualFile: VirtualFile): Boolean {
+        try {
+            val fileIndex = ProjectFileIndex.getInstance(project)
+            if (fileIndex.isInContent(virtualFile)) return true
+        } catch (_: Exception) {
+            // Fall back to path-based checks below when file index is unavailable.
+        }
+
         val basePath = project.basePath ?: return false
         val filePath = virtualFile.path
         if (filePath == basePath || filePath.startsWith("$basePath/")) return true
@@ -58,8 +65,7 @@ object ProjectUtils {
             val fileIndex = ProjectFileIndex.getInstance(project)
             fileIndex.isInLibrary(virtualFile) ||
                 fileIndex.isInLibraryClasses(virtualFile) ||
-                fileIndex.isInLibrarySource(virtualFile) ||
-                fileIndex.getOrderEntriesForFile(virtualFile).isNotEmpty()
+                fileIndex.isInLibrarySource(virtualFile)
         } catch (_: Exception) {
             false
         }

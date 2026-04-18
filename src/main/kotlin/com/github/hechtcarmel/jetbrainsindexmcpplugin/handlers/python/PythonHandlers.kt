@@ -281,11 +281,16 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
 
     override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
 
-    override fun getTypeHierarchy(element: PsiElement, project: Project): TypeHierarchyData? {
+    override fun getTypeHierarchy(
+        element: PsiElement,
+        project: Project,
+        includeLibraries: Boolean,
+        includeTests: Boolean
+    ): TypeHierarchyData? {
         val pyClass = findContainingPyClass(element) ?: return null
 
-        val supertypes = getSupertypes(project, pyClass)
-        val subtypes = getSubtypes(project, pyClass)
+        val supertypes = getSupertypes(project, pyClass, includeLibraries = includeLibraries, includeTests = includeTests)
+        val subtypes = getSubtypes(project, pyClass, includeLibraries, includeTests)
 
         return TypeHierarchyData(
             element = TypeElementData(
@@ -305,7 +310,9 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
         project: Project,
         pyClass: PsiElement,
         visited: MutableSet<String> = mutableSetOf(),
-        depth: Int = 0
+        depth: Int = 0,
+        includeLibraries: Boolean,
+        includeTests: Boolean
     ): List<TypeElementData> {
         if (depth > MAX_HIERARCHY_DEPTH) return emptyList()
 
@@ -319,8 +326,12 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
             val superClasses = getSuperClasses(pyClass)
             superClasses?.filterIsInstance<PsiElement>()?.forEach { superClass ->
                 val superName = getQualifiedName(superClass) ?: getName(superClass)
-                if (superName != null && superName != "object") {
-                    val superSupertypes = getSupertypes(project, superClass, visited, depth + 1)
+                if (
+                    superName != null &&
+                    superName != "object" &&
+                    shouldIncludeNavigationElement(project, superClass, includeLibraries, includeTests)
+                ) {
+                    val superSupertypes = getSupertypes(project, superClass, visited, depth + 1, includeLibraries, includeTests)
                     supertypes.add(TypeElementData(
                         name = superName,
                         qualifiedName = getQualifiedName(superClass),
@@ -339,7 +350,12 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
         return supertypes
     }
 
-    private fun getSubtypes(project: Project, pyClass: PsiElement): List<TypeElementData> {
+    private fun getSubtypes(
+        project: Project,
+        pyClass: PsiElement,
+        includeLibraries: Boolean,
+        includeTests: Boolean
+    ): List<TypeElementData> {
         return try {
             val searchClass = Class.forName("com.jetbrains.python.psi.search.PyClassInheritorsSearch")
             val searchMethod = searchClass.getMethod("search", pyClassClass, java.lang.Boolean.TYPE)
@@ -349,6 +365,7 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
             val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
 
             inheritors.filterIsInstance<PsiElement>()
+                .filter { shouldIncludeNavigationElement(project, it, includeLibraries, includeTests) }
                 .take(100)
                 .map { inheritor ->
                     TypeElementData(
@@ -379,21 +396,31 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
 
     override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
 
-    override fun findImplementations(element: PsiElement, project: Project): List<ImplementationData>? {
+    override fun findImplementations(
+        element: PsiElement,
+        project: Project,
+        includeLibraries: Boolean,
+        includeTests: Boolean
+    ): List<ImplementationData>? {
         val pyFunction = findContainingPyFunction(element)
         if (pyFunction != null) {
-            return findMethodImplementations(project, pyFunction)
+            return findMethodImplementations(project, pyFunction, includeLibraries, includeTests)
         }
 
         val pyClass = findContainingPyClass(element)
         if (pyClass != null) {
-            return findClassImplementations(project, pyClass)
+            return findClassImplementations(project, pyClass, includeLibraries, includeTests)
         }
 
         return null
     }
 
-    private fun findMethodImplementations(project: Project, pyFunction: PsiElement): List<ImplementationData> {
+    private fun findMethodImplementations(
+        project: Project,
+        pyFunction: PsiElement,
+        includeLibraries: Boolean,
+        includeTests: Boolean
+    ): List<ImplementationData> {
         return try {
             val searchClass = Class.forName("com.jetbrains.python.psi.search.PyOverridingMethodsSearch")
             val searchMethod = searchClass.getMethod("search", pyFunctionClass, java.lang.Boolean.TYPE)
@@ -403,6 +430,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
             val overridingMethods = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
 
             overridingMethods.filterIsInstance<PsiElement>()
+                .filter { shouldIncludeNavigationElement(project, it, includeLibraries, includeTests) }
                 .take(100)
                 .mapNotNull { overridingMethod ->
                     val file = overridingMethod.containingFile?.virtualFile ?: return@mapNotNull null
@@ -423,7 +451,12 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
         }
     }
 
-    private fun findClassImplementations(project: Project, pyClass: PsiElement): List<ImplementationData> {
+    private fun findClassImplementations(
+        project: Project,
+        pyClass: PsiElement,
+        includeLibraries: Boolean,
+        includeTests: Boolean
+    ): List<ImplementationData> {
         return try {
             val searchClass = Class.forName("com.jetbrains.python.psi.search.PyClassInheritorsSearch")
             val searchMethod = searchClass.getMethod("search", pyClassClass, java.lang.Boolean.TYPE)
@@ -433,6 +466,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
             val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
 
             inheritors.filterIsInstance<PsiElement>()
+                .filter { shouldIncludeNavigationElement(project, it, includeLibraries, includeTests) }
                 .take(100)
                 .mapNotNull { inheritor ->
                     val file = inheritor.containingFile?.virtualFile ?: return@mapNotNull null
@@ -475,15 +509,17 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         element: PsiElement,
         project: Project,
         direction: String,
-        depth: Int
+        depth: Int,
+        includeLibraries: Boolean,
+        includeTests: Boolean
     ): CallHierarchyData? {
         val pyFunction = findContainingPyFunction(element) ?: return null
         val visited = mutableSetOf<String>()
 
         val calls = if (direction == "callers") {
-            findCallersRecursive(project, pyFunction, depth, visited)
+            findCallersRecursive(project, pyFunction, depth, visited, includeLibraries = includeLibraries, includeTests = includeTests)
         } else {
-            findCalleesRecursive(project, pyFunction, depth, visited)
+            findCalleesRecursive(project, pyFunction, depth, visited, includeLibraries = includeLibraries, includeTests = includeTests)
         }
 
         return CallHierarchyData(
@@ -533,7 +569,9 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         pyFunction: PsiElement,
         depth: Int,
         visited: MutableSet<String>,
-        stackDepth: Int = 0
+        stackDepth: Int = 0,
+        includeLibraries: Boolean,
+        includeTests: Boolean
     ): List<CallElementData> {
         if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
 
@@ -541,17 +579,28 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         if (functionKey in visited) return emptyList()
         visited.add(functionKey)
 
-        return findDirectCallers(pyFunction)
-            .take(MAX_RESULTS_PER_LEVEL)
-            .mapNotNull { directCaller ->
-                if (directCaller == pyFunction) return@mapNotNull null
+        val callers = mutableListOf<CallElementData>()
+        findDirectCallers(pyFunction)
+            .take(MAX_RESULTS_PER_LEVEL * 2)
+            .forEach { directCaller ->
+                if (directCaller == pyFunction || callers.size >= MAX_RESULTS_PER_LEVEL) return@forEach
 
                 val children = if (depth > 1) {
-                    findCallersRecursive(project, directCaller, depth - 1, visited, stackDepth + 1)
+                    findCallersRecursive(project, directCaller, depth - 1, visited, stackDepth + 1, includeLibraries, includeTests)
                 } else null
-                createCallElement(project, directCaller, children)
+
+                if (shouldIncludeNavigationElement(project, directCaller, includeLibraries, includeTests)) {
+                    callers.add(createCallElement(project, directCaller, children))
+                } else if (children != null) {
+                    children.forEach { child ->
+                        if (callers.size < MAX_RESULTS_PER_LEVEL) {
+                            callers.add(child)
+                        }
+                    }
+                }
             }
-            .distinctBy { it.name + it.file + it.line }
+
+        return callers.distinctBy { it.name + it.file + it.line }.take(MAX_RESULTS_PER_LEVEL)
     }
 
     private fun findDirectCallers(pyFunction: PsiElement): List<PsiElement> {
@@ -610,7 +659,9 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         pyFunction: PsiElement,
         depth: Int,
         visited: MutableSet<String>,
-        stackDepth: Int = 0
+        stackDepth: Int = 0,
+        includeLibraries: Boolean,
+        includeTests: Boolean
     ): List<CallElementData> {
         if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
 
@@ -628,11 +679,19 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
                 val calledFunction = resolveCallExpression(callExpr)
                 if (calledFunction != null && isPyFunction(calledFunction)) {
                     val children = if (depth > 1) {
-                        findCalleesRecursive(project, calledFunction, depth - 1, visited, stackDepth + 1)
+                        findCalleesRecursive(project, calledFunction, depth - 1, visited, stackDepth + 1, includeLibraries, includeTests)
                     } else null
-                    val element = createCallElement(project, calledFunction, children)
-                    if (callees.none { it.name == element.name && it.file == element.file }) {
-                        callees.add(element)
+                    if (shouldIncludeNavigationElement(project, calledFunction, includeLibraries, includeTests)) {
+                        val element = createCallElement(project, calledFunction, children)
+                        if (callees.none { it.name == element.name && it.file == element.file }) {
+                            callees.add(element)
+                        }
+                    } else if (children != null) {
+                        children.forEach { child ->
+                            if (callees.none { it.name == child.name && it.file == child.file }) {
+                                callees.add(child)
+                            }
+                        }
                     }
                 }
             }
