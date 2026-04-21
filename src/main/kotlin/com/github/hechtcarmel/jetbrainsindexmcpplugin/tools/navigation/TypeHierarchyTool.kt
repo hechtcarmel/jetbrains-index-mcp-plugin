@@ -114,14 +114,14 @@ class TypeHierarchyTool : AbstractMcpTool() {
     }
 
     private fun createInvalidScopeError(provided: String): ToolCallResult =
-        createErrorResult(buildJsonObject {
+        createStructuredErrorResult(buildJsonObject {
             put("error", JsonPrimitive("invalid_scope"))
             put("parameter", JsonPrimitive(ParamNames.SCOPE))
             put("provided", JsonPrimitive(provided))
             put("supportedValues", buildJsonArray {
                 BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
             })
-        }.toString())
+        })
 
     private fun resolveTargetElement(project: Project, arguments: JsonObject): PsiElement? {
         // Try className first (Java/Kotlin specific)

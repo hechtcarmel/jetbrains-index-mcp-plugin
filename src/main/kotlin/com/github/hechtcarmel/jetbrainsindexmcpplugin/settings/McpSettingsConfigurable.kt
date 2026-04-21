@@ -49,6 +49,7 @@ class McpSettingsConfigurable : Configurable {
     private var serverPortSpinner: JSpinner? = null
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private var availableProjectsModeComboBox: ComboBox<McpSettings.AvailableProjectsMode>? = null
+    private var responseFormatComboBox: ComboBox<McpSettings.ResponseFormat>? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
 
@@ -104,6 +105,12 @@ class McpSettingsConfigurable : Configurable {
                 value?.let(::availableProjectsModeLabel).orEmpty()
             }
         }
+        responseFormatComboBox = ComboBox(McpSettings.ResponseFormat.values()).apply {
+            toolTipText = McpBundle.message("settings.responseFormat.tooltip")
+            renderer = SimpleListCellRenderer.create("") { value ->
+                value?.let(::responseFormatLabel).orEmpty()
+            }
+        }
 
         val warningLabel = JBLabel(McpBundle.message("settings.syncExternalChanges.warning")).apply {
             foreground = JBColor.RED
@@ -129,6 +136,7 @@ class McpSettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel(McpBundle.message("settings.serverPort") + ":"), serverPortSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.availableProjectsMode") + ":"), availableProjectsModeComboBox!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("settings.responseFormat") + ":"), responseFormatComboBox!!, 1, false)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
@@ -174,7 +182,8 @@ class McpSettingsConfigurable : Configurable {
             serverPortSpinner?.value != settings.serverPort ||
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges ||
-            availableProjectsModeComboBox?.selectedItem != settings.availableProjectsMode) {
+            availableProjectsModeComboBox?.selectedItem != settings.availableProjectsMode ||
+            responseFormatComboBox?.selectedItem != settings.responseFormat) {
             return true
         }
 
@@ -231,6 +240,9 @@ class McpSettingsConfigurable : Configurable {
         settings.availableProjectsMode =
             availableProjectsModeComboBox?.selectedItem as? McpSettings.AvailableProjectsMode
                 ?: McpSettings.AvailableProjectsMode.EXPANDED
+        settings.responseFormat =
+            responseFormatComboBox?.selectedItem as? McpSettings.ResponseFormat
+                ?: McpSettings.ResponseFormat.JSON
 
         val disabledTools = mutableSetOf<String>()
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -317,6 +329,7 @@ class McpSettingsConfigurable : Configurable {
         maxHistorySizeSpinner?.value = settings.maxHistorySize
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
         availableProjectsModeComboBox?.selectedItem = settings.availableProjectsMode
+        responseFormatComboBox?.selectedItem = settings.responseFormat
         
         hostValidationErrorLabel?.isVisible = false
         hostValidationIcon?.isVisible = false
@@ -413,6 +426,7 @@ class McpSettingsConfigurable : Configurable {
         maxHistorySizeSpinner = null
         syncExternalChangesCheckBox = null
         availableProjectsModeComboBox = null
+        responseFormatComboBox = null
         toolCheckBoxes.clear()
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
@@ -422,6 +436,12 @@ class McpSettingsConfigurable : Configurable {
         when (mode) {
             McpSettings.AvailableProjectsMode.EXPANDED -> McpBundle.message("settings.availableProjectsMode.expanded")
             McpSettings.AvailableProjectsMode.COMPACT -> McpBundle.message("settings.availableProjectsMode.compact")
+        }
+
+    private fun responseFormatLabel(format: McpSettings.ResponseFormat): String =
+        when (format) {
+            McpSettings.ResponseFormat.JSON -> McpBundle.message("settings.responseFormat.json")
+            McpSettings.ResponseFormat.TOON -> McpBundle.message("settings.responseFormat.toon")
         }
 
     companion object {

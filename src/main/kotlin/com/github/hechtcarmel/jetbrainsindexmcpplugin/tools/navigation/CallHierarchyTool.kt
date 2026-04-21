@@ -127,14 +127,14 @@ class CallHierarchyTool : AbstractMcpTool() {
     }
 
     private fun createInvalidScopeError(provided: String): ToolCallResult =
-        createErrorResult(buildJsonObject {
+        createStructuredErrorResult(buildJsonObject {
             put("error", JsonPrimitive("invalid_scope"))
             put("parameter", JsonPrimitive(ParamNames.SCOPE))
             put("provided", JsonPrimitive(provided))
             put("supportedValues", buildJsonArray {
                 BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
             })
-        }.toString())
+        })
 
     /**
      * Converts handler CallElementData to tool CallElement.

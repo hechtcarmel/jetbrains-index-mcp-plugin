@@ -1,8 +1,12 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import junit.framework.TestCase
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class ProjectResolverUnitTest : TestCase() {
 
@@ -60,5 +64,38 @@ class ProjectResolverUnitTest : TestCase() {
     fun testBuildAvailableProjectsJsonHandlesEmptyEntries() {
         val result = buildAvailableProjectsJson(emptyList(), includeWorkspaceSubProjects = true)
         assertEquals(0, result.size)
+    }
+
+    fun testBuildStructuredErrorResultDefaultsToJson() {
+        val result = buildStructuredErrorResult(
+            buildJsonObject {
+                put("error", "project_not_found")
+                put("message", "Missing project")
+            }
+        )
+
+        val text = (result.content.single() as ContentBlock.Text).text
+        val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+
+        assertTrue(result.isError)
+        assertEquals("project_not_found", parsed["error"]?.jsonPrimitive?.content)
+        assertEquals("Missing project", parsed["message"]?.jsonPrimitive?.content)
+    }
+
+    fun testBuildStructuredErrorResultSupportsToon() {
+        val result = buildStructuredErrorResult(
+            payload = buildJsonObject {
+                put("error", "project_not_found")
+                put("message", "Missing project")
+            },
+            format = McpSettings.ResponseFormat.TOON
+        )
+
+        val text = (result.content.single() as ContentBlock.Text).text
+
+        assertTrue(result.isError)
+        assertFalse(text.trim().startsWith("{"))
+        assertTrue(text.contains("error: project_not_found"))
+        assertTrue(text.contains("message: Missing project"))
     }
 }

@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.14.0] - 2026-04-21
+### Added
+- Added a settings toggle to return structured MCP tool payloads as either JSON or TOON.
+
 ## [4.13.2] - 2026-04-21
 ### Fixed
 - **Qualified symbol search in `ide_find_symbol` now behaves much closer to IntelliJ's Go to Symbol popup** — queries like `BasicSolver.run` and `test.BasicSolver.run` now resolve the intended symbol instead of being treated like a plain symbol name. Fixes [#144](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/144).

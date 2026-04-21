@@ -13,6 +13,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
@@ -40,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.int
@@ -649,16 +651,50 @@ abstract class AbstractMcpTool : McpTool {
     }
 
     /**
+     * Creates an error result with a structured payload.
+     *
+     * The payload is emitted using the configured response format.
+     * If formatting fails, returns a plain-text formatting error instead.
+     */
+    protected fun createStructuredErrorResult(data: JsonElement): ToolCallResult {
+        return try {
+            val jsonText = json.encodeToString(JsonElement.serializer(), data)
+            ToolCallResult(
+                content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+                isError = true
+            )
+        } catch (e: Exception) {
+            createErrorResult(formattingFailureMessage(e))
+        }
+    }
+
+    /**
      * Creates a successful result with JSON-serialized data.
      *
      * @param data The data to serialize (must be @Serializable)
      * @return A [ToolCallResult] with JSON content and `isError = false`
      */
     protected inline fun <reified T> createJsonResult(data: T): ToolCallResult {
-        val jsonText = json.encodeToString(data)
-        return ToolCallResult(
-            content = listOf(ContentBlock.Text(text = jsonText)),
-            isError = false
-        )
+        return try {
+            val jsonText = json.encodeToString(data)
+            ToolCallResult(
+                content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+                isError = false
+            )
+        } catch (e: Exception) {
+            createErrorResult(formattingFailureMessage(e))
+        }
+    }
+
+    @PublishedApi
+    internal fun formatStructuredPayload(jsonText: String): String {
+        val format = McpSettings.getInstance().responseFormat
+        return ResponseFormatter.formatStructuredPayload(jsonText, format)
+    }
+
+    @PublishedApi
+    internal fun formattingFailureMessage(error: Exception): String {
+        val message = error.message?.takeIf { it.isNotBlank() } ?: "unknown error"
+        return "Response formatting failed: $message"
     }
 }

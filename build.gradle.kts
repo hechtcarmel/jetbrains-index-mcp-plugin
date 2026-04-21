@@ -43,6 +43,7 @@ dependencies {
 
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.jtoon)
 
     // Ktor Server (for custom MCP server with configurable port)
     implementation(libs.ktor.server.core) {

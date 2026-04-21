@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
@@ -40,6 +41,30 @@ internal fun buildAvailableProjectsJson(
     }
 }
 
+internal fun buildStructuredErrorResult(
+    payload: JsonObject,
+    format: McpSettings.ResponseFormat = McpSettings.ResponseFormat.JSON
+): ToolCallResult {
+    val json = Json { encodeDefaults = true; prettyPrint = false }
+    return try {
+        val jsonText = json.encodeToString(payload)
+        ToolCallResult(
+            content = listOf(
+                ContentBlock.Text(
+                    text = ResponseFormatter.formatStructuredPayload(jsonText, format)
+                )
+            ),
+            isError = true
+        )
+    } catch (e: Exception) {
+        val message = e.message?.takeIf { it.isNotBlank() } ?: "unknown error"
+        ToolCallResult(
+            content = listOf(ContentBlock.Text(text = "Response formatting failed: $message")),
+            isError = true
+        )
+    }
+}
+
 object ProjectResolver {
 
     private val LOG = logger<ProjectResolver>()
@@ -63,14 +88,12 @@ object ProjectResolver {
         if (openProjects.isEmpty()) {
             return Result(
                 isError = true,
-                errorResult = ToolCallResult(
-                    content = listOf(ContentBlock.Text(
-                        text = json.encodeToString(buildJsonObject {
-                            put("error", ErrorMessages.ERROR_NO_PROJECT_OPEN)
-                            put("message", ErrorMessages.MSG_NO_PROJECT_OPEN)
-                        })
-                    )),
-                    isError = true
+                errorResult = buildStructuredErrorResult(
+                    payload = buildJsonObject {
+                        put("error", ErrorMessages.ERROR_NO_PROJECT_OPEN)
+                        put("message", ErrorMessages.MSG_NO_PROJECT_OPEN)
+                    },
+                    format = responseFormat()
                 )
             )
         }
@@ -102,15 +125,13 @@ object ProjectResolver {
 
             return Result(
                 isError = true,
-                errorResult = ToolCallResult(
-                    content = listOf(ContentBlock.Text(
-                        text = json.encodeToString(buildJsonObject {
-                            put("error", ErrorMessages.ERROR_PROJECT_NOT_FOUND)
-                            put("message", ErrorMessages.msgProjectNotFound(projectPath))
-                            put("available_projects", buildAvailableProjectsArray(openProjects))
-                        })
-                    )),
-                    isError = true
+                errorResult = buildStructuredErrorResult(
+                    payload = buildJsonObject {
+                        put("error", ErrorMessages.ERROR_PROJECT_NOT_FOUND)
+                        put("message", ErrorMessages.msgProjectNotFound(projectPath))
+                        put("available_projects", buildAvailableProjectsArray(openProjects))
+                    },
+                    format = responseFormat()
                 )
             )
         }
@@ -123,15 +144,13 @@ object ProjectResolver {
         // Multiple projects open, no path specified - return error with list
         return Result(
             isError = true,
-            errorResult = ToolCallResult(
-                content = listOf(ContentBlock.Text(
-                    text = json.encodeToString(buildJsonObject {
-                        put("error", ErrorMessages.ERROR_MULTIPLE_PROJECTS)
-                        put("message", ErrorMessages.MSG_MULTIPLE_PROJECTS)
-                        put("available_projects", buildAvailableProjectsArray(openProjects))
-                    })
-                )),
-                isError = true
+            errorResult = buildStructuredErrorResult(
+                payload = buildJsonObject {
+                    put("error", ErrorMessages.ERROR_MULTIPLE_PROJECTS)
+                    put("message", ErrorMessages.MSG_MULTIPLE_PROJECTS)
+                    put("available_projects", buildAvailableProjectsArray(openProjects))
+                },
+                format = responseFormat()
             )
         )
     }
@@ -217,4 +236,8 @@ object ProjectResolver {
         runCatching { McpSettings.getInstance().availableProjectsMode }
             .getOrDefault(McpSettings.AvailableProjectsMode.EXPANDED) ==
             McpSettings.AvailableProjectsMode.EXPANDED
+
+    private fun responseFormat(): McpSettings.ResponseFormat =
+        runCatching { McpSettings.getInstance().responseFormat }
+            .getOrDefault(McpSettings.ResponseFormat.JSON)
 }

@@ -8,6 +8,7 @@ mcpKotlinSdk = "0.4.0"
 ktor = "2.3.12"
 kotlinxSerializationJson = "1.7.3"
 kotlinxCoroutines = "1.9.0"
+jtoon = "1.0.9"
 
 # Testing
 mockk = "1.14.6"
@@ -29,6 +30,7 @@ mcp-kotlin-sdk = { group = "io.modelcontextprotocol", name = "kotlin-sdk-jvm", v
 
 # Kotlinx Serialization
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+jtoon = { group = "dev.toonformat", name = "jtoon", version.ref = "jtoon" }
 
 # Kotlinx Coroutines
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
