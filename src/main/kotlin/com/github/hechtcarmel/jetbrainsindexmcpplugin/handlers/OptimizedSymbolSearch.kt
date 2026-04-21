@@ -10,7 +10,6 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.codeStyle.MinusculeMatcher
-import com.intellij.psi.codeStyle.NameUtil
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
 
@@ -59,47 +58,54 @@ object OptimizedSymbolSearch {
 
         LOG.debug("Searching for symbols matching '$pattern' (limit=$limit, filter=$languageFilter, matchMode=$matchMode)")
 
+        try {
+            val matcher = if (matchMode == "substring") null else createMatcher(pattern, matchMode)
+            var popupLimit = limit
+            val popupLimitCap = maxOf(limit * 8, limit + 200)
+
+            while (true) {
+                val popupResults = PopupFaithfulSymbolSearch.search(project, pattern, scope, popupLimit)
+                val results = popupResults.candidates
+                    .mapNotNull { candidate ->
+                        val symbolData = convertToSymbolData(candidate.item, project, scope, languageFilter) ?: return@mapNotNull null
+                        if (!matchesPattern(candidate, symbolData, pattern, matchMode, matcher, popupResults.isQualifiedQuery)) {
+                            return@mapNotNull null
+                        }
+                        symbolData
+                    }
+                    .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+
+                if (results.size >= limit || popupResults.candidates.size < popupLimit || popupLimit >= popupLimitCap) {
+                    LOG.debug("Found ${results.size} symbols via popup-backed search")
+                    return results.take(limit)
+                }
+
+                popupLimit = minOf(popupLimitCap, popupLimit * 2)
+            }
+        } catch (e: Exception) {
+            LOG.debug("Popup-backed symbol search failed, falling back to contributor iteration: ${e.message}", e)
+        }
+
+        return legacySearch(project, pattern, scope, limit, languageFilter, matchMode)
+    }
+
+    /**
+     * Legacy contributor iteration path kept as a fallback if the popup-backed search fails.
+     */
+    private fun legacySearch(
+        project: Project,
+        pattern: String,
+        scope: GlobalSearchScope,
+        limit: Int,
+        languageFilter: Set<String>? = null,
+        matchMode: String = "substring"
+    ): List<SymbolData> {
         val results = mutableListOf<SymbolData>()
         val seen = mutableSetOf<String>() // Deduplication key: file:line:column:name
         val matcher = createMatcher(pattern, matchMode)
         val nameFilter = createNameFilter(pattern, matchMode, matcher)
 
-        // Strategy 1: Use ChooseByNameContributor extension points (most reliable)
-        try {
-            searchUsingContributors(project, pattern, scope, limit, languageFilter, nameFilter, matcher, results, seen)
-        } catch (e: Exception) {
-            LOG.debug("Contributor-based search failed: ${e.message}")
-        }
-
-        // Sort by match quality
-        val sortedResults = results.sortedWith(compareBy(
-            { !it.name.equals(pattern, ignoreCase = true) }, // Exact matches first
-            { -matcher.matchingDegree(it.name) } // Then by match quality
-        ))
-
-        LOG.debug("Found ${sortedResults.size} symbols")
-        return sortedResults.take(limit)
-    }
-
-    /**
-     * Search using platform ChooseByNameContributor extension points.
-     *
-     * This is the same infrastructure used by IntelliJ's "Go to Symbol" dialog.
-     */
-    private fun searchUsingContributors(
-        project: Project,
-        pattern: String,
-        scope: GlobalSearchScope,
-        limit: Int,
-        languageFilter: Set<String>?,
-        nameFilter: (String) -> Boolean,
-        matcher: MinusculeMatcher,
-        results: MutableList<SymbolData>,
-        seen: MutableSet<String>
-    ) {
-        val contributors = ChooseByNameContributor.SYMBOL_EP_NAME.extensionList
-
-        for (contributor in contributors) {
+        for (contributor in ChooseByNameContributor.SYMBOL_EP_NAME.extensionList) {
             if (results.size >= limit) break
 
             try {
@@ -108,6 +114,14 @@ object OptimizedSymbolSearch {
                 LOG.debug("Error processing contributor ${contributor.javaClass.simpleName}: ${e.message}")
             }
         }
+
+        val sortedResults = results.sortedWith(compareBy(
+            { !it.name.equals(pattern, ignoreCase = true) },
+            { -matcher.matchingDegree(it.name) }
+        ))
+
+        LOG.debug("Found ${sortedResults.size} symbols via legacy contributor iteration")
+        return sortedResults.take(limit)
     }
 
     private fun processContributor(
@@ -184,6 +198,35 @@ object OptimizedSymbolSearch {
         }
     }
 
+    private fun matchesPattern(
+        candidate: PopupSearchCandidate,
+        symbolData: SymbolData,
+        pattern: String,
+        matchMode: String,
+        matcher: MinusculeMatcher?,
+        isQualifiedQuery: Boolean
+    ): Boolean {
+        if (matchMode == "substring") return true
+
+        val matchTarget = if (isQualifiedQuery) {
+            if (matchMode == "exact") {
+                symbolData.qualifiedName
+            } else {
+                candidate.fullName
+            }
+                ?: symbolData.qualifiedName
+                ?: symbolData.containerName?.let { "$it.${symbolData.name}" }
+                ?: symbolData.name
+        } else {
+            symbolData.name
+        }
+
+        return when (matchMode) {
+            "exact" -> matchTarget == pattern
+            else -> matcher?.matches(matchTarget) == true
+        }
+    }
+
     /**
      * Convert a NavigationItem or PsiElement to SymbolData.
      */
@@ -230,12 +273,13 @@ object OptimizedSymbolSearch {
             }
         } ?: return null
 
-        val qualifiedName = try {
+        val directQualifiedName = try {
             val method = targetElement.javaClass.getMethod("getQualifiedName")
             method.invoke(targetElement) as? String
         } catch (e: Exception) {
             null
         }
+        val qualifiedName = directQualifiedName ?: buildQualifiedNameFromContainer(targetElement, name)
 
         val line = getLineNumber(project, targetElement) ?: 1
         val kind = determineKind(targetElement)
@@ -251,6 +295,25 @@ object OptimizedSymbolSearch {
             containerName = containerName,
             language = language
         )
+    }
+
+    private fun buildQualifiedNameFromContainer(element: PsiElement, name: String): String? {
+        var parent = element.parent
+
+        while (parent != null) {
+            try {
+                val method = parent.javaClass.getMethod("getQualifiedName")
+                val parentQualifiedName = method.invoke(parent) as? String
+                if (!parentQualifiedName.isNullOrBlank()) {
+                    return "$parentQualifiedName.$name"
+                }
+            } catch (_: Exception) {
+                // Ignore and continue walking up the PSI tree.
+            }
+            parent = parent.parent
+        }
+
+        return null
     }
 
     private fun getLanguageName(element: PsiElement): String {

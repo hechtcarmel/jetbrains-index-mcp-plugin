@@ -199,6 +199,94 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         )
     }
 
+    fun testFindSymbolSupportsQualifiedNameSearch() = runBlocking {
+        val fixture = createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "BasicSolver.run")
+        })
+
+        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+
+        val content = result.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString<FindSymbolResult>(content.text)
+
+        assertEquals("Qualified query should resolve to exactly one method", 1, symbols.symbols.size)
+        val symbol = symbols.symbols.single()
+        assertEquals("run", symbol.name)
+        assertTrue(
+            "Qualified query should resolve to BasicSolver.run",
+            symbol.file.endsWith(fixture.basicSolverRelativePath)
+        )
+    }
+
+    fun testFindSymbolSupportsFullyQualifiedExactNameSearch() = runBlocking {
+        val fixture = createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "test.BasicSolver.run")
+            put("matchMode", "exact")
+        })
+
+        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+
+        val content = result.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString<FindSymbolResult>(content.text)
+
+        assertEquals("Exact fully-qualified query should resolve to exactly one method", 1, symbols.symbols.size)
+        val symbol = symbols.symbols.single()
+        assertEquals("run", symbol.name)
+        assertTrue(
+            "Exact fully-qualified query should resolve to BasicSolver.run",
+            symbol.file.endsWith(fixture.basicSolverRelativePath)
+        )
+    }
+
+    fun testFindSymbolQualifiedSuffixSearchPaginatesCorrectly() = runBlocking {
+        val fixture = createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        val firstPage = tool.execute(project, buildJsonObject {
+            put("query", "Solver.run")
+            put("pageSize", 1)
+        })
+
+        assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isError)
+
+        val firstContent = firstPage.content.first() as ContentBlock.Text
+        val firstResult = json.decodeFromString<FindSymbolResult>(firstContent.text)
+        val aggregatedFiles = firstResult.symbols.map { it.file }.toMutableList()
+        var nextCursor = firstResult.nextCursor
+
+        while (nextCursor != null) {
+            val nextPage = tool.execute(project, buildJsonObject {
+                put("cursor", nextCursor)
+                put("pageSize", 1)
+            })
+            assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isError)
+            val nextContent = nextPage.content.first() as ContentBlock.Text
+            val nextResult = json.decodeFromString<FindSymbolResult>(nextContent.text)
+            aggregatedFiles += nextResult.symbols.map { it.file }
+            nextCursor = nextResult.nextCursor
+        }
+
+        assertEquals("Qualified suffix query should resolve to two solver methods", 2, aggregatedFiles.size)
+        assertTrue(
+            "BasicSolver.run should be part of the paginated results",
+            aggregatedFiles.any { it.endsWith(fixture.basicSolverRelativePath) }
+        )
+        assertTrue(
+            "StackSolver.run should be part of the paginated results",
+            aggregatedFiles.any { it.endsWith(fixture.stackSolverRelativePath) }
+        )
+        assertFalse(
+            "BatchRunner.run should not match the qualified suffix query",
+            aggregatedFiles.any { it.endsWith(fixture.batchRunnerRelativePath) }
+        )
+    }
+
     fun testCallHierarchyRespectsProjectProductionFilesScope() = runBlocking {
         val fixture = createProjectMethodFixture()
         val tool = CallHierarchyTool()
@@ -286,6 +374,12 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val className: String,
         val fileName: String,
         val relativePath: String
+    )
+
+    private data class QualifiedSymbolFixture(
+        val basicSolverRelativePath: String,
+        val stackSolverRelativePath: String,
+        val batchRunnerRelativePath: String
     )
 
     private fun createLibraryInterfaceFixture(): LibraryInterfaceFixture {
@@ -555,6 +649,68 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             className = className,
             fileName = "$className.java",
             relativePath = relativePath
+        )
+    }
+
+    private fun createQualifiedSymbolFixture(): QualifiedSymbolFixture {
+        val prodRootPath = createProjectDirectory("qualified-symbol-src")
+        val prodRoot = refreshVfsDirectory(prodRootPath)
+        PsiTestUtil.addSourceRoot(module, prodRoot, false)
+
+        val basicSolverRelativePath = "qualified-symbol-src/test/BasicSolver.java"
+        val stackSolverRelativePath = "qualified-symbol-src/test/StackSolver.java"
+        val batchRunnerRelativePath = "qualified-symbol-src/test/BatchRunner.java"
+
+        val basicSolverFile = writePathFile(
+            prodRootPath,
+            "test/BasicSolver.java",
+            """
+                package test;
+
+                public class BasicSolver {
+                    public String run(String expr) {
+                        return expr;
+                    }
+                }
+            """.trimIndent()
+        )
+        val stackSolverFile = writePathFile(
+            prodRootPath,
+            "test/StackSolver.java",
+            """
+                package test;
+
+                public class StackSolver {
+                    public String run(String expr) {
+                        return expr;
+                    }
+                }
+            """.trimIndent()
+        )
+        val batchRunnerFile = writePathFile(
+            prodRootPath,
+            "test/BatchRunner.java",
+            """
+                package test;
+
+                public class BatchRunner {
+                    public String run(String expr) {
+                        return expr;
+                    }
+                }
+            """.trimIndent()
+        )
+
+        refreshVfsFile(basicSolverFile)
+        refreshVfsFile(stackSolverFile)
+        refreshVfsFile(batchRunnerFile)
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        return QualifiedSymbolFixture(
+            basicSolverRelativePath = basicSolverRelativePath,
+            stackSolverRelativePath = stackSolverRelativePath,
+            batchRunnerRelativePath = batchRunnerRelativePath
         )
     }
 
