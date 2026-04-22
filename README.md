@@ -69,6 +69,7 @@ Perfect for AI-assisted development workflows where accuracy and safety matter.
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Community Integrations](#community-integrations)
 - [Client Configuration](#client-configuration)
 - [Available Tools](#available-tools)
 - [Multi-Project Support](#multi-project-support)
@@ -113,6 +114,12 @@ The easiest way to configure your AI assistant:
    - **Install Now** - For Claude Code CLI and Codex CLI: Runs the installation command automatically
    - **Copy Configuration** - For other clients: Copies the JSON config to your clipboard
 4. For "Copy Configuration" clients, paste the config into the appropriate config file
+
+## Community Integrations
+
+- [opencode-jetbrains-index](https://github.com/ineersa/opencode-jetbrains-index) - a third-party integration for OpenCode that uses this plugin
+
+> **Disclaimer**: This repository is not maintained by me. Please use its own issue tracker for integration-specific issues and support.
 
 ## Client Configuration
 
