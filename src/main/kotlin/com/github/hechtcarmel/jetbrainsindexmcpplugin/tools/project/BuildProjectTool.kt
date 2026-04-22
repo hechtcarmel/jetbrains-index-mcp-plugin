@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
@@ -74,6 +75,8 @@ class BuildProjectTool : AbstractMcpTool() {
         if (timeoutSeconds != null && timeoutSeconds <= 0) {
             return createErrorResult("timeoutSeconds must be a positive integer, or omit for no timeout.")
         }
+
+        BuildDiagnosticsCacheService.getInstance(project).initialize()
 
         val startTime = System.currentTimeMillis()
 
@@ -148,6 +151,7 @@ class BuildProjectTool : AbstractMcpTool() {
             val messages = synchronized(allMessages) {
                 if (truncated) ArrayList(allMessages.subList(0, MAX_BUILD_MESSAGES)) else ArrayList(allMessages)
             }
+            BuildDiagnosticsCacheService.getInstance(project).recordBuildResult(messages)
             val errorCount = messages.count { it.category == "ERROR" }.takeIf { allMessages.isNotEmpty() }
             val warningCount = messages.count { it.category == "WARNING" }.takeIf { allMessages.isNotEmpty() }
 

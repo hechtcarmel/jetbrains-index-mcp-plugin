@@ -32,7 +32,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * MCP tool that analyzes files for code problems and available intentions.
  *
- * This tool leverages IntelliJ's daemon code analyzer to detect:
+ * This tool leverages public IntelliJ diagnostics APIs to detect:
  * - Compilation errors
  * - Code warnings and weak warnings
  * - Available quick fixes and intentions
@@ -41,8 +41,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * - Build errors/warnings from the last build
  * - Test results from open test run tabs
  *
- * File diagnostics run through explicit daemon main passes so they work
- * even when the target project window is not active.
+ * File diagnostics use open-editor daemon highlights when the file is already
+ * open, and public batch code-smell analysis for closed files.
  */
 class GetDiagnosticsTool : AbstractMcpTool() {
 
@@ -59,6 +59,8 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         Returns: problems with severity and location, available intentions/quick fixes, build errors, and test results with error messages and stack traces.
 
         At least one source must be active: provide 'file' for code analysis, 'includeBuildErrors' for build output, or 'includeTestResults' for test results. Can combine all three.
+
+        File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open.
 
         Parameters: file (optional, enables code analysis), line + column (optional, for intentions, requires file), startLine/endLine (optional, requires file), includeBuildErrors (optional), includeTestResults (optional), severity (optional, default 'all'), testResultFilter (optional, default 'failed'), maxBuildErrors (optional, default 100), maxTestResults (optional, default 100).
 

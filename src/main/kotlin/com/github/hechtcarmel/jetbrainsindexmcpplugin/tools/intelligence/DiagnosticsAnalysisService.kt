@@ -1,89 +1,85 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
+import com.intellij.codeInsight.CodeSmellInfo
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.ProblemHighlightFilter
-import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
-import com.intellij.codeInsight.daemon.impl.DaemonProgressIndicator
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
-import com.intellij.codeInsight.daemon.impl.HighlightingSessionImpl
-import com.intellij.codeInspection.InspectionProfile
-import com.intellij.codeInspection.ex.InspectionProfileImpl
-import com.intellij.codeInspection.ex.InspectionProfileWrapper
-import com.intellij.openapi.application.WriteActionListener
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
-import com.intellij.openapi.application.ex.ApplicationManagerEx
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.progress.jobToIndicator
+import com.intellij.openapi.progress.util.ProgressIndicatorBase
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.ProperTextRange
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager
+import com.intellij.openapi.util.Computable
+import com.intellij.openapi.vcs.CodeSmellDetector
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.openapi.util.Disposer
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.job
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.annotations.TestOnly
-import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Method
-import java.util.function.Function
-import java.util.function.Consumer
-import kotlin.coroutines.resume
+import kotlin.math.max
 
 @Service(Service.Level.PROJECT)
 class DiagnosticsAnalysisService(private val project: Project) {
 
     companion object {
         private const val DEFAULT_ANALYSIS_TIMEOUT_MS = 30_000L
-        private const val MAX_RETRIES = 100
-        private val runInsideHighlightingSessionMethod: Method by lazy {
-            HighlightingSessionImpl::class.java.methods.firstOrNull { method ->
-                method.name == "runInsideHighlightingSession" && (method.parameterCount == 5 || method.parameterCount == 6)
-            } ?: error("HighlightingSessionImpl.runInsideHighlightingSession is unavailable")
-        }
-        private val anyCodeInsightContext: Any by lazy {
-            loadAnyCodeInsightContext()
-        }
+        private const val HIGHLIGHT_POLL_INTERVAL_MS = 50L
+        private const val HIGHLIGHT_RESTART_GRACE_MS = 150L
+        private const val HIGHLIGHT_STABLE_SNAPSHOTS_REQUIRED = 2
 
         fun getInstance(project: Project): DiagnosticsAnalysisService =
             project.getService(DiagnosticsAnalysisService::class.java)
 
-        private fun loadAnyCodeInsightContext(): Any {
-            val providers = listOf(
-                "com.intellij.codeInsight.multiverse.CodeInsightContexts" to "anyContext",
-                "com.intellij.codeInsight.multiverse.CodeInsightContextsKt" to "anyContext",
-                "com.intellij.codeInsight.multiverse.CodeInsightContextKt" to "anyContext"
-            )
-
-            for ((className, methodName) in providers) {
-                val context = runCatching {
-                    Class.forName(className).getMethod(methodName).invoke(null)
-                }.getOrNull()
-                if (context != null) {
-                    return context
-                }
+        internal fun shouldFinishHighlightWait(
+            completed: Boolean,
+            sawIncompleteState: Boolean,
+            sawRelevantEvent: Boolean,
+            elapsedMs: Long
+        ): Boolean {
+            if (!completed) {
+                return false
             }
 
-            val singleton = runCatching {
-                Class.forName("com.intellij.codeInsight.multiverse.AnyContext")
-                    .getField("INSTANCE")
-                    .get(null)
-            }.getOrNull()
-            if (singleton != null) {
-                return singleton
+            if (sawIncompleteState) {
+                return true
             }
 
-            error("Unable to resolve IntelliJ anyContext implementation for highlighting session")
+            return elapsedMs >= HIGHLIGHT_RESTART_GRACE_MS && (!sawIncompleteState || sawRelevantEvent)
+        }
+
+        internal fun shouldAcceptHighlightSnapshot(
+            completed: Boolean,
+            sawIncompleteState: Boolean,
+            sawRelevantEvent: Boolean,
+            sawRelevantTerminalEvent: Boolean,
+            stableSnapshotCount: Int,
+            elapsedMs: Long
+        ): Boolean {
+            if (shouldFinishHighlightWait(completed, sawIncompleteState, sawRelevantEvent, elapsedMs)) {
+                return true
+            }
+
+            if (elapsedMs < HIGHLIGHT_RESTART_GRACE_MS) {
+                return false
+            }
+
+            if (sawRelevantTerminalEvent) {
+                return true
+            }
+
+            return stableSnapshotCount >= HIGHLIGHT_STABLE_SNAPSHOTS_REQUIRED
         }
     }
 
@@ -91,7 +87,10 @@ class DiagnosticsAnalysisService(private val project: Project) {
     internal var analysisTimeoutMsOverride: Long? = null
 
     @TestOnly
-    internal var mainPassesRunnerOverride: (suspend (MainPassesRequest) -> List<HighlightInfo>)? = null
+    internal var openFileAnalysisOverride: (suspend (OpenFileAnalysisRequest) -> List<HighlightInfo>)? = null
+
+    @TestOnly
+    internal var closedFileAnalysisOverride: (suspend (ClosedFileAnalysisRequest) -> List<CodeSmellInfo>)? = null
 
     suspend fun analyzeFile(
         virtualFile: VirtualFile,
@@ -101,67 +100,125 @@ class DiagnosticsAnalysisService(private val project: Project) {
         endLine: Int?,
         maxProblems: Int
     ): FileAnalysisResult {
+        val openTextEditor = currentTextEditor(virtualFile)
         val fileContext = ReadAction.compute<FileContext?, Throwable> {
             if (!virtualFile.isValid) {
                 return@compute null
             }
 
             val psiFile = PsiManager.getInstance(project).findFile(virtualFile) ?: return@compute null
-            if (!ProblemHighlightFilter.shouldProcessFileInBatch(psiFile)) {
-                return@compute null
-            }
-
             val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return@compute null
-            FileContext(psiFile = psiFile, filePath = filePath, document = document)
+            val codeAnalyzer = DaemonCodeAnalyzer.getInstance(project)
+
+            FileContext(
+                virtualFile = virtualFile,
+                psiFile = psiFile,
+                filePath = filePath,
+                document = document,
+                textEditor = openTextEditor,
+                openEditorEligible = openTextEditor != null && codeAnalyzer.isHighlightingAvailable(psiFile),
+                batchEligible = ProblemHighlightFilter.shouldProcessFileInBatch(psiFile)
+            )
         }
 
-        if (fileContext == null) {
+        if (fileContext == null || (!fileContext.openEditorEligible && !fileContext.batchEligible)) {
             return FileAnalysisResult(
                 problems = emptyList(),
                 highlights = emptyList(),
                 analysisFresh = false,
                 analysisTimedOut = false,
-                analysisMessage = "File is not eligible for batch diagnostics analysis."
+                analysisMessage = "File is not eligible for IDE diagnostics analysis."
             )
         }
 
         val timeoutMs = analysisTimeoutMsOverride ?: DEFAULT_ANALYSIS_TIMEOUT_MS
         val minSeverity = minimumSeverityFor(severity)
-        val inspectionProfile = InspectionProjectProfileManager.getInstance(project).currentProfile
-        val codeAnalyzer = DaemonCodeAnalyzer.getInstance(project) as? DaemonCodeAnalyzerImpl
-            ?: return FileAnalysisResult(
-                problems = emptyList(),
-                highlights = emptyList(),
-                analysisFresh = false,
-                analysisTimedOut = false,
-                analysisMessage = "IDE daemon code analyzer is not available."
-            )
 
-        val highlights = DiagnosticsAnalysisCoordinator.getInstance().withMainPassLock {
-            withTimeoutOrNull(timeoutMs) {
-                runMainPassesWithRetries(
+        return DiagnosticsAnalysisCoordinator.getInstance().withMainPassLock {
+            if (fileContext.openEditorEligible) {
+                val openEditorResult = analyzeOpenEditorFile(
                     fileContext = fileContext,
+                    severity = severity,
                     minSeverity = minSeverity,
-                    inspectionProfile = inspectionProfile,
-                    codeAnalyzer = codeAnalyzer
+                    startLine = startLine,
+                    endLine = endLine,
+                    maxProblems = maxProblems,
+                    timeoutMs = timeoutMs
                 )
-            }
-        }
+                if (openEditorResult != null) {
+                    return@withMainPassLock openEditorResult
+                }
 
-        if (highlights == null) {
-            return FileAnalysisResult(
-                problems = emptyList(),
-                highlights = emptyList(),
-                analysisFresh = false,
-                analysisTimedOut = true,
-                analysisMessage = "File diagnostics analysis timed out after ${timeoutMs}ms."
-            )
+                if (fileContext.batchEligible) {
+                    val batchFallback = analyzeClosedFile(
+                        fileContext = fileContext,
+                        severity = severity,
+                        startLine = startLine,
+                        endLine = endLine,
+                        maxProblems = maxProblems,
+                        timeoutMs = timeoutMs
+                    )
+                    if (batchFallback != null) {
+                        return@withMainPassLock batchFallback.copy(
+                            analysisMessage = appendAnalysisMessage(
+                                batchFallback.analysisMessage,
+                                "Open-editor highlighting refresh timed out; returned public batch diagnostics instead, so weak warnings and quick-fix intentions may be incomplete."
+                            )
+                        )
+                    }
+                }
+
+                return@withMainPassLock timeoutResult(timeoutMs)
+            }
+
+            analyzeClosedFile(
+                fileContext = fileContext,
+                severity = severity,
+                startLine = startLine,
+                endLine = endLine,
+                maxProblems = maxProblems,
+                timeoutMs = timeoutMs
+            ) ?: timeoutResult(timeoutMs)
         }
+    }
+
+    private suspend fun analyzeOpenEditorFile(
+        fileContext: FileContext,
+        severity: String,
+        minSeverity: HighlightSeverity,
+        startLine: Int?,
+        endLine: Int?,
+        maxProblems: Int,
+        timeoutMs: Long
+    ): FileAnalysisResult? {
+        val highlights = withTimeoutOrNull(timeoutMs) {
+            val overrideRunner = openFileAnalysisOverride
+            if (overrideRunner != null) {
+                overrideRunner(
+                    OpenFileAnalysisRequest(
+                        filePath = fileContext.filePath,
+                        psiFile = fileContext.psiFile,
+                        document = fileContext.document,
+                        textEditor = requireNotNull(fileContext.textEditor),
+                        minSeverity = minSeverity
+                    )
+                )
+            } else {
+                refreshOpenEditorHighlights(fileContext, minSeverity)
+            }
+        } ?: return null
 
         return FileAnalysisResult(
             problems = toProblemInfoList(
-                highlights = highlights,
-                filePath = filePath,
+                spans = highlights.map { highlight ->
+                    ProblemSpan(
+                        message = highlight.description ?: "Unknown problem",
+                        severity = highlight.severity,
+                        startOffset = highlight.startOffset,
+                        endOffset = highlight.endOffset
+                    )
+                },
+                filePath = fileContext.filePath,
                 document = fileContext.document,
                 severity = severity,
                 startLine = startLine,
@@ -175,167 +232,189 @@ class DiagnosticsAnalysisService(private val project: Project) {
         )
     }
 
-    private suspend fun runMainPassesWithRetries(
+    private suspend fun analyzeClosedFile(
         fileContext: FileContext,
-        minSeverity: HighlightSeverity,
-        inspectionProfile: InspectionProfile,
-        codeAnalyzer: DaemonCodeAnalyzerImpl
-    ): List<HighlightInfo> {
-        val appEx = ApplicationManagerEx.getApplicationEx()
-        val profileProvider = Function<InspectionProfile, InspectionProfileWrapper> { profile ->
-            InspectionProfileWrapper(inspectionProfile, (profile as InspectionProfileImpl).profileManager)
-        }
-        var lastProcessCanceled: ProcessCanceledException? = null
-
-        repeat(MAX_RETRIES) { attemptIndex ->
-            currentCoroutineContext().ensureActive()
-            val attempt = attemptIndex + 1
-            val daemonIndicator = DaemonProgressIndicator()
-            val listenerDisposable = Disposer.newDisposable()
-            var canceledByWriteAction = false
-
-            appEx.addWriteActionListener(object : WriteActionListener {
-                override fun beforeWriteActionStart(action: Class<*>) {
-                    canceledByWriteAction = true
-                    daemonIndicator.cancel("beforeWriteActionStart: $action")
-                }
-
-                override fun writeActionStarted(action: Class<*>) = Unit
-                override fun writeActionFinished(action: Class<*>) = Unit
-                override fun afterWriteActionFinished(action: Class<*>) = Unit
-            }, listenerDisposable)
-
-            try {
-                if (appEx.isWriteActionPending || appEx.isWriteActionInProgress) {
-                    canceledByWriteAction = true
-                    throw ProcessCanceledException()
-                }
-
-                return runSingleMainPassAttempt(
-                    fileContext = fileContext,
-                    attempt = attempt,
-                    minSeverity = minSeverity,
-                    profileProvider = profileProvider,
-                    daemonIndicator = daemonIndicator,
-                    codeAnalyzer = codeAnalyzer
+        severity: String,
+        startLine: Int?,
+        endLine: Int?,
+        maxProblems: Int,
+        timeoutMs: Long
+    ): FileAnalysisResult? {
+        val codeSmells = withTimeoutOrNull(timeoutMs) {
+            val overrideRunner = closedFileAnalysisOverride
+            if (overrideRunner != null) {
+                overrideRunner(
+                    ClosedFileAnalysisRequest(
+                        filePath = fileContext.filePath,
+                        virtualFile = fileContext.virtualFile,
+                        psiFile = fileContext.psiFile,
+                        document = fileContext.document
+                    )
                 )
-            } catch (e: ProcessCanceledException) {
-                currentCoroutineContext().ensureActive()
-                if (!isRetriable(e)) {
-                    throw e
+            } else {
+                withContext(Dispatchers.Default) {
+                    ProgressManager.getInstance().runProcess(
+                        Computable {
+                            CodeSmellDetector.getInstance(project).findCodeSmells(listOf(fileContext.virtualFile))
+                        },
+                        ProgressIndicatorBase()
+                    )
                 }
-
-                lastProcessCanceled = e
-                if (canceledByWriteAction || appEx.isWriteActionPending || appEx.isWriteActionInProgress) {
-                    awaitWriteActionCompletion()
-                }
-            } finally {
-                Disposer.dispose(listenerDisposable)
             }
+        } ?: return null
+
+        val closedFileMessage = if (severity == "errors") {
+            null
+        } else {
+            "Closed-file diagnostics use public batch analysis; weak warnings are only available when the file is open in an editor."
         }
 
-        throw lastProcessCanceled ?: ProcessCanceledException()
+        return FileAnalysisResult(
+            problems = toProblemInfoList(
+                spans = codeSmells.map { smell ->
+                    val range = smell.textRange
+                    ProblemSpan(
+                        message = smell.description ?: "Unknown problem",
+                        severity = smell.severity,
+                        startOffset = range.startOffset,
+                        endOffset = range.endOffset
+                    )
+                },
+                filePath = fileContext.filePath,
+                document = fileContext.document,
+                severity = severity,
+                startLine = startLine,
+                endLine = endLine,
+                maxProblems = maxProblems
+            ),
+            highlights = emptyList(),
+            analysisFresh = true,
+            analysisTimedOut = false,
+            analysisMessage = closedFileMessage
+        )
     }
 
-    private suspend fun runSingleMainPassAttempt(
+    private suspend fun refreshOpenEditorHighlights(
         fileContext: FileContext,
-        attempt: Int,
-        minSeverity: HighlightSeverity,
-        profileProvider: Function<InspectionProfile, InspectionProfileWrapper>,
-        daemonIndicator: DaemonProgressIndicator,
-        codeAnalyzer: DaemonCodeAnalyzerImpl
+        minSeverity: HighlightSeverity
     ): List<HighlightInfo> {
-        val overrideRunner = mainPassesRunnerOverride
-        if (overrideRunner != null) {
-            return overrideRunner(
-                MainPassesRequest(
-                    filePath = fileContext.filePath,
-                    psiFile = fileContext.psiFile,
-                    document = fileContext.document,
-                    attempt = attempt,
-                    minSeverity = minSeverity
-                )
-            )
-        }
-
-        return withContext(Dispatchers.Default) {
-            val range = ProperTextRange.create(0, fileContext.document.textLength)
-            var collectedHighlights: List<HighlightInfo>? = null
-
-            jobToIndicator(currentCoroutineContext().job, daemonIndicator) {
-                ProgressManager.checkCanceled()
-                runInsideHighlightingSessionCompat(fileContext.psiFile, range) { session ->
-                    (session as HighlightingSessionImpl).setMinimumSeverity(minSeverity)
-                    InspectionProfileWrapper.runWithCustomInspectionWrapper(fileContext.psiFile, profileProvider) {
-                        collectedHighlights = codeAnalyzer.runMainPasses(
-                            fileContext.psiFile,
-                            fileContext.document,
-                            daemonIndicator
-                        )
-                    }
-                }
-                collectedHighlights.orEmpty()
-            }
-        }
-    }
-
-    private fun runInsideHighlightingSessionCompat(
-        psiFile: PsiFile,
-        range: ProperTextRange,
-        action: (session: Any) -> Unit
-    ) {
-        val consumer = Consumer<Any?> { session ->
-            if (session != null) {
-                action(session)
-            }
-        }
+        val textEditor = requireNotNull(fileContext.textEditor)
+        val activityTracker = DaemonActivityTracker(project, textEditor)
 
         try {
-            when (runInsideHighlightingSessionMethod.parameterCount) {
-                6 -> runInsideHighlightingSessionMethod.invoke(null, psiFile, anyCodeInsightContext, null, range, false, consumer)
-                5 -> runInsideHighlightingSessionMethod.invoke(null, psiFile, null, range, false, consumer)
-                else -> error("Unsupported HighlightingSessionImpl.runInsideHighlightingSession signature")
+            edtRestart(fileContext.psiFile)
+            return awaitOpenEditorHighlights(fileContext, textEditor, minSeverity, activityTracker)
+        } finally {
+            activityTracker.dispose()
+        }
+    }
+
+    private suspend fun awaitOpenEditorHighlights(
+        fileContext: FileContext,
+        textEditor: TextEditor,
+        minSeverity: HighlightSeverity,
+        activityTracker: DaemonActivityTracker
+    ): List<HighlightInfo> {
+        var sawIncompleteState = false
+        var previousSnapshot: List<HighlightSnapshot>? = null
+        var stableSnapshotCount = 0
+        val startedAt = System.nanoTime()
+        var latestHighlights = emptyList<HighlightInfo>()
+
+        while (true) {
+            currentCoroutineContext().ensureActive()
+
+            val completed = edtHighlightingCompleted(textEditor)
+            if (!completed) {
+                sawIncompleteState = true
             }
-        } catch (e: InvocationTargetException) {
-            val cause = e.targetException ?: e
-            when (cause) {
-                is RuntimeException -> throw cause
-                is Error -> throw cause
-                else -> throw RuntimeException(cause)
+
+            latestHighlights = readCurrentHighlights(fileContext, minSeverity)
+            val snapshot = latestHighlights.toSnapshot()
+            stableSnapshotCount = if (snapshot == previousSnapshot) stableSnapshotCount + 1 else 0
+            previousSnapshot = snapshot
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            if (
+                shouldAcceptHighlightSnapshot(
+                    completed = completed,
+                    sawIncompleteState = sawIncompleteState,
+                    sawRelevantEvent = activityTracker.sawRelevantEvent,
+                    sawRelevantTerminalEvent = activityTracker.sawRelevantTerminalEvent,
+                    stableSnapshotCount = stableSnapshotCount,
+                    elapsedMs = elapsedMs
+                )
+            ) {
+                return latestHighlights
+            }
+
+            delay(HIGHLIGHT_POLL_INTERVAL_MS)
+        }
+    }
+
+    private fun readCurrentHighlights(
+        fileContext: FileContext,
+        minSeverity: HighlightSeverity
+    ): List<HighlightInfo> {
+        return ReadAction.compute<List<HighlightInfo>, Throwable> {
+            val highlights = mutableListOf<HighlightInfo>()
+            DaemonCodeAnalyzerEx.processHighlights(
+                fileContext.document,
+                project,
+                minSeverity,
+                0,
+                fileContext.document.textLength
+            ) { highlight ->
+                highlights.add(highlight)
+                true
+            }
+            highlights
+        }
+    }
+
+    private suspend fun edtRestart(psiFile: PsiFile) {
+        invokeOnEdt {
+            DaemonCodeAnalyzer.getInstance(project).restart(psiFile)
+        }
+    }
+
+    private suspend fun edtHighlightingCompleted(textEditor: TextEditor): Boolean {
+        return invokeOnEdt {
+            !textEditor.editor.isDisposed && DaemonCodeAnalyzerEx.isHighlightingCompleted(textEditor, project)
+        }
+    }
+
+    private suspend fun currentTextEditor(virtualFile: VirtualFile): TextEditor? {
+        return invokeOnEdt {
+            FileEditorManager.getInstance(project)
+                .getEditors(virtualFile)
+                .filterIsInstance<TextEditor>()
+                .firstOrNull { !it.editor.isDisposed }
+        }
+    }
+
+    private suspend fun <T> invokeOnEdt(action: () -> T): T {
+        return if (ApplicationManager.getApplication().isDispatchThread) {
+            action()
+        } else {
+            withContext(Dispatchers.Default) {
+                var result: Result<T>? = null
+                ApplicationManager.getApplication().invokeAndWait {
+                    result = runCatching(action)
+                }
+                result!!.getOrThrow()
             }
         }
     }
 
-    private suspend fun awaitWriteActionCompletion() {
-        val appEx = ApplicationManagerEx.getApplicationEx()
-        if (!appEx.isWriteActionPending && !appEx.isWriteActionInProgress) {
-            return
-        }
-
-        suspendCancellableCoroutine { continuation ->
-            val listenerDisposable = Disposer.newDisposable()
-            val resumeIfComplete = {
-                if (!appEx.isWriteActionPending && !appEx.isWriteActionInProgress && continuation.isActive) {
-                    Disposer.dispose(listenerDisposable)
-                    continuation.resume(Unit)
-                }
-            }
-
-            appEx.addWriteActionListener(object : WriteActionListener {
-                override fun beforeWriteActionStart(action: Class<*>) = Unit
-                override fun writeActionStarted(action: Class<*>) = Unit
-                override fun writeActionFinished(action: Class<*>) = Unit
-                override fun afterWriteActionFinished(action: Class<*>) {
-                    resumeIfComplete()
-                }
-            }, listenerDisposable)
-
-            continuation.invokeOnCancellation {
-                Disposer.dispose(listenerDisposable)
-            }
-
-            resumeIfComplete()
-        }
+    private fun timeoutResult(timeoutMs: Long): FileAnalysisResult {
+        return FileAnalysisResult(
+            problems = emptyList(),
+            highlights = emptyList(),
+            analysisFresh = false,
+            analysisTimedOut = true,
+            analysisMessage = "File diagnostics analysis timed out after ${timeoutMs}ms."
+        )
     }
 
     private fun minimumSeverityFor(severity: String): HighlightSeverity {
@@ -345,13 +424,8 @@ class DiagnosticsAnalysisService(private val project: Project) {
         }
     }
 
-    private fun isRetriable(exception: ProcessCanceledException): Boolean {
-        val cause = exception.cause
-        return cause == null || cause.javaClass == Throwable::class.java
-    }
-
     private fun toProblemInfoList(
-        highlights: List<HighlightInfo>,
+        spans: List<ProblemSpan>,
         filePath: String,
         document: com.intellij.openapi.editor.Document,
         severity: String,
@@ -362,14 +436,14 @@ class DiagnosticsAnalysisService(private val project: Project) {
         val problems = mutableListOf<ProblemInfo>()
         val seen = linkedSetOf<String>()
 
-        for (highlight in highlights) {
-            if (highlight.severity.myVal < HighlightSeverity.WEAK_WARNING.myVal) {
+        for (span in spans) {
+            if (span.severity.myVal < HighlightSeverity.WEAK_WARNING.myVal) {
                 continue
             }
 
             val matchesSeverity = when (severity) {
-                "errors" -> highlight.severity.myVal >= HighlightSeverity.ERROR.myVal
-                "warnings" -> highlight.severity.myVal < HighlightSeverity.ERROR.myVal
+                "errors" -> span.severity.myVal >= HighlightSeverity.ERROR.myVal
+                "warnings" -> span.severity.myVal < HighlightSeverity.ERROR.myVal
                 else -> true
             }
 
@@ -377,7 +451,7 @@ class DiagnosticsAnalysisService(private val project: Project) {
                 continue
             }
 
-            val problem = highlight.toProblemInfo(document, filePath)
+            val problem = span.toProblemInfo(document, filePath)
             val inRange = (startLine == null || problem.line >= startLine) &&
                 (endLine == null || problem.line <= endLine)
 
@@ -399,17 +473,19 @@ class DiagnosticsAnalysisService(private val project: Project) {
         return problems
     }
 
-    private fun HighlightInfo.toProblemInfo(
+    private fun ProblemSpan.toProblemInfo(
         document: com.intellij.openapi.editor.Document,
         filePath: String
     ): ProblemInfo {
-        val safeStartOffset = startOffset.coerceIn(0, document.textLength)
-        val safeEndOffset = endOffset.coerceIn(safeStartOffset, document.textLength)
+        val textLength = document.textLength
+        val safeStartOffset = startOffset.coerceIn(0, textLength)
+        val safeEndOffset = endOffset.coerceIn(safeStartOffset, textLength)
 
         val problemLine = document.getLineNumber(safeStartOffset) + 1
         val problemColumn = safeStartOffset - document.getLineStartOffset(problemLine - 1) + 1
-        val endLineNum = document.getLineNumber(safeEndOffset) + 1
-        val endColumnNum = safeEndOffset - document.getLineStartOffset(endLineNum - 1) + 1
+        val displayEndOffset = max(safeStartOffset, safeEndOffset - 1)
+        val endLineNum = document.getLineNumber(displayEndOffset) + 1
+        val endColumnNum = displayEndOffset - document.getLineStartOffset(endLineNum - 1) + 1
 
         val severityString = when {
             severity.myVal >= HighlightSeverity.ERROR.myVal -> "ERROR"
@@ -419,7 +495,7 @@ class DiagnosticsAnalysisService(private val project: Project) {
         }
 
         return ProblemInfo(
-            message = description ?: "Unknown problem",
+            message = message,
             severity = severityString,
             file = filePath,
             line = problemLine,
@@ -429,12 +505,25 @@ class DiagnosticsAnalysisService(private val project: Project) {
         )
     }
 
-    internal data class MainPassesRequest(
+    private fun appendAnalysisMessage(existing: String?, additional: String): String {
+        if (existing.isNullOrBlank()) return additional
+        if (existing.contains(additional)) return existing
+        return "$existing $additional"
+    }
+
+    internal data class OpenFileAnalysisRequest(
         val filePath: String,
         val psiFile: PsiFile,
         val document: com.intellij.openapi.editor.Document,
-        val attempt: Int,
+        val textEditor: TextEditor,
         val minSeverity: HighlightSeverity
+    )
+
+    internal data class ClosedFileAnalysisRequest(
+        val filePath: String,
+        val virtualFile: VirtualFile,
+        val psiFile: PsiFile,
+        val document: com.intellij.openapi.editor.Document
     )
 
     data class FileAnalysisResult(
@@ -446,8 +535,90 @@ class DiagnosticsAnalysisService(private val project: Project) {
     )
 
     private data class FileContext(
+        val virtualFile: VirtualFile,
         val psiFile: PsiFile,
         val filePath: String,
-        val document: com.intellij.openapi.editor.Document
+        val document: com.intellij.openapi.editor.Document,
+        val textEditor: TextEditor?,
+        val openEditorEligible: Boolean,
+        val batchEligible: Boolean
     )
+
+    private data class ProblemSpan(
+        val message: String,
+        val severity: HighlightSeverity,
+        val startOffset: Int,
+        val endOffset: Int
+    )
+
+    private data class HighlightSnapshot(
+        val severityName: String,
+        val startOffset: Int,
+        val endOffset: Int,
+        val description: String?
+    )
+
+    private fun List<HighlightInfo>.toSnapshot(): List<HighlightSnapshot> {
+        return map { highlight ->
+            HighlightSnapshot(
+                severityName = highlight.severity.name,
+                startOffset = highlight.startOffset,
+                endOffset = highlight.endOffset,
+                description = highlight.description
+            )
+        }
+    }
+
+    private class DaemonActivityTracker(
+        project: Project,
+        private val targetEditor: TextEditor
+    ) {
+        private val targetFile = targetEditor.file
+
+        @Volatile
+        var sawRelevantEvent: Boolean = false
+            private set
+
+        @Volatile
+        var sawRelevantTerminalEvent: Boolean = false
+            private set
+
+        private val connection = project.messageBus.connect()
+
+        init {
+            connection.subscribe(DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC, object : DaemonCodeAnalyzer.DaemonListener {
+                override fun daemonStarting(fileEditors: Collection<out com.intellij.openapi.fileEditor.FileEditor>) {
+                    markIfRelevant(fileEditors)
+                }
+
+                override fun daemonFinished() = Unit
+
+                override fun daemonFinished(fileEditors: Collection<out com.intellij.openapi.fileEditor.FileEditor>) {
+                    markIfRelevant(fileEditors, terminal = true)
+                }
+
+                override fun daemonCanceled(reason: String, fileEditors: Collection<out com.intellij.openapi.fileEditor.FileEditor>) {
+                    markIfRelevant(fileEditors, terminal = true)
+                }
+
+                override fun daemonCancelEventOccurred(reason: String) = Unit
+            })
+        }
+
+        fun dispose() {
+            connection.disconnect()
+        }
+
+        private fun markIfRelevant(
+            fileEditors: Collection<out com.intellij.openapi.fileEditor.FileEditor>,
+            terminal: Boolean = false
+        ) {
+            if (fileEditors.any { it === targetEditor || it.file == targetFile }) {
+                sawRelevantEvent = true
+                if (terminal) {
+                    sawRelevantTerminalEvent = true
+                }
+            }
+        }
+    }
 }

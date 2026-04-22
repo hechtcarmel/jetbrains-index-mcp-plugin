@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.startup
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -24,6 +25,8 @@ class McpServerStartupActivity : ProjectActivity {
         }
 
         try {
+            BuildDiagnosticsCacheService.getInstance(project).initialize()
+
             // McpServerService self-initializes asynchronously from its constructor (see issue #73).
             // This call is a redundant safety net — initialize() is idempotent.
             val mcpService = McpServerService.getInstance()
