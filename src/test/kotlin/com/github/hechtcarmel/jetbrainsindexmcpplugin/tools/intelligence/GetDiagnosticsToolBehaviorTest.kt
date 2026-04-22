@@ -6,11 +6,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
+import com.intellij.codeInsight.CodeSmellInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiManager
 import com.intellij.testFramework.IndexingTestUtil
@@ -65,10 +67,18 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             "Expected unresolved symbol diagnostics",
             diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") || it.message.contains("Cannot resolve") }
         )
+        assertTrue(
+            "Closed-file analysis should explain the public batch fallback",
+            diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true
+        )
+        assertTrue(
+            "Closed-file analysis should explain missing intentions",
+            diagnostics.analysisMessage?.contains("Intentions are unavailable because the file is not open in an editor.") == true
+        )
         assertFalse("Diagnostics should not auto-open the file", fileEditorManager.isFileOpen(brokenFile.virtualFile))
     }
 
-    fun testMarksAnalysisTimedOutWhenFreshAnalysisExceedsBudget() = runBlocking {
+    fun testMarksAnalysisTimedOutWhenClosedFileAnalysisExceedsBudget() = runBlocking {
         val file = createProjectFile(
             "TimeoutExample.java",
             """
@@ -80,11 +90,11 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
 
         val service = DiagnosticsAnalysisService.getInstance(project)
         val originalTimeout = service.analysisTimeoutMsOverride
-        val originalRunner = service.mainPassesRunnerOverride
+        val originalRunner = service.closedFileAnalysisOverride
 
         try {
             service.analysisTimeoutMsOverride = 1L
-            service.mainPassesRunnerOverride = {
+            service.closedFileAnalysisOverride = {
                 delay(50)
                 emptyList()
             }
@@ -104,56 +114,130 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             )
         } finally {
             service.analysisTimeoutMsOverride = originalTimeout
-            service.mainPassesRunnerOverride = originalRunner
+            service.closedFileAnalysisOverride = originalRunner
         }
     }
 
-    fun testRetriesRetriableCanceledAnalysis() = runBlocking {
-        createProjectFile(
-            "RetryExample.java",
+    fun testUsesOpenEditorPathWhenFileIsAlreadyOpen() = runBlocking {
+        val openFile = createProjectFile(
+            "OpenEditorExample.java",
             """
-            class RetryExample {
+            class OpenEditorExample {
                 void test() {}
             }
             """.trimIndent()
         )
 
         val service = DiagnosticsAnalysisService.getInstance(project)
-        val originalTimeout = service.analysisTimeoutMsOverride
-        val originalRunner = service.mainPassesRunnerOverride
-        var attempts = 0
+        val originalRunner = service.openFileAnalysisOverride
+        var openPathUsed = false
 
         try {
-            service.mainPassesRunnerOverride = { request ->
-                attempts++
-                if (attempts == 1) {
-                    throw ProcessCanceledException()
-                }
+            ApplicationManager.getApplication().invokeAndWait {
+                FileEditorManager.getInstance(project).openFile(openFile.virtualFile, true)
+            }
+            assertTrue("OpenEditorExample.java should be open for the editor path", FileEditorManager.getInstance(project).isFileOpen(openFile.virtualFile))
 
+            service.openFileAnalysisOverride = {
+                openPathUsed = true
                 listOf(
-                    HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+                    HighlightInfo.newHighlightInfo(HighlightInfoType.WEAK_WARNING)
                         .range(0, 1)
-                        .descriptionAndTooltip("Synthetic retryable error")
+                        .descriptionAndTooltip("Synthetic weak warning")
                         .createUnconditionally()
                 )
             }
 
             val result = GetDiagnosticsTool().execute(project, buildJsonObject {
-                put("file", "src/RetryExample.java")
+                put("file", "src/OpenEditorExample.java")
             })
 
-            assertFalse("Diagnostics should succeed after retry: ${renderResult(result)}", result.isError)
+            assertFalse("Diagnostics should succeed for open-editor analysis: ${renderResult(result)}", result.isError)
 
             val diagnostics = decodeDiagnostics(result)
-            assertEquals("Expected one retried analysis rerun", 2, attempts)
-            assertTrue("Retry path should still report fresh analysis", diagnostics.analysisFresh == true)
-            assertFalse("Retry path should not time out", diagnostics.analysisTimedOut == true)
+            assertTrue("Expected the open-editor analysis path to be used", openPathUsed)
+            assertTrue("Open-editor analysis should report fresh results", diagnostics.analysisFresh == true)
+            assertFalse("Open-editor analysis should not time out", diagnostics.analysisTimedOut == true)
             assertEquals("Expected one synthetic problem", 1, diagnostics.problemCount)
-            assertEquals("Synthetic retryable error", diagnostics.problems?.singleOrNull()?.message)
+            assertEquals("Synthetic weak warning", diagnostics.problems?.singleOrNull()?.message)
+            assertEquals("WEAK_WARNING", diagnostics.problems?.singleOrNull()?.severity)
+            assertFalse(
+                "Open-editor analysis should not advertise closed-file limitations",
+                diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true
+            )
         } finally {
-            service.analysisTimeoutMsOverride = originalTimeout
-            service.mainPassesRunnerOverride = originalRunner
+            service.openFileAnalysisOverride = originalRunner
         }
+    }
+
+    fun testHighlightWaitFinishesAfterGracePeriodWhenDaemonStaysCompleted() {
+        assertFalse(
+            "Completed highlighting should not finish immediately before the restart grace window elapses",
+            DiagnosticsAnalysisService.shouldFinishHighlightWait(
+                completed = true,
+                sawIncompleteState = false,
+                sawRelevantEvent = false,
+                elapsedMs = 100L
+            )
+        )
+
+        assertTrue(
+            "Completed highlighting should finish after the grace window even if the daemon never reports a visible transition",
+            DiagnosticsAnalysisService.shouldFinishHighlightWait(
+                completed = true,
+                sawIncompleteState = false,
+                sawRelevantEvent = false,
+                elapsedMs = 200L
+            )
+        )
+
+        assertTrue(
+            "A real incomplete-to-complete transition should finish immediately",
+            DiagnosticsAnalysisService.shouldFinishHighlightWait(
+                completed = true,
+                sawIncompleteState = true,
+                sawRelevantEvent = false,
+                elapsedMs = 0L
+            )
+        )
+    }
+
+    fun testHighlightSnapshotCanFinishWithoutCompletedSignalWhenDaemonStabilizes() {
+        assertFalse(
+            "Stable snapshots should not be accepted before the restart grace window elapses",
+            DiagnosticsAnalysisService.shouldAcceptHighlightSnapshot(
+                completed = false,
+                sawIncompleteState = true,
+                sawRelevantEvent = false,
+                sawRelevantTerminalEvent = false,
+                stableSnapshotCount = 5,
+                elapsedMs = 100L
+            )
+        )
+
+        assertTrue(
+            "A terminal daemon event should allow returning current highlights even if completion never flips",
+            DiagnosticsAnalysisService.shouldAcceptHighlightSnapshot(
+                completed = false,
+                sawIncompleteState = true,
+                sawRelevantEvent = true,
+                sawRelevantTerminalEvent = true,
+                stableSnapshotCount = 0,
+                elapsedMs = 200L
+            )
+        )
+
+        assertTrue(
+            "Stable highlight snapshots should be accepted after the grace window when completion never flips",
+            DiagnosticsAnalysisService.shouldAcceptHighlightSnapshot(
+                completed = false,
+                sawIncompleteState = true,
+                sawRelevantEvent = false,
+                sawRelevantTerminalEvent = false,
+                stableSnapshotCount = 2,
+                elapsedMs = 200L
+            )
+        )
     }
 
     fun testRefreshesExternalDiskChangesWhenAutoSyncEnabled() = runBlocking {
@@ -202,7 +286,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         }
     }
 
-    fun testPassesErrorSeverityToFreshAnalysisRunner() = runBlocking {
+    fun testFiltersClosedFileProblemsByRequestedSeverity() = runBlocking {
         createProjectFile(
             "SeverityExample.java",
             """
@@ -213,17 +297,23 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         )
 
         val service = DiagnosticsAnalysisService.getInstance(project)
-        val originalRunner = service.mainPassesRunnerOverride
-        var capturedSeverity: HighlightSeverity? = null
+        val originalRunner = service.closedFileAnalysisOverride
 
         try {
-            service.mainPassesRunnerOverride = { request ->
-                capturedSeverity = request.minSeverity
+            service.closedFileAnalysisOverride = { request ->
                 listOf(
-                    HighlightInfo.newHighlightInfo(HighlightInfoType.WARNING)
-                        .range(0, 1)
-                        .descriptionAndTooltip("Synthetic warning")
-                        .createUnconditionally()
+                    CodeSmellInfo(
+                        request.document,
+                        "Synthetic warning",
+                        TextRange(0, 1),
+                        HighlightSeverity.WARNING
+                    ),
+                    CodeSmellInfo(
+                        request.document,
+                        "Synthetic error",
+                        TextRange(0, 1),
+                        HighlightSeverity.ERROR
+                    )
                 )
             }
 
@@ -235,10 +325,11 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             assertFalse("Diagnostics should succeed for error-only severity: ${renderResult(result)}", result.isError)
 
             val diagnostics = decodeDiagnostics(result)
-            assertEquals("Fresh analysis should request error severity", HighlightSeverity.ERROR, capturedSeverity)
-            assertEquals("Warning highlight should be filtered from error-only results", 0, diagnostics.problemCount)
+            assertEquals("Expected one error result after severity filtering", 1, diagnostics.problemCount)
+            assertEquals("Synthetic error", diagnostics.problems?.singleOrNull()?.message)
+            assertEquals("ERROR", diagnostics.problems?.singleOrNull()?.severity)
         } finally {
-            service.mainPassesRunnerOverride = originalRunner
+            service.closedFileAnalysisOverride = originalRunner
         }
     }
 
@@ -274,6 +365,34 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         assertEquals("Expected filtered error count", 1, diagnostics.buildErrorCount)
         assertEquals("Expected filtered warning count", 0, diagnostics.buildWarningCount)
         assertEquals("ERROR", diagnostics.buildErrors?.singleOrNull()?.category)
+    }
+
+    fun testReportsBuildDiagnosticsRecordedAfterBuildCompletes() = runBlocking {
+        val cacheService = BuildDiagnosticsCacheService.getInstance(project)
+        cacheService.recordBuildResult(
+            listOf(
+                BuildMessage(
+                    category = "ERROR",
+                    message = "Recorded build failure",
+                    file = "src/Recorded.java",
+                    line = 12,
+                    column = 4
+                )
+            )
+        )
+
+        val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+            put("includeBuildErrors", true)
+        })
+
+        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isError)
+
+        val diagnostics = decodeDiagnostics(result)
+        assertEquals("Expected one recorded build diagnostic", 1, diagnostics.buildErrors?.size)
+        assertEquals("Expected recorded build error count", 1, diagnostics.buildErrorCount)
+        assertEquals(0, diagnostics.buildWarningCount)
+        assertEquals("Recorded build failure", diagnostics.buildErrors?.singleOrNull()?.message)
+        assertNotNull("Expected build timestamp after recording build results", diagnostics.buildTimestamp)
     }
 
     fun testPrefersCompilerMessagesOverDuplicateBuildEventMessages() = runBlocking {

@@ -241,8 +241,9 @@ Analyze a file for errors, warnings, and available quick fixes/intentions.
 | `endLine` | integer | no | Filter problems to range |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ problems: [{message, severity, line, column, source}], intentions: [{name, description, familyName}], problemCount, intentionCount }`
-**Severity levels**: `ERROR`, `WARNING`, `WEAK_WARNING`, `INFO`
+**Returns**: `{ problems: [{message, severity, line, column, source}], intentions: [{name, description, familyName}], problemCount, intentionCount, analysisFresh, analysisTimedOut, analysisMessage }`
+**Notes**: Open files use fresh daemon highlights. Closed files use public batch analysis, so `WEAK_WARNING` results and quick-fix intentions may be less complete unless the file is already open in an editor.
+**Severity levels**: `ERROR`, `WARNING`, `WEAK_WARNING`
 
 ---
 

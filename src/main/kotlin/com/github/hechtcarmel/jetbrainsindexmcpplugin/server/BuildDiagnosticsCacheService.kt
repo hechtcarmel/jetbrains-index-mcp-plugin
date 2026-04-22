@@ -99,6 +99,13 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
         return if (ts == 0L) null else ts
     }
 
+    fun recordBuildResult(messages: List<BuildMessage>) {
+        initialize()
+        val cappedMessages = messages.take(MAX_CACHED_MESSAGES)
+        publishedMessages.set(cappedMessages)
+        buildTimestamp.set(System.currentTimeMillis())
+    }
+
     override fun dispose() {
         buildEventMessages.set(emptyList())
         compilerMessages.set(emptyList())

@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [4.14.1] - 2026-04-22
+### Fixed
+- Reworked `ide_diagnostics` to use Marketplace-safe public IntelliJ APIs instead of internal highlighting APIs, resolving the JetBrains Marketplace internal API rejection.
+- Preserved fresh diagnostics for open editor files while falling back to public batch analysis for closed files, with updated tool messaging that explains the weaker closed-file `WEAK_WARNING` and intention coverage.
+
 ## [4.14.0] - 2026-04-21
 ### Added
 - Added a settings toggle to return structured MCP tool payloads as either JSON or TOON.
