@@ -6,9 +6,9 @@ This document provides detailed documentation for all MCP tools available in the
 
 Tools are organized into categories based on IDE compatibility:
 
-### Universal Tools (All JetBrains IDEs)
+### Universal Tools (All Supported JetBrains IDEs)
 
-These tools work in **every** JetBrains IDE:
+These tools work in every supported JetBrains IDE:
 
 | Tool | Description | Default |
 |------|-------------|---------|
@@ -16,6 +16,7 @@ These tools work in **every** JetBrains IDE:
 | `ide_find_definition` | Find symbol definition location | Enabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
+| `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
 | `ide_search_text` | Text search using word index | Enabled |
 | `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
 | `ide_index_status` | Check indexing status | Enabled |
@@ -37,7 +38,6 @@ These tools activate based on available language plugins:
 | `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_symbol` | Search symbols and Markdown headings by name *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Markdown (headings) |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
 | `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
 
@@ -59,6 +59,7 @@ These tools activate based on available language plugins:
   - [ide_find_class](#ide_find_class)
   - [ide_find_file](#ide_find_file)
   - [ide_search_text](#ide_search_text)
+  - [ide_find_symbol](#ide_find_symbol)
   - [ide_diagnostics](#ide_diagnostics)
   - [ide_index_status](#ide_index_status)
   - [ide_sync_files](#ide_sync_files)
@@ -74,7 +75,6 @@ These tools activate based on available language plugins:
   - [ide_type_hierarchy](#ide_type_hierarchy)
   - [ide_call_hierarchy](#ide_call_hierarchy)
   - [ide_find_implementations](#ide_find_implementations)
-  - [ide_find_symbol](#ide_find_symbol)
   - [ide_find_super_methods](#ide_find_super_methods)
   - [ide_file_structure](#ide_file_structure)
 - [Java-Specific Refactoring Tools](#java-specific-refactoring-tools)
@@ -836,6 +836,120 @@ Open a file in the IDE editor with optional line/column navigation.
 
 ---
 
+### ide_find_symbol
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Searches for code symbols (classes, interfaces, methods, fields, and functions) by name using the IDE's semantic index and IntelliJ's Go to Symbol matching.
+
+**Use when:**
+- Finding a class or interface by name (e.g., find "UserService")
+- Locating methods across the codebase (e.g., find all "findById" methods)
+- Discovering fields or constants by name
+- Navigating to code when you know the symbol name but not the file location
+
+**Supports Go to Symbol matching:**
+- Substring: "Service" matches "UserService", "OrderService"
+- CamelCase: "USvc" matches "UserService", "US" matches "UserService"
+- Qualified queries: "BasicSolver.run" matches a method in its containing class or module
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | Search pattern. Matching follows IntelliJ's Go to Symbol popup. |
+| `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`). Case-insensitive |
+| `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
+| `cursor` | string | No | Pagination cursor from a previous response |
+| `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_find_symbol",
+    "arguments": {
+      "query": "UserService"
+    }
+  }
+}
+```
+
+**Example Request (camelCase matching):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_find_symbol",
+    "arguments": {
+      "query": "USvc",
+      "scope": "project_and_libraries",
+      "pageSize": 50
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "symbols": [
+    {
+      "name": "UserService",
+      "qualifiedName": "com.example.service.UserService",
+      "kind": "INTERFACE",
+      "file": "src/main/java/com/example/service/UserService.java",
+      "line": 12,
+      "column": 18,
+      "containerName": null
+    },
+    {
+      "name": "UserServiceImpl",
+      "qualifiedName": "com.example.service.UserServiceImpl",
+      "kind": "CLASS",
+      "file": "src/main/java/com/example/service/UserServiceImpl.java",
+      "line": 15,
+      "column": 14,
+      "containerName": null
+    },
+    {
+      "name": "findUser",
+      "qualifiedName": "com.example.service.UserService.findUser",
+      "kind": "METHOD",
+      "file": "src/main/java/com/example/service/UserService.java",
+      "line": 18,
+      "column": 10,
+      "containerName": "UserService"
+    }
+  ],
+  "totalCount": 3,
+  "query": "UserService"
+}
+```
+
+**Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+
+**Kind Values:**
+- `CLASS` - Concrete class
+- `ABSTRACT_CLASS` - Abstract class
+- `INTERFACE` - Interface
+- `ENUM` - Enum type
+- `ANNOTATION` - Annotation type
+- `RECORD` - Record class (Java 16+)
+- `METHOD` - Method
+- `FIELD` - Field or constant
+- `FUNCTION` - Function
+- `SYMBOL` - Generic symbol when the IDE contributor does not expose a more specific kind
+
+For Markdown heading outlines, use `ide_file_structure`.
+
+---
+
 ## Refactoring Tools
 
 > **Note**: All refactoring tools modify source files. Changes can be undone with Ctrl/Cmd+Z.
@@ -1079,9 +1193,9 @@ These tools activate based on available language plugins:
 - **Go** - GoLand, IntelliJ Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
-- **Markdown** - heading symbol search and file structure in IDEs with the bundled Markdown plugin
+- **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
-Navigation tools appear according to installed language plugins. Markdown heading search and file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
+Navigation tools appear according to installed language plugins. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
 
 ### ide_type_hierarchy
 
@@ -1373,115 +1487,6 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
   "stale": false
 }
 ```
-
----
-
-### ide_find_symbol
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
-Searches for code symbols (classes, interfaces, methods, fields) and Markdown headings by name using the IDE's semantic index.
-
-**Use when:**
-- Finding a class or interface by name (e.g., find "UserService")
-- Locating methods across the codebase (e.g., find all "findById" methods)
-- Discovering fields or constants by name
-- Navigating to code or documentation sections when you know the symbol or heading name but not the file location
-
-**Supports fuzzy matching:**
-- Substring: "Service" matches "UserService", "OrderService"
-- CamelCase: "USvc" matches "UserService", "US" matches "UserService"
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | Yes | Search pattern (supports substring and camelCase matching) |
-| `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
-| `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`, `"Markdown"`). Case-insensitive |
-| `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
-| `cursor` | string | No | Pagination cursor from a previous response |
-| `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
-
-**Example Request:**
-
-```json
-{
-  "method": "tools/call",
-  "params": {
-    "name": "ide_find_symbol",
-    "arguments": {
-      "query": "UserService"
-    }
-  }
-}
-```
-
-**Example Request (camelCase matching):**
-
-```json
-{
-  "method": "tools/call",
-  "params": {
-    "name": "ide_find_symbol",
-    "arguments": {
-      "query": "USvc",
-      "scope": "project_and_libraries",
-      "pageSize": 50
-    }
-  }
-}
-```
-
-**Example Response:**
-
-```json
-{
-  "symbols": [
-    {
-      "name": "UserService",
-      "qualifiedName": "com.example.service.UserService",
-      "kind": "INTERFACE",
-      "file": "src/main/java/com/example/service/UserService.java",
-      "line": 12,
-      "column": 18,
-      "containerName": null
-    },
-    {
-      "name": "UserServiceImpl",
-      "qualifiedName": "com.example.service.UserServiceImpl",
-      "kind": "CLASS",
-      "file": "src/main/java/com/example/service/UserServiceImpl.java",
-      "line": 15,
-      "column": 14,
-      "containerName": null
-    },
-    {
-      "name": "findUser",
-      "qualifiedName": "com.example.service.UserService.findUser",
-      "kind": "METHOD",
-      "file": "src/main/java/com/example/service/UserService.java",
-      "line": 18,
-      "column": 10,
-      "containerName": "UserService"
-    }
-  ],
-  "totalCount": 3,
-  "query": "UserService"
-}
-```
-
-**Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
-
-**Kind Values:**
-- `CLASS` - Concrete class
-- `ABSTRACT_CLASS` - Abstract class
-- `INTERFACE` - Interface
-- `ENUM` - Enum type
-- `ANNOTATION` - Annotation type
-- `RECORD` - Record class (Java 16+)
-- `METHOD` - Method
-- `FIELD` - Field or constant
 
 ---
 

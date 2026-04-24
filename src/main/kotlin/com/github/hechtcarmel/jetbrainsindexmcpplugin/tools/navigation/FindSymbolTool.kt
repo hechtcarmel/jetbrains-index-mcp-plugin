@@ -28,7 +28,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for searching code symbols by name.
  *
- * Works in any JetBrains IDE. Delegates to the headless Go to Symbol popup stack via
+ * Works in any supported JetBrains IDE. Delegates to the headless Go to Symbol popup stack via
  * [OptimizedSymbolSearch], so matching and ranking follow IntelliJ's own Go to Symbol popup.
  */
 class FindSymbolTool : AbstractMcpTool() {
@@ -41,9 +41,9 @@ class FindSymbolTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_SYMBOL
 
     override val description = """
-        Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, functions, and Markdown headings. Faster and more accurate than grep for code navigation.
+        Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, and functions. Faster and more accurate than grep for code navigation.
 
-        Works in any JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and Markdown; other IDE-supplied languages (Ruby, C/C++, C#, SQL, …) are also returned with their IDE-provided metadata.
+        Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, and Rust; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
 
         Matching and ranking follow IntelliJ's Go to Symbol popup, including qualified queries like "BasicSolver.run".
 
