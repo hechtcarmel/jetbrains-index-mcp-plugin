@@ -133,7 +133,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 **Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
 
 ### ide_find_symbol (disabled by default)
-Search for any symbol (classes, methods, fields, functions) by name.
+Search for any symbol (classes, methods, fields, functions) or Markdown heading by name.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -146,6 +146,7 @@ Search for any symbol (classes, methods, fields, functions) by name.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ symbols: [{name, qualifiedName, file, line, kind, language}], totalCount, query }`
+**Languages**: Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Markdown (headings).
 **Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_find_super_methods
@@ -209,7 +210,7 @@ Get hierarchical file structure like IDE's Structure panel.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
-**Languages**: Java, Kotlin, Python, JS/TS.
+**Languages**: Java, Kotlin, Python, JS/TS, Markdown.
 
 ### ide_read_file (disabled by default)
 Read file content by path or qualified name, including library/jar sources.

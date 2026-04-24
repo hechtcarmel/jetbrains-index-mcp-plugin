@@ -51,13 +51,13 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ### Language-Specific Navigation Tools
  *
- * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust)
+ * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, Markdown)
  * and are registered when at least one language handler is available:
  *
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
  * - `ide_call_hierarchy` - Analyze method call relationships
  * - `ide_find_implementations` - Find interface/method implementations
- * - `ide_find_symbol` - Search for symbols by name
+ * - `ide_find_symbol` - Search for symbols and Markdown headings by name
  * - `ide_find_super_methods` - Find methods that a method overrides
  *
  * ### Universal Refactoring Tools

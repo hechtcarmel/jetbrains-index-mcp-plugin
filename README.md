@@ -24,6 +24,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
+- **Markdown** - heading symbol search and file structure in IDEs with the bundled Markdown plugin
 
 **Universal Tools (All JetBrains IDEs)**
 - **Find References** - Locate all usages of any symbol across the project
@@ -44,9 +45,9 @@ These tools activate based on installed language plugins:
 - **Type Hierarchy** - Explore class inheritance chains
 - **Call Hierarchy** - Trace method/function call relationships
 - **Find Implementations** - Discover interface/abstract implementations
-- **Symbol Search** - Find by name with fuzzy/camelCase matching (disabled by default)
+- **Symbol Search** - Find code symbols and Markdown headings by name with fuzzy/camelCase matching (disabled by default)
 - **Find Super Methods** - Navigate method override hierarchies
-- **File Structure** - View hierarchical file structure like IDE's Structure view (disabled by default)
+- **File Structure** - View hierarchical file structure like IDE's Structure view, including Markdown heading outlines (disabled by default)
 
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
@@ -257,9 +258,9 @@ These tools activate based on available language plugins:
 | `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_symbol` | Search for symbols (classes, methods, fields) by name with fuzzy/camelCase matching *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
+| `ide_find_symbol` | Search for symbols (classes, methods, fields, Markdown headings) by name with fuzzy/camelCase matching *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Markdown (headings) |
 | `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
 
 ### Java-Specific Refactoring Tools
 
@@ -281,18 +282,18 @@ These tools activate based on available language plugins:
 | PyCharm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 | WebStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 | GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| RustRover | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| PhpStorm | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
+| RustRover | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
+| PhpStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 14 tools | - | ✓ rename + reformat |
-| CLion | ✓ 14 tools | - | ✓ rename + reformat |
-| DataGrip | ✓ 14 tools | - | ✓ rename + reformat |
+| RubyMine | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
+| CLion | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
+| DataGrip | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
 
-> **Note**: Navigation tools activate when language plugins are present. GoLand and RustRover have 4 navigation tools (no `ide_find_implementations` or `ide_find_super_methods` due to language semantics). PhpStorm has 5 (no `ide_file_structure`). The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 

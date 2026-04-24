@@ -32,6 +32,12 @@ object PluginDetectors {
         fallbackClass = "org.rust.lang.core.psi.RsFile"
     )
 
+    val markdown = PluginDetector(
+        name = "Markdown",
+        pluginIds = listOf("org.intellij.plugins.markdown"),
+        fallbackClass = "org.intellij.plugins.markdown.lang.MarkdownLanguage"
+    )
+
     val kotlin = PluginDetector(
         name = "Kotlin",
         pluginIds = listOf("org.jetbrains.kotlin")

@@ -37,9 +37,9 @@ These tools activate based on available language plugins:
 | `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_symbol` | Search symbols by name *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
+| `ide_find_symbol` | Search symbols and Markdown headings by name *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Markdown (headings) |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS |
+| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
 
 ### Java-Specific Refactoring Tools
 
@@ -1079,8 +1079,9 @@ These tools activate based on available language plugins:
 - **Go** - GoLand, IntelliJ Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
+- **Markdown** - heading symbol search and file structure in IDEs with the bundled Markdown plugin
 
-In IDEs without language-specific plugins (e.g., DataGrip), these tools will not appear in the tools list.
+Navigation tools appear according to installed language plugins. Markdown heading search and file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
 
 ### ide_type_hierarchy
 
@@ -1379,13 +1380,13 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
-Searches for code symbols (classes, interfaces, methods, fields) by name using the IDE's semantic index.
+Searches for code symbols (classes, interfaces, methods, fields) and Markdown headings by name using the IDE's semantic index.
 
 **Use when:**
 - Finding a class or interface by name (e.g., find "UserService")
 - Locating methods across the codebase (e.g., find all "findById" methods)
 - Discovering fields or constants by name
-- Navigating to code when you know the symbol name but not the file location
+- Navigating to code or documentation sections when you know the symbol or heading name but not the file location
 
 **Supports fuzzy matching:**
 - Substring: "Service" matches "UserService", "OrderService"
@@ -1397,8 +1398,7 @@ Searches for code symbols (classes, interfaces, methods, fields) by name using t
 |-----------|------|----------|-------------|
 | `query` | string | Yes | Search pattern (supports substring and camelCase matching) |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
-| `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`). Case-insensitive |
-| `matchMode` | string | No | `"substring"` (default), `"prefix"`, or `"exact"` |
+| `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`, `"Markdown"`). Case-insensitive |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -1600,10 +1600,10 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Markdown.
 
 **Use when:**
-- Getting an overview of a file's classes, methods, and fields
+- Getting an overview of a file's classes, methods, fields, or Markdown heading outline
 - Understanding code organization without reading the full file
 - Navigating large files
 

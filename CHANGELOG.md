@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.15.0] - 2026-04-24
+### Added
+- Added Markdown heading support for `ide_find_symbol` and `ide_file_structure`, backed by the bundled JetBrains Markdown PSI/indexes. Fixes [#149](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/149).
+
 ## [4.14.1] - 2026-04-22
 ### Fixed
 - Reworked `ide_diagnostics` to use Marketplace-safe public IntelliJ APIs instead of internal highlighting APIs, resolving the JetBrains Marketplace internal API rejection.

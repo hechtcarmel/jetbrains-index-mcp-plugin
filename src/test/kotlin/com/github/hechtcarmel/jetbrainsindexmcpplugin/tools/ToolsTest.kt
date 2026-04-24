@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
@@ -9,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStruc
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
@@ -528,6 +530,65 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    fun testMarkdownStructureHandlerBuildsHeadingHierarchy() {
+        val psiFile = myFixture.addFileToProject(
+            "docs/guide.md",
+            """
+            # Starter Pack
+            Intro text.
+            ## Installation
+            Install steps.
+            ### CLI Setup
+            CLI details.
+            ## Usage
+            Usage details.
+            """.trimIndent()
+        )
+        val handler = LanguageHandlerRegistry.getStructureHandler(psiFile)
+
+        assertNotNull("Expected Markdown structure handler", handler)
+        val nodes = handler!!.getFileStructure(psiFile, project)
+        val root = nodes.single()
+
+        assertEquals("Starter Pack", root.name)
+        assertEquals("HEADING", root.kind.name)
+        assertEquals(1, root.line)
+        assertEquals(listOf("Installation", "Usage"), root.children.map { it.name })
+        assertEquals("CLI Setup", root.children.first().children.single().name)
+        assertEquals(5, root.children.first().children.single().line)
+    }
+
+    fun testFindSymbolToolFindsMarkdownHeadings() = runBlocking {
+        myFixture.addFileToProject(
+            "docs/symbols.md",
+            """
+            # Starter Pack
+
+            ## Runtime Configuration
+
+            ### CLI Setup
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+        val tool = FindSymbolTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "Runtime Configuration")
+            put("language", "Markdown")
+        })
+
+        assertFalse("Markdown symbol search should succeed: ${result.content}", result.isError)
+        val content = result.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString(FindSymbolResult.serializer(), content.text)
+        val markdownHeading = symbols.symbols.singleOrNull { it.name == "Runtime Configuration" }
+
+        assertNotNull("Expected Markdown heading symbol", markdownHeading)
+        assertEquals("HEADING", markdownHeading!!.kind)
+        assertEquals("Markdown", markdownHeading.language)
+        assertTrue(markdownHeading.file.endsWith("docs/symbols.md"))
+        assertEquals(3, markdownHeading.line)
     }
 
     // Editor Tools Tests

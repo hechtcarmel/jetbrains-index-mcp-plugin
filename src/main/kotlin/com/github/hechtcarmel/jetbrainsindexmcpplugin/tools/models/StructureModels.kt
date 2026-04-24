@@ -34,7 +34,7 @@ enum class StructureKind {
     METHOD, FIELD, PROPERTY, CONSTRUCTOR,
 
     // Language-specific
-    FUNCTION, VARIABLE, TYPE_ALIAS,
+    FUNCTION, VARIABLE, TYPE_ALIAS, HEADING,
 
     // Containers
     NAMESPACE, PACKAGE, MODULE,

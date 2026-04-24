@@ -104,6 +104,7 @@ object TreeFormatter {
             StructureKind.MODULE -> "module"
             StructureKind.TYPE_ALIAS -> "typealias"
             StructureKind.VARIABLE -> "var"
+            StructureKind.HEADING -> "heading"
             StructureKind.UNKNOWN -> "unknown"
 
             // Language-specific keywords for methods, functions, fields, and properties

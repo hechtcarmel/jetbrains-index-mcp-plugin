@@ -28,7 +28,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for searching code symbols across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Markdown headings
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -42,9 +42,9 @@ class FindSymbolTool : AbstractMcpTool() {
     override val name = ToolNames.FIND_SYMBOL
 
     override val description = """
-        Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, functions. Faster and more accurate than grep for code navigation.
+        Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, functions, and Markdown headings. Faster and more accurate than grep for code navigation.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Markdown (headings).
 
         Matching follows IntelliJ's Go to Symbol popup, including qualified queries like "BasicSolver.run".
 
