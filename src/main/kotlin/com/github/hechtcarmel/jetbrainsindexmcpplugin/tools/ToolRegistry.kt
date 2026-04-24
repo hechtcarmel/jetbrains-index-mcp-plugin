@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiag
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
@@ -42,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_find_definition` - Find symbol definition location
  * - `ide_find_class` - Class search using CLASS_EP_NAME index
  * - `ide_find_file` - File search using FILE_EP_NAME index
+ * - `ide_find_symbol` - Search for symbols by name (universal, popup-backed)
  * - `ide_search_text` - Text search using word index
  * - `ide_diagnostics` - Analyze code for problems and available intentions
  * - `ide_build_project` - Build project using IDE's build system (disabled by default)
@@ -57,7 +59,6 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
  * - `ide_call_hierarchy` - Analyze method call relationships
  * - `ide_find_implementations` - Find interface/method implementations
- * - `ide_find_symbol` - Search for symbols and Markdown headings by name
  * - `ide_find_super_methods` - Find methods that a method overrides
  *
  * ### Universal Refactoring Tools
@@ -204,7 +205,6 @@ class ToolRegistry {
         val typeHierarchyLangs = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy()
         val implementationLangs = LanguageHandlerRegistry.getSupportedLanguagesForImplementations()
         val callHierarchyLangs = LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()
-        val symbolSearchLangs = LanguageHandlerRegistry.getSupportedLanguagesForSymbolSearch()
         val superMethodsLangs = LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()
         val structureLangs = LanguageHandlerRegistry.getSupportedLanguagesForStructure()
         val symbolReferenceLangs = LanguageHandlerRegistry.getSupportedLanguagesForSymbolReference()
@@ -212,7 +212,6 @@ class ToolRegistry {
         LOG.info("Language support - TypeHierarchy: $typeHierarchyLangs, " +
             "Implementations: $implementationLangs, " +
             "CallHierarchy: $callHierarchyLangs, " +
-            "SymbolSearch: $symbolSearchLangs, " +
             "SuperMethods: $superMethodsLangs, " +
             "Structure: $structureLangs, " +
             "SymbolReference: $symbolReferenceLangs")
@@ -246,6 +245,7 @@ class ToolRegistry {
         // Fast search tools (universal)
         register(FindClassTool())
         register(FindFileTool())
+        register(FindSymbolTool())
         register(SearchTextTool())
         register(ReadFileTool())
 
@@ -265,7 +265,6 @@ class ToolRegistry {
         ConditionalTool("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool") { LanguageHandlerRegistry.hasTypeHierarchyHandlers() },
         ConditionalTool("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool") { LanguageHandlerRegistry.hasImplementationsHandlers() },
         ConditionalTool("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool") { LanguageHandlerRegistry.hasCallHierarchyHandlers() },
-        ConditionalTool("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool") { LanguageHandlerRegistry.hasSymbolSearchHandlers() },
         ConditionalTool("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool") { LanguageHandlerRegistry.hasSuperMethodsHandlers() },
         ConditionalTool("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool") { LanguageHandlerRegistry.hasStructureHandlers() },
     )

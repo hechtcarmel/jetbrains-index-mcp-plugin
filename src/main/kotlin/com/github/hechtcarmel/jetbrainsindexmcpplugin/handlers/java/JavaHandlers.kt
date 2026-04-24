@@ -43,7 +43,6 @@ object JavaHandlers {
         registry.registerTypeHierarchyHandler(JavaTypeHierarchyHandler())
         registry.registerImplementationsHandler(JavaImplementationsHandler())
         registry.registerCallHierarchyHandler(JavaCallHierarchyHandler())
-        registry.registerSymbolSearchHandler(JavaSymbolSearchHandler())
         registry.registerSymbolReferenceHandler(JavaSymbolReferenceHandler())
         registry.registerSuperMethodsHandler(JavaSuperMethodsHandler())
         registry.registerStructureHandler(JavaStructureHandler())
@@ -52,7 +51,6 @@ object JavaHandlers {
         registry.registerTypeHierarchyHandler(KotlinTypeHierarchyHandler())
         registry.registerImplementationsHandler(KotlinImplementationsHandler())
         registry.registerCallHierarchyHandler(KotlinCallHierarchyHandler())
-        registry.registerSymbolSearchHandler(KotlinSymbolSearchHandler())
         registry.registerSuperMethodsHandler(KotlinSuperMethodsHandler())
         registry.registerStructureHandler(KotlinStructureHandler())
 
@@ -927,42 +925,6 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
 }
 
 /**
- * Java implementation of [SymbolSearchHandler].
- *
- * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
- * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
- *
- * This replaces the manual iteration over PsiShortNamesCache which was O(n) for
- * all symbols in large monorepos.
- */
-class JavaSymbolSearchHandler : BaseJavaHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override val languageId = "JAVA"
-
-    override fun canHandle(element: PsiElement): Boolean = isAvailable()
-
-    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-
-        // Use the optimized platform-based search with language filter for Java/Kotlin
-        return OptimizedSymbolSearch.search(
-            project = project,
-            pattern = pattern,
-            scope = searchScope,
-            limit = limit,
-            languageFilter = setOf("Java", "Kotlin")
-        )
-    }
-}
-
-/**
  * Java implementation of [SuperMethodsHandler].
  */
 class JavaSuperMethodsHandler : BaseJavaHandler<SuperMethodsData>(), SuperMethodsHandler {
@@ -1055,10 +1017,6 @@ class KotlinImplementationsHandler : ImplementationsHandler by JavaImplementatio
 }
 
 class KotlinCallHierarchyHandler : CallHierarchyHandler by JavaCallHierarchyHandler() {
-    override val languageId = "kotlin"
-}
-
-class KotlinSymbolSearchHandler : SymbolSearchHandler by JavaSymbolSearchHandler() {
     override val languageId = "kotlin"
 }
 

@@ -127,29 +127,6 @@ interface CallHierarchyHandler : LanguageHandler<CallHierarchyData> {
 }
 
 /**
- * Handler for symbol search.
- *
- * Searches for classes, methods, functions, fields, etc. by name.
- */
-interface SymbolSearchHandler : LanguageHandler<List<SymbolData>> {
-    /**
-     * Searches for symbols matching the given pattern.
-     *
-     * @param project The project context
-     * @param pattern The search pattern. Matching follows IntelliJ's Go to Symbol behavior.
-     * @param scope The built-in search scope to honor for this search
-     * @param limit Maximum number of results
-     * @return List of matching symbols
-     */
-    fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES,
-        limit: Int
-    ): List<SymbolData>
-}
-
-/**
  * Handler for finding super methods.
  *
  * Finds all parent methods that a method overrides or implements.

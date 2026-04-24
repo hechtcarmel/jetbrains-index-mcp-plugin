@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [4.16.0] - 2026-04-24
+### Fixed
+- **`ide_find_symbol` ordering, missing/extra results, and qualified-query handling now match IntelliJ's Go to Symbol popup.** The tool previously ran the popup search separately for each registered language handler and concatenated results in handler-iteration order, which destroyed cross-language ranking. Symbol search now issues a single popup-backed call.
+
+### Added
+- **`ide_find_symbol` is now available in every JetBrains IDE**, including RubyMine, CLion, DataGrip, Rider, and Aqua. Result quality depends on IDE-supplied `ChooseByNameContributor` extensions; `kind` and `qualifiedName` may fall back to generic values for languages the plugin doesn't special-case.
+
+### Changed
+- Internal: removed the `SymbolSearchHandler` interface and its nine language implementations (including the Markdown symbol-search handler added in 4.15.0); symbol search is now centralised in `OptimizedSymbolSearch` + `PopupFaithfulSymbolSearch`. Markdown headings still surface through the single popup-backed path.
+
 ## [4.15.0] - 2026-04-24
 ### Added
 - Added Markdown heading support for `ide_find_symbol` and `ide_file_structure`, backed by the bundled JetBrains Markdown PSI/indexes. Fixes [#149](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/149).

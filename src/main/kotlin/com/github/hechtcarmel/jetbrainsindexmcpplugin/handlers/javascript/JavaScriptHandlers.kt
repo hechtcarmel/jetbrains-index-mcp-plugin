@@ -60,7 +60,6 @@ object JavaScriptHandlers {
             registry.registerTypeHierarchyHandler(JavaScriptTypeHierarchyHandler())
             registry.registerImplementationsHandler(JavaScriptImplementationsHandler())
             registry.registerCallHierarchyHandler(JavaScriptCallHierarchyHandler())
-            registry.registerSymbolSearchHandler(JavaScriptSymbolSearchHandler())
             registry.registerSuperMethodsHandler(JavaScriptSuperMethodsHandler())
             registry.registerStructureHandler(JavaScriptStructureHandler())
 
@@ -68,7 +67,6 @@ object JavaScriptHandlers {
             registry.registerTypeHierarchyHandler(TypeScriptTypeHierarchyHandler())
             registry.registerImplementationsHandler(TypeScriptImplementationsHandler())
             registry.registerCallHierarchyHandler(TypeScriptCallHierarchyHandler())
-            registry.registerSymbolSearchHandler(TypeScriptSymbolSearchHandler())
             registry.registerSuperMethodsHandler(TypeScriptSuperMethodsHandler())
             registry.registerStructureHandler(TypeScriptStructureHandler())
 
@@ -974,39 +972,6 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
 }
 
 /**
- * JavaScript implementation of [SymbolSearchHandler].
- *
- * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
- * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
- */
-class JavaScriptSymbolSearchHandler : BaseJavaScriptHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override val languageId = "JavaScript"
-
-    override fun canHandle(element: PsiElement): Boolean = isAvailable()
-
-    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable && jsFunctionClass != null
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-
-        // Use the optimized platform-based search with language filter for JavaScript/TypeScript
-        return OptimizedSymbolSearch.search(
-            project = project,
-            pattern = pattern,
-            scope = searchScope,
-            limit = limit,
-            languageFilter = setOf("JavaScript", "TypeScript")
-        )
-    }
-}
-
-/**
  * JavaScript implementation of [SuperMethodsHandler].
  */
 class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(), SuperMethodsHandler {
@@ -1177,10 +1142,6 @@ class TypeScriptImplementationsHandler : ImplementationsHandler by JavaScriptImp
 }
 
 class TypeScriptCallHierarchyHandler : CallHierarchyHandler by JavaScriptCallHierarchyHandler() {
-    override val languageId = "TypeScript"
-}
-
-class TypeScriptSymbolSearchHandler : SymbolSearchHandler by JavaScriptSymbolSearchHandler() {
     override val languageId = "TypeScript"
 }
 

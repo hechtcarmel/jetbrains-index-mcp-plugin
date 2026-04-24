@@ -38,7 +38,6 @@ object LanguageHandlerRegistry {
     private val typeHierarchyHandlers = ConcurrentHashMap<String, TypeHierarchyHandler>()
     private val implementationsHandlers = ConcurrentHashMap<String, ImplementationsHandler>()
     private val callHierarchyHandlers = ConcurrentHashMap<String, CallHierarchyHandler>()
-    private val symbolSearchHandlers = ConcurrentHashMap<String, SymbolSearchHandler>()
     private val symbolReferenceHandlers = ConcurrentHashMap<String, SymbolReferenceHandler>()
     private val superMethodsHandlers = ConcurrentHashMap<String, SuperMethodsHandler>()
     private val structureHandlers = ConcurrentHashMap<String, StructureHandler>()
@@ -67,7 +66,6 @@ object LanguageHandlerRegistry {
             "TypeHierarchy=${typeHierarchyHandlers.size}, " +
             "Implementations=${implementationsHandlers.size}, " +
             "CallHierarchy=${callHierarchyHandlers.size}, " +
-            "SymbolSearch=${symbolSearchHandlers.size}, " +
             "SymbolReference=${symbolReferenceHandlers.size}, " +
             "SuperMethods=${superMethodsHandlers.size}, " +
             "Structure=${structureHandlers.size}")
@@ -81,7 +79,6 @@ object LanguageHandlerRegistry {
         typeHierarchyHandlers.clear()
         implementationsHandlers.clear()
         callHierarchyHandlers.clear()
-        symbolSearchHandlers.clear()
         symbolReferenceHandlers.clear()
         superMethodsHandlers.clear()
         structureHandlers.clear()
@@ -103,11 +100,6 @@ object LanguageHandlerRegistry {
     fun registerCallHierarchyHandler(handler: CallHierarchyHandler) {
         callHierarchyHandlers[handler.languageId] = handler
         LOG.info("Registered CallHierarchyHandler for ${handler.languageId}")
-    }
-
-    fun registerSymbolSearchHandler(handler: SymbolSearchHandler) {
-        symbolSearchHandlers[handler.languageId] = handler
-        LOG.info("Registered SymbolSearchHandler for ${handler.languageId}")
     }
 
     fun registerSymbolReferenceHandler(handler: SymbolReferenceHandler) {
@@ -193,22 +185,11 @@ object LanguageHandlerRegistry {
     }
 
     /**
-     * Gets all available symbol search handlers.
-     *
-     * Unlike other handlers, symbol search aggregates results from all languages,
-     * so we return all available handlers.
-     */
-    fun getAllSymbolSearchHandlers(): List<SymbolSearchHandler> {
-        return symbolSearchHandlers.values.filter { it.isAvailable() }
-    }
-
-    /**
      * Checks if any handlers are available for the given handler type.
      */
     fun hasTypeHierarchyHandlers(): Boolean = typeHierarchyHandlers.values.any { it.isAvailable() }
     fun hasImplementationsHandlers(): Boolean = implementationsHandlers.values.any { it.isAvailable() }
     fun hasCallHierarchyHandlers(): Boolean = callHierarchyHandlers.values.any { it.isAvailable() }
-    fun hasSymbolSearchHandlers(): Boolean = symbolSearchHandlers.values.any { it.isAvailable() }
     fun hasSuperMethodsHandlers(): Boolean = superMethodsHandlers.values.any { it.isAvailable() }
     fun hasStructureHandlers(): Boolean = structureHandlers.values.any { it.isAvailable() }
 
@@ -223,9 +204,6 @@ object LanguageHandlerRegistry {
 
     fun getSupportedLanguagesForCallHierarchy(): List<String> =
         callHierarchyHandlers.filter { it.value.isAvailable() }.keys.toList()
-
-    fun getSupportedLanguagesForSymbolSearch(): List<String> =
-        symbolSearchHandlers.filter { it.value.isAvailable() }.keys.toList()
 
     fun getSupportedLanguagesForSuperMethods(): List<String> =
         superMethodsHandlers.filter { it.value.isAvailable() }.keys.toList()

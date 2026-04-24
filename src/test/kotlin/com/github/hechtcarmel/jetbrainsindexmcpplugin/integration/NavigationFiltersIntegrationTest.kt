@@ -220,6 +220,81 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         )
     }
 
+    fun testFindSymbolQualifierMiddleMatch() = runBlocking {
+        val fixture = createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        // "asic" is a middle substring of "BasicSolver" (not a prefix, not a suffix).
+        // Parity with IntelliJ's Go to Symbol popup: a partial qualifier should still
+        // resolve via middle-matching on the class/module segment.
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "asic.run")
+        })
+        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+
+        val content = result.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString<FindSymbolResult>(content.text)
+
+        assertTrue(
+            "Middle-match qualifier should include BasicSolver.run; got ${symbols.symbols.map { it.file }}",
+            symbols.symbols.any { it.name == "run" && it.file.endsWith(fixture.basicSolverRelativePath) }
+        )
+    }
+
+    fun testFindSymbolWildcardSuffixQuery() = runBlocking {
+        val fixture = createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        // `*Solver` should match class names ending with "Solver" (BasicSolver, StackSolver).
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "*Solver")
+            put("pageSize", 100)
+        })
+        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+
+        val content = result.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString<FindSymbolResult>(content.text)
+        val names = symbols.symbols.map { it.name }
+
+        assertTrue(
+            "Wildcard suffix `*Solver` should match BasicSolver; got $names",
+            names.contains("BasicSolver")
+        )
+        assertTrue(
+            "Wildcard suffix `*Solver` should match StackSolver; got $names",
+            names.contains("StackSolver")
+        )
+        assertFalse(
+            "Wildcard suffix `*Solver` should NOT match BatchRunner; got $names",
+            names.contains("BatchRunner")
+        )
+    }
+
+    fun testFindSymbolWildcardPrefixQuery() = runBlocking {
+        val fixture = createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        // `Batch*` should match names starting with "Batch" (BatchRunner).
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "Batch*")
+            put("pageSize", 100)
+        })
+        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+
+        val content = result.content.first() as ContentBlock.Text
+        val symbols = json.decodeFromString<FindSymbolResult>(content.text)
+        val names = symbols.symbols.map { it.name }
+
+        assertTrue(
+            "Wildcard prefix `Batch*` should match BatchRunner; got $names",
+            names.contains("BatchRunner")
+        )
+        assertFalse(
+            "Wildcard prefix `Batch*` should NOT match BasicSolver; got $names",
+            names.contains("BasicSolver")
+        )
+    }
+
     fun testFindSymbolSupportsFullyQualifiedNameSearch() = runBlocking {
         val fixture = createQualifiedSymbolFixture()
         val tool = FindSymbolTool()
@@ -282,6 +357,57 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         assertFalse(
             "BatchRunner.run should not match the qualified suffix query",
             aggregatedFiles.any { it.endsWith(fixture.batchRunnerRelativePath) }
+        )
+    }
+
+    fun testFindSymbolLanguageFilterReturnsOnlyRequestedLanguage() = runBlocking {
+        createQualifiedSymbolFixture()
+        val tool = FindSymbolTool()
+
+        val filtered = tool.execute(project, buildJsonObject {
+            put("query", "run")
+            put("language", "Java")
+            put("pageSize", 100)
+        })
+        assertFalse("Find symbol should succeed: ${filtered.content}", filtered.isError)
+
+        val filteredContent = filtered.content.first() as ContentBlock.Text
+        val filteredResult = json.decodeFromString<FindSymbolResult>(filteredContent.text)
+        assertTrue(
+            "Language filter should keep results non-empty when Java matches exist",
+            filteredResult.symbols.isNotEmpty()
+        )
+        assertTrue(
+            "All results must be Java when language=Java is specified",
+            filteredResult.symbols.all { it.language.equals("Java", ignoreCase = true) }
+        )
+
+        // Case-insensitive: lowercase input should return the same results as canonical case.
+        val lowercase = tool.execute(project, buildJsonObject {
+            put("query", "run")
+            put("language", "java")
+            put("pageSize", 100)
+        })
+        assertFalse("Find symbol with lowercase language should succeed: ${lowercase.content}", lowercase.isError)
+        val lowercaseContent = lowercase.content.first() as ContentBlock.Text
+        val lowercaseResult = json.decodeFromString<FindSymbolResult>(lowercaseContent.text)
+        assertEquals(
+            "Language filter must be case-insensitive — lowercase 'java' must yield the same symbol set as canonical 'Java'",
+            filteredResult.symbols.map { it.file }.toSet(),
+            lowercaseResult.symbols.map { it.file }.toSet()
+        )
+
+        val mismatched = tool.execute(project, buildJsonObject {
+            put("query", "run")
+            put("language", "Kotlin")
+            put("pageSize", 100)
+        })
+        assertFalse("Find symbol should succeed: ${mismatched.content}", mismatched.isError)
+        val mismatchedContent = mismatched.content.first() as ContentBlock.Text
+        val mismatchedResult = json.decodeFromString<FindSymbolResult>(mismatchedContent.text)
+        assertTrue(
+            "Language filter is exclusive — fixture has no Kotlin, so zero results expected",
+            mismatchedResult.symbols.isEmpty()
         )
     }
 

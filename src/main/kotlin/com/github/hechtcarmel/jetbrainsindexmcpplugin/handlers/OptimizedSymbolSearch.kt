@@ -214,8 +214,9 @@ object OptimizedSymbolSearch {
         val targetElement = element.navigationElement ?: element
         val language = getLanguageName(targetElement)
 
-        // Apply language filter if specified
-        if (languageFilter != null && language !in languageFilter) {
+        // Apply language filter if specified (case-insensitive — the tool's `language`
+        // parameter is user-facing and may be "kotlin", "Kotlin", "KOTLIN", etc.)
+        if (languageFilter != null && languageFilter.none { it.equals(language, ignoreCase = true) }) {
             return null
         }
 

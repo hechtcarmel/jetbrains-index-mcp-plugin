@@ -59,7 +59,6 @@ object PhpHandlers {
             registry.registerTypeHierarchyHandler(PhpTypeHierarchyHandler())
             registry.registerImplementationsHandler(PhpImplementationsHandler())
             registry.registerCallHierarchyHandler(PhpCallHierarchyHandler())
-            registry.registerSymbolSearchHandler(PhpSymbolSearchHandler())
             registry.registerSuperMethodsHandler(PhpSuperMethodsHandler())
 
             LOG.info("Registered PHP handlers")
@@ -996,39 +995,6 @@ class PhpCallHierarchyHandler : BasePhpHandler<CallHierarchyData>(), CallHierarc
             column = getColumnNumber(project, callable) ?: 0,
             language = "PHP",
             children = children?.takeIf { it.isNotEmpty() }
-        )
-    }
-}
-
-/**
- * PHP implementation of [SymbolSearchHandler].
- *
- * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
- * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
- */
-class PhpSymbolSearchHandler : BasePhpHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override val languageId = "PHP"
-
-    override fun canHandle(element: PsiElement): Boolean = isAvailable()
-
-    override fun isAvailable(): Boolean = PluginDetectors.php.isAvailable && phpClassClass != null
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-
-        // Use the optimized platform-based search with language filter for PHP
-        return OptimizedSymbolSearch.search(
-            project = project,
-            pattern = pattern,
-            scope = searchScope,
-            limit = limit,
-            languageFilter = setOf("PHP")
         )
     }
 }

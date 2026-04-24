@@ -53,7 +53,6 @@ object PythonHandlers {
             registry.registerTypeHierarchyHandler(PythonTypeHierarchyHandler())
             registry.registerImplementationsHandler(PythonImplementationsHandler())
             registry.registerCallHierarchyHandler(PythonCallHierarchyHandler())
-            registry.registerSymbolSearchHandler(PythonSymbolSearchHandler())
             registry.registerSuperMethodsHandler(PythonSuperMethodsHandler())
             registry.registerStructureHandler(PythonStructureHandler())
 
@@ -731,39 +730,6 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
             column = getColumnNumber(project, pyFunction) ?: 0,
             language = "Python",
             children = children?.takeIf { it.isNotEmpty() }
-        )
-    }
-}
-
-/**
- * Python implementation of [SymbolSearchHandler].
- *
- * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
- * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
- */
-class PythonSymbolSearchHandler : BasePythonHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override val languageId = "Python"
-
-    override fun canHandle(element: PsiElement): Boolean = isAvailable()
-
-    override fun isAvailable(): Boolean = PluginDetectors.python.isAvailable && pyClassClass != null
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-
-        // Use the optimized platform-based search with language filter for Python
-        return OptimizedSymbolSearch.search(
-            project = project,
-            pattern = pattern,
-            scope = searchScope,
-            limit = limit,
-            languageFilter = setOf("Python")
         )
     }
 }

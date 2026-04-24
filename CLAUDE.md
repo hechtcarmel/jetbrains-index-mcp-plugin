@@ -417,7 +417,6 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `TypeHierarchyHandler` - Type hierarchy lookup
 - `ImplementationsHandler` - Find implementations
 - `CallHierarchyHandler` - Call hierarchy analysis
-- `SymbolSearchHandler` - Symbol search by name
 - `SymbolReferenceHandler` - Resolve fully qualified symbol references (e.g., `com.example.MyClass#method(String)`) to PSI elements
 - `SuperMethodsHandler` - Method override hierarchy
 

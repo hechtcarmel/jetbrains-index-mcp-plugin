@@ -75,7 +75,6 @@ object GoHandlers {
             // Register handlers for tools that work well with Go
             registry.registerTypeHierarchyHandler(GoTypeHierarchyHandler())
             registry.registerCallHierarchyHandler(GoCallHierarchyHandler())
-            registry.registerSymbolSearchHandler(GoSymbolSearchHandler())
 
             // Note: GoImplementationsHandler and GoSuperMethodsHandler are intentionally
             // NOT registered because:
@@ -83,7 +82,7 @@ object GoHandlers {
             //   doesn't work reliably. Use ide_type_hierarchy instead.
             // - Go has no inheritance, so "find super methods" is not applicable.
 
-            LOG.info("Registered Go handlers (TypeHierarchy, CallHierarchy, SymbolSearch)")
+            LOG.info("Registered Go handlers (TypeHierarchy, CallHierarchy)")
         } catch (e: ClassNotFoundException) {
             LOG.warn("Go PSI classes not found, skipping registration: ${e.message}")
         } catch (e: Exception) {
@@ -889,39 +888,6 @@ class GoCallHierarchyHandler : BaseGoHandler<CallHierarchyData>(), CallHierarchy
         } catch (e: Exception) {
             null
         }
-    }
-}
-
-/**
- * Go implementation of [SymbolSearchHandler].
- *
- * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
- * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
- */
-class GoSymbolSearchHandler : BaseGoHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override val languageId = "go"
-
-    override fun canHandle(element: PsiElement): Boolean = isAvailable()
-
-    override fun isAvailable(): Boolean = PluginDetectors.go.isAvailable && goFileClass != null
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-
-        // Use the optimized platform-based search with language filter for Go
-        return OptimizedSymbolSearch.search(
-            project = project,
-            pattern = pattern,
-            scope = searchScope,
-            limit = limit,
-            languageFilter = setOf("go", "Go")
-        )
     }
 }
 

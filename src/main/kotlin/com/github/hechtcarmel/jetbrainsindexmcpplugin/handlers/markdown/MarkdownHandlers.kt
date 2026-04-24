@@ -1,14 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.markdown
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandler
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.StructureHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolSearchHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
@@ -18,11 +12,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.stubs.StubIndex
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.util.Processor
-import org.intellij.plugins.markdown.lang.index.HeaderTextIndex
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
 
 private const val MARKDOWN_LANGUAGE_ID = "Markdown"
@@ -30,8 +20,9 @@ private const val MARKDOWN_LANGUAGE_ID = "Markdown"
 /**
  * Registration entry point for Markdown handlers.
  *
- * Markdown support is intentionally header-focused: headings are the navigable symbols agents need
- * for large documentation files, and they provide the hierarchy used by the file structure tool.
+ * Markdown support is intentionally header-focused: headings provide the hierarchy used by the file
+ * structure tool. Symbol search goes through the single popup-backed path in [FindSymbolTool],
+ * which picks up Markdown headers via IntelliJ's `ChooseByNameContributor` infrastructure.
  */
 object MarkdownHandlers {
 
@@ -44,7 +35,6 @@ object MarkdownHandlers {
             return
         }
 
-        registry.registerSymbolSearchHandler(MarkdownSymbolSearchHandler())
         registry.registerStructureHandler(MarkdownStructureHandler())
 
         LOG.info("Registered Markdown handlers")
@@ -85,100 +75,6 @@ abstract class BaseMarkdownHandler<T> : LanguageHandler<T> {
     protected fun markdownHeaders(file: PsiFile): List<MarkdownHeader> =
         PsiTreeUtil.findChildrenOfType(file, MarkdownHeader::class.java)
             .sortedBy { it.textOffset }
-}
-
-class MarkdownSymbolSearchHandler : BaseMarkdownHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        if (pattern.isBlank() || limit <= 0) return emptyList()
-
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-        val matcher = createMatcher(pattern)
-        val nameFilter = createNameFilter(pattern, "substring", matcher)
-        val matchingKeys = StubIndex.getInstance()
-            .getAllKeys(HeaderTextIndex.KEY, project)
-            .asSequence()
-            .filter { key -> nameFilter(key) || key.contains(pattern, ignoreCase = true) }
-            .sortedWith(compareBy(
-                { !it.equals(pattern, ignoreCase = true) },
-                { -matcher.matchingDegree(it) },
-                { it }
-            ))
-            .toList()
-
-        val results = mutableListOf<SymbolData>()
-        val seen = mutableSetOf<String>()
-
-        for (key in matchingKeys) {
-            if (results.size >= limit) break
-
-            StubIndex.getInstance().processElements(
-                HeaderTextIndex.KEY,
-                key,
-                project,
-                searchScope,
-                MarkdownHeader::class.java,
-                Processor { header ->
-                    val symbol = createSymbolData(project, header, searchScope) ?: return@Processor true
-                    val dedupeKey = "${symbol.file}:${symbol.line}:${symbol.column}:${symbol.name}"
-                    if (seen.add(dedupeKey)) {
-                        results.add(symbol)
-                    }
-                    results.size < limit
-                }
-            )
-        }
-
-        return results.sortedWith(compareBy(
-            { !it.name.equals(pattern, ignoreCase = true) },
-            { -matcher.matchingDegree(it.name) },
-            { it.file },
-            { it.line }
-        )).take(limit)
-    }
-
-    private fun createSymbolData(
-        project: Project,
-        header: MarkdownHeader,
-        searchScope: GlobalSearchScope
-    ): SymbolData? {
-        val virtualFile = header.containingFile?.virtualFile ?: return null
-        if (!searchScope.contains(virtualFile)) return null
-
-        val relativePath = getRelativePath(project, virtualFile)
-        val name = headerName(header)
-        val anchorText = header.anchorText?.takeIf { it.isNotBlank() }
-
-        return SymbolData(
-            name = name,
-            qualifiedName = anchorText?.let { "$relativePath#$it" } ?: relativePath,
-            kind = "HEADING",
-            file = relativePath,
-            line = getLineNumber(project, header),
-            column = getColumnNumber(project, header),
-            containerName = findParentHeadingName(header),
-            language = MARKDOWN_LANGUAGE_ID
-        )
-    }
-
-    private fun findParentHeadingName(header: MarkdownHeader): String? {
-        val containingFile = header.containingFile ?: return null
-        var parent: MarkdownHeader? = null
-
-        for (candidate in markdownHeaders(containingFile)) {
-            if (candidate == header) break
-            if (candidate.level < header.level) {
-                parent = candidate
-            }
-        }
-
-        return parent?.let { headerName(it) }
-    }
 }
 
 class MarkdownStructureHandler : BaseMarkdownHandler<List<StructureNode>>(), StructureHandler {

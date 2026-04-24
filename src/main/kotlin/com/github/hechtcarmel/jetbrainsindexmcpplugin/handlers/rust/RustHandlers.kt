@@ -66,12 +66,11 @@ object RustHandlers {
             registry.registerTypeHierarchyHandler(RustTypeHierarchyHandler())
             registry.registerImplementationsHandler(RustImplementationsHandler())
             registry.registerCallHierarchyHandler(RustCallHierarchyHandler())
-            registry.registerSymbolSearchHandler(RustSymbolSearchHandler())
             // Note: SuperMethodsHandler is NOT registered for Rust because Rust uses trait
             // implementations rather than classical inheritance. There are no "super methods"
             // in the OOP sense. Users should use ide_find_definition or ide_type_hierarchy instead.
 
-            LOG.info("Registered Rust handlers (4 handlers - SuperMethods not applicable for Rust)")
+            LOG.info("Registered Rust handlers (3 handlers - SuperMethods not applicable for Rust)")
         } catch (e: ClassNotFoundException) {
             LOG.warn("Rust PSI classes not found, skipping registration: ${e.message}")
         } catch (e: Exception) {
@@ -1086,39 +1085,6 @@ class RustCallHierarchyHandler : BaseRustHandler<CallHierarchyData>(), CallHiera
         }
 
         return functionName
-    }
-}
-
-/**
- * Rust implementation of [SymbolSearchHandler].
- *
- * Uses the optimized [OptimizedSymbolSearch] infrastructure which leverages IntelliJ's
- * built-in "Go to Symbol" APIs with caching, word index, and prefix matching.
- */
-class RustSymbolSearchHandler : BaseRustHandler<List<SymbolData>>(), SymbolSearchHandler {
-
-    override val languageId = "Rust"
-
-    override fun canHandle(element: PsiElement): Boolean = isAvailable()
-
-    override fun isAvailable(): Boolean = PluginDetectors.rust.isAvailable && rsFileClass != null
-
-    override fun searchSymbols(
-        project: Project,
-        pattern: String,
-        scope: BuiltInSearchScope,
-        limit: Int
-    ): List<SymbolData> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
-
-        // Use the optimized platform-based search with language filter for Rust
-        return OptimizedSymbolSearch.search(
-            project = project,
-            pattern = pattern,
-            scope = searchScope,
-            limit = limit,
-            languageFilter = setOf("Rust")
-        )
     }
 }
 
