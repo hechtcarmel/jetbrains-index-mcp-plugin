@@ -24,9 +24,9 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
-- **Markdown** - heading symbol search and file structure in IDEs with the bundled Markdown plugin
+- **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
-**Universal Tools (All JetBrains IDEs)**
+**Universal Tools (All Supported JetBrains IDEs)**
 - **Find References** - Locate all usages of any symbol across the project
 - **Go to Definition** - Navigate to symbol declarations
 - **Code Diagnostics** - Access errors, warnings, and quick fixes
@@ -35,6 +35,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
 - **Find Class** - Fast class/interface search by name with camelCase matching
 - **Find File** - Fast file search by name using IDE's file index
+- **Symbol Search** - Find code symbols by name with IntelliJ Go to Symbol matching (disabled by default)
 - **Search Text** - Text search using IDE's pre-built word index
 - **Read File** - Read file content by path or qualified name, including library sources (disabled by default)
 - **Open File** - Open a file in the editor with optional navigation (disabled by default)
@@ -45,7 +46,6 @@ These tools activate based on installed language plugins:
 - **Type Hierarchy** - Explore class inheritance chains
 - **Call Hierarchy** - Trace method/function call relationships
 - **Find Implementations** - Discover interface/abstract implementations
-- **Symbol Search** - Find code symbols and Markdown headings by name with fuzzy/camelCase matching (disabled by default)
 - **Find Super Methods** - Navigate method override hierarchies
 - **File Structure** - View hierarchical file structure like IDE's Structure view, including Markdown heading outlines (disabled by default)
 
@@ -237,6 +237,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_find_definition` | Find the definition/declaration location of a symbol |
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
+| `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching *(disabled by default)* |
 | `ide_search_text` | Text search using IDE's pre-built word index with context filtering |
 | `ide_diagnostics` | Analyze file problems with fresh editor diagnostics for open files or public batch diagnostics for closed files, plus optional build/test results; intentions are best-effort |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
@@ -258,7 +259,6 @@ These tools activate based on available language plugins:
 | `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_symbol` | Search for symbols (classes, methods, fields, Markdown headings) by name with fuzzy/camelCase matching *(disabled by default)* | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Markdown (headings) |
 | `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
 | `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
 

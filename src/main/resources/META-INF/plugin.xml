@@ -18,7 +18,7 @@
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
     <li><b>PHP</b> - PhpStorm, IntelliJ IDEA Ultimate with PHP plugin</li>
     <li><b>Rust</b> - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion</li>
-    <li><b>Markdown</b> - heading symbol search and file structure via the bundled Markdown plugin</li>
+    <li><b>Markdown</b> - heading outlines in file structure via the bundled Markdown plugin</li>
 </ul>
 
 <h3>Universal Tools (All Supported IDEs)</h3>
@@ -28,6 +28,7 @@
     <li><b>Go to Definition</b> - Jump to symbol declarations instantly</li>
     <li><b>Find Class</b> - Fast class/interface search by name with camelCase/substring/wildcard matching</li>
     <li><b>Find File</b> - Fast file search by name using IDE's file index</li>
+    <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with IntelliJ Go to Symbol matching (disabled by default)</li>
     <li><b>Search Text</b> - Text search using IDE's pre-built word index with context filtering</li>
     <li><b>Code Diagnostics</b> - Access errors, warnings, and available quick fixes</li>
     <li><b>Index Status</b> - Check if the IDE is ready for code intelligence</li>
@@ -44,7 +45,6 @@
     <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
     <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
     <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods (Java, Kotlin, Python, JS/TS, PHP, Rust)</li>
-    <li><b>Symbol Search</b> - Find classes, methods, functions, fields, and Markdown headings by name with fuzzy/camelCase matching (disabled by default)</li>
     <li><b>Find Super Methods</b> - Navigate through method override hierarchies (Java, Kotlin, Python, JS/TS, PHP)</li>
     <li><b>File Structure</b> - View hierarchical file structure like IDE's Structure view (Java, Kotlin, Python, JS/TS, Markdown) (disabled by default)</li>
 </ul>
