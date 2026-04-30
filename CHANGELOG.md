@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.16.1] - 2026-04-30
+### Fixed
+- **Install on Coding Agents now works on Windows for Codex CLI and Claude Code** — Direct installation no longer assumes a POSIX `sh` shell. Windows installs now run through `cmd.exe` with Windows-compatible command separators and null-output redirection, and copied Windows install commands are wrapped for terminal paste. Fixes [#165](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/165).
+
 ## [4.16.0] - 2026-04-24
 ### Fixed
 - **`ide_find_symbol` ordering, missing/extra results, and qualified-query handling now match IntelliJ's Go to Symbol popup.** The tool previously ran the popup search separately for each registered language handler and concatenated results in handler-iteration order, which destroyed cross-language ranking. Symbol search now issues a single popup-backed call.
