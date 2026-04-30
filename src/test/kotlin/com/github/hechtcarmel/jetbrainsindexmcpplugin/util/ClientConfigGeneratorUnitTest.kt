@@ -193,7 +193,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
 
         assertTrue(
             "Command should contain add command",
-            command.contains("claude mcp add --transport http test-server http://127.0.0.1:63342/index-mcp/streamable-http --scope user")
+            command.contains("claude mcp add --transport http --scope user test-server http://127.0.0.1:63342/index-mcp/streamable-http")
         )
     }
 
@@ -252,7 +252,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         )
         assertTrue(
             "Add command should use custom server name",
-            command.contains("claude mcp add --transport http custom-name")
+            command.contains("claude mcp add --transport http --scope user custom-name")
         )
     }
 
@@ -277,7 +277,7 @@ class ClientConfigGeneratorUnitTest : TestCase() {
 
         val expectedCommand = "claude mcp remove jetbrains-index-mcp 2>/dev/null ; " +
             "claude mcp remove intellij-index 2>/dev/null ; " +
-            "claude mcp add --transport http intellij-index http://127.0.0.1:63342/index-mcp/streamable-http --scope user"
+            "claude mcp add --transport http --scope user intellij-index http://127.0.0.1:63342/index-mcp/streamable-http"
 
         assertEquals(
             "Command format should match expected reinstall pattern with legacy cleanup",
@@ -393,6 +393,76 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         assertTrue(
             "Add command should include the server URL",
             command.contains(customUrl)
+        )
+    }
+
+    fun testBuildCodexCommandForWindowsUsesCmdCompatibleSyntax() {
+        val command = ClientConfigGenerator.buildCodexCommand(
+            serverUrl = "http://127.0.0.1:63342/index-mcp/streamable-http",
+            serverName = "test-server",
+            platform = ClientConfigGenerator.CommandPlatform.WINDOWS
+        )
+
+        assertEquals(
+            "Windows Codex command should use cmd.exe-compatible separators and null redirection",
+            "codex mcp remove test-server >NUL 2>&1 & " +
+                "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http",
+            command
+        )
+        assertFalse("Windows command should not use POSIX /dev/null", command.contains("/dev/null"))
+        assertFalse("Windows command should not use POSIX ; separators", command.contains(";"))
+    }
+
+    fun testBuildClaudeCodeCommandForWindowsUsesCmdCompatibleSyntax() {
+        val command = ClientConfigGenerator.buildClaudeCodeCommand(
+            serverUrl = "http://127.0.0.1:63342/index-mcp/streamable-http",
+            serverName = "intellij-index",
+            platform = ClientConfigGenerator.CommandPlatform.WINDOWS
+        )
+
+        assertEquals(
+            "Windows Claude command should use cmd.exe-compatible separators and null redirection",
+            "claude mcp remove jetbrains-index-mcp 2>NUL & " +
+                "claude mcp remove intellij-index 2>NUL & " +
+                "claude mcp add --transport http --scope user intellij-index http://127.0.0.1:63342/index-mcp/streamable-http",
+            command
+        )
+        assertFalse("Windows command should not use POSIX /dev/null", command.contains("/dev/null"))
+        assertFalse("Windows command should not use POSIX ; separators", command.contains(";"))
+    }
+
+    fun testBuildShellInvocationForWindowsUsesCmdExe() {
+        val invocation = ClientConfigGenerator.buildShellInvocation(
+            command = "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http",
+            platform = ClientConfigGenerator.CommandPlatform.WINDOWS
+        )
+
+        assertEquals(
+            "Windows installation should invoke the command through cmd.exe without AutoRun hooks",
+            listOf(
+                "cmd.exe",
+                "/d",
+                "/c",
+                "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http"
+            ),
+            invocation
+        )
+    }
+
+    fun testBuildShellInvocationForPosixUsesSh() {
+        val invocation = ClientConfigGenerator.buildShellInvocation(
+            command = "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http",
+            platform = ClientConfigGenerator.CommandPlatform.POSIX
+        )
+
+        assertEquals(
+            "POSIX installation should keep using sh",
+            listOf(
+                "sh",
+                "-c",
+                "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http"
+            ),
+            invocation
         )
     }
 

@@ -227,7 +227,9 @@ class CopyClientConfigAction : AnAction() {
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val commandLine = GeneralCommandLine("sh", "-c", command)
+                val shellInvocation = ClientConfigGenerator.buildShellInvocation(command)
+                val commandLine = GeneralCommandLine(shellInvocation.first())
+                    .withParameters(shellInvocation.drop(1))
                     .withRedirectErrorStream(true)
 
                 val handler = OSProcessHandler(commandLine)
