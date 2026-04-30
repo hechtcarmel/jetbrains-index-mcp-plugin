@@ -86,8 +86,14 @@ object ClientConfigGenerator {
         val serverUrl = getStreamableHttpUrlOrDefault()
 
         return when (clientType) {
-            ClientType.CLAUDE_CODE -> generateClaudeCodeConfig(serverUrl, serverName, platform)
-            ClientType.CODEX_CLI -> generateCodexConfig(serverUrl, serverName, platform)
+            ClientType.CLAUDE_CODE -> buildTerminalCommand(
+                generateClaudeCodeConfig(serverUrl, serverName, platform),
+                platform
+            )
+            ClientType.CODEX_CLI -> buildTerminalCommand(
+                generateCodexConfig(serverUrl, serverName, platform),
+                platform
+            )
             ClientType.GEMINI_CLI -> generateGeminiCliConfig(serverUrl, serverName)
             ClientType.CURSOR -> generateCursorConfig(serverUrl, serverName)
         }
@@ -126,6 +132,19 @@ object ClientConfigGenerator {
         return when (platform) {
             CommandPlatform.POSIX -> listOf("sh", "-c", command)
             CommandPlatform.WINDOWS -> listOf("cmd.exe", "/d", "/c", command)
+        }
+    }
+
+    /**
+     * Builds a command suitable for copying into a terminal.
+     */
+    internal fun buildTerminalCommand(
+        command: String,
+        platform: CommandPlatform = currentCommandPlatform()
+    ): String {
+        return when (platform) {
+            CommandPlatform.POSIX -> command
+            CommandPlatform.WINDOWS -> "cmd.exe /d /c \"${command.replace("\"", "\"\"")}\""
         }
     }
 

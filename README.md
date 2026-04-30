@@ -130,13 +130,13 @@ Use the "Install on Coding Agents" button in the tool window, or run this comman
 
 ```bash
 # IntelliJ IDEA
-claude mcp add --transport http intellij-index http://127.0.0.1:29170/index-mcp/streamable-http --scope user
+claude mcp add --transport http --scope user intellij-index http://127.0.0.1:29170/index-mcp/streamable-http
 
 # PyCharm
-claude mcp add --transport http pycharm-index http://127.0.0.1:29172/index-mcp/streamable-http --scope user
+claude mcp add --transport http --scope user pycharm-index http://127.0.0.1:29172/index-mcp/streamable-http
 
 # WebStorm
-claude mcp add --transport http webstorm-index http://127.0.0.1:29173/index-mcp/streamable-http --scope user
+claude mcp add --transport http --scope user webstorm-index http://127.0.0.1:29173/index-mcp/streamable-http
 ```
 
 Options:

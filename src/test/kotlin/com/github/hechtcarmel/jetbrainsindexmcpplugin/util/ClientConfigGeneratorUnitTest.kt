@@ -466,6 +466,33 @@ class ClientConfigGeneratorUnitTest : TestCase() {
         )
     }
 
+    fun testBuildTerminalCommandForWindowsWrapsCmdSyntaxForPowershellPaste() {
+        val terminalCommand = ClientConfigGenerator.buildTerminalCommand(
+            command = "codex mcp remove test-server >NUL 2>&1 & " +
+                "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http",
+            platform = ClientConfigGenerator.CommandPlatform.WINDOWS
+        )
+
+        assertEquals(
+            "Copied Windows install commands should be pasteable from PowerShell or cmd.exe",
+            "cmd.exe /d /c \"codex mcp remove test-server >NUL 2>&1 & " +
+                "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http\"",
+            terminalCommand
+        )
+    }
+
+    fun testBuildTerminalCommandForPosixReturnsCommandUnwrapped() {
+        val command = "codex mcp remove test-server >/dev/null 2>&1 ; " +
+            "codex mcp add test-server --url http://127.0.0.1:63342/index-mcp/streamable-http"
+
+        val terminalCommand = ClientConfigGenerator.buildTerminalCommand(
+            command = command,
+            platform = ClientConfigGenerator.CommandPlatform.POSIX
+        )
+
+        assertEquals("POSIX copied install commands should remain shell commands", command, terminalCommand)
+    }
+
 
 
     // Config Format Tests (structure validation without actual server)
