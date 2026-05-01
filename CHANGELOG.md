@@ -3,8 +3,6 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
-### Added
-- Added Rider C# and F# language handlers for hierarchy, implementation, call hierarchy, super-method, and file-structure tools using Rider's frontend navigation bridge to the ReSharper backend.
 
 ## [4.17.0] - 2026-05-01
 ### Added
