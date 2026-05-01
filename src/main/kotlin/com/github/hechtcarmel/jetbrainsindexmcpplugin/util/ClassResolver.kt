@@ -81,7 +81,9 @@ object ClassResolver {
             }
         }
 
-        // Fallback for partial classes or F# modules whose filename differs from the type name.
+        // Necessary fallback for partial classes and F# modules whose filename differs from the
+        // type name. The filename fast path above handles the common case, so this full .NET file
+        // scan is only used when indexed filename lookup cannot find a matching declaration.
         val allDotNetFiles = FilenameIndex.getAllFilesByExt(project, "cs", scope) +
             FilenameIndex.getAllFilesByExt(project, "fs", scope) +
             FilenameIndex.getAllFilesByExt(project, "fsi", scope) +

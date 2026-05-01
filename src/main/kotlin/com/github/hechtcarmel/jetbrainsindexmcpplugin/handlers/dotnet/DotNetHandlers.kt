@@ -1,22 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallHierarchyData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallHierarchyHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.ImplementationData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.ImplementationsHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.MethodData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.StructureHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SuperMethodData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SuperMethodsData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SuperMethodsHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeHierarchyData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeHierarchyHandler
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNavigationSearchScope
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeProductInfo
@@ -83,7 +67,7 @@ abstract class BaseDotNetHandler<T>(
         // Cap headers to a single readable declaration line and avoid embedding large method bodies.
         private const val MAX_DECLARATION_HEADER_LENGTH = 240
         private val TYPE_KEYWORDS = setOf("class", "interface", "struct", "enum", "record", "delegate", "type")
-        private val CALLABLE_KEYWORDS = setOf("void", "async", "member", "let", "new", "override")
+        private val CALLABLE_KEYWORDS = setOf("void", "async", "member", "let", "override")
         private val MODIFIERS = setOf("public", "private", "protected", "internal", "static", "abstract", "sealed", "virtual", "override", "async", "partial", "readonly")
 
         fun isRiderAvailable(): Boolean =
@@ -106,6 +90,9 @@ abstract class BaseDotNetHandler<T>(
      *
      * Resolution order is direct named element, semantic reference target/navigation element, then
      * nearest named parent. This covers both declarations and references in Rider's frontend PSI.
+     *
+     * @param element The frontend PSI element at or near the requested position.
+     * @return The best named declaration/reference target, or null when no .NET named target exists.
      */
     protected fun resolveNamedTarget(element: PsiElement): PsiNamedElement? {
         (element as? PsiNamedElement)?.takeIf { isDotNetElement(it) }?.let { return it }
@@ -130,6 +117,9 @@ abstract class BaseDotNetHandler<T>(
      * The method first resolves references to their target, then walks parents until it finds a
      * class/interface/struct/enum/record/delegate/type declaration according to Rider metadata or
      * declaration text heuristics.
+     *
+     * @param element The frontend PSI element at or near the requested position.
+     * @return The nearest type-like named element, or null when the position is outside a type.
      */
     protected fun resolveTypeElement(element: PsiElement): PsiNamedElement? {
         val named = resolveNamedTarget(element) ?: return null
@@ -150,6 +140,9 @@ abstract class BaseDotNetHandler<T>(
      *
      * The method handles references and declarations, then walks parents to locate methods,
      * constructors, F# members/functions, or similar callable elements.
+     *
+     * @param element The frontend PSI element at or near the requested position.
+     * @return The nearest callable named element, or null when no callable can be resolved.
      */
     protected fun resolveCallableElement(element: PsiElement): PsiNamedElement? {
         val named = resolveNamedTarget(element) ?: return null
@@ -324,6 +317,9 @@ abstract class BaseDotNetHandler<T>(
      *
      * The classification is heuristic by design: it detects type declarations, callable elements,
      * and file-structure node kinds without depending on Rider/ReSharper implementation classes.
+     *
+     * @param element The Rider frontend named element to classify.
+     * @return A compact description of type/callable status and file-structure kind.
      */
     protected fun classifyNamedElement(element: PsiNamedElement): DotNetElementKind {
         val header = declarationHeader(element).lowercase()
