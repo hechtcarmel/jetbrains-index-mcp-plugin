@@ -69,7 +69,7 @@ object DotNetHandlers {
 
 abstract class BaseDotNetHandler<T>(
     final override val languageId: String,
-    private val displayLanguage: String,
+    protected val displayLanguage: String,
     private val supportedExtensions: Set<String>,
     private val supportedLanguageIds: Set<String>,
 ) : LanguageHandler<T> {
@@ -78,6 +78,10 @@ abstract class BaseDotNetHandler<T>(
     companion object {
         private const val MAX_PARENT_DEPTH = 40
         private const val MAX_RESULTS = 100
+        // Ignore tiny leaf-token text like identifiers/operators when deriving declaration headers.
+        private const val MIN_USEFUL_HEADER_LENGTH = 8
+        // Cap headers to a single readable declaration line and avoid embedding large method bodies.
+        private const val MAX_DECLARATION_HEADER_LENGTH = 240
         private val TYPE_KEYWORDS = setOf("class", "interface", "struct", "enum", "record", "delegate", "type")
         private val CALLABLE_KEYWORDS = setOf("void", "async", "member", "let", "new", "override")
         private val MODIFIERS = setOf("public", "private", "protected", "internal", "static", "abstract", "sealed", "virtual", "override", "async", "partial", "readonly")
@@ -362,9 +366,9 @@ abstract class BaseDotNetHandler<T>(
 
     private fun declarationHeader(element: PsiElement): String {
         val text = element.text.lineSequence().firstOrNull()?.trim().orEmpty()
-        if (text.length > 8 && text.length <= 240) return text
+        if (text.length > MIN_USEFUL_HEADER_LENGTH && text.length <= MAX_DECLARATION_HEADER_LENGTH) return text
         val parentText = element.parent?.text?.lineSequence()?.firstOrNull()?.trim().orEmpty()
-        return parentText.take(240)
+        return parentText.take(MAX_DECLARATION_HEADER_LENGTH)
     }
 
     private fun getStringNoArg(target: Any, methodName: String): String? =
@@ -401,7 +405,7 @@ abstract class DotNetTypeHierarchyHandler(
         return TypeHierarchyData(
             element = toTypeElementData(project, typeElement, includeSupertypes = true),
             supertypes = parseDeclaredSupertypes(typeElement).map { name ->
-                TypeElementData(name = name, qualifiedName = name, file = null, line = null, kind = "TYPE", language = languageId)
+                TypeElementData(name = name, qualifiedName = name, file = null, line = null, kind = "TYPE", language = displayLanguage)
             },
             subtypes = subtypes
         )
