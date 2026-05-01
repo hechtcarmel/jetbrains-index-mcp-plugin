@@ -61,7 +61,11 @@ object ClassResolver {
      * Finds C# and F# type-like named elements in Rider.
      *
      * Rider's semantic C#/F# PSI lives in the ReSharper backend, so this uses frontend files and
-     * navigation metadata only. It is intentionally conservative and dependency-free.
+     * navigation metadata only. It first checks common type-name-based filenames, then scans all
+     * project C#/F# files as a fallback for partial classes and F# modules whose filename differs
+     * from the type name.
+     *
+     * @return The first matching frontend named element, or null if no matching type-like element is found.
      */
     fun findClassByNameWithRider(project: Project, qualifiedName: String): PsiElement? {
         val simpleName = qualifiedName.substringAfterLast('.').substringAfterLast('+')

@@ -34,12 +34,12 @@ import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.util.Processor
 
 /**
- * Rider/.NET language handlers.
+ * Registration entry point for Rider C# and F# language handlers.
  *
- * Rider's C# and F# semantic model is served by the ReSharper backend rather than normal
- * frontend PSI classes. These handlers intentionally avoid compile-time dependencies on Rider or
- * ReSharper classes and instead use IntelliJ/Rider navigation bridges (references, definitions,
- * navigation items, and language metadata) that are exposed on the frontend when Rider is running.
+ * Rider's C# and F# semantic model is served by the ReSharper backend rather than normal frontend
+ * PSI classes. These handlers intentionally avoid compile-time dependencies on Rider/ReSharper
+ * classes and use Rider's frontend navigation bridge (references, definitions, navigation items,
+ * and language metadata) when Rider is running.
  */
 object DotNetHandlers {
     private val LOG = logger<DotNetHandlers>()
@@ -97,6 +97,12 @@ abstract class BaseDotNetHandler<T>(
         return ext in supportedExtensions
     }
 
+    /**
+     * Resolves a source position to the best available named .NET target.
+     *
+     * Resolution order is direct named element, semantic reference target/navigation element, then
+     * nearest named parent. This covers both declarations and references in Rider's frontend PSI.
+     */
     protected fun resolveNamedTarget(element: PsiElement): PsiNamedElement? {
         (element as? PsiNamedElement)?.takeIf { isDotNetElement(it) }?.let { return it }
         element.reference?.resolve()?.let { resolved ->
@@ -114,6 +120,13 @@ abstract class BaseDotNetHandler<T>(
         return null
     }
 
+    /**
+     * Resolves the nearest type-level declaration for a source position.
+     *
+     * The method first resolves references to their target, then walks parents until it finds a
+     * class/interface/struct/enum/record/delegate/type declaration according to Rider metadata or
+     * declaration text heuristics.
+     */
     protected fun resolveTypeElement(element: PsiElement): PsiNamedElement? {
         val named = resolveNamedTarget(element) ?: return null
         if (classifyNamedElement(named).isType) return named
@@ -128,6 +141,12 @@ abstract class BaseDotNetHandler<T>(
         return named.takeIf { looksLikeTypeName(it.name) }
     }
 
+    /**
+     * Resolves the nearest callable declaration for a source position.
+     *
+     * The method handles references and declarations, then walks parents to locate methods,
+     * constructors, F# members/functions, or similar callable elements.
+     */
     protected fun resolveCallableElement(element: PsiElement): PsiNamedElement? {
         val named = resolveNamedTarget(element) ?: return null
         if (classifyNamedElement(named).isCallable) return named
@@ -272,6 +291,13 @@ abstract class BaseDotNetHandler<T>(
         getStringNoArg(element, "getSignature")
             ?: element.text.lineSequence().firstOrNull()?.trim()?.take(160)
 
+    /**
+     * Parses declared supertypes from source declaration text.
+     *
+     * Supports C# base/interface lists after `:` and F# inherited types declared with `inherit`.
+     * Returned names may be unresolved because Rider exposes full semantic hierarchy data through
+     * backend services that are not directly linked from this frontend-only plugin.
+     */
     protected fun parseDeclaredSupertypes(element: PsiElement): List<String> {
         val header = declarationHeader(element)
         val csharp = header.substringAfter(":", missingDelimiterValue = "")
@@ -289,6 +315,12 @@ abstract class BaseDotNetHandler<T>(
         return (csharp + fsharp).filter { it.isNotBlank() }.distinct()
     }
 
+    /**
+     * Classifies a Rider frontend named element using available metadata and declaration text.
+     *
+     * The classification is heuristic by design: it detects type declarations, callable elements,
+     * and file-structure node kinds without depending on Rider/ReSharper implementation classes.
+     */
     protected fun classifyNamedElement(element: PsiNamedElement): DotNetElementKind {
         val header = declarationHeader(element).lowercase()
         val rawKind = getStringNoArg(element, "getKind")?.lowercase().orEmpty()
