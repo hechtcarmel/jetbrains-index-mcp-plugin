@@ -132,7 +132,7 @@ abstract class BaseDotNetHandler<T>(
             current = current.parent
             depth++
         }
-        return named.takeIf { looksLikeTypeName(it.name) }
+        return null
     }
 
     /**
@@ -300,7 +300,7 @@ abstract class BaseDotNetHandler<T>(
         val csharp = header.substringAfter(":", missingDelimiterValue = "")
             .substringBefore("{")
             .takeIf { it.isNotBlank() }
-            ?.split(",")
+            ?.let { splitTopLevelCommaSeparated(it) }
             ?.map { it.trim().substringBefore("(").substringBefore(" where ") }
             ?: emptyList()
 
@@ -332,7 +332,7 @@ abstract class BaseDotNetHandler<T>(
             "enum" in header || "enum" in rawKind -> "ENUM"
             "record" in header || "record" in rawKind -> "RECORD"
             "delegate" in header || "delegate" in rawKind -> "DELEGATE"
-            Regex("""\btype\s+${Regex.escape(name)}\b""").containsMatchIn(header) -> "TYPE"
+            name.isNotBlank() && Regex("""\btype\s+${Regex.escape(name)}\b""").containsMatchIn(header) -> "TYPE"
             "class" in header || "class" in rawKind -> "CLASS"
             else -> "TYPE"
         }
@@ -375,8 +375,28 @@ abstract class BaseDotNetHandler<T>(
             null
         }
 
-    private fun looksLikeTypeName(name: String?): Boolean =
-        !name.isNullOrBlank() && name.first().isUpperCase()
+    private fun splitTopLevelCommaSeparated(value: String): List<String> {
+        val result = mutableListOf<String>()
+        val current = StringBuilder()
+        var angleDepth = 0
+        var parenDepth = 0
+        for (char in value) {
+            if (char == ',' && angleDepth == 0 && parenDepth == 0) {
+                result.add(current.toString())
+                current.clear()
+                continue
+            }
+            when (char) {
+                '<' -> angleDepth++
+                '>' -> if (angleDepth > 0) angleDepth--
+                '(' -> parenDepth++
+                ')' -> if (parenDepth > 0) parenDepth--
+            }
+            current.append(char)
+        }
+        result.add(current.toString())
+        return result
+    }
 
     protected data class DotNetElementKind(
         val isType: Boolean,

@@ -104,7 +104,7 @@ object ClassResolver {
                 val named = element as? PsiNamedElement
                 if (named?.name == simpleName) {
                     val qName = getStringNoArg(named, "getQualifiedName")
-                    if (qName == null || qName == qualifiedName || qName.endsWith(".$simpleName") || simpleName == qualifiedName) {
+                    if (qName == qualifiedName || qName?.endsWith("+$simpleName") == true) {
                         best = named
                         return
                     }
