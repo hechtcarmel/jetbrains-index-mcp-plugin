@@ -304,7 +304,7 @@ abstract class BaseDotNetHandler<T>(
             ?.map { it.trim().substringBefore("(").substringBefore(" where ") }
             ?: emptyList()
 
-        val fsharp = Regex("""\binherit\s+([A-Za-z_][\w.`<>]*)""")
+        val fsharp = Regex("""\binherit\s+([A-Za-z_][\w.<>]*)""")
             .findAll(header)
             .map { it.groupValues[1] }
             .toList()
@@ -332,7 +332,7 @@ abstract class BaseDotNetHandler<T>(
             "enum" in header || "enum" in rawKind -> "ENUM"
             "record" in header || "record" in rawKind -> "RECORD"
             "delegate" in header || "delegate" in rawKind -> "DELEGATE"
-            name.isNotBlank() && Regex("""\btype\s+${Regex.escape(name)}\b""").containsMatchIn(header) -> "TYPE"
+            name.isNotBlank() && containsWordSequence(header, "type", name.lowercase()) -> "TYPE"
             "class" in header || "class" in rawKind -> "CLASS"
             else -> "TYPE"
         }
@@ -374,6 +374,14 @@ abstract class BaseDotNetHandler<T>(
         } catch (_: ReflectiveOperationException) {
             null
         }
+
+    private fun containsWordSequence(text: String, firstWord: String, secondWord: String): Boolean {
+        val index = text.indexOf("$firstWord $secondWord")
+        if (index < 0) return false
+        val before = text.getOrNull(index - 1)
+        val after = text.getOrNull(index + firstWord.length + 1 + secondWord.length)
+        return before?.isLetterOrDigit() != true && after?.isLetterOrDigit() != true
+    }
 
     private fun splitTopLevelCommaSeparated(value: String): List<String> {
         val result = mutableListOf<String>()
