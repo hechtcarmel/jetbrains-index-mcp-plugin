@@ -79,7 +79,7 @@ abstract class BaseDotNetHandler<T>(
         private const val MAX_PARENT_DEPTH = 40
         private const val MAX_RESULTS = 100
         private val TYPE_KEYWORDS = setOf("class", "interface", "struct", "enum", "record", "delegate", "type")
-        private val CALLABLE_KEYWORDS = setOf("void", "async", "member", "let", "new", "static", "public", "private", "protected", "internal", "override")
+        private val CALLABLE_KEYWORDS = setOf("void", "async", "member", "let", "new", "override")
         private val MODIFIERS = setOf("public", "private", "protected", "internal", "static", "abstract", "sealed", "virtual", "override", "async", "partial", "readonly")
 
         fun isRiderAvailable(): Boolean =
@@ -300,14 +300,13 @@ abstract class BaseDotNetHandler<T>(
             "enum" in header || "enum" in rawKind -> "ENUM"
             "record" in header || "record" in rawKind -> "RECORD"
             "delegate" in header || "delegate" in rawKind -> "DELEGATE"
-            Regex("""\btype\s+$name\b""").containsMatchIn(header) -> "TYPE"
-            "class" in header || "class" in rawKind || looksLikeTypeName(name) -> "CLASS"
+            Regex("""\btype\s+${Regex.escape(name)}\b""").containsMatchIn(header) -> "TYPE"
+            "class" in header || "class" in rawKind -> "CLASS"
             else -> "TYPE"
         }
 
         val isType = TYPE_KEYWORDS.any { Regex("""\b$it\b""").containsMatchIn(header) } ||
-            listOf("class", "interface", "struct", "enum", "record", "delegate").any { it in rawKind } ||
-            looksLikeTypeName(name)
+            listOf("class", "interface", "struct", "enum", "record", "delegate").any { it in rawKind }
 
         val isCallable = !isType && ("(" in header || CALLABLE_KEYWORDS.any { Regex("""\b$it\b""").containsMatchIn(header) })
         val structureKind = when {
