@@ -25,7 +25,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for retrieving type hierarchies across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,9 +36,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
 
         Rust note: className parameter not supported for Rust; use file + line + column instead.
+        Rider note: C#/F# hierarchy uses Rider's frontend navigation bridge to the ReSharper backend; subtype/supertype detail depends on the current Rider build.
 
         Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
@@ -49,7 +50,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .stringProperty("className", "Fully qualified class name (e.g., 'com.example.MyClass' for Java or 'App\\\\Models\\\\User' for PHP). RECOMMENDED - use this if you know the class name.")
+        .stringProperty("className", "Fully qualified class name (e.g., 'com.example.MyClass' for Java, 'App\\\\Models\\\\User' for PHP, or 'My.Namespace.CustomerService' for C#). RECOMMENDED - use this if you know the class name.")
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")

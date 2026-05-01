@@ -25,7 +25,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for analyzing method call relationships across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,9 +36,10 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val description = """
         Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
 
         Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
+        Rider note: C#/F# results use Rider's frontend navigation bridge to the ReSharper backend.
 
         Returns: recursive tree with method signatures, file locations (line/column), and nested call relationships.
 

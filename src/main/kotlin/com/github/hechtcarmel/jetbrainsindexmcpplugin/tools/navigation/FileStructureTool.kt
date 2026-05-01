@@ -16,7 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Provides a tree-formatted view of file structure similar to IDE's Structure view,
  * showing classes, methods, fields, Markdown headings, and their nesting relationships.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, Markdown
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, C#, F#, Markdown
  */
 class FileStructureTool : AbstractMcpTool() {
 
@@ -27,7 +27,7 @@ class FileStructureTool : AbstractMcpTool() {
 
         Shows classes, methods, fields, functions, Markdown headings, and their nesting relationships in a tree format.
 
-        Supports: Java, Kotlin, Python, JavaScript, TypeScript, Markdown
+        Supports: Java, Kotlin, Python, JavaScript, TypeScript, C#, F#, Markdown
 
         Returns: Formatted tree string with element types, modifiers, signatures, and line numbers.
 

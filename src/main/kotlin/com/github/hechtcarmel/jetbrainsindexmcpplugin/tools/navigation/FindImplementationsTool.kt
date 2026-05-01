@@ -27,7 +27,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for finding implementations of interfaces, abstract classes, or methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -43,7 +43,9 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val description = """
         Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
+
+        Rider note: C#/F# results use Rider's frontend navigation bridge to the ReSharper backend.
 
         Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
 

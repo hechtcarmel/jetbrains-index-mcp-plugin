@@ -5,6 +5,10 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiRecursiveElementWalkingVisitor
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
 
 /**
  * Resolves classes by fully qualified name across multiple languages.
@@ -12,6 +16,7 @@ import com.intellij.psi.PsiManager
  * Supports:
  * - **PHP**: Uses `PhpIndex.getClassesByFQN()`, `getInterfacesByFQN()`, and `getTraitsByFQN()` via reflection
  * - **Java/Kotlin**: Uses `JavaPsiFacade.findClass()` with fallback to filename-based search
+ * - **C#/F# in Rider**: Uses Rider's frontend file/symbol navigation bridge without compile-time Rider dependencies
  *
  * All language-specific classes are accessed via reflection to avoid compile-time dependencies
  * on optional language plugins.
@@ -34,6 +39,12 @@ object ClassResolver {
             if (phpResult != null) return phpResult
         }
 
+        // Try Rider/.NET by filename and frontend navigation metadata.
+        if (PluginDetectors.rider.isAvailable || IdeProductInfo.detectIdeProduct() == IdeProductInfo.IdeProduct.RIDER) {
+            val dotNetResult = findClassByNameWithRider(project, qualifiedName)
+            if (dotNetResult != null) return dotNetResult
+        }
+
         // Try Java/Kotlin (if Java plugin is available)
         if (PluginDetectors.java.isAvailable) {
             return try {
@@ -45,6 +56,66 @@ object ClassResolver {
 
         return null
     }
+
+    /**
+     * Finds C# and F# type-like named elements in Rider.
+     *
+     * Rider's semantic C#/F# PSI lives in the ReSharper backend, so this uses frontend files and
+     * navigation metadata only. It is intentionally conservative and dependency-free.
+     */
+    fun findClassByNameWithRider(project: Project, qualifiedName: String): PsiElement? {
+        val simpleName = qualifiedName.substringAfterLast('.').substringAfterLast('+')
+        val scope = GlobalSearchScope.projectScope(project)
+        val psiManager = PsiManager.getInstance(project)
+        val candidateFileNames = listOf("$simpleName.cs", "$simpleName.fs", "$simpleName.fsi", "$simpleName.fsx")
+
+        for (fileName in candidateFileNames) {
+            val files = FilenameIndex.getVirtualFilesByName(fileName, scope)
+            for (virtualFile in files) {
+                val psiFile = psiManager.findFile(virtualFile) ?: continue
+                findNamedElementInFile(psiFile, simpleName, qualifiedName)?.let { return it }
+            }
+        }
+
+        // Fallback for partial classes or F# modules whose filename differs from the type name.
+        val allDotNetFiles = FilenameIndex.getAllFilesByExt(project, "cs", scope) +
+            FilenameIndex.getAllFilesByExt(project, "fs", scope) +
+            FilenameIndex.getAllFilesByExt(project, "fsi", scope) +
+            FilenameIndex.getAllFilesByExt(project, "fsx", scope)
+        for (virtualFile in allDotNetFiles) {
+            val psiFile = psiManager.findFile(virtualFile) ?: continue
+            findNamedElementInFile(psiFile, simpleName, qualifiedName)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun findNamedElementInFile(file: PsiFile, simpleName: String, qualifiedName: String): PsiNamedElement? {
+        var best: PsiNamedElement? = null
+        file.accept(object : PsiRecursiveElementWalkingVisitor() {
+            override fun visitElement(element: PsiElement) {
+                if (best != null) return
+                val named = element as? PsiNamedElement
+                if (named?.name == simpleName) {
+                    val qName = getStringNoArg(named, "getQualifiedName")
+                    if (qName == null || qName == qualifiedName || qName.endsWith(".$simpleName") || simpleName == qualifiedName) {
+                        best = named
+                        return
+                    }
+                }
+                super.visitElement(element)
+            }
+        })
+        return best
+    }
+
+    private fun getStringNoArg(target: Any, methodName: String): String? =
+        try {
+            target.javaClass.methods.firstOrNull { it.name == methodName && it.parameterCount == 0 }
+                ?.invoke(target) as? String
+        } catch (_: ReflectiveOperationException) {
+            null
+        }
 
     /**
      * Finds a PHP class, interface, or trait by its fully qualified name using PhpIndex.
