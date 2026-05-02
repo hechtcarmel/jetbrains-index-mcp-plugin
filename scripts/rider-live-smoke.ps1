@@ -8,7 +8,8 @@ param(
     [string] $ProjectPath = "$env:USERPROFILE\programming\Clipthrough",
     [string] $Endpoint = "http://127.0.0.1:29182/index-mcp/streamable-http",
     [int] $InitialDelaySeconds = 30,
-    [int] $StartupWaitSeconds = 60
+    [int] $StartupWaitSeconds = 60,
+    [switch] $FullMatrix
 )
 
 $ErrorActionPreference = "Stop"
@@ -116,6 +117,25 @@ function Assert-ToolOk {
     Write-Host "PASS $Name"
 }
 
+function Assert-ToolError {
+    param(
+        [string] $Name,
+        [object] $Response,
+        [scriptblock] $Predicate
+    )
+
+    if (-not $Response.result.isError) {
+        throw "$Name unexpectedly succeeded: $(Get-ToolText $Response)"
+    }
+
+    $text = Get-ToolText $Response
+    if (-not (& $Predicate $text)) {
+        throw "$Name returned unexpected error: $text"
+    }
+
+    Write-Host "PASS $Name"
+}
+
 if (-not (Test-Path $PluginZip)) { throw "Plugin ZIP not found: $PluginZip" }
 if (-not (Test-Path $RiderExe)) { throw "Rider executable not found: $RiderExe" }
 if (-not (Test-Path $SolutionPath)) { throw "Solution not found: $SolutionPath" }
@@ -188,6 +208,143 @@ $callHierarchy = Invoke-Tool -Id 7 -Name "ide_call_hierarchy" -Arguments @{
 }
 Assert-ToolOk -Name "ide_call_hierarchy callers C#" -Response $callHierarchy -Predicate {
     param($json) $json.calls.Count -gt 0
+}
+
+if ($FullMatrix) {
+    $findClassExact = Invoke-Tool -Id 8 -Name "ide_find_class" -Arguments @{
+        project_path = $ProjectPath
+        query = "MainWindow"
+        language = "C#"
+        matchMode = "exact"
+        scope = "project_production_files"
+        pageSize = 5
+    }
+    Assert-ToolOk -Name "ide_find_class exact C#" -Response $findClassExact -Predicate {
+        param($json) ($json.classes | Where-Object { $_.name -eq "MainWindow" }).Count -eq 1
+    }
+
+    $findClassPrefix = Invoke-Tool -Id 9 -Name "ide_find_class" -Arguments @{
+        project_path = $ProjectPath
+        query = "MainWindow"
+        language = "C#"
+        matchMode = "prefix"
+        scope = "project_production_files"
+        pageSize = 5
+    }
+    Assert-ToolOk -Name "ide_find_class prefix C#" -Response $findClassPrefix -Predicate {
+        param($json) ($json.classes | Where-Object { $_.name -eq "MainWindowViewModel" }).Count -gt 0
+    }
+
+    $findClassCamelCase = Invoke-Tool -Id 10 -Name "ide_find_class" -Arguments @{
+        project_path = $ProjectPath
+        query = "MWVM"
+        language = "C#"
+        matchMode = "substring"
+        scope = "project_production_files"
+        pageSize = 5
+    }
+    Assert-ToolOk -Name "ide_find_class camelCase C#" -Response $findClassCamelCase -Predicate {
+        param($json) ($json.classes | Where-Object { $_.name -eq "MainWindowViewModel" }).Count -gt 0
+    }
+
+    $findClassWildcard = Invoke-Tool -Id 11 -Name "ide_find_class" -Arguments @{
+        project_path = $ProjectPath
+        query = "*Window"
+        language = "C#"
+        matchMode = "substring"
+        scope = "project_production_files"
+        pageSize = 5
+    }
+    Assert-ToolOk -Name "ide_find_class wildcard C#" -Response $findClassWildcard -Predicate {
+        param($json) ($json.classes | Where-Object { $_.name -eq "MainWindow" }).Count -gt 0
+    }
+
+    $findClassTests = Invoke-Tool -Id 12 -Name "ide_find_class" -Arguments @{
+        project_path = $ProjectPath
+        query = "MainWindow"
+        language = "C#"
+        matchMode = "substring"
+        scope = "project_test_files"
+        pageSize = 5
+    }
+    Assert-ToolOk -Name "ide_find_class test scope C#" -Response $findClassTests -Predicate {
+        param($json)
+        ($json.classes | Where-Object { $_.name -eq "MainWindowHeadlessTests" }).Count -gt 0 -and
+            ($json.classes | Where-Object { $_.name -eq "MainWindow" }).Count -eq 0
+    }
+
+    $definitionPosition = Invoke-Tool -Id 13 -Name "ide_find_definition" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Views/MainWindow.axaml.cs"
+        line = 19
+        column = 22
+    }
+    Assert-ToolOk -Name "ide_find_definition position C#" -Response $definitionPosition -Predicate {
+        param($json) $json.file -like "*MainWindow.axaml.cs" -and $json.symbolName -eq "MainWindow"
+    }
+
+    $methodReferences = Invoke-Tool -Id 14 -Name "ide_find_references" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Views/MainWindow.axaml.cs"
+        line = 89
+        column = 18
+        pageSize = 5
+    }
+    Assert-ToolOk -Name "ide_find_references method position C#" -Response $methodReferences -Predicate {
+        param($json) $json.totalCount -gt 0
+    }
+
+    $typeHierarchyClass = Invoke-Tool -Id 15 -Name "ide_type_hierarchy" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Views/MainWindow.axaml.cs"
+        line = 19
+        column = 22
+    }
+    Assert-ToolOk -Name "ide_type_hierarchy class C#" -Response $typeHierarchyClass -Predicate {
+        param($json) ($json.supertypes | Where-Object { $_.name -eq "Window" }).Count -gt 0
+    }
+
+    $typeHierarchyInterface = Invoke-Tool -Id 16 -Name "ide_type_hierarchy" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Services/Storage/IClipStoreService.cs"
+        line = 8
+        column = 18
+    }
+    Assert-ToolOk -Name "ide_type_hierarchy interface C#" -Response $typeHierarchyInterface -Predicate {
+        param($json) ($json.subtypes | Where-Object { $_.name -eq "ClipStoreService" }).Count -gt 0
+    }
+
+    $superMethods = Invoke-Tool -Id 17 -Name "ide_find_super_methods" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/App.axaml.cs"
+        line = 51
+        column = 26
+    }
+    Assert-ToolOk -Name "ide_find_super_methods override C#" -Response $superMethods -Predicate {
+        param($json)
+        ($json.hierarchy | Where-Object {
+            $_.name -eq "Initialize" -and $_.containingClass -eq "Avalonia.Application"
+        }).Count -gt 0
+    }
+
+    $rename = Invoke-Tool -Id 18 -Name "ide_refactor_rename" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Views/MainWindow.axaml.cs"
+        line = 19
+        column = 22
+        newName = "MainWindowSmokeShouldNotApply"
+    }
+    Assert-ToolError -Name "ide_refactor_rename C# safe error" -Response $rename -Predicate {
+        param($text) $text -like "*No files were modified*"
+    }
+
+    $fsharpFiles = Get-ChildItem -Path $ProjectPath -Recurse -Include *.fs,*.fsi,*.fsx -File -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($fsharpFiles) {
+        Write-Host "INFO F# fixture found at $($fsharpFiles.FullName); add a concrete F# semantic assertion for this solution."
+    } else {
+        Write-Host "SKIP F# semantic matrix: no F# fixture files found under $ProjectPath"
+    }
 }
 
 Write-Host "All Rider live smoke checks passed."
