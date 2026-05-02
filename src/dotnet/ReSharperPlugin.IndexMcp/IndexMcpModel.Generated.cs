@@ -44,6 +44,10 @@ namespace JetBrains.Rider.Model.IndexMcp
     //fields
     //public fields
     [NotNull] public IRdEndpoint<Unit, RdBackendStatusResult> GetBackendStatus => _GetBackendStatus;
+    [NotNull] public IRdEndpoint<RdFindTypesRequest, RdFindTypesResult> FindTypes => _FindTypes;
+    [NotNull] public IRdEndpoint<RdFindDefinitionRequest, RdDefinitionResult> FindDefinition => _FindDefinition;
+    [NotNull] public IRdEndpoint<RdFindReferencesRequest, RdFindReferencesResult> FindReferences => _FindReferences;
+    [NotNull] public IRdEndpoint<RdResolveSymbolRequest, RdSymbolInfo> ResolveSymbol => _ResolveSymbol;
     [NotNull] public IRdEndpoint<RdTypeHierarchyRequest, RdTypeHierarchyResult> GetTypeHierarchy => _GetTypeHierarchy;
     [NotNull] public IRdEndpoint<RdImplementationsRequest, RdImplementationsResult> FindImplementations => _FindImplementations;
     [NotNull] public IRdEndpoint<RdCallHierarchyRequest, RdCallHierarchyResult> GetCallHierarchy => _GetCallHierarchy;
@@ -53,6 +57,10 @@ namespace JetBrains.Rider.Model.IndexMcp
     
     //private fields
     [NotNull] private readonly RdCall<Unit, RdBackendStatusResult> _GetBackendStatus;
+    [NotNull] private readonly RdCall<RdFindTypesRequest, RdFindTypesResult> _FindTypes;
+    [NotNull] private readonly RdCall<RdFindDefinitionRequest, RdDefinitionResult> _FindDefinition;
+    [NotNull] private readonly RdCall<RdFindReferencesRequest, RdFindReferencesResult> _FindReferences;
+    [NotNull] private readonly RdCall<RdResolveSymbolRequest, RdSymbolInfo> _ResolveSymbol;
     [NotNull] private readonly RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult> _GetTypeHierarchy;
     [NotNull] private readonly RdCall<RdImplementationsRequest, RdImplementationsResult> _FindImplementations;
     [NotNull] private readonly RdCall<RdCallHierarchyRequest, RdCallHierarchyResult> _GetCallHierarchy;
@@ -63,6 +71,10 @@ namespace JetBrains.Rider.Model.IndexMcp
     //primary constructor
     private IndexMcpModel(
       [NotNull] RdCall<Unit, RdBackendStatusResult> getBackendStatus,
+      [NotNull] RdCall<RdFindTypesRequest, RdFindTypesResult> findTypes,
+      [NotNull] RdCall<RdFindDefinitionRequest, RdDefinitionResult> findDefinition,
+      [NotNull] RdCall<RdFindReferencesRequest, RdFindReferencesResult> findReferences,
+      [NotNull] RdCall<RdResolveSymbolRequest, RdSymbolInfo> resolveSymbol,
       [NotNull] RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult> getTypeHierarchy,
       [NotNull] RdCall<RdImplementationsRequest, RdImplementationsResult> findImplementations,
       [NotNull] RdCall<RdCallHierarchyRequest, RdCallHierarchyResult> getCallHierarchy,
@@ -72,6 +84,10 @@ namespace JetBrains.Rider.Model.IndexMcp
     )
     {
       if (getBackendStatus == null) throw new ArgumentNullException("getBackendStatus");
+      if (findTypes == null) throw new ArgumentNullException("findTypes");
+      if (findDefinition == null) throw new ArgumentNullException("findDefinition");
+      if (findReferences == null) throw new ArgumentNullException("findReferences");
+      if (resolveSymbol == null) throw new ArgumentNullException("resolveSymbol");
       if (getTypeHierarchy == null) throw new ArgumentNullException("getTypeHierarchy");
       if (findImplementations == null) throw new ArgumentNullException("findImplementations");
       if (getCallHierarchy == null) throw new ArgumentNullException("getCallHierarchy");
@@ -80,12 +96,18 @@ namespace JetBrains.Rider.Model.IndexMcp
       if (renameSymbol == null) throw new ArgumentNullException("renameSymbol");
       
       _GetBackendStatus = getBackendStatus;
+      _FindTypes = findTypes;
+      _FindDefinition = findDefinition;
+      _FindReferences = findReferences;
+      _ResolveSymbol = resolveSymbol;
       _GetTypeHierarchy = getTypeHierarchy;
       _FindImplementations = findImplementations;
       _GetCallHierarchy = getCallHierarchy;
       _FindSuperMethods = findSuperMethods;
       _GetFileStructure = getFileStructure;
       _RenameSymbol = renameSymbol;
+      _FindDefinition.ValueCanBeNull = true;
+      _ResolveSymbol.ValueCanBeNull = true;
       _GetTypeHierarchy.ValueCanBeNull = true;
       _FindImplementations.ValueCanBeNull = true;
       _GetCallHierarchy.ValueCanBeNull = true;
@@ -93,6 +115,10 @@ namespace JetBrains.Rider.Model.IndexMcp
       _GetFileStructure.ValueCanBeNull = true;
       _RenameSymbol.ValueCanBeNull = true;
       BindableChildren.Add(new KeyValuePair<string, object>("getBackendStatus", _GetBackendStatus));
+      BindableChildren.Add(new KeyValuePair<string, object>("findTypes", _FindTypes));
+      BindableChildren.Add(new KeyValuePair<string, object>("findDefinition", _FindDefinition));
+      BindableChildren.Add(new KeyValuePair<string, object>("findReferences", _FindReferences));
+      BindableChildren.Add(new KeyValuePair<string, object>("resolveSymbol", _ResolveSymbol));
       BindableChildren.Add(new KeyValuePair<string, object>("getTypeHierarchy", _GetTypeHierarchy));
       BindableChildren.Add(new KeyValuePair<string, object>("findImplementations", _FindImplementations));
       BindableChildren.Add(new KeyValuePair<string, object>("getCallHierarchy", _GetCallHierarchy));
@@ -104,6 +130,10 @@ namespace JetBrains.Rider.Model.IndexMcp
     private IndexMcpModel (
     ) : this (
       new RdCall<Unit, RdBackendStatusResult>(JetBrains.Rd.Impl.Serializers.ReadVoid, JetBrains.Rd.Impl.Serializers.WriteVoid, RdBackendStatusResult.Read, RdBackendStatusResult.Write),
+      new RdCall<RdFindTypesRequest, RdFindTypesResult>(RdFindTypesRequest.Read, RdFindTypesRequest.Write, RdFindTypesResult.Read, RdFindTypesResult.Write),
+      new RdCall<RdFindDefinitionRequest, RdDefinitionResult>(RdFindDefinitionRequest.Read, RdFindDefinitionRequest.Write, ReadRdDefinitionResultNullable, WriteRdDefinitionResultNullable),
+      new RdCall<RdFindReferencesRequest, RdFindReferencesResult>(RdFindReferencesRequest.Read, RdFindReferencesRequest.Write, RdFindReferencesResult.Read, RdFindReferencesResult.Write),
+      new RdCall<RdResolveSymbolRequest, RdSymbolInfo>(RdResolveSymbolRequest.Read, RdResolveSymbolRequest.Write, ReadRdSymbolInfoNullable, WriteRdSymbolInfoNullable),
       new RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult>(RdTypeHierarchyRequest.Read, RdTypeHierarchyRequest.Write, ReadRdTypeHierarchyResultNullable, WriteRdTypeHierarchyResultNullable),
       new RdCall<RdImplementationsRequest, RdImplementationsResult>(RdImplementationsRequest.Read, RdImplementationsRequest.Write, ReadRdImplementationsResultNullable, WriteRdImplementationsResultNullable),
       new RdCall<RdCallHierarchyRequest, RdCallHierarchyResult>(RdCallHierarchyRequest.Read, RdCallHierarchyRequest.Write, ReadRdCallHierarchyResultNullable, WriteRdCallHierarchyResultNullable),
@@ -114,6 +144,8 @@ namespace JetBrains.Rider.Model.IndexMcp
     //deconstruct trait
     //statics
     
+    public static CtxReadDelegate<RdDefinitionResult> ReadRdDefinitionResultNullable = RdDefinitionResult.Read.NullableClass();
+    public static CtxReadDelegate<RdSymbolInfo> ReadRdSymbolInfoNullable = RdSymbolInfo.Read.NullableClass();
     public static CtxReadDelegate<RdTypeHierarchyResult> ReadRdTypeHierarchyResultNullable = RdTypeHierarchyResult.Read.NullableClass();
     public static CtxReadDelegate<RdImplementationsResult> ReadRdImplementationsResultNullable = RdImplementationsResult.Read.NullableClass();
     public static CtxReadDelegate<RdCallHierarchyResult> ReadRdCallHierarchyResultNullable = RdCallHierarchyResult.Read.NullableClass();
@@ -121,6 +153,8 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static CtxReadDelegate<RdFileStructureResult> ReadRdFileStructureResultNullable = RdFileStructureResult.Read.NullableClass();
     public static CtxReadDelegate<RdRenameSymbolResult> ReadRdRenameSymbolResultNullable = RdRenameSymbolResult.Read.NullableClass();
     
+    public static  CtxWriteDelegate<RdDefinitionResult> WriteRdDefinitionResultNullable = RdDefinitionResult.Write.NullableClass();
+    public static  CtxWriteDelegate<RdSymbolInfo> WriteRdSymbolInfoNullable = RdSymbolInfo.Write.NullableClass();
     public static  CtxWriteDelegate<RdTypeHierarchyResult> WriteRdTypeHierarchyResultNullable = RdTypeHierarchyResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdImplementationsResult> WriteRdImplementationsResultNullable = RdImplementationsResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdCallHierarchyResult> WriteRdCallHierarchyResultNullable = RdCallHierarchyResult.Write.NullableClass();
@@ -128,7 +162,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static  CtxWriteDelegate<RdFileStructureResult> WriteRdFileStructureResultNullable = RdFileStructureResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdRenameSymbolResult> WriteRdRenameSymbolResultNullable = RdRenameSymbolResult.Write.NullableClass();
     
-    protected override long SerializationHash => -3349276471755233403L;
+    protected override long SerializationHash => 1737773450648360157L;
     
     protected override Action<ISerializers> Register => RegisterDeclaredTypesSerializers;
     public static void RegisterDeclaredTypesSerializers(ISerializers serializers)
@@ -155,6 +189,10 @@ namespace JetBrains.Rider.Model.IndexMcp
       printer.Println("IndexMcpModel (");
       using (printer.IndentCookie()) {
         printer.Print("getBackendStatus = "); _GetBackendStatus.PrintEx(printer); printer.Println();
+        printer.Print("findTypes = "); _FindTypes.PrintEx(printer); printer.Println();
+        printer.Print("findDefinition = "); _FindDefinition.PrintEx(printer); printer.Println();
+        printer.Print("findReferences = "); _FindReferences.PrintEx(printer); printer.Println();
+        printer.Print("resolveSymbol = "); _ResolveSymbol.PrintEx(printer); printer.Println();
         printer.Print("getTypeHierarchy = "); _GetTypeHierarchy.PrintEx(printer); printer.Println();
         printer.Print("findImplementations = "); _FindImplementations.PrintEx(printer); printer.Println();
         printer.Print("getCallHierarchy = "); _GetCallHierarchy.PrintEx(printer); printer.Println();
@@ -175,7 +213,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:48</p>
+  /// <p>Generated from: IndexMcpModel.kt:56</p>
   /// </summary>
   public sealed class RdBackendStatusResult : IPrintable, IEquatable<RdBackendStatusResult>
   {
@@ -285,7 +323,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:81</p>
+  /// <p>Generated from: IndexMcpModel.kt:141</p>
   /// </summary>
   public sealed class RdCallHierarchyRequest : IPrintable, IEquatable<RdCallHierarchyRequest>
   {
@@ -396,7 +434,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:88</p>
+  /// <p>Generated from: IndexMcpModel.kt:148</p>
   /// </summary>
   public sealed class RdCallHierarchyResult : IPrintable, IEquatable<RdCallHierarchyResult>
   {
@@ -492,7 +530,112 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:114</p>
+  /// <p>Generated from: IndexMcpModel.kt:84</p>
+  /// </summary>
+  public sealed class RdDefinitionResult : IPrintable, IEquatable<RdDefinitionResult>
+  {
+    //fields
+    //public fields
+    [NotNull] public RdSymbolInfo Definition {get; private set;}
+    [NotNull] public string Preview {get; private set;}
+    [NotNull] public List<string> AstPath {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdDefinitionResult(
+      [NotNull] RdSymbolInfo definition,
+      [NotNull] string preview,
+      [NotNull] List<string> astPath
+    )
+    {
+      if (definition == null) throw new ArgumentNullException("definition");
+      if (preview == null) throw new ArgumentNullException("preview");
+      if (astPath == null) throw new ArgumentNullException("astPath");
+      
+      Definition = definition;
+      Preview = preview;
+      AstPath = astPath;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out RdSymbolInfo definition, [NotNull] out string preview, [NotNull] out List<string> astPath)
+    {
+      definition = Definition;
+      preview = Preview;
+      astPath = AstPath;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdDefinitionResult> Read = (ctx, reader) => 
+    {
+      var definition = RdSymbolInfo.Read(ctx, reader);
+      var preview = reader.ReadString();
+      var astPath = ReadStringList(ctx, reader);
+      var _result = new RdDefinitionResult(definition, preview, astPath);
+      return _result;
+    };
+    public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    
+    public static CtxWriteDelegate<RdDefinitionResult> Write = (ctx, writer, value) => 
+    {
+      RdSymbolInfo.Write(ctx, writer, value.Definition);
+      writer.Write(value.Preview);
+      WriteStringList(ctx, writer, value.AstPath);
+    };
+    public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdDefinitionResult) obj);
+    }
+    public bool Equals(RdDefinitionResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Equals(Definition, other.Definition) && Preview == other.Preview && AstPath.SequenceEqual(other.AstPath);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Definition.GetHashCode();
+        hash = hash * 31 + Preview.GetHashCode();
+        hash = hash * 31 + AstPath.ContentHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdDefinitionResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("definition = "); Definition.PrintEx(printer); printer.Println();
+        printer.Print("preview = "); Preview.PrintEx(printer); printer.Println();
+        printer.Print("astPath = "); AstPath.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:174</p>
   /// </summary>
   public sealed class RdFileStructureRequest : IPrintable, IEquatable<RdFileStructureRequest>
   {
@@ -577,7 +720,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:129</p>
+  /// <p>Generated from: IndexMcpModel.kt:189</p>
   /// </summary>
   public sealed class RdFileStructureResult : IPrintable, IEquatable<RdFileStructureResult>
   {
@@ -664,7 +807,521 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:120</p>
+  /// <p>Generated from: IndexMcpModel.kt:78</p>
+  /// </summary>
+  public sealed class RdFindDefinitionRequest : IPrintable, IEquatable<RdFindDefinitionRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public RdSemanticTarget Target {get; private set;}
+    public bool FullElementPreview {get; private set;}
+    public int MaxPreviewLines {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindDefinitionRequest(
+      [NotNull] RdSemanticTarget target,
+      bool fullElementPreview,
+      int maxPreviewLines
+    )
+    {
+      if (target == null) throw new ArgumentNullException("target");
+      
+      Target = target;
+      FullElementPreview = fullElementPreview;
+      MaxPreviewLines = maxPreviewLines;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out RdSemanticTarget target, out bool fullElementPreview, out int maxPreviewLines)
+    {
+      target = Target;
+      fullElementPreview = FullElementPreview;
+      maxPreviewLines = MaxPreviewLines;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindDefinitionRequest> Read = (ctx, reader) => 
+    {
+      var target = RdSemanticTarget.Read(ctx, reader);
+      var fullElementPreview = reader.ReadBool();
+      var maxPreviewLines = reader.ReadInt();
+      var _result = new RdFindDefinitionRequest(target, fullElementPreview, maxPreviewLines);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdFindDefinitionRequest> Write = (ctx, writer, value) => 
+    {
+      RdSemanticTarget.Write(ctx, writer, value.Target);
+      writer.Write(value.FullElementPreview);
+      writer.Write(value.MaxPreviewLines);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindDefinitionRequest) obj);
+    }
+    public bool Equals(RdFindDefinitionRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Equals(Target, other.Target) && FullElementPreview == other.FullElementPreview && MaxPreviewLines == other.MaxPreviewLines;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Target.GetHashCode();
+        hash = hash * 31 + FullElementPreview.GetHashCode();
+        hash = hash * 31 + MaxPreviewLines.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindDefinitionRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("target = "); Target.PrintEx(printer); printer.Println();
+        printer.Print("fullElementPreview = "); FullElementPreview.PrintEx(printer); printer.Println();
+        printer.Print("maxPreviewLines = "); MaxPreviewLines.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:99</p>
+  /// </summary>
+  public sealed class RdFindReferencesRequest : IPrintable, IEquatable<RdFindReferencesRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public RdSemanticTarget Target {get; private set;}
+    [NotNull] public string Scope {get; private set;}
+    public int Limit {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindReferencesRequest(
+      [NotNull] RdSemanticTarget target,
+      [NotNull] string scope,
+      int limit
+    )
+    {
+      if (target == null) throw new ArgumentNullException("target");
+      if (scope == null) throw new ArgumentNullException("scope");
+      
+      Target = target;
+      Scope = scope;
+      Limit = limit;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out RdSemanticTarget target, [NotNull] out string scope, out int limit)
+    {
+      target = Target;
+      scope = Scope;
+      limit = Limit;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindReferencesRequest> Read = (ctx, reader) => 
+    {
+      var target = RdSemanticTarget.Read(ctx, reader);
+      var scope = reader.ReadString();
+      var limit = reader.ReadInt();
+      var _result = new RdFindReferencesRequest(target, scope, limit);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdFindReferencesRequest> Write = (ctx, writer, value) => 
+    {
+      RdSemanticTarget.Write(ctx, writer, value.Target);
+      writer.Write(value.Scope);
+      writer.Write(value.Limit);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindReferencesRequest) obj);
+    }
+    public bool Equals(RdFindReferencesRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Equals(Target, other.Target) && Scope == other.Scope && Limit == other.Limit;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Target.GetHashCode();
+        hash = hash * 31 + Scope.GetHashCode();
+        hash = hash * 31 + Limit.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindReferencesRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("target = "); Target.PrintEx(printer); printer.Println();
+        printer.Print("scope = "); Scope.PrintEx(printer); printer.Println();
+        printer.Print("limit = "); Limit.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:105</p>
+  /// </summary>
+  public sealed class RdFindReferencesResult : IPrintable, IEquatable<RdFindReferencesResult>
+  {
+    //fields
+    //public fields
+    [NotNull] public List<RdReferenceInfo> References {get; private set;}
+    public int TotalCount {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindReferencesResult(
+      [NotNull] List<RdReferenceInfo> references,
+      int totalCount
+    )
+    {
+      if (references == null) throw new ArgumentNullException("references");
+      
+      References = references;
+      TotalCount = totalCount;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out List<RdReferenceInfo> references, out int totalCount)
+    {
+      references = References;
+      totalCount = TotalCount;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindReferencesResult> Read = (ctx, reader) => 
+    {
+      var references = ReadRdReferenceInfoList(ctx, reader);
+      var totalCount = reader.ReadInt();
+      var _result = new RdFindReferencesResult(references, totalCount);
+      return _result;
+    };
+    public static CtxReadDelegate<List<RdReferenceInfo>> ReadRdReferenceInfoList = RdReferenceInfo.Read.List();
+    
+    public static CtxWriteDelegate<RdFindReferencesResult> Write = (ctx, writer, value) => 
+    {
+      WriteRdReferenceInfoList(ctx, writer, value.References);
+      writer.Write(value.TotalCount);
+    };
+    public static  CtxWriteDelegate<List<RdReferenceInfo>> WriteRdReferenceInfoList = RdReferenceInfo.Write.List();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindReferencesResult) obj);
+    }
+    public bool Equals(RdFindReferencesResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return References.SequenceEqual(other.References) && TotalCount == other.TotalCount;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + References.ContentHashCode();
+        hash = hash * 31 + TotalCount.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindReferencesResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("references = "); References.PrintEx(printer); printer.Println();
+        printer.Print("totalCount = "); TotalCount.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:65</p>
+  /// </summary>
+  public sealed class RdFindTypesRequest : IPrintable, IEquatable<RdFindTypesRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public string Query {get; private set;}
+    [NotNull] public string MatchMode {get; private set;}
+    [NotNull] public string Scope {get; private set;}
+    [CanBeNull] public string Language {get; private set;}
+    public int Limit {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindTypesRequest(
+      [NotNull] string query,
+      [NotNull] string matchMode,
+      [NotNull] string scope,
+      [CanBeNull] string language,
+      int limit
+    )
+    {
+      if (query == null) throw new ArgumentNullException("query");
+      if (matchMode == null) throw new ArgumentNullException("matchMode");
+      if (scope == null) throw new ArgumentNullException("scope");
+      
+      Query = query;
+      MatchMode = matchMode;
+      Scope = scope;
+      Language = language;
+      Limit = limit;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string query, [NotNull] out string matchMode, [NotNull] out string scope, [CanBeNull] out string language, out int limit)
+    {
+      query = Query;
+      matchMode = MatchMode;
+      scope = Scope;
+      language = Language;
+      limit = Limit;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindTypesRequest> Read = (ctx, reader) => 
+    {
+      var query = reader.ReadString();
+      var matchMode = reader.ReadString();
+      var scope = reader.ReadString();
+      var language = ReadStringNullable(ctx, reader);
+      var limit = reader.ReadInt();
+      var _result = new RdFindTypesRequest(query, matchMode, scope, language, limit);
+      return _result;
+    };
+    public static CtxReadDelegate<string> ReadStringNullable = JetBrains.Rd.Impl.Serializers.ReadString.NullableClass();
+    
+    public static CtxWriteDelegate<RdFindTypesRequest> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Query);
+      writer.Write(value.MatchMode);
+      writer.Write(value.Scope);
+      WriteStringNullable(ctx, writer, value.Language);
+      writer.Write(value.Limit);
+    };
+    public static  CtxWriteDelegate<string> WriteStringNullable = JetBrains.Rd.Impl.Serializers.WriteString.NullableClass();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindTypesRequest) obj);
+    }
+    public bool Equals(RdFindTypesRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Query == other.Query && MatchMode == other.MatchMode && Scope == other.Scope && Equals(Language, other.Language) && Limit == other.Limit;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Query.GetHashCode();
+        hash = hash * 31 + MatchMode.GetHashCode();
+        hash = hash * 31 + Scope.GetHashCode();
+        hash = hash * 31 + (Language != null ? Language.GetHashCode() : 0);
+        hash = hash * 31 + Limit.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindTypesRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("query = "); Query.PrintEx(printer); printer.Println();
+        printer.Print("matchMode = "); MatchMode.PrintEx(printer); printer.Println();
+        printer.Print("scope = "); Scope.PrintEx(printer); printer.Println();
+        printer.Print("language = "); Language.PrintEx(printer); printer.Println();
+        printer.Print("limit = "); Limit.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:73</p>
+  /// </summary>
+  public sealed class RdFindTypesResult : IPrintable, IEquatable<RdFindTypesResult>
+  {
+    //fields
+    //public fields
+    [NotNull] public List<RdSymbolInfo> Types {get; private set;}
+    public int TotalCount {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindTypesResult(
+      [NotNull] List<RdSymbolInfo> types,
+      int totalCount
+    )
+    {
+      if (types == null) throw new ArgumentNullException("types");
+      
+      Types = types;
+      TotalCount = totalCount;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out List<RdSymbolInfo> types, out int totalCount)
+    {
+      types = Types;
+      totalCount = TotalCount;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindTypesResult> Read = (ctx, reader) => 
+    {
+      var types = ReadRdSymbolInfoList(ctx, reader);
+      var totalCount = reader.ReadInt();
+      var _result = new RdFindTypesResult(types, totalCount);
+      return _result;
+    };
+    public static CtxReadDelegate<List<RdSymbolInfo>> ReadRdSymbolInfoList = RdSymbolInfo.Read.List();
+    
+    public static CtxWriteDelegate<RdFindTypesResult> Write = (ctx, writer, value) => 
+    {
+      WriteRdSymbolInfoList(ctx, writer, value.Types);
+      writer.Write(value.TotalCount);
+    };
+    public static  CtxWriteDelegate<List<RdSymbolInfo>> WriteRdSymbolInfoList = RdSymbolInfo.Write.List();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindTypesResult) obj);
+    }
+    public bool Equals(RdFindTypesResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Types.SequenceEqual(other.Types) && TotalCount == other.TotalCount;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Types.ContentHashCode();
+        hash = hash * 31 + TotalCount.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindTypesResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("types = "); Types.PrintEx(printer); printer.Println();
+        printer.Print("totalCount = "); TotalCount.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:180</p>
   /// </summary>
   public sealed class RdFlatStructureNode : IPrintable, IEquatable<RdFlatStructureNode>
   {
@@ -795,7 +1452,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:70</p>
+  /// <p>Generated from: IndexMcpModel.kt:130</p>
   /// </summary>
   public sealed class RdImplementationsRequest : IPrintable, IEquatable<RdImplementationsRequest>
   {
@@ -889,7 +1546,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:75</p>
+  /// <p>Generated from: IndexMcpModel.kt:135</p>
   /// </summary>
   public sealed class RdImplementationsResult : IPrintable, IEquatable<RdImplementationsResult>
   {
@@ -976,7 +1633,137 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:135</p>
+  /// <p>Generated from: IndexMcpModel.kt:90</p>
+  /// </summary>
+  public sealed class RdReferenceInfo : IPrintable, IEquatable<RdReferenceInfo>
+  {
+    //fields
+    //public fields
+    [NotNull] public string FilePath {get; private set;}
+    public int Line {get; private set;}
+    public int Column {get; private set;}
+    [NotNull] public string Context {get; private set;}
+    [NotNull] public string Kind {get; private set;}
+    [NotNull] public List<string> AstPath {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdReferenceInfo(
+      [NotNull] string filePath,
+      int line,
+      int column,
+      [NotNull] string context,
+      [NotNull] string kind,
+      [NotNull] List<string> astPath
+    )
+    {
+      if (filePath == null) throw new ArgumentNullException("filePath");
+      if (context == null) throw new ArgumentNullException("context");
+      if (kind == null) throw new ArgumentNullException("kind");
+      if (astPath == null) throw new ArgumentNullException("astPath");
+      
+      FilePath = filePath;
+      Line = line;
+      Column = column;
+      Context = context;
+      Kind = kind;
+      AstPath = astPath;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string filePath, out int line, out int column, [NotNull] out string context, [NotNull] out string kind, [NotNull] out List<string> astPath)
+    {
+      filePath = FilePath;
+      line = Line;
+      column = Column;
+      context = Context;
+      kind = Kind;
+      astPath = AstPath;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdReferenceInfo> Read = (ctx, reader) => 
+    {
+      var filePath = reader.ReadString();
+      var line = reader.ReadInt();
+      var column = reader.ReadInt();
+      var context = reader.ReadString();
+      var kind = reader.ReadString();
+      var astPath = ReadStringList(ctx, reader);
+      var _result = new RdReferenceInfo(filePath, line, column, context, kind, astPath);
+      return _result;
+    };
+    public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    
+    public static CtxWriteDelegate<RdReferenceInfo> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.FilePath);
+      writer.Write(value.Line);
+      writer.Write(value.Column);
+      writer.Write(value.Context);
+      writer.Write(value.Kind);
+      WriteStringList(ctx, writer, value.AstPath);
+    };
+    public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdReferenceInfo) obj);
+    }
+    public bool Equals(RdReferenceInfo other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return FilePath == other.FilePath && Line == other.Line && Column == other.Column && Context == other.Context && Kind == other.Kind && AstPath.SequenceEqual(other.AstPath);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + FilePath.GetHashCode();
+        hash = hash * 31 + Line.GetHashCode();
+        hash = hash * 31 + Column.GetHashCode();
+        hash = hash * 31 + Context.GetHashCode();
+        hash = hash * 31 + Kind.GetHashCode();
+        hash = hash * 31 + AstPath.ContentHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdReferenceInfo (");
+      using (printer.IndentCookie()) {
+        printer.Print("filePath = "); FilePath.PrintEx(printer); printer.Println();
+        printer.Print("line = "); Line.PrintEx(printer); printer.Println();
+        printer.Print("column = "); Column.PrintEx(printer); printer.Println();
+        printer.Print("context = "); Context.PrintEx(printer); printer.Println();
+        printer.Print("kind = "); Kind.PrintEx(printer); printer.Println();
+        printer.Print("astPath = "); AstPath.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:195</p>
   /// </summary>
   public sealed class RdRenameSymbolRequest : IPrintable, IEquatable<RdRenameSymbolRequest>
   {
@@ -1070,7 +1857,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:140</p>
+  /// <p>Generated from: IndexMcpModel.kt:200</p>
   /// </summary>
   public sealed class RdRenameSymbolResult : IPrintable, IEquatable<RdRenameSymbolResult>
   {
@@ -1200,6 +1987,219 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:110</p>
+  /// </summary>
+  public sealed class RdResolveSymbolRequest : IPrintable, IEquatable<RdResolveSymbolRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public string Language {get; private set;}
+    [NotNull] public string Symbol {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdResolveSymbolRequest(
+      [NotNull] string language,
+      [NotNull] string symbol
+    )
+    {
+      if (language == null) throw new ArgumentNullException("language");
+      if (symbol == null) throw new ArgumentNullException("symbol");
+      
+      Language = language;
+      Symbol = symbol;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string language, [NotNull] out string symbol)
+    {
+      language = Language;
+      symbol = Symbol;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdResolveSymbolRequest> Read = (ctx, reader) => 
+    {
+      var language = reader.ReadString();
+      var symbol = reader.ReadString();
+      var _result = new RdResolveSymbolRequest(language, symbol);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdResolveSymbolRequest> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Language);
+      writer.Write(value.Symbol);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdResolveSymbolRequest) obj);
+    }
+    public bool Equals(RdResolveSymbolRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Language == other.Language && Symbol == other.Symbol;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Language.GetHashCode();
+        hash = hash * 31 + Symbol.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdResolveSymbolRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("language = "); Language.PrintEx(printer); printer.Println();
+        printer.Print("symbol = "); Symbol.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:34</p>
+  /// </summary>
+  public sealed class RdSemanticTarget : IPrintable, IEquatable<RdSemanticTarget>
+  {
+    //fields
+    //public fields
+    [CanBeNull] public string FilePath {get; private set;}
+    [CanBeNull] public int? Line {get; private set;}
+    [CanBeNull] public int? Column {get; private set;}
+    [CanBeNull] public string Language {get; private set;}
+    [CanBeNull] public string Symbol {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdSemanticTarget(
+      [CanBeNull] string filePath,
+      [CanBeNull] int? line,
+      [CanBeNull] int? column,
+      [CanBeNull] string language,
+      [CanBeNull] string symbol
+    )
+    {
+      FilePath = filePath;
+      Line = line;
+      Column = column;
+      Language = language;
+      Symbol = symbol;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([CanBeNull] out string filePath, [CanBeNull] out int? line, [CanBeNull] out int? column, [CanBeNull] out string language, [CanBeNull] out string symbol)
+    {
+      filePath = FilePath;
+      line = Line;
+      column = Column;
+      language = Language;
+      symbol = Symbol;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdSemanticTarget> Read = (ctx, reader) => 
+    {
+      var filePath = ReadStringNullable(ctx, reader);
+      var line = ReadIntNullable(ctx, reader);
+      var column = ReadIntNullable(ctx, reader);
+      var language = ReadStringNullable(ctx, reader);
+      var symbol = ReadStringNullable(ctx, reader);
+      var _result = new RdSemanticTarget(filePath, line, column, language, symbol);
+      return _result;
+    };
+    public static CtxReadDelegate<string> ReadStringNullable = JetBrains.Rd.Impl.Serializers.ReadString.NullableClass();
+    public static CtxReadDelegate<int?> ReadIntNullable = JetBrains.Rd.Impl.Serializers.ReadInt.NullableStruct();
+    
+    public static CtxWriteDelegate<RdSemanticTarget> Write = (ctx, writer, value) => 
+    {
+      WriteStringNullable(ctx, writer, value.FilePath);
+      WriteIntNullable(ctx, writer, value.Line);
+      WriteIntNullable(ctx, writer, value.Column);
+      WriteStringNullable(ctx, writer, value.Language);
+      WriteStringNullable(ctx, writer, value.Symbol);
+    };
+    public static  CtxWriteDelegate<string> WriteStringNullable = JetBrains.Rd.Impl.Serializers.WriteString.NullableClass();
+    public static  CtxWriteDelegate<int?> WriteIntNullable = JetBrains.Rd.Impl.Serializers.WriteInt.NullableStruct();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdSemanticTarget) obj);
+    }
+    public bool Equals(RdSemanticTarget other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Equals(FilePath, other.FilePath) && Equals(Line, other.Line) && Equals(Column, other.Column) && Equals(Language, other.Language) && Equals(Symbol, other.Symbol);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + (FilePath != null ? FilePath.GetHashCode() : 0);
+        hash = hash * 31 + (Line != null ? Line.GetHashCode() : 0);
+        hash = hash * 31 + (Column != null ? Column.GetHashCode() : 0);
+        hash = hash * 31 + (Language != null ? Language.GetHashCode() : 0);
+        hash = hash * 31 + (Symbol != null ? Symbol.GetHashCode() : 0);
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdSemanticTarget (");
+      using (printer.IndentCookie()) {
+        printer.Print("filePath = "); FilePath.PrintEx(printer); printer.Println();
+        printer.Print("line = "); Line.PrintEx(printer); printer.Println();
+        printer.Print("column = "); Column.PrintEx(printer); printer.Println();
+        printer.Print("language = "); Language.PrintEx(printer); printer.Println();
+        printer.Print("symbol = "); Symbol.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
   /// <p>Generated from: IndexMcpModel.kt:28</p>
   /// </summary>
   public sealed class RdSourcePosition : IPrintable, IEquatable<RdSourcePosition>
@@ -1301,7 +2301,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:99</p>
+  /// <p>Generated from: IndexMcpModel.kt:159</p>
   /// </summary>
   public sealed class RdSuperMethodInfo : IPrintable, IEquatable<RdSuperMethodInfo>
   {
@@ -1420,7 +2420,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:95</p>
+  /// <p>Generated from: IndexMcpModel.kt:155</p>
   /// </summary>
   public sealed class RdSuperMethodsRequest : IPrintable, IEquatable<RdSuperMethodsRequest>
   {
@@ -1505,7 +2505,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:107</p>
+  /// <p>Generated from: IndexMcpModel.kt:167</p>
   /// </summary>
   public sealed class RdSuperMethodsResult : IPrintable, IEquatable<RdSuperMethodsResult>
   {
@@ -1601,7 +2601,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:34</p>
+  /// <p>Generated from: IndexMcpModel.kt:42</p>
   /// </summary>
   public sealed class RdSymbolInfo : IPrintable, IEquatable<RdSymbolInfo>
   {
@@ -1760,7 +2760,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:57</p>
+  /// <p>Generated from: IndexMcpModel.kt:117</p>
   /// </summary>
   public sealed class RdTypeHierarchyRequest : IPrintable, IEquatable<RdTypeHierarchyRequest>
   {
@@ -1854,7 +2854,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:62</p>
+  /// <p>Generated from: IndexMcpModel.kt:122</p>
   /// </summary>
   public sealed class RdTypeHierarchyResult : IPrintable, IEquatable<RdTypeHierarchyResult>
   {

@@ -20,6 +20,10 @@ import kotlin.jvm.JvmStatic
  */
 class IndexMcpModel private constructor(
     private val _getBackendStatus: RdCall<Unit, RdBackendStatusResult>,
+    private val _findTypes: RdCall<RdFindTypesRequest, RdFindTypesResult>,
+    private val _findDefinition: RdCall<RdFindDefinitionRequest, RdDefinitionResult?>,
+    private val _findReferences: RdCall<RdFindReferencesRequest, RdFindReferencesResult>,
+    private val _resolveSymbol: RdCall<RdResolveSymbolRequest, RdSymbolInfo?>,
     private val _getTypeHierarchy: RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult?>,
     private val _findImplementations: RdCall<RdImplementationsRequest, RdImplementationsResult?>,
     private val _getCallHierarchy: RdCall<RdCallHierarchyRequest, RdCallHierarchyResult?>,
@@ -34,8 +38,17 @@ class IndexMcpModel private constructor(
         override fun registerSerializersCore(serializers: ISerializers)  {
             val classLoader = javaClass.classLoader
             serializers.register(LazyCompanionMarshaller(RdId(-5977976679503629463), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSourcePosition"))
+            serializers.register(LazyCompanionMarshaller(RdId(4375242365750196220), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSemanticTarget"))
             serializers.register(LazyCompanionMarshaller(RdId(-1313392469938805269), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSymbolInfo"))
             serializers.register(LazyCompanionMarshaller(RdId(5994498188749596030), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdBackendStatusResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-4108457705209229324), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindTypesRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(4627919189821581848), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindTypesResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-869352042608296866), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindDefinitionRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(3534513108899072789), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdDefinitionResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-3032379611242238732), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdReferenceInfo"))
+            serializers.register(LazyCompanionMarshaller(RdId(7995059252749119881), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindReferencesRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(7993636522934682083), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindReferencesResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(8323260431033600144), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdResolveSymbolRequest"))
             serializers.register(LazyCompanionMarshaller(RdId(-1227020239591611591), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdTypeHierarchyRequest"))
             serializers.register(LazyCompanionMarshaller(RdId(4720868785486666291), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdTypeHierarchyResult"))
             serializers.register(LazyCompanionMarshaller(RdId(4312643375883653203), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdImplementationsRequest"))
@@ -67,6 +80,8 @@ class IndexMcpModel private constructor(
             return IndexMcpModel()
         }
         
+        private val __RdDefinitionResultNullableSerializer = RdDefinitionResult.nullable()
+        private val __RdSymbolInfoNullableSerializer = RdSymbolInfo.nullable()
         private val __RdTypeHierarchyResultNullableSerializer = RdTypeHierarchyResult.nullable()
         private val __RdImplementationsResultNullableSerializer = RdImplementationsResult.nullable()
         private val __RdCallHierarchyResultNullableSerializer = RdCallHierarchyResult.nullable()
@@ -74,7 +89,7 @@ class IndexMcpModel private constructor(
         private val __RdFileStructureResultNullableSerializer = RdFileStructureResult.nullable()
         private val __RdRenameSymbolResultNullableSerializer = RdRenameSymbolResult.nullable()
         
-        const val serializationHash = -3349276471755233403L
+        const val serializationHash = 1737773450648360157L
         
     }
     override val serializersOwner: ISerializersOwner get() = IndexMcpModel
@@ -82,6 +97,10 @@ class IndexMcpModel private constructor(
     
     //fields
     val getBackendStatus: IRdCall<Unit, RdBackendStatusResult> get() = _getBackendStatus
+    val findTypes: IRdCall<RdFindTypesRequest, RdFindTypesResult> get() = _findTypes
+    val findDefinition: IRdCall<RdFindDefinitionRequest, RdDefinitionResult?> get() = _findDefinition
+    val findReferences: IRdCall<RdFindReferencesRequest, RdFindReferencesResult> get() = _findReferences
+    val resolveSymbol: IRdCall<RdResolveSymbolRequest, RdSymbolInfo?> get() = _resolveSymbol
     val getTypeHierarchy: IRdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult?> get() = _getTypeHierarchy
     val findImplementations: IRdCall<RdImplementationsRequest, RdImplementationsResult?> get() = _findImplementations
     val getCallHierarchy: IRdCall<RdCallHierarchyRequest, RdCallHierarchyResult?> get() = _getCallHierarchy
@@ -92,6 +111,10 @@ class IndexMcpModel private constructor(
     //initializer
     init {
         bindableChildren.add("getBackendStatus" to _getBackendStatus)
+        bindableChildren.add("findTypes" to _findTypes)
+        bindableChildren.add("findDefinition" to _findDefinition)
+        bindableChildren.add("findReferences" to _findReferences)
+        bindableChildren.add("resolveSymbol" to _resolveSymbol)
         bindableChildren.add("getTypeHierarchy" to _getTypeHierarchy)
         bindableChildren.add("findImplementations" to _findImplementations)
         bindableChildren.add("getCallHierarchy" to _getCallHierarchy)
@@ -104,6 +127,10 @@ class IndexMcpModel private constructor(
     private constructor(
     ) : this(
         RdCall<Unit, RdBackendStatusResult>(FrameworkMarshallers.Void, RdBackendStatusResult),
+        RdCall<RdFindTypesRequest, RdFindTypesResult>(RdFindTypesRequest, RdFindTypesResult),
+        RdCall<RdFindDefinitionRequest, RdDefinitionResult?>(RdFindDefinitionRequest, __RdDefinitionResultNullableSerializer),
+        RdCall<RdFindReferencesRequest, RdFindReferencesResult>(RdFindReferencesRequest, RdFindReferencesResult),
+        RdCall<RdResolveSymbolRequest, RdSymbolInfo?>(RdResolveSymbolRequest, __RdSymbolInfoNullableSerializer),
         RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult?>(RdTypeHierarchyRequest, __RdTypeHierarchyResultNullableSerializer),
         RdCall<RdImplementationsRequest, RdImplementationsResult?>(RdImplementationsRequest, __RdImplementationsResultNullableSerializer),
         RdCall<RdCallHierarchyRequest, RdCallHierarchyResult?>(RdCallHierarchyRequest, __RdCallHierarchyResultNullableSerializer),
@@ -119,6 +146,10 @@ class IndexMcpModel private constructor(
         printer.println("IndexMcpModel (")
         printer.indent {
             print("getBackendStatus = "); _getBackendStatus.print(printer); println()
+            print("findTypes = "); _findTypes.print(printer); println()
+            print("findDefinition = "); _findDefinition.print(printer); println()
+            print("findReferences = "); _findReferences.print(printer); println()
+            print("resolveSymbol = "); _resolveSymbol.print(printer); println()
             print("getTypeHierarchy = "); _getTypeHierarchy.print(printer); println()
             print("findImplementations = "); _findImplementations.print(printer); println()
             print("getCallHierarchy = "); _getCallHierarchy.print(printer); println()
@@ -132,6 +163,10 @@ class IndexMcpModel private constructor(
     override fun deepClone(): IndexMcpModel   {
         return IndexMcpModel(
             _getBackendStatus.deepClonePolymorphic(),
+            _findTypes.deepClonePolymorphic(),
+            _findDefinition.deepClonePolymorphic(),
+            _findReferences.deepClonePolymorphic(),
+            _resolveSymbol.deepClonePolymorphic(),
             _getTypeHierarchy.deepClonePolymorphic(),
             _findImplementations.deepClonePolymorphic(),
             _getCallHierarchy.deepClonePolymorphic(),
@@ -149,7 +184,7 @@ val IProtocol.indexMcpModel get() = getOrCreateExtension(IndexMcpModel::class) {
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:48]
+ * #### Generated from [IndexMcpModel.kt:56]
  */
 data class RdBackendStatusResult (
     val backendVersion: String,
@@ -226,7 +261,7 @@ data class RdBackendStatusResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:81]
+ * #### Generated from [IndexMcpModel.kt:141]
  */
 data class RdCallHierarchyRequest (
     val position: RdSourcePosition,
@@ -303,7 +338,7 @@ data class RdCallHierarchyRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:88]
+ * #### Generated from [IndexMcpModel.kt:148]
  */
 data class RdCallHierarchyResult (
     val root: RdSymbolInfo,
@@ -368,7 +403,78 @@ data class RdCallHierarchyResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:114]
+ * #### Generated from [IndexMcpModel.kt:84]
+ */
+data class RdDefinitionResult (
+    val definition: RdSymbolInfo,
+    val preview: String,
+    val astPath: List<String>
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdDefinitionResult> {
+        override val _type: KClass<RdDefinitionResult> = RdDefinitionResult::class
+        override val id: RdId get() = RdId(3534513108899072789)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdDefinitionResult  {
+            val definition = RdSymbolInfo.read(ctx, buffer)
+            val preview = buffer.readString()
+            val astPath = buffer.readList { buffer.readString() }
+            return RdDefinitionResult(definition, preview, astPath)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdDefinitionResult)  {
+            RdSymbolInfo.write(ctx, buffer, value.definition)
+            buffer.writeString(value.preview)
+            buffer.writeList(value.astPath) { v -> buffer.writeString(v) }
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdDefinitionResult
+        
+        if (definition != other.definition) return false
+        if (preview != other.preview) return false
+        if (astPath != other.astPath) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + definition.hashCode()
+        __r = __r*31 + preview.hashCode()
+        __r = __r*31 + astPath.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdDefinitionResult (")
+        printer.indent {
+            print("definition = "); definition.print(printer); println()
+            print("preview = "); preview.print(printer); println()
+            print("astPath = "); astPath.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:174]
  */
 data class RdFileStructureRequest (
     val filePath: String
@@ -427,7 +533,7 @@ data class RdFileStructureRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:129]
+ * #### Generated from [IndexMcpModel.kt:189]
  */
 data class RdFileStructureResult (
     val nodes: List<RdFlatStructureNode>
@@ -486,7 +592,362 @@ data class RdFileStructureResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:120]
+ * #### Generated from [IndexMcpModel.kt:78]
+ */
+data class RdFindDefinitionRequest (
+    val target: RdSemanticTarget,
+    val fullElementPreview: Boolean,
+    val maxPreviewLines: Int
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdFindDefinitionRequest> {
+        override val _type: KClass<RdFindDefinitionRequest> = RdFindDefinitionRequest::class
+        override val id: RdId get() = RdId(-869352042608296866)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdFindDefinitionRequest  {
+            val target = RdSemanticTarget.read(ctx, buffer)
+            val fullElementPreview = buffer.readBool()
+            val maxPreviewLines = buffer.readInt()
+            return RdFindDefinitionRequest(target, fullElementPreview, maxPreviewLines)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdFindDefinitionRequest)  {
+            RdSemanticTarget.write(ctx, buffer, value.target)
+            buffer.writeBool(value.fullElementPreview)
+            buffer.writeInt(value.maxPreviewLines)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdFindDefinitionRequest
+        
+        if (target != other.target) return false
+        if (fullElementPreview != other.fullElementPreview) return false
+        if (maxPreviewLines != other.maxPreviewLines) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + target.hashCode()
+        __r = __r*31 + fullElementPreview.hashCode()
+        __r = __r*31 + maxPreviewLines.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdFindDefinitionRequest (")
+        printer.indent {
+            print("target = "); target.print(printer); println()
+            print("fullElementPreview = "); fullElementPreview.print(printer); println()
+            print("maxPreviewLines = "); maxPreviewLines.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:99]
+ */
+data class RdFindReferencesRequest (
+    val target: RdSemanticTarget,
+    val scope: String,
+    val limit: Int
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdFindReferencesRequest> {
+        override val _type: KClass<RdFindReferencesRequest> = RdFindReferencesRequest::class
+        override val id: RdId get() = RdId(7995059252749119881)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdFindReferencesRequest  {
+            val target = RdSemanticTarget.read(ctx, buffer)
+            val scope = buffer.readString()
+            val limit = buffer.readInt()
+            return RdFindReferencesRequest(target, scope, limit)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdFindReferencesRequest)  {
+            RdSemanticTarget.write(ctx, buffer, value.target)
+            buffer.writeString(value.scope)
+            buffer.writeInt(value.limit)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdFindReferencesRequest
+        
+        if (target != other.target) return false
+        if (scope != other.scope) return false
+        if (limit != other.limit) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + target.hashCode()
+        __r = __r*31 + scope.hashCode()
+        __r = __r*31 + limit.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdFindReferencesRequest (")
+        printer.indent {
+            print("target = "); target.print(printer); println()
+            print("scope = "); scope.print(printer); println()
+            print("limit = "); limit.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:105]
+ */
+data class RdFindReferencesResult (
+    val references: List<RdReferenceInfo>,
+    val totalCount: Int
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdFindReferencesResult> {
+        override val _type: KClass<RdFindReferencesResult> = RdFindReferencesResult::class
+        override val id: RdId get() = RdId(7993636522934682083)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdFindReferencesResult  {
+            val references = buffer.readList { RdReferenceInfo.read(ctx, buffer) }
+            val totalCount = buffer.readInt()
+            return RdFindReferencesResult(references, totalCount)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdFindReferencesResult)  {
+            buffer.writeList(value.references) { v -> RdReferenceInfo.write(ctx, buffer, v) }
+            buffer.writeInt(value.totalCount)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdFindReferencesResult
+        
+        if (references != other.references) return false
+        if (totalCount != other.totalCount) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + references.hashCode()
+        __r = __r*31 + totalCount.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdFindReferencesResult (")
+        printer.indent {
+            print("references = "); references.print(printer); println()
+            print("totalCount = "); totalCount.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:65]
+ */
+data class RdFindTypesRequest (
+    val query: String,
+    val matchMode: String,
+    val scope: String,
+    val language: String?,
+    val limit: Int
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdFindTypesRequest> {
+        override val _type: KClass<RdFindTypesRequest> = RdFindTypesRequest::class
+        override val id: RdId get() = RdId(-4108457705209229324)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdFindTypesRequest  {
+            val query = buffer.readString()
+            val matchMode = buffer.readString()
+            val scope = buffer.readString()
+            val language = buffer.readNullable { buffer.readString() }
+            val limit = buffer.readInt()
+            return RdFindTypesRequest(query, matchMode, scope, language, limit)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdFindTypesRequest)  {
+            buffer.writeString(value.query)
+            buffer.writeString(value.matchMode)
+            buffer.writeString(value.scope)
+            buffer.writeNullable(value.language) { buffer.writeString(it) }
+            buffer.writeInt(value.limit)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdFindTypesRequest
+        
+        if (query != other.query) return false
+        if (matchMode != other.matchMode) return false
+        if (scope != other.scope) return false
+        if (language != other.language) return false
+        if (limit != other.limit) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + query.hashCode()
+        __r = __r*31 + matchMode.hashCode()
+        __r = __r*31 + scope.hashCode()
+        __r = __r*31 + if (language != null) language.hashCode() else 0
+        __r = __r*31 + limit.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdFindTypesRequest (")
+        printer.indent {
+            print("query = "); query.print(printer); println()
+            print("matchMode = "); matchMode.print(printer); println()
+            print("scope = "); scope.print(printer); println()
+            print("language = "); language.print(printer); println()
+            print("limit = "); limit.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:73]
+ */
+data class RdFindTypesResult (
+    val types: List<RdSymbolInfo>,
+    val totalCount: Int
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdFindTypesResult> {
+        override val _type: KClass<RdFindTypesResult> = RdFindTypesResult::class
+        override val id: RdId get() = RdId(4627919189821581848)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdFindTypesResult  {
+            val types = buffer.readList { RdSymbolInfo.read(ctx, buffer) }
+            val totalCount = buffer.readInt()
+            return RdFindTypesResult(types, totalCount)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdFindTypesResult)  {
+            buffer.writeList(value.types) { v -> RdSymbolInfo.write(ctx, buffer, v) }
+            buffer.writeInt(value.totalCount)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdFindTypesResult
+        
+        if (types != other.types) return false
+        if (totalCount != other.totalCount) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + types.hashCode()
+        __r = __r*31 + totalCount.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdFindTypesResult (")
+        printer.indent {
+            print("types = "); types.print(printer); println()
+            print("totalCount = "); totalCount.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:180]
  */
 data class RdFlatStructureNode (
     val name: String,
@@ -575,7 +1036,7 @@ data class RdFlatStructureNode (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:70]
+ * #### Generated from [IndexMcpModel.kt:130]
  */
 data class RdImplementationsRequest (
     val position: RdSourcePosition,
@@ -640,7 +1101,7 @@ data class RdImplementationsRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:75]
+ * #### Generated from [IndexMcpModel.kt:135]
  */
 data class RdImplementationsResult (
     val implementations: List<RdSymbolInfo>
@@ -699,7 +1160,96 @@ data class RdImplementationsResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:135]
+ * #### Generated from [IndexMcpModel.kt:90]
+ */
+data class RdReferenceInfo (
+    val filePath: String,
+    val line: Int,
+    val column: Int,
+    val context: String,
+    val kind: String,
+    val astPath: List<String>
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdReferenceInfo> {
+        override val _type: KClass<RdReferenceInfo> = RdReferenceInfo::class
+        override val id: RdId get() = RdId(-3032379611242238732)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdReferenceInfo  {
+            val filePath = buffer.readString()
+            val line = buffer.readInt()
+            val column = buffer.readInt()
+            val context = buffer.readString()
+            val kind = buffer.readString()
+            val astPath = buffer.readList { buffer.readString() }
+            return RdReferenceInfo(filePath, line, column, context, kind, astPath)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdReferenceInfo)  {
+            buffer.writeString(value.filePath)
+            buffer.writeInt(value.line)
+            buffer.writeInt(value.column)
+            buffer.writeString(value.context)
+            buffer.writeString(value.kind)
+            buffer.writeList(value.astPath) { v -> buffer.writeString(v) }
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdReferenceInfo
+        
+        if (filePath != other.filePath) return false
+        if (line != other.line) return false
+        if (column != other.column) return false
+        if (context != other.context) return false
+        if (kind != other.kind) return false
+        if (astPath != other.astPath) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + filePath.hashCode()
+        __r = __r*31 + line.hashCode()
+        __r = __r*31 + column.hashCode()
+        __r = __r*31 + context.hashCode()
+        __r = __r*31 + kind.hashCode()
+        __r = __r*31 + astPath.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdReferenceInfo (")
+        printer.indent {
+            print("filePath = "); filePath.print(printer); println()
+            print("line = "); line.print(printer); println()
+            print("column = "); column.print(printer); println()
+            print("context = "); context.print(printer); println()
+            print("kind = "); kind.print(printer); println()
+            print("astPath = "); astPath.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:195]
  */
 data class RdRenameSymbolRequest (
     val position: RdSourcePosition,
@@ -764,7 +1314,7 @@ data class RdRenameSymbolRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:140]
+ * #### Generated from [IndexMcpModel.kt:200]
  */
 data class RdRenameSymbolResult (
     val success: Boolean,
@@ -853,6 +1403,154 @@ data class RdRenameSymbolResult (
 
 
 /**
+ * #### Generated from [IndexMcpModel.kt:110]
+ */
+data class RdResolveSymbolRequest (
+    val language: String,
+    val symbol: String
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdResolveSymbolRequest> {
+        override val _type: KClass<RdResolveSymbolRequest> = RdResolveSymbolRequest::class
+        override val id: RdId get() = RdId(8323260431033600144)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdResolveSymbolRequest  {
+            val language = buffer.readString()
+            val symbol = buffer.readString()
+            return RdResolveSymbolRequest(language, symbol)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdResolveSymbolRequest)  {
+            buffer.writeString(value.language)
+            buffer.writeString(value.symbol)
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdResolveSymbolRequest
+        
+        if (language != other.language) return false
+        if (symbol != other.symbol) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + language.hashCode()
+        __r = __r*31 + symbol.hashCode()
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdResolveSymbolRequest (")
+        printer.indent {
+            print("language = "); language.print(printer); println()
+            print("symbol = "); symbol.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
+ * #### Generated from [IndexMcpModel.kt:34]
+ */
+data class RdSemanticTarget (
+    val filePath: String?,
+    val line: Int?,
+    val column: Int?,
+    val language: String?,
+    val symbol: String?
+) : IPrintable {
+    //companion
+    
+    companion object : IMarshaller<RdSemanticTarget> {
+        override val _type: KClass<RdSemanticTarget> = RdSemanticTarget::class
+        override val id: RdId get() = RdId(4375242365750196220)
+        
+        @Suppress("UNCHECKED_CAST")
+        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdSemanticTarget  {
+            val filePath = buffer.readNullable { buffer.readString() }
+            val line = buffer.readNullable { buffer.readInt() }
+            val column = buffer.readNullable { buffer.readInt() }
+            val language = buffer.readNullable { buffer.readString() }
+            val symbol = buffer.readNullable { buffer.readString() }
+            return RdSemanticTarget(filePath, line, column, language, symbol)
+        }
+        
+        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdSemanticTarget)  {
+            buffer.writeNullable(value.filePath) { buffer.writeString(it) }
+            buffer.writeNullable(value.line) { buffer.writeInt(it) }
+            buffer.writeNullable(value.column) { buffer.writeInt(it) }
+            buffer.writeNullable(value.language) { buffer.writeString(it) }
+            buffer.writeNullable(value.symbol) { buffer.writeString(it) }
+        }
+        
+        
+    }
+    //fields
+    //methods
+    //initializer
+    //secondary constructor
+    //equals trait
+    override fun equals(other: Any?): Boolean  {
+        if (this === other) return true
+        if (other == null || other::class != this::class) return false
+        
+        other as RdSemanticTarget
+        
+        if (filePath != other.filePath) return false
+        if (line != other.line) return false
+        if (column != other.column) return false
+        if (language != other.language) return false
+        if (symbol != other.symbol) return false
+        
+        return true
+    }
+    //hash code trait
+    override fun hashCode(): Int  {
+        var __r = 0
+        __r = __r*31 + if (filePath != null) filePath.hashCode() else 0
+        __r = __r*31 + if (line != null) line.hashCode() else 0
+        __r = __r*31 + if (column != null) column.hashCode() else 0
+        __r = __r*31 + if (language != null) language.hashCode() else 0
+        __r = __r*31 + if (symbol != null) symbol.hashCode() else 0
+        return __r
+    }
+    //pretty print
+    override fun print(printer: PrettyPrinter)  {
+        printer.println("RdSemanticTarget (")
+        printer.indent {
+            print("filePath = "); filePath.print(printer); println()
+            print("line = "); line.print(printer); println()
+            print("column = "); column.print(printer); println()
+            print("language = "); language.print(printer); println()
+            print("symbol = "); symbol.print(printer); println()
+        }
+        printer.print(")")
+    }
+    //deepClone
+    //contexts
+    //threading
+}
+
+
+/**
  * #### Generated from [IndexMcpModel.kt:28]
  */
 data class RdSourcePosition (
@@ -924,7 +1622,7 @@ data class RdSourcePosition (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:99]
+ * #### Generated from [IndexMcpModel.kt:159]
  */
 data class RdSuperMethodInfo (
     val symbol: RdSymbolInfo,
@@ -1007,7 +1705,7 @@ data class RdSuperMethodInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:95]
+ * #### Generated from [IndexMcpModel.kt:155]
  */
 data class RdSuperMethodsRequest (
     val position: RdSourcePosition
@@ -1066,7 +1764,7 @@ data class RdSuperMethodsRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:107]
+ * #### Generated from [IndexMcpModel.kt:167]
  */
 data class RdSuperMethodsResult (
     val method: RdSymbolInfo,
@@ -1131,7 +1829,7 @@ data class RdSuperMethodsResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:34]
+ * #### Generated from [IndexMcpModel.kt:42]
  */
 data class RdSymbolInfo (
     val name: String,
@@ -1238,7 +1936,7 @@ data class RdSymbolInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:57]
+ * #### Generated from [IndexMcpModel.kt:117]
  */
 data class RdTypeHierarchyRequest (
     val position: RdSourcePosition,
@@ -1303,7 +2001,7 @@ data class RdTypeHierarchyRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:62]
+ * #### Generated from [IndexMcpModel.kt:122]
  */
 data class RdTypeHierarchyResult (
     val element: RdSymbolInfo,

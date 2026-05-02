@@ -31,6 +31,14 @@ object IndexMcpModel : Ext(IdeRoot) {
         field("column", int)
     }
 
+    private val RdSemanticTarget = structdef {
+        field("filePath", string.nullable)
+        field("line", int.nullable)
+        field("column", int.nullable)
+        field("language", string.nullable)
+        field("symbol", string.nullable)
+    }
+
     private val RdSymbolInfo = structdef {
         field("name", string)
         field("qualifiedName", string)
@@ -50,6 +58,58 @@ object IndexMcpModel : Ext(IdeRoot) {
         field("solutionLoaded", bool)
         field("psiServicesAvailable", bool)
         field("message", string)
+    }
+
+    // ── Universal Navigation/Search ─────────────────────────────────────────
+
+    private val RdFindTypesRequest = structdef {
+        field("query", string)
+        field("matchMode", string)
+        field("scope", string)
+        field("language", string.nullable)
+        field("limit", int)
+    }
+
+    private val RdFindTypesResult = structdef {
+        field("types", immutableList(RdSymbolInfo))
+        field("totalCount", int)
+    }
+
+    private val RdFindDefinitionRequest = structdef {
+        field("target", RdSemanticTarget)
+        field("fullElementPreview", bool)
+        field("maxPreviewLines", int)
+    }
+
+    private val RdDefinitionResult = structdef {
+        field("definition", RdSymbolInfo)
+        field("preview", string)
+        field("astPath", immutableList(string))
+    }
+
+    private val RdReferenceInfo = structdef {
+        field("filePath", string)
+        field("line", int)
+        field("column", int)
+        field("context", string)
+        field("kind", string)
+        field("astPath", immutableList(string))
+    }
+
+    private val RdFindReferencesRequest = structdef {
+        field("target", RdSemanticTarget)
+        field("scope", string)
+        field("limit", int)
+    }
+
+    private val RdFindReferencesResult = structdef {
+        field("references", immutableList(RdReferenceInfo))
+        field("totalCount", int)
+    }
+
+    private val RdResolveSymbolRequest = structdef {
+        field("language", string)
+        field("symbol", string)
     }
 
     // ── Type Hierarchy ──────────────────────────────────────────────────────
@@ -150,6 +210,10 @@ object IndexMcpModel : Ext(IdeRoot) {
 
     init {
         call("getBackendStatus", void, RdBackendStatusResult)
+        call("findTypes", RdFindTypesRequest, RdFindTypesResult)
+        call("findDefinition", RdFindDefinitionRequest, RdDefinitionResult.nullable)
+        call("findReferences", RdFindReferencesRequest, RdFindReferencesResult)
+        call("resolveSymbol", RdResolveSymbolRequest, RdSymbolInfo.nullable)
         call("getTypeHierarchy", RdTypeHierarchyRequest, RdTypeHierarchyResult.nullable)
         call("findImplementations", RdImplementationsRequest, RdImplementationsResult.nullable)
         call("getCallHierarchy", RdCallHierarchyRequest, RdCallHierarchyResult.nullable)
