@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.20.1";
+    private const string BackendVersion = "4.20.2";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -889,11 +889,10 @@ public class IndexMcpBackendHost
     // Detection layers (cheapest first):
     //   - empty path                                                -> 4
     //   - PSI source file IsGeneratedFile / IsNonUserFile           -> 3
-    //   - path heuristic: /obj/, /generated/, *.g.cs, *.g.i.cs,     -> 3
-    //     Roslyn source-generator paths like
-    //     ".../Avalonia.NameGenerator/.../*.cs" produced by the
-    //     Avalonia source generator (no /obj/, virtual generator
-    //     namespace as a path segment)
+    //   - path heuristic (belt-and-braces): /obj/, /generated/,     -> 3
+    //     *.g.cs, *.g.i.cs (IsGeneratedFile is the authoritative
+    //     signal; broad substring patterns avoided to prevent
+    //     false positives on legitimate user folders)
     //   - .cs / .fs / .fsi / .fsx hand-written file                 -> 0
     //   - any other on-disk path (XAML-paired synthetic partial,
     //     non-source documents)                                     -> 1
@@ -907,11 +906,14 @@ public class IndexMcpBackendHost
         if (props.IsGeneratedFile || props.IsNonUserFile) return 3;
 
         var normalized = path.Replace('\\', '/');
+        // Path heuristics are belt-and-braces (IsGeneratedFile/IsNonUserFile
+        // is the authoritative signal above). Keep only patterns that are
+        // unambiguous: a project would not contain a hand-written file under
+        // /obj/ or /generated/, and *.g.cs / *.g.i.cs are conventional
+        // generator output extensions. Avoid broad substrings like
+        // ".namegenerator/" that could match legitimate user folders.
         var isGenerated = normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase) ||
                           normalized.Contains("/generated/", StringComparison.OrdinalIgnoreCase) ||
-                          normalized.Contains("/generators/", StringComparison.OrdinalIgnoreCase) ||
-                          normalized.Contains("/sourcegenerator", StringComparison.OrdinalIgnoreCase) ||
-                          normalized.Contains(".namegenerator/", StringComparison.OrdinalIgnoreCase) ||
                           path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) ||
                           path.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
         if (isGenerated) return 3;

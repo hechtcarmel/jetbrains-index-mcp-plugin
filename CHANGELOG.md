@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Fixed
+- **AXAML resolver: dropped overly broad path heuristics that could misclassify legitimate user folders.** v4.20.1 added `/generators/`, `/sourcegenerator`, and `.namegenerator/` substring matches to the generator-detection heuristic. A user folder named (for example) `MyProject.NameGenerator/` would have all its hand-written `.cs` files ranked as generator output, losing priority to synthetic XAML partials. Since `IPsiSourceFile.Properties.IsGeneratedFile` / `IsNonUserFile` (added in v4.20.1) is the authoritative ReSharper signal for Roslyn source generators including Avalonia's, the broad path patterns were unnecessary belt-and-braces. The path heuristic now keeps only the unambiguous markers `/obj/`, `/generated/`, `*.g.cs`, `*.g.i.cs`.
+
+## [4.20.1]
+
+### Fixed
 - **Rider C#/F#: AXAML resolver still picked source-generator partials in v4.20.0 for some Avalonia projects.** The v4.20.0 path heuristic only caught `/obj/`, `/generated/`, `*.g.cs`, and `*.g.i.cs`. Avalonia's Roslyn source generator emits files under virtual generator paths (e.g. `.../Avalonia.NameGenerator/.../*.cs`) that don't match those patterns, so the generator partial still won the rank. The ranker now consults `IPsiSourceFile.Properties.IsGeneratedFile` / `IsNonUserFile` first (the authoritative ReSharper signal), then falls back to a widened path heuristic that also catches `/generators/`, `/sourcegenerator`, and `*.NameGenerator/` segments. Affects `find_definition`, `find_class`, `type_hierarchy` for Avalonia/WPF code-behind classes.
 - **`ide_call_hierarchy` symbol-only request rejected as `Cannot specify both language+symbol and file+line+column`.** When MCP clients send schema defaults for unset position fields (e.g. `file: ""`, `line: 0`, `column: 0`) alongside `language` + `symbol`, the mutual-exclusivity guard in `resolveElementFromArguments` saw both groups as "present" and errored out before the Rider symbol-form rewrite could run. Two fixes:
   - `resolveElementFromArguments` now treats blank strings and non-positive line/column as unset, so default values from the request schema no longer trip the conflict guard. This applies to every navigation tool that accepts both forms (`find_definition`, `find_references`, `find_implementations`, `find_super_methods`, `call_hierarchy`).
