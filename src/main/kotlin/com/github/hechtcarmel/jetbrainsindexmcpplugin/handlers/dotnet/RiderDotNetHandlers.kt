@@ -3,14 +3,15 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
+import java.io.File
 
 /**
  * Rider protocol-based handlers for C# and F# code intelligence.
@@ -181,6 +182,9 @@ private val FSHARP_EXTENSIONS = setOf("fs", "fsi", "fsx")
 private val CSHARP_LANGUAGE_IDS = setOf("C#", "CSHARP", "CSharp")
 private val FSHARP_LANGUAGE_IDS = setOf("F#", "FSHARP", "FSharp")
 
+private fun riderBackendPath(file: VirtualFile): String =
+    file.path.replace('/', File.separatorChar)
+
 private fun isDotNetElement(element: PsiElement, supportedExtensions: Set<String>, supportedLanguageIds: Set<String>): Boolean {
     val langId = element.language.id
     if (supportedLanguageIds.any { it.equals(langId, ignoreCase = true) }) return true
@@ -191,7 +195,7 @@ private fun isDotNetElement(element: PsiElement, supportedExtensions: Set<String
 private fun createSourcePosition(project: Project, element: PsiElement): Any? {
     val file = element.containingFile
     val vf = file?.virtualFile
-    val filePath = vf?.let { ProjectUtils.getToolFilePath(project, it) } ?: vf?.path ?: ""
+    val filePath = vf?.let { riderBackendPath(it) } ?: ""
     val document = file?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
     val offset = element.textOffset
     val line = document?.getLineNumber(offset)?.plus(1) ?: 1
@@ -496,8 +500,7 @@ abstract class RiderStructureHandler(
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         val model = RdProtocolBridge.getModel(project) ?: return emptyList()
-        val filePath = file.virtualFile?.let { ProjectUtils.getToolFilePath(project, it) }
-            ?: file.virtualFile?.path ?: return emptyList()
+        val filePath = file.virtualFile?.let { riderBackendPath(it) } ?: return emptyList()
         val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdFileStructureRequest", filePath) ?: return emptyList()
         val result = RdProtocolBridge.invokeCall(model, "getFileStructure", request) ?: return emptyList()
 

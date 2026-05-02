@@ -6,6 +6,7 @@
 
 ### Fixed
 - Added a Rider/ReSharper backend health protocol endpoint for v4.18.1 test builds so live validation can distinguish backend loading failures from C#/F# symbol-resolution failures.
+- Rider C#/F# backend requests now send absolute virtual file paths to ReSharper and probe nearby caret offsets, avoiding the project-relative path mismatch that caused position-based semantic tools to report "No class/type/method found at position".
 
 ## [4.18.0]
 ### Added

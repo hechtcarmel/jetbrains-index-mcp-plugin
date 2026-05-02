@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using JetBrains.Application.Parts;
@@ -34,7 +35,7 @@ namespace ReSharperPlugin.IndexMcp;
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
-    private const string BackendVersion = "4.18.1";
+    private const string BackendVersion = "4.18.2";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(ISolution solution, IndexMcpModel model, Lifetime lifetime)
@@ -354,23 +355,47 @@ public class IndexMcpBackendHost
         if (sourceFile == null) return null;
 
         var document = sourceFile.Document;
-        var line = position.Line - 1; // Convert 1-based to 0-based
-        var col = position.Column - 1;
+        var line = Math.Max(0, position.Line - 1); // Convert 1-based to 0-based
+        var col = Math.Max(0, position.Column - 1);
 
-        // Calculate offset from line and column using typed intrinsic
         var docLine = (Int32<DocLine>)line;
         var offset = document.GetLineStartOffset(docLine) + col;
-        var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(offset), 1));
-        if (node == null) return null;
+        foreach (var candidateOffset in CandidateOffsets(offset))
+        {
+            var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(candidateOffset), 1));
+            if (node == null) continue;
 
-        // Try to resolve as a reference first
-        if (node.GetContainingNode<IReferenceExpression>()?.Reference is { } reference)
+            var resolved = ResolveFromNode(node);
+            if (resolved != null) return resolved;
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<int> CandidateOffsets(int offset)
+    {
+        yield return offset;
+        for (var delta = 1; delta <= 3; delta++)
+        {
+            if (offset - delta >= 0) yield return offset - delta;
+            yield return offset + delta;
+        }
+    }
+
+    private static IDeclaredElement? ResolveFromNode(ITreeNode node)
+    {
+        foreach (var reference in node.GetReferences())
         {
             var resolved = reference.Resolve().DeclaredElement;
             if (resolved != null) return resolved;
         }
 
-        // Fall back to declaration at caret
+        if (node.GetContainingNode<IReferenceExpression>()?.Reference is { } referenceExpression)
+        {
+            var resolved = referenceExpression.Resolve().DeclaredElement;
+            if (resolved != null) return resolved;
+        }
+
         return node.GetContainingNode<IDeclaration>()?.DeclaredElement;
     }
 
@@ -408,7 +433,10 @@ public class IndexMcpBackendHost
 
     private IFile? GetPsiFileForPath(string filePath)
     {
-        var vfp = VirtualFileSystemPath.Parse(filePath, InteractionContext.SolutionContext);
+        if (string.IsNullOrWhiteSpace(filePath)) return null;
+
+        var normalizedPath = filePath.Replace('/', Path.DirectorySeparatorChar);
+        var vfp = VirtualFileSystemPath.Parse(normalizedPath, InteractionContext.SolutionContext);
         
         // Find the project file for this path
         var projectFiles = _solution.FindProjectItemsByLocation(vfp)
