@@ -19,6 +19,8 @@ using JetBrains.ReSharper.Psi.Modules;
 using JetBrains.ReSharper.Psi.Search;
 using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
+using JetBrains.ReSharper.Feature.Services.Protocol;
+using JetBrains.Rider.Model;
 using JetBrains.Rider.Model.IndexMcp;
 using JetBrains.Rd.Tasks;
 using JetBrains.Util;
@@ -32,16 +34,17 @@ namespace ReSharperPlugin.IndexMcp;
 /// Handles all code intelligence RPC calls from the Kotlin frontend by using
 /// ReSharper's full semantic model for C# and F# code.
 /// </summary>
-[SolutionComponent(Instantiation.DemandAnyThreadSafe)]
+[SolutionComponent(Instantiation.ContainerAsyncPrimaryThread)]
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
-    private const string BackendVersion = "4.18.8";
+    private const string BackendVersion = "4.18.11";
     private const int MaxResults = 200;
 
-    public IndexMcpBackendHost(ISolution solution, IndexMcpModel model, Lifetime lifetime)
+    public IndexMcpBackendHost(Lifetime lifetime, ISolution solution)
     {
         _solution = solution;
+        var model = solution.GetProtocolSolution().GetIndexMcpModel();
 
         model.GetBackendStatus.SetAsync(HandleGetBackendStatus);
         model.FindTypes.SetAsync(HandleFindTypes);

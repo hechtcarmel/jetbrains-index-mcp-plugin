@@ -13,6 +13,9 @@
 - Moved the generated Rider rd model from the global IDE root to the Rider solution model for v4.18.6 test builds so `rd.solutionExtListener` can bind it for the opened `.slnx`.
 - Stored the live Rider solution rd model from `rd.solutionExtListener` for v4.18.7 test builds so MCP tool handlers use the same generated model instance Rider created for the loaded solution.
 - Generated the Rider frontend rd model in the standard `com.jetbrains.rd.ide.model` package for v4.18.8 test builds to match Rider's `rd.solutionExtListener` model discovery pattern.
+- Added a direct Rider solution model lookup for v4.18.9 test builds using `SolutionHostExtensionsKt.getSolution(project).indexMcpModel`, avoiding dependency on listener callback timing.
+- Fixed Rider backend component model binding for v4.18.10 by retrieving the RD model with `solution.GetProtocolSolution().GetIndexMcpModel()` instead of constructor injection.
+- Fixed Rider frontend RD call invocation for v4.18.11 by using the current `RdCall.sync(request, RpcTimeouts)` signature.
 
 ## [4.18.0]
 ### Added

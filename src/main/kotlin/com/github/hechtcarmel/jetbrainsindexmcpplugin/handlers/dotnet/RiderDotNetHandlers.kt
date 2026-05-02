@@ -106,6 +106,7 @@ object RdProtocolBridge {
      */
     fun getModel(project: Project): Any? {
         getModelFromProtocolListener(project)?.let { return it }
+        getModelFromSolution(project)?.let { return it }
         return try {
             // ProtocolManager.getOrCreate(project).protocol.indexMcpModel → IndexMcpModel
             val protocol = getProtocol(project) ?: return null
@@ -115,6 +116,21 @@ object RdProtocolBridge {
             getModel.invoke(null, protocol)
         } catch (e: Exception) {
             LOG.warn("Failed to get IndexMcpModel via reflection: ${e.message}")
+            null
+        }
+    }
+
+    private fun getModelFromSolution(project: Project): Any? {
+        return try {
+            val solutionHostExtensions = Class.forName("com.jetbrains.rider.projectView.SolutionHostExtensionsKt")
+            val solution = solutionHostExtensions.getMethod("getSolution", Project::class.java).invoke(null, project)
+                ?: return null
+            val solutionClass = Class.forName("com.jetbrains.rd.ide.model.Solution")
+            val modelExtClass = Class.forName("com.jetbrains.rd.ide.model.IndexMcpModel_GeneratedKt")
+            val getModel = modelExtClass.getMethod("getIndexMcpModel", solutionClass)
+            getModel.invoke(null, solution)
+        } catch (e: Exception) {
+            LOG.debug("Failed to get solution-scoped IndexMcpModel via reflection: ${e.message}")
             null
         }
     }
@@ -150,8 +166,11 @@ object RdProtocolBridge {
         return try {
             val callField = model.javaClass.getMethod("get${callName.replaceFirstChar { it.uppercaseChar() }}")
             val rdCall = callField.invoke(model)
-            val syncMethod = rdCall.javaClass.getMethod("sync", Any::class.java)
-            syncMethod.invoke(rdCall, request)
+            val timeoutsClass = Class.forName("com.jetbrains.rd.framework.impl.RpcTimeouts")
+            val companion = timeoutsClass.getField("Companion").get(null)
+            val longRunningTimeouts = companion.javaClass.getMethod("getLongRunning").invoke(companion)
+            val syncMethod = rdCall.javaClass.getMethod("sync", Any::class.java, timeoutsClass)
+            syncMethod.invoke(rdCall, request, longRunningTimeouts)
         } catch (e: Exception) {
             LOG.warn("Failed to invoke rd call '$callName': ${e.message}")
             null
