@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
@@ -80,6 +81,16 @@ class FindDefinitionTool : AbstractMcpTool() {
                     navElement
                 } else {
                     targetElement
+                }
+            }
+
+            if (DotNetTextSearchSupport.isDotNetElement(element) && effectiveTarget is PsiDirectory) {
+                val symbolName = DotNetTextSearchSupport.wordAt(element)
+                if (symbolName != null) {
+                    val fallback = DotNetTextSearchSupport.findDefinition(project, symbolName, BuiltInSearchScope.PROJECT_FILES)
+                    if (fallback != null) {
+                        return@suspendingReadAction createJsonResult(fallback)
+                    }
                 }
             }
 
