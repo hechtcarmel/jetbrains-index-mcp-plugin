@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.Constants
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -18,6 +19,13 @@ version = providers.gradleProperty("pluginVersion").get()
 // Set the JVM language level used to build the project.
 kotlin {
     jvmToolchain(21)
+
+    // Include Rider protocol-generated sources when available
+    sourceSets {
+        main {
+            kotlin.srcDir("src/rider/main/kotlin")
+        }
+    }
 }
 
 // Configure project's dependencies
@@ -88,6 +96,21 @@ dependencies {
 
         testFramework(TestFrameworkType.Platform)
 
+    }
+}
+
+// Expose rider-model.jar for the protocol module's rdgen code generation.
+// This configuration is consumed by :protocol to get the rd model base classes.
+val riderModel: Configuration by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+
+afterEvaluate {
+    val platformPath = intellijPlatform.platformPath
+    val riderModelJar = platformPath.resolve("lib/rider-model.jar")
+    if (riderModelJar.toFile().exists()) {
+        artifacts.add(riderModel.name, riderModelJar.toFile())
     }
 }
 
@@ -206,5 +229,42 @@ intellijPlatformTesting {
                 robotServerPlugin()
             }
         }
+    }
+}
+
+// ── Rider / .NET Backend Build Integration ──────────────────────────────────
+
+val dotNetSolutionDir = file("src/dotnet")
+val dotNetSolution = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp.sln")
+val dotNetConfiguration = "Release"
+val dotNetOutputDir = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp/bin/$dotNetConfiguration")
+
+val compileDotNet by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Build the ReSharper backend .NET plugin"
+    onlyIf { dotNetSolution.exists() }
+    workingDir = dotNetSolutionDir
+    commandLine("dotnet", "build", dotNetSolution.name, "-c", dotNetConfiguration, "/p:HostFullIdentifier=")
+    notCompatibleWithConfigurationCache("Exec tasks are not configuration cache compatible")
+}
+
+val testDotNet by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Run ReSharper backend .NET tests"
+    dependsOn(compileDotNet)
+    onlyIf { dotNetSolution.exists() }
+    workingDir = dotNetSolutionDir
+    commandLine("dotnet", "test", dotNetSolution.name, "-c", dotNetConfiguration, "--no-build")
+    notCompatibleWithConfigurationCache("Exec tasks are not configuration cache compatible")
+}
+
+// Copy .NET backend DLLs into the plugin sandbox so Rider can load them
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Constants.Tasks.PREPARE_SANDBOX) {
+    dependsOn(compileDotNet)
+    val pluginName = providers.gradleProperty("pluginName").get()
+    from(dotNetOutputDir) {
+        include("*.dll")
+        include("*.pdb")
+        into("$pluginName/dotnet")
     }
 }

@@ -1,0 +1,3 @@
+<idea-plugin>
+    <!-- Rider-specific extensions for C#/F# support via ReSharper backend protocol -->
+</idea-plugin>

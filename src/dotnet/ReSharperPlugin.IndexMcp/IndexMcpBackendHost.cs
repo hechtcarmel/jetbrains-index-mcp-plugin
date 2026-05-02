@@ -1,0 +1,565 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using JetBrains.Application.Parts;
+using JetBrains.Application.Progress;
+using JetBrains.DocumentModel;
+using JetBrains.Lifetimes;
+using JetBrains.ProjectModel;
+using JetBrains.ReSharper.Resources.Shell;
+using JetBrains.ReSharper.Psi;
+using JetBrains.ReSharper.Psi.CSharp;
+using JetBrains.ReSharper.Psi.CSharp.Tree;
+using JetBrains.ReSharper.Psi.Files;
+using JetBrains.ReSharper.Psi.Modules;
+using JetBrains.ReSharper.Psi.Search;
+using JetBrains.ReSharper.Psi.Tree;
+using JetBrains.ReSharper.Psi.Util;
+using JetBrains.Rider.Model.IndexMcp;
+using JetBrains.Util;
+using JetBrains.Util.dataStructures.TypedIntrinsics;
+
+namespace ReSharperPlugin.IndexMcp;
+
+/// <summary>
+/// Main backend host for the IDE Index MCP Server protocol.
+///
+/// Handles all code intelligence RPC calls from the Kotlin frontend by using
+/// ReSharper's full semantic model for C# and F# code.
+/// </summary>
+[SolutionComponent(Instantiation.DemandAnyThreadSafe)]
+public class IndexMcpBackendHost
+{
+    private readonly ISolution _solution;
+    private const int MaxResults = 200;
+
+    public IndexMcpBackendHost(ISolution solution, IndexMcpModel model, Lifetime lifetime)
+    {
+        _solution = solution;
+
+        model.GetTypeHierarchy.SetAsync(HandleGetTypeHierarchy);
+        model.FindImplementations.SetAsync(HandleFindImplementations);
+        model.GetCallHierarchy.SetAsync(HandleGetCallHierarchy);
+        model.FindSuperMethods.SetAsync(HandleFindSuperMethods);
+        model.GetFileStructure.SetAsync(HandleGetFileStructure);
+        model.RenameSymbol.SetAsync(HandleRenameSymbol);
+    }
+
+    // ── Rename Symbol ───────────────────────────────────────────────────────
+
+    private Task<RdRenameSymbolResult?> HandleRenameSymbol(
+        Lifetime lt, RdRenameSymbolRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveDeclaredElementAt(request.Position);
+            if (element == null)
+            {
+                return (RdRenameSymbolResult?)new RdRenameSymbolResult(
+                    false,
+                    "",
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    "No declared C#/F# symbol found at position");
+            }
+
+            var oldName = element.ShortName;
+            if (oldName == request.NewName)
+            {
+                return (RdRenameSymbolResult?)new RdRenameSymbolResult(
+                    false,
+                    oldName,
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    "New name is the same as the current name");
+            }
+
+            var references = FindReferences(element);
+            var affectedFiles = new HashSet<string>(
+                element.GetDeclarations()
+                    .Select(d => d.GetSourceFile()?.GetLocation().FullPath)
+                    .Where(path => !string.IsNullOrEmpty(path))!);
+
+            foreach (var reference in references)
+            {
+                var sourceFile = reference.GetTreeNode().GetSourceFile();
+                var path = sourceFile?.GetLocation().FullPath;
+                if (!string.IsNullOrEmpty(path)) affectedFiles.Add(path);
+            }
+
+            var changes = 0;
+            WriteLockCookie.Execute(() =>
+            {
+                foreach (var declaration in element.GetDeclarations())
+                {
+                    declaration.SetName(request.NewName);
+                    changes++;
+                }
+
+                foreach (var reference in references)
+                {
+                    if (!reference.IsValid()) continue;
+                    reference.BindTo(element);
+                    changes++;
+                }
+            });
+
+            return (RdRenameSymbolResult?)new RdRenameSymbolResult(
+                true,
+                oldName,
+                request.NewName,
+                affectedFiles.ToList(),
+                changes,
+                $"Renamed '{oldName}' to '{request.NewName}' using ReSharper backend");
+        });
+    }
+
+    // ── Type Hierarchy ──────────────────────────────────────────────────────
+
+    private Task<RdTypeHierarchyResult?> HandleGetTypeHierarchy(
+        Lifetime lt, RdTypeHierarchyRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var typeElement = ResolveTypeElementAt(request.Position);
+            if (typeElement == null) return null;
+
+            var supertypes = typeElement.GetAllSuperTypes()
+                .Select(t => t.GetTypeElement())
+                .Where(te => te != null)
+                .Select(te => ToSymbolInfo(te!))
+                .Take(MaxResults)
+                .ToList();
+
+            var subtypes = new List<RdSymbolInfo>();
+            var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+                .CreateSearchDomain(_solution, false);
+
+            // Use FinderExtensions.FindInheritors with IDeclaredType + Func callback
+            var declaredType = TypeFactory.CreateType(typeElement);
+            _solution.GetPsiServices().Finder.FindInheritors(
+                declaredType,
+                declaredInheritor =>
+                {
+                    var subType = declaredInheritor.GetTypeElement();
+                    if (subType != null)
+                        subtypes.Add(ToSymbolInfo(subType));
+                    return subtypes.Count < MaxResults
+                        ? FindExecution.Continue
+                        : FindExecution.Stop;
+                },
+                searchDomain,
+                NoOpProgressIndicator.Instance);
+
+            return (RdTypeHierarchyResult?)new RdTypeHierarchyResult(
+                ToSymbolInfo(typeElement),
+                supertypes,
+                subtypes);
+        });
+    }
+
+    // ── Find Implementations ────────────────────────────────────────────────
+
+    private Task<RdImplementationsResult?> HandleFindImplementations(
+        Lifetime lt, RdImplementationsRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveDeclaredElementAt(request.Position);
+            if (element == null) return null;
+
+            var typeElement = element as ITypeElement
+                ?? (element as ITypeMember)?.ContainingType;
+            if (typeElement == null) return null;
+
+            var implementations = new List<RdSymbolInfo>();
+            var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+                .CreateSearchDomain(_solution, false);
+
+            var declaredType = TypeFactory.CreateType(typeElement);
+            _solution.GetPsiServices().Finder.FindInheritors(
+                declaredType,
+                declaredInheritor =>
+                {
+                    var implType = declaredInheritor.GetTypeElement();
+                    if (implType is IClass cls && !cls.IsAbstract)
+                        implementations.Add(ToSymbolInfo(implType));
+                    else if (implType is IStruct)
+                        implementations.Add(ToSymbolInfo(implType));
+                    return implementations.Count < MaxResults
+                        ? FindExecution.Continue
+                        : FindExecution.Stop;
+                },
+                searchDomain,
+                NoOpProgressIndicator.Instance);
+
+            return (RdImplementationsResult?)new RdImplementationsResult(implementations);
+        });
+    }
+
+    // ── Call Hierarchy ──────────────────────────────────────────────────────
+
+    private Task<RdCallHierarchyResult?> HandleGetCallHierarchy(
+        Lifetime lt, RdCallHierarchyRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveDeclaredElementAt(request.Position);
+            if (element is not IMethod method) return null;
+
+            var root = ToSymbolInfo(method);
+            var calls = new List<RdSymbolInfo>();
+
+            if (request.Direction == "callers")
+            {
+                var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+                    .CreateSearchDomain(_solution, false);
+                var referenceResults = new List<FindResult>();
+                var consumer = new FindResultConsumer<List<FindResult>>(
+                    result => new List<FindResult> { result },
+                    results =>
+                    {
+                        foreach (var result in results)
+                        {
+                            referenceResults.Add(result);
+                            if (referenceResults.Count >= MaxResults)
+                                return FindExecution.Stop;
+                        }
+                        return FindExecution.Continue;
+                    });
+                _solution.GetPsiServices().Finder.FindReferences(
+                    method,
+                    searchDomain,
+                    consumer,
+                    NoOpProgressIndicator.Instance,
+                    false);
+
+                var seen = new HashSet<string>();
+                foreach (var result in referenceResults)
+                {
+                    if (result is not FindResultReference referenceResult) continue;
+                    var containingMethod = referenceResult.Reference.GetTreeNode()
+                        .GetContainingNode<IMethodDeclaration>()?.DeclaredElement;
+                    if (containingMethod == null) continue;
+                    var key = GetQualifiedName(containingMethod);
+                    if (seen.Add(key))
+                        calls.Add(ToSymbolInfo(containingMethod));
+                }
+            }
+            else if (request.Direction == "callees")
+            {
+                var methodDecl = method.GetDeclarations().FirstOrDefault() as IMethodDeclaration;
+                if (methodDecl?.Body != null)
+                {
+                    var seen = new HashSet<string>();
+                    foreach (var invocation in methodDecl.Body.Descendants<IInvocationExpression>())
+                    {
+                        var invokedMethod = invocation.Reference?.Resolve().DeclaredElement as IMethod;
+                        if (invokedMethod != null)
+                        {
+                            var key = GetQualifiedName(invokedMethod);
+                            if (seen.Add(key) && calls.Count < MaxResults)
+                                calls.Add(ToSymbolInfo(invokedMethod));
+                        }
+                    }
+                }
+            }
+
+            return (RdCallHierarchyResult?)new RdCallHierarchyResult(root, calls);
+        });
+    }
+
+    // ── Super Methods ───────────────────────────────────────────────────────
+
+    private Task<RdSuperMethodsResult?> HandleFindSuperMethods(
+        Lifetime lt, RdSuperMethodsRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveDeclaredElementAt(request.Position);
+            if (element is not IOverridableMember overridable) return null;
+
+            var methodInfo = ToSymbolInfo(overridable);
+            var hierarchy = new List<RdSuperMethodInfo>();
+            var depth = 0;
+
+            foreach (var superMember in overridable.GetAllSuperMembers())
+            {
+                depth++;
+                var superElement = superMember.Element;
+                var containingType = superElement.ContainingType;
+                if (containingType == null) continue;
+
+                hierarchy.Add(new RdSuperMethodInfo(
+                    symbol: ToSymbolInfo(superElement),
+                    containingTypeName: containingType.GetClrName().FullName,
+                    containingTypeKind: GetTypeKind(containingType),
+                    isInterface: containingType is IInterface,
+                    depth: depth));
+            }
+
+            return (RdSuperMethodsResult?)new RdSuperMethodsResult(methodInfo, hierarchy);
+        });
+    }
+
+    // ── File Structure ──────────────────────────────────────────────────────
+
+    private Task<RdFileStructureResult?> HandleGetFileStructure(
+        Lifetime lt, RdFileStructureRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var psiFile = GetPsiFileForPath(request.FilePath);
+            if (psiFile == null) return null;
+
+            var nodes = new List<RdFlatStructureNode>();
+            CollectStructureNodes(psiFile, nodes, 0);
+            return (RdFileStructureResult?)new RdFileStructureResult(nodes);
+        });
+    }
+
+    // ── Private Helpers ─────────────────────────────────────────────────────
+
+    private ITypeElement? ResolveTypeElementAt(RdSourcePosition position)
+    {
+        var element = ResolveDeclaredElementAt(position);
+        return element as ITypeElement
+            ?? (element as ITypeMember)?.ContainingType;
+    }
+
+    private IDeclaredElement? ResolveDeclaredElementAt(RdSourcePosition position)
+    {
+        var psiFile = GetPsiFileForPath(position.FilePath);
+        if (psiFile == null) return null;
+
+        var sourceFile = psiFile.GetSourceFile();
+        if (sourceFile == null) return null;
+
+        var document = sourceFile.Document;
+        var line = position.Line - 1; // Convert 1-based to 0-based
+        var col = position.Column - 1;
+
+        // Calculate offset from line and column using typed intrinsic
+        var docLine = (Int32<DocLine>)line;
+        var offset = document.GetLineStartOffset(docLine) + col;
+        var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(offset), 1));
+        if (node == null) return null;
+
+        // Try to resolve as a reference first
+        if (node.GetContainingNode<IReferenceExpression>()?.Reference is { } reference)
+        {
+            var resolved = reference.Resolve().DeclaredElement;
+            if (resolved != null) return resolved;
+        }
+
+        // Fall back to declaration at caret
+        return node.GetContainingNode<IDeclaration>()?.DeclaredElement;
+    }
+
+    private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferences(IDeclaredElement element)
+    {
+        var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+            .CreateSearchDomain(_solution, false);
+        var referenceResults = new List<FindResult>();
+        var consumer = new FindResultConsumer<List<FindResult>>(
+            result => new List<FindResult> { result },
+            results =>
+            {
+                foreach (var result in results)
+                {
+                    referenceResults.Add(result);
+                    if (referenceResults.Count >= MaxResults)
+                        return FindExecution.Stop;
+                }
+                return FindExecution.Continue;
+            });
+
+        _solution.GetPsiServices().Finder.FindReferences(
+            element,
+            searchDomain,
+            consumer,
+            NoOpProgressIndicator.Instance,
+            false);
+
+        return referenceResults
+            .OfType<FindResultReference>()
+            .Select(result => result.Reference)
+            .Where(reference => reference.IsValid())
+            .ToList();
+    }
+
+    private IFile? GetPsiFileForPath(string filePath)
+    {
+        var vfp = VirtualFileSystemPath.Parse(filePath, InteractionContext.SolutionContext);
+        
+        // Find the project file for this path
+        var projectFiles = _solution.FindProjectItemsByLocation(vfp)
+            .OfType<IProjectFile>()
+            .ToList();
+
+        if (projectFiles.Count == 0) return null;
+
+        var projectFile = projectFiles.First();
+        var sourceFiles = projectFile.ToSourceFiles();
+        var sourceFile = sourceFiles.FirstOrDefault();
+        return sourceFile?.GetPrimaryPsiFile();
+    }
+
+    private static RdSymbolInfo ToSymbolInfo(IDeclaredElement element)
+    {
+        var declarations = element.GetDeclarations();
+        var declaration = declarations.FirstOrDefault();
+
+        string? filePath = null;
+        int? line = null;
+        int? column = null;
+
+        if (declaration != null)
+        {
+            var sourceFile = declaration.GetSourceFile();
+            filePath = sourceFile?.GetLocation().FullPath;
+
+            var document = sourceFile?.Document;
+            if (document != null)
+            {
+                var offset = declaration.GetNavigationRange().StartOffset.Offset;
+                var coords = document.GetCoordsByOffset(offset);
+                line = (int)coords.Line + 1; // Convert to 1-based
+                column = (int)coords.Column + 1;
+            }
+        }
+
+        var language = element.PresentationLanguage?.Name ?? "C#";
+        var signature = element is IParametersOwner paramOwner
+            ? $"{element.ShortName}({string.Join(", ", paramOwner.Parameters.Select(p => p.Type.GetPresentableName(CSharpLanguage.Instance!)))})"
+            : null;
+
+        return new RdSymbolInfo(
+            name: element.ShortName,
+            qualifiedName: GetQualifiedName(element),
+            kind: GetElementKind(element),
+            filePath: filePath,
+            line: line,
+            column: column,
+            language: language,
+            signature: signature,
+            modifiers: GetModifiers(element));
+    }
+
+    private static string GetQualifiedName(IDeclaredElement element)
+    {
+        if (element is ITypeElement typeElement)
+            return typeElement.GetClrName().FullName;
+        if (element is ITypeMember member)
+            return $"{member.ContainingType?.GetClrName().FullName}.{member.ShortName}";
+        return element.ShortName;
+    }
+
+    private static string GetElementKind(IDeclaredElement element) => element switch
+    {
+        IInterface => "INTERFACE",
+        IStruct => "STRUCT",
+        IEnum => "ENUM",
+        IDelegate => "DELEGATE",
+        IClass cls => cls.IsAbstract ? "ABSTRACT_CLASS" : "CLASS",
+        IConstructor => "CONSTRUCTOR",
+        IMethod => "METHOD",
+        IProperty => "PROPERTY",
+        IField => "FIELD",
+        IEvent => "EVENT",
+        _ => "UNKNOWN"
+    };
+
+    private static string GetTypeKind(ITypeElement element) => element switch
+    {
+        IInterface => "INTERFACE",
+        IStruct => "STRUCT",
+        IEnum => "ENUM",
+        IDelegate => "DELEGATE",
+        IClass => "CLASS",
+        _ => "TYPE"
+    };
+
+    private static List<string> GetModifiers(IDeclaredElement element)
+    {
+        var modifiers = new List<string>();
+        if (element is IModifiersOwner owner)
+        {
+            if (owner.IsAbstract) modifiers.Add("abstract");
+            if (owner.IsSealed) modifiers.Add("sealed");
+            if (owner.IsStatic) modifiers.Add("static");
+            if (owner.IsVirtual) modifiers.Add("virtual");
+            if (owner.IsOverride) modifiers.Add("override");
+
+            switch (owner.GetAccessRights())
+            {
+                case AccessRights.PUBLIC: modifiers.Add("public"); break;
+                case AccessRights.PRIVATE: modifiers.Add("private"); break;
+                case AccessRights.PROTECTED: modifiers.Add("protected"); break;
+                case AccessRights.INTERNAL: modifiers.Add("internal"); break;
+                case AccessRights.PROTECTED_OR_INTERNAL: modifiers.Add("protected internal"); break;
+                case AccessRights.PROTECTED_AND_INTERNAL: modifiers.Add("private protected"); break;
+            }
+        }
+        return modifiers;
+    }
+
+    private void CollectStructureNodes(ITreeNode node, List<RdFlatStructureNode> nodes, int depth)
+    {
+        if (node is IDeclaration declaration && declaration.DeclaredElement != null)
+        {
+            var element = declaration.DeclaredElement;
+            var kind = GetElementKind(element);
+            if (kind != "UNKNOWN")
+            {
+                var sourceFile = declaration.GetSourceFile();
+                var document = sourceFile?.Document;
+                var line = 1;
+                if (document != null)
+                {
+                    var offset = declaration.GetNavigationRange().StartOffset.Offset;
+                    line = (int)document.GetCoordsByOffset(offset).Line + 1;
+                }
+
+                var signature = element is IParametersOwner paramOwner
+                    ? $"{element.ShortName}({string.Join(", ", paramOwner.Parameters.Select(p => p.Type.GetPresentableName(CSharpLanguage.Instance!)))})"
+                    : null;
+
+                nodes.Add(new RdFlatStructureNode(
+                    name: element.ShortName,
+                    kind: kind,
+                    signature: signature,
+                    modifiers: GetModifiers(element),
+                    line: line,
+                    depth: depth));
+            }
+        }
+
+        foreach (var child in node.Children())
+        {
+            CollectStructureNodes(child, nodes, node is IDeclaration ? depth + 1 : depth);
+        }
+    }
+}
+
+/// <summary>
+/// Simple no-op progress indicator for API calls that require one.
+/// </summary>
+internal sealed class NoOpProgressIndicator : IProgressIndicator
+{
+    public static readonly NoOpProgressIndicator Instance = new();
+
+    private NoOpProgressIndicator() { }
+
+    public bool IsCanceled { get; set; }
+    public string? TaskName { get; set; }
+    public string? CurrentItemText { get; set; }
+
+    public void Start(int totalWork) { }
+    public void Stop() { }
+    public void Advance(double work) { }
+    public void Dispose() { }
+}
