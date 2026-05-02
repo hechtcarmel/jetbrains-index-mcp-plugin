@@ -19,6 +19,7 @@
 - Added Rider/ReSharper backend symbol rename RPC for C#/F# that renames declarations and rebinds references through ReSharper PSI.
 - C#/F# symbol rename now fails safely if the Rider/ReSharper rename protocol is unavailable, instead of applying a lexical fallback that could rename unrelated symbols in real projects.
 - Added C# namespace adjustment after `ide_move_file` when moving `.cs` files between project folders.
+- Packaged the Rider/ReSharper backend DLL under the plugin ZIP's `dotnet/` directory so Rider can load the generated rd protocol endpoints at runtime.
 
 ## [4.17.0] - 2026-05-01
 ### Added

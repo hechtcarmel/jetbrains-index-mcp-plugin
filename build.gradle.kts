@@ -310,7 +310,8 @@ intellijPlatformTesting {
 val dotNetSolutionDir = file("src/dotnet")
 val dotNetSolution = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp.sln")
 val dotNetConfiguration = "Release"
-val dotNetOutputDir = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp/bin/$dotNetConfiguration")
+val dotNetTargetFramework = "net8.0"
+val dotNetOutputDir = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp/bin/$dotNetConfiguration/$dotNetTargetFramework")
 
 val compileDotNet by tasks.registering(Exec::class) {
     group = "build"
@@ -339,5 +340,19 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Con
         include("*.dll")
         include("*.pdb")
         into("$pluginName/dotnet")
+    }
+    doFirst {
+        require(dotNetOutputDir.resolve("ReSharperPlugin.IndexMcp.dll").isFile) {
+            "ReSharper backend DLL was not built at ${dotNetOutputDir.resolve("ReSharperPlugin.IndexMcp.dll")}"
+        }
+    }
+}
+
+tasks.named<Zip>(Constants.Tasks.BUILD_PLUGIN) {
+    dependsOn(compileDotNet)
+    from(dotNetOutputDir) {
+        include("*.dll")
+        include("*.pdb")
+        into("dotnet")
     }
 }
