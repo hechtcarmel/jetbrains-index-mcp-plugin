@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using JetBrains.Application.Parts;
 using JetBrains.Application.Progress;
+using JetBrains.Core;
 using JetBrains.DocumentModel;
 using JetBrains.Lifetimes;
 using JetBrains.ProjectModel;
@@ -33,18 +34,31 @@ namespace ReSharperPlugin.IndexMcp;
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
+    private const string BackendVersion = "4.18.1";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(ISolution solution, IndexMcpModel model, Lifetime lifetime)
     {
         _solution = solution;
 
+        model.GetBackendStatus.SetAsync(HandleGetBackendStatus);
         model.GetTypeHierarchy.SetAsync(HandleGetTypeHierarchy);
         model.FindImplementations.SetAsync(HandleFindImplementations);
         model.GetCallHierarchy.SetAsync(HandleGetCallHierarchy);
         model.FindSuperMethods.SetAsync(HandleFindSuperMethods);
         model.GetFileStructure.SetAsync(HandleGetFileStructure);
         model.RenameSymbol.SetAsync(HandleRenameSymbol);
+    }
+
+    // ── Backend Status ──────────────────────────────────────────────────────
+
+    private Task<RdBackendStatusResult> HandleGetBackendStatus(Lifetime lt, Unit request)
+    {
+        return Task.FromResult(new RdBackendStatusResult(
+            BackendVersion,
+            true,
+            _solution.GetPsiServices() != null,
+            "Rider Index MCP ReSharper backend is loaded and rd endpoints are registered"));
     }
 
     // ── Rename Symbol ───────────────────────────────────────────────────────

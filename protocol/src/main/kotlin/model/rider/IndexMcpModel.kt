@@ -43,6 +43,15 @@ object IndexMcpModel : Ext(IdeRoot) {
         field("modifiers", immutableList(string))
     }
 
+    // ── Backend Status ──────────────────────────────────────────────────────
+
+    private val RdBackendStatusResult = structdef {
+        field("backendVersion", string)
+        field("solutionLoaded", bool)
+        field("psiServicesAvailable", bool)
+        field("message", string)
+    }
+
     // ── Type Hierarchy ──────────────────────────────────────────────────────
 
     private val RdTypeHierarchyRequest = structdef {
@@ -140,6 +149,7 @@ object IndexMcpModel : Ext(IdeRoot) {
     // ── RPC Calls (frontend → backend) ──────────────────────────────────────
 
     init {
+        call("getBackendStatus", void, RdBackendStatusResult)
         call("getTypeHierarchy", RdTypeHierarchyRequest, RdTypeHierarchyResult.nullable)
         call("findImplementations", RdImplementationsRequest, RdImplementationsResult.nullable)
         call("getCallHierarchy", RdCallHierarchyRequest, RdCallHierarchyResult.nullable)

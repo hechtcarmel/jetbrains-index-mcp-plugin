@@ -43,6 +43,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   {
     //fields
     //public fields
+    [NotNull] public IRdEndpoint<Unit, RdBackendStatusResult> GetBackendStatus => _GetBackendStatus;
     [NotNull] public IRdEndpoint<RdTypeHierarchyRequest, RdTypeHierarchyResult> GetTypeHierarchy => _GetTypeHierarchy;
     [NotNull] public IRdEndpoint<RdImplementationsRequest, RdImplementationsResult> FindImplementations => _FindImplementations;
     [NotNull] public IRdEndpoint<RdCallHierarchyRequest, RdCallHierarchyResult> GetCallHierarchy => _GetCallHierarchy;
@@ -51,6 +52,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     [NotNull] public IRdEndpoint<RdRenameSymbolRequest, RdRenameSymbolResult> RenameSymbol => _RenameSymbol;
     
     //private fields
+    [NotNull] private readonly RdCall<Unit, RdBackendStatusResult> _GetBackendStatus;
     [NotNull] private readonly RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult> _GetTypeHierarchy;
     [NotNull] private readonly RdCall<RdImplementationsRequest, RdImplementationsResult> _FindImplementations;
     [NotNull] private readonly RdCall<RdCallHierarchyRequest, RdCallHierarchyResult> _GetCallHierarchy;
@@ -60,6 +62,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     
     //primary constructor
     private IndexMcpModel(
+      [NotNull] RdCall<Unit, RdBackendStatusResult> getBackendStatus,
       [NotNull] RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult> getTypeHierarchy,
       [NotNull] RdCall<RdImplementationsRequest, RdImplementationsResult> findImplementations,
       [NotNull] RdCall<RdCallHierarchyRequest, RdCallHierarchyResult> getCallHierarchy,
@@ -68,6 +71,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       [NotNull] RdCall<RdRenameSymbolRequest, RdRenameSymbolResult> renameSymbol
     )
     {
+      if (getBackendStatus == null) throw new ArgumentNullException("getBackendStatus");
       if (getTypeHierarchy == null) throw new ArgumentNullException("getTypeHierarchy");
       if (findImplementations == null) throw new ArgumentNullException("findImplementations");
       if (getCallHierarchy == null) throw new ArgumentNullException("getCallHierarchy");
@@ -75,6 +79,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       if (getFileStructure == null) throw new ArgumentNullException("getFileStructure");
       if (renameSymbol == null) throw new ArgumentNullException("renameSymbol");
       
+      _GetBackendStatus = getBackendStatus;
       _GetTypeHierarchy = getTypeHierarchy;
       _FindImplementations = findImplementations;
       _GetCallHierarchy = getCallHierarchy;
@@ -87,6 +92,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       _FindSuperMethods.ValueCanBeNull = true;
       _GetFileStructure.ValueCanBeNull = true;
       _RenameSymbol.ValueCanBeNull = true;
+      BindableChildren.Add(new KeyValuePair<string, object>("getBackendStatus", _GetBackendStatus));
       BindableChildren.Add(new KeyValuePair<string, object>("getTypeHierarchy", _GetTypeHierarchy));
       BindableChildren.Add(new KeyValuePair<string, object>("findImplementations", _FindImplementations));
       BindableChildren.Add(new KeyValuePair<string, object>("getCallHierarchy", _GetCallHierarchy));
@@ -97,6 +103,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     //secondary constructor
     private IndexMcpModel (
     ) : this (
+      new RdCall<Unit, RdBackendStatusResult>(JetBrains.Rd.Impl.Serializers.ReadVoid, JetBrains.Rd.Impl.Serializers.WriteVoid, RdBackendStatusResult.Read, RdBackendStatusResult.Write),
       new RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult>(RdTypeHierarchyRequest.Read, RdTypeHierarchyRequest.Write, ReadRdTypeHierarchyResultNullable, WriteRdTypeHierarchyResultNullable),
       new RdCall<RdImplementationsRequest, RdImplementationsResult>(RdImplementationsRequest.Read, RdImplementationsRequest.Write, ReadRdImplementationsResultNullable, WriteRdImplementationsResultNullable),
       new RdCall<RdCallHierarchyRequest, RdCallHierarchyResult>(RdCallHierarchyRequest.Read, RdCallHierarchyRequest.Write, ReadRdCallHierarchyResultNullable, WriteRdCallHierarchyResultNullable),
@@ -121,7 +128,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static  CtxWriteDelegate<RdFileStructureResult> WriteRdFileStructureResultNullable = RdFileStructureResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdRenameSymbolResult> WriteRdRenameSymbolResultNullable = RdRenameSymbolResult.Write.NullableClass();
     
-    protected override long SerializationHash => 1205334339629245198L;
+    protected override long SerializationHash => -3349276471755233403L;
     
     protected override Action<ISerializers> Register => RegisterDeclaredTypesSerializers;
     public static void RegisterDeclaredTypesSerializers(ISerializers serializers)
@@ -147,6 +154,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       printer.Println("IndexMcpModel (");
       using (printer.IndentCookie()) {
+        printer.Print("getBackendStatus = "); _GetBackendStatus.PrintEx(printer); printer.Println();
         printer.Print("getTypeHierarchy = "); _GetTypeHierarchy.PrintEx(printer); printer.Println();
         printer.Print("findImplementations = "); _FindImplementations.PrintEx(printer); printer.Println();
         printer.Print("getCallHierarchy = "); _GetCallHierarchy.PrintEx(printer); printer.Println();
@@ -167,7 +175,117 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:72</p>
+  /// <p>Generated from: IndexMcpModel.kt:48</p>
+  /// </summary>
+  public sealed class RdBackendStatusResult : IPrintable, IEquatable<RdBackendStatusResult>
+  {
+    //fields
+    //public fields
+    [NotNull] public string BackendVersion {get; private set;}
+    public bool SolutionLoaded {get; private set;}
+    public bool PsiServicesAvailable {get; private set;}
+    [NotNull] public string Message {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdBackendStatusResult(
+      [NotNull] string backendVersion,
+      bool solutionLoaded,
+      bool psiServicesAvailable,
+      [NotNull] string message
+    )
+    {
+      if (backendVersion == null) throw new ArgumentNullException("backendVersion");
+      if (message == null) throw new ArgumentNullException("message");
+      
+      BackendVersion = backendVersion;
+      SolutionLoaded = solutionLoaded;
+      PsiServicesAvailable = psiServicesAvailable;
+      Message = message;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string backendVersion, out bool solutionLoaded, out bool psiServicesAvailable, [NotNull] out string message)
+    {
+      backendVersion = BackendVersion;
+      solutionLoaded = SolutionLoaded;
+      psiServicesAvailable = PsiServicesAvailable;
+      message = Message;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdBackendStatusResult> Read = (ctx, reader) => 
+    {
+      var backendVersion = reader.ReadString();
+      var solutionLoaded = reader.ReadBool();
+      var psiServicesAvailable = reader.ReadBool();
+      var message = reader.ReadString();
+      var _result = new RdBackendStatusResult(backendVersion, solutionLoaded, psiServicesAvailable, message);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdBackendStatusResult> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.BackendVersion);
+      writer.Write(value.SolutionLoaded);
+      writer.Write(value.PsiServicesAvailable);
+      writer.Write(value.Message);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdBackendStatusResult) obj);
+    }
+    public bool Equals(RdBackendStatusResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return BackendVersion == other.BackendVersion && SolutionLoaded == other.SolutionLoaded && PsiServicesAvailable == other.PsiServicesAvailable && Message == other.Message;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + BackendVersion.GetHashCode();
+        hash = hash * 31 + SolutionLoaded.GetHashCode();
+        hash = hash * 31 + PsiServicesAvailable.GetHashCode();
+        hash = hash * 31 + Message.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdBackendStatusResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("backendVersion = "); BackendVersion.PrintEx(printer); printer.Println();
+        printer.Print("solutionLoaded = "); SolutionLoaded.PrintEx(printer); printer.Println();
+        printer.Print("psiServicesAvailable = "); PsiServicesAvailable.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:81</p>
   /// </summary>
   public sealed class RdCallHierarchyRequest : IPrintable, IEquatable<RdCallHierarchyRequest>
   {
@@ -278,7 +396,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:79</p>
+  /// <p>Generated from: IndexMcpModel.kt:88</p>
   /// </summary>
   public sealed class RdCallHierarchyResult : IPrintable, IEquatable<RdCallHierarchyResult>
   {
@@ -374,7 +492,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:105</p>
+  /// <p>Generated from: IndexMcpModel.kt:114</p>
   /// </summary>
   public sealed class RdFileStructureRequest : IPrintable, IEquatable<RdFileStructureRequest>
   {
@@ -459,7 +577,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:120</p>
+  /// <p>Generated from: IndexMcpModel.kt:129</p>
   /// </summary>
   public sealed class RdFileStructureResult : IPrintable, IEquatable<RdFileStructureResult>
   {
@@ -546,7 +664,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:111</p>
+  /// <p>Generated from: IndexMcpModel.kt:120</p>
   /// </summary>
   public sealed class RdFlatStructureNode : IPrintable, IEquatable<RdFlatStructureNode>
   {
@@ -677,7 +795,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:61</p>
+  /// <p>Generated from: IndexMcpModel.kt:70</p>
   /// </summary>
   public sealed class RdImplementationsRequest : IPrintable, IEquatable<RdImplementationsRequest>
   {
@@ -771,7 +889,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:66</p>
+  /// <p>Generated from: IndexMcpModel.kt:75</p>
   /// </summary>
   public sealed class RdImplementationsResult : IPrintable, IEquatable<RdImplementationsResult>
   {
@@ -858,7 +976,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:126</p>
+  /// <p>Generated from: IndexMcpModel.kt:135</p>
   /// </summary>
   public sealed class RdRenameSymbolRequest : IPrintable, IEquatable<RdRenameSymbolRequest>
   {
@@ -952,7 +1070,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:131</p>
+  /// <p>Generated from: IndexMcpModel.kt:140</p>
   /// </summary>
   public sealed class RdRenameSymbolResult : IPrintable, IEquatable<RdRenameSymbolResult>
   {
@@ -1183,7 +1301,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:90</p>
+  /// <p>Generated from: IndexMcpModel.kt:99</p>
   /// </summary>
   public sealed class RdSuperMethodInfo : IPrintable, IEquatable<RdSuperMethodInfo>
   {
@@ -1302,7 +1420,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:86</p>
+  /// <p>Generated from: IndexMcpModel.kt:95</p>
   /// </summary>
   public sealed class RdSuperMethodsRequest : IPrintable, IEquatable<RdSuperMethodsRequest>
   {
@@ -1387,7 +1505,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:98</p>
+  /// <p>Generated from: IndexMcpModel.kt:107</p>
   /// </summary>
   public sealed class RdSuperMethodsResult : IPrintable, IEquatable<RdSuperMethodsResult>
   {
@@ -1642,7 +1760,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:48</p>
+  /// <p>Generated from: IndexMcpModel.kt:57</p>
   /// </summary>
   public sealed class RdTypeHierarchyRequest : IPrintable, IEquatable<RdTypeHierarchyRequest>
   {
@@ -1736,7 +1854,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:53</p>
+  /// <p>Generated from: IndexMcpModel.kt:62</p>
   /// </summary>
   public sealed class RdTypeHierarchyResult : IPrintable, IEquatable<RdTypeHierarchyResult>
   {

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Added a Rider/ReSharper backend health protocol endpoint for v4.18.1 test builds so live validation can distinguish backend loading failures from C#/F# symbol-resolution failures.
+
 ## [4.18.0]
 ### Added
 - **Rider ReSharper backend integration scaffolding for C# and F#** — Added rd protocol model, generated Kotlin/C# rd stubs, backend project, and frontend protocol handlers for a backend-only semantic implementation. C#/F# semantic handlers now require generated Rider rd stubs at runtime instead of falling back to frontend PSI heuristics.
