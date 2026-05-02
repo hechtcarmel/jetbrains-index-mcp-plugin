@@ -12,6 +12,7 @@
 - Registered the generated Rider rd model through `rd.solutionExtListener` and synchronized the MCP server version for v4.18.5 test builds so backend protocol lifecycle failures are visible during live validation.
 - Moved the generated Rider rd model from the global IDE root to the Rider solution model for v4.18.6 test builds so `rd.solutionExtListener` can bind it for the opened `.slnx`.
 - Stored the live Rider solution rd model from `rd.solutionExtListener` for v4.18.7 test builds so MCP tool handlers use the same generated model instance Rider created for the loaded solution.
+- Generated the Rider frontend rd model in the standard `com.jetbrains.rd.ide.model` package for v4.18.8 test builds to match Rider's `rd.solutionExtListener` model discovery pattern.
 
 ## [4.18.0]
 ### Added

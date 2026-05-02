@@ -36,7 +36,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:19</p>
+  /// <p>Generated from: IndexMcpModel.kt:18</p>
   /// </summary>
   public class IndexMcpModel : RdExtBase
   {
@@ -214,7 +214,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:56</p>
+  /// <p>Generated from: IndexMcpModel.kt:54</p>
   /// </summary>
   public sealed class RdBackendStatusResult : IPrintable, IEquatable<RdBackendStatusResult>
   {
@@ -324,7 +324,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:141</p>
+  /// <p>Generated from: IndexMcpModel.kt:139</p>
   /// </summary>
   public sealed class RdCallHierarchyRequest : IPrintable, IEquatable<RdCallHierarchyRequest>
   {
@@ -435,7 +435,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:148</p>
+  /// <p>Generated from: IndexMcpModel.kt:146</p>
   /// </summary>
   public sealed class RdCallHierarchyResult : IPrintable, IEquatable<RdCallHierarchyResult>
   {
@@ -531,7 +531,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:84</p>
+  /// <p>Generated from: IndexMcpModel.kt:82</p>
   /// </summary>
   public sealed class RdDefinitionResult : IPrintable, IEquatable<RdDefinitionResult>
   {
@@ -636,7 +636,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:174</p>
+  /// <p>Generated from: IndexMcpModel.kt:172</p>
   /// </summary>
   public sealed class RdFileStructureRequest : IPrintable, IEquatable<RdFileStructureRequest>
   {
@@ -721,7 +721,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:189</p>
+  /// <p>Generated from: IndexMcpModel.kt:187</p>
   /// </summary>
   public sealed class RdFileStructureResult : IPrintable, IEquatable<RdFileStructureResult>
   {
@@ -808,7 +808,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:78</p>
+  /// <p>Generated from: IndexMcpModel.kt:76</p>
   /// </summary>
   public sealed class RdFindDefinitionRequest : IPrintable, IEquatable<RdFindDefinitionRequest>
   {
@@ -909,7 +909,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:99</p>
+  /// <p>Generated from: IndexMcpModel.kt:97</p>
   /// </summary>
   public sealed class RdFindReferencesRequest : IPrintable, IEquatable<RdFindReferencesRequest>
   {
@@ -1011,7 +1011,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:105</p>
+  /// <p>Generated from: IndexMcpModel.kt:103</p>
   /// </summary>
   public sealed class RdFindReferencesResult : IPrintable, IEquatable<RdFindReferencesResult>
   {
@@ -1106,7 +1106,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:65</p>
+  /// <p>Generated from: IndexMcpModel.kt:63</p>
   /// </summary>
   public sealed class RdFindTypesRequest : IPrintable, IEquatable<RdFindTypesRequest>
   {
@@ -1227,7 +1227,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:73</p>
+  /// <p>Generated from: IndexMcpModel.kt:71</p>
   /// </summary>
   public sealed class RdFindTypesResult : IPrintable, IEquatable<RdFindTypesResult>
   {
@@ -1322,7 +1322,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:180</p>
+  /// <p>Generated from: IndexMcpModel.kt:178</p>
   /// </summary>
   public sealed class RdFlatStructureNode : IPrintable, IEquatable<RdFlatStructureNode>
   {
@@ -1453,7 +1453,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:130</p>
+  /// <p>Generated from: IndexMcpModel.kt:128</p>
   /// </summary>
   public sealed class RdImplementationsRequest : IPrintable, IEquatable<RdImplementationsRequest>
   {
@@ -1547,7 +1547,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:135</p>
+  /// <p>Generated from: IndexMcpModel.kt:133</p>
   /// </summary>
   public sealed class RdImplementationsResult : IPrintable, IEquatable<RdImplementationsResult>
   {
@@ -1634,7 +1634,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:90</p>
+  /// <p>Generated from: IndexMcpModel.kt:88</p>
   /// </summary>
   public sealed class RdReferenceInfo : IPrintable, IEquatable<RdReferenceInfo>
   {
@@ -1764,7 +1764,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:195</p>
+  /// <p>Generated from: IndexMcpModel.kt:193</p>
   /// </summary>
   public sealed class RdRenameSymbolRequest : IPrintable, IEquatable<RdRenameSymbolRequest>
   {
@@ -1858,7 +1858,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:200</p>
+  /// <p>Generated from: IndexMcpModel.kt:198</p>
   /// </summary>
   public sealed class RdRenameSymbolResult : IPrintable, IEquatable<RdRenameSymbolResult>
   {
@@ -1988,7 +1988,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:110</p>
+  /// <p>Generated from: IndexMcpModel.kt:108</p>
   /// </summary>
   public sealed class RdResolveSymbolRequest : IPrintable, IEquatable<RdResolveSymbolRequest>
   {
@@ -2082,7 +2082,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:34</p>
+  /// <p>Generated from: IndexMcpModel.kt:32</p>
   /// </summary>
   public sealed class RdSemanticTarget : IPrintable, IEquatable<RdSemanticTarget>
   {
@@ -2201,7 +2201,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:28</p>
+  /// <p>Generated from: IndexMcpModel.kt:26</p>
   /// </summary>
   public sealed class RdSourcePosition : IPrintable, IEquatable<RdSourcePosition>
   {
@@ -2302,7 +2302,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:159</p>
+  /// <p>Generated from: IndexMcpModel.kt:157</p>
   /// </summary>
   public sealed class RdSuperMethodInfo : IPrintable, IEquatable<RdSuperMethodInfo>
   {
@@ -2421,7 +2421,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:155</p>
+  /// <p>Generated from: IndexMcpModel.kt:153</p>
   /// </summary>
   public sealed class RdSuperMethodsRequest : IPrintable, IEquatable<RdSuperMethodsRequest>
   {
@@ -2506,7 +2506,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:167</p>
+  /// <p>Generated from: IndexMcpModel.kt:165</p>
   /// </summary>
   public sealed class RdSuperMethodsResult : IPrintable, IEquatable<RdSuperMethodsResult>
   {
@@ -2602,7 +2602,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:42</p>
+  /// <p>Generated from: IndexMcpModel.kt:40</p>
   /// </summary>
   public sealed class RdSymbolInfo : IPrintable, IEquatable<RdSymbolInfo>
   {
@@ -2761,7 +2761,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:117</p>
+  /// <p>Generated from: IndexMcpModel.kt:115</p>
   /// </summary>
   public sealed class RdTypeHierarchyRequest : IPrintable, IEquatable<RdTypeHierarchyRequest>
   {
@@ -2855,7 +2855,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:122</p>
+  /// <p>Generated from: IndexMcpModel.kt:120</p>
   /// </summary>
   public sealed class RdTypeHierarchyResult : IPrintable, IEquatable<RdTypeHierarchyResult>
   {

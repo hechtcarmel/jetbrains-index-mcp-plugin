@@ -2,9 +2,9 @@ package com.jetbrains.rider.plugins.indexmcp
 
 import com.intellij.openapi.client.ClientProjectSession
 import com.intellij.openapi.diagnostic.Logger
+import com.jetbrains.rd.ide.model.IndexMcpModel
 import com.jetbrains.rd.protocol.SolutionExtListener
 import com.jetbrains.rd.util.lifetime.Lifetime
-import com.jetbrains.rider.plugins.indexmcp.model.IndexMcpModel
 
 class IndexMcpProtocolListener : SolutionExtListener<IndexMcpModel> {
     override fun extensionCreated(lifetime: Lifetime, session: ClientProjectSession, model: IndexMcpModel) {

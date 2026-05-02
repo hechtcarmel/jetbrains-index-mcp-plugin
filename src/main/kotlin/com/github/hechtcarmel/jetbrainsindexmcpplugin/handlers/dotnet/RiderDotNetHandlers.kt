@@ -110,7 +110,7 @@ object RdProtocolBridge {
             // ProtocolManager.getOrCreate(project).protocol.indexMcpModel → IndexMcpModel
             val protocol = getProtocol(project) ?: return null
             val protocolClass = Class.forName("com.jetbrains.rd.framework.IProtocol")
-            val modelExtClass = Class.forName("com.jetbrains.rider.plugins.indexmcp.model.IndexMcpModel_GeneratedKt")
+            val modelExtClass = Class.forName("com.jetbrains.rd.ide.model.IndexMcpModel_GeneratedKt")
             val getModel = modelExtClass.getMethod("getIndexMcpModel", protocolClass)
             getModel.invoke(null, protocol)
         } catch (e: Exception) {
@@ -191,7 +191,7 @@ object RdProtocolBridge {
     }
 }
 
-const val MODEL_PKG = "com.jetbrains.rider.plugins.indexmcp.model"
+const val MODEL_PKG = "com.jetbrains.rd.ide.model"
 
 data class RiderBackendResponse<T>(
     val handled: Boolean,

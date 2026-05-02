@@ -1,5 +1,5 @@
 @file:Suppress("EXPERIMENTAL_API_USAGE","EXPERIMENTAL_UNSIGNED_LITERALS","PackageDirectoryMismatch","UnusedImport","unused","LocalVariableName","CanBeVal","PropertyName","EnumEntryName","ClassName","ObjectPropertyName","UnnecessaryVariable","SpellCheckingInspection")
-package com.jetbrains.rider.plugins.indexmcp.model
+package com.jetbrains.rd.ide.model
 
 import com.jetbrains.rd.framework.*
 import com.jetbrains.rd.framework.base.*
@@ -16,7 +16,7 @@ import kotlin.jvm.JvmStatic
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:19]
+ * #### Generated from [IndexMcpModel.kt:18]
  */
 class IndexMcpModel private constructor(
     private val _getBackendStatus: RdCall<Unit, RdBackendStatusResult>,
@@ -37,32 +37,32 @@ class IndexMcpModel private constructor(
         
         override fun registerSerializersCore(serializers: ISerializers)  {
             val classLoader = javaClass.classLoader
-            serializers.register(LazyCompanionMarshaller(RdId(-5977976679503629463), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSourcePosition"))
-            serializers.register(LazyCompanionMarshaller(RdId(4375242365750196220), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSemanticTarget"))
-            serializers.register(LazyCompanionMarshaller(RdId(-1313392469938805269), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSymbolInfo"))
-            serializers.register(LazyCompanionMarshaller(RdId(5994498188749596030), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdBackendStatusResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-4108457705209229324), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindTypesRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(4627919189821581848), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindTypesResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-869352042608296866), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindDefinitionRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(3534513108899072789), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdDefinitionResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-3032379611242238732), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdReferenceInfo"))
-            serializers.register(LazyCompanionMarshaller(RdId(7995059252749119881), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindReferencesRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(7993636522934682083), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFindReferencesResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(8323260431033600144), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdResolveSymbolRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(-1227020239591611591), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdTypeHierarchyRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(4720868785486666291), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdTypeHierarchyResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(4312643375883653203), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdImplementationsRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(3709455090907832793), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdImplementationsResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(1059166656247531101), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdCallHierarchyRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(-5321339677649567089), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdCallHierarchyResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-3118716768245179149), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSuperMethodsRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(-6175457339077949787), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSuperMethodInfo"))
-            serializers.register(LazyCompanionMarshaller(RdId(-3670941329370988231), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdSuperMethodsResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-6049031805937391491), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFileStructureRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(-994497033408018441), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFlatStructureNode"))
-            serializers.register(LazyCompanionMarshaller(RdId(1590038723070745711), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdFileStructureResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-1370157819129083564), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdRenameSymbolRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(-5994761243749120840), classLoader, "com.jetbrains.rider.plugins.indexmcp.model.RdRenameSymbolResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-5977976679503629463), classLoader, "com.jetbrains.rd.ide.model.RdSourcePosition"))
+            serializers.register(LazyCompanionMarshaller(RdId(4375242365750196220), classLoader, "com.jetbrains.rd.ide.model.RdSemanticTarget"))
+            serializers.register(LazyCompanionMarshaller(RdId(-1313392469938805269), classLoader, "com.jetbrains.rd.ide.model.RdSymbolInfo"))
+            serializers.register(LazyCompanionMarshaller(RdId(5994498188749596030), classLoader, "com.jetbrains.rd.ide.model.RdBackendStatusResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-4108457705209229324), classLoader, "com.jetbrains.rd.ide.model.RdFindTypesRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(4627919189821581848), classLoader, "com.jetbrains.rd.ide.model.RdFindTypesResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-869352042608296866), classLoader, "com.jetbrains.rd.ide.model.RdFindDefinitionRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(3534513108899072789), classLoader, "com.jetbrains.rd.ide.model.RdDefinitionResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-3032379611242238732), classLoader, "com.jetbrains.rd.ide.model.RdReferenceInfo"))
+            serializers.register(LazyCompanionMarshaller(RdId(7995059252749119881), classLoader, "com.jetbrains.rd.ide.model.RdFindReferencesRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(7993636522934682083), classLoader, "com.jetbrains.rd.ide.model.RdFindReferencesResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(8323260431033600144), classLoader, "com.jetbrains.rd.ide.model.RdResolveSymbolRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(-1227020239591611591), classLoader, "com.jetbrains.rd.ide.model.RdTypeHierarchyRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(4720868785486666291), classLoader, "com.jetbrains.rd.ide.model.RdTypeHierarchyResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(4312643375883653203), classLoader, "com.jetbrains.rd.ide.model.RdImplementationsRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(3709455090907832793), classLoader, "com.jetbrains.rd.ide.model.RdImplementationsResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(1059166656247531101), classLoader, "com.jetbrains.rd.ide.model.RdCallHierarchyRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(-5321339677649567089), classLoader, "com.jetbrains.rd.ide.model.RdCallHierarchyResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-3118716768245179149), classLoader, "com.jetbrains.rd.ide.model.RdSuperMethodsRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(-6175457339077949787), classLoader, "com.jetbrains.rd.ide.model.RdSuperMethodInfo"))
+            serializers.register(LazyCompanionMarshaller(RdId(-3670941329370988231), classLoader, "com.jetbrains.rd.ide.model.RdSuperMethodsResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-6049031805937391491), classLoader, "com.jetbrains.rd.ide.model.RdFileStructureRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(-994497033408018441), classLoader, "com.jetbrains.rd.ide.model.RdFlatStructureNode"))
+            serializers.register(LazyCompanionMarshaller(RdId(1590038723070745711), classLoader, "com.jetbrains.rd.ide.model.RdFileStructureResult"))
+            serializers.register(LazyCompanionMarshaller(RdId(-1370157819129083564), classLoader, "com.jetbrains.rd.ide.model.RdRenameSymbolRequest"))
+            serializers.register(LazyCompanionMarshaller(RdId(-5994761243749120840), classLoader, "com.jetbrains.rd.ide.model.RdRenameSymbolResult"))
         }
         
         
@@ -167,12 +167,12 @@ class IndexMcpModel private constructor(
     //threading
     override val extThreading: ExtThreadingKind get() = ExtThreadingKind.Default
 }
-val com.jetbrains.rd.ide.model.Solution.indexMcpModel get() = getOrCreateExtension("indexMcpModel", ::IndexMcpModel)
+val Solution.indexMcpModel get() = getOrCreateExtension("indexMcpModel", ::IndexMcpModel)
 
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:56]
+ * #### Generated from [IndexMcpModel.kt:54]
  */
 data class RdBackendStatusResult (
     val backendVersion: String,
@@ -249,7 +249,7 @@ data class RdBackendStatusResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:141]
+ * #### Generated from [IndexMcpModel.kt:139]
  */
 data class RdCallHierarchyRequest (
     val position: RdSourcePosition,
@@ -326,7 +326,7 @@ data class RdCallHierarchyRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:148]
+ * #### Generated from [IndexMcpModel.kt:146]
  */
 data class RdCallHierarchyResult (
     val root: RdSymbolInfo,
@@ -391,7 +391,7 @@ data class RdCallHierarchyResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:84]
+ * #### Generated from [IndexMcpModel.kt:82]
  */
 data class RdDefinitionResult (
     val definition: RdSymbolInfo,
@@ -462,7 +462,7 @@ data class RdDefinitionResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:174]
+ * #### Generated from [IndexMcpModel.kt:172]
  */
 data class RdFileStructureRequest (
     val filePath: String
@@ -521,7 +521,7 @@ data class RdFileStructureRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:189]
+ * #### Generated from [IndexMcpModel.kt:187]
  */
 data class RdFileStructureResult (
     val nodes: List<RdFlatStructureNode>
@@ -580,7 +580,7 @@ data class RdFileStructureResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:78]
+ * #### Generated from [IndexMcpModel.kt:76]
  */
 data class RdFindDefinitionRequest (
     val target: RdSemanticTarget,
@@ -651,7 +651,7 @@ data class RdFindDefinitionRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:99]
+ * #### Generated from [IndexMcpModel.kt:97]
  */
 data class RdFindReferencesRequest (
     val target: RdSemanticTarget,
@@ -722,7 +722,7 @@ data class RdFindReferencesRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:105]
+ * #### Generated from [IndexMcpModel.kt:103]
  */
 data class RdFindReferencesResult (
     val references: List<RdReferenceInfo>,
@@ -787,7 +787,7 @@ data class RdFindReferencesResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:65]
+ * #### Generated from [IndexMcpModel.kt:63]
  */
 data class RdFindTypesRequest (
     val query: String,
@@ -870,7 +870,7 @@ data class RdFindTypesRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:73]
+ * #### Generated from [IndexMcpModel.kt:71]
  */
 data class RdFindTypesResult (
     val types: List<RdSymbolInfo>,
@@ -935,7 +935,7 @@ data class RdFindTypesResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:180]
+ * #### Generated from [IndexMcpModel.kt:178]
  */
 data class RdFlatStructureNode (
     val name: String,
@@ -1024,7 +1024,7 @@ data class RdFlatStructureNode (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:130]
+ * #### Generated from [IndexMcpModel.kt:128]
  */
 data class RdImplementationsRequest (
     val position: RdSourcePosition,
@@ -1089,7 +1089,7 @@ data class RdImplementationsRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:135]
+ * #### Generated from [IndexMcpModel.kt:133]
  */
 data class RdImplementationsResult (
     val implementations: List<RdSymbolInfo>
@@ -1148,7 +1148,7 @@ data class RdImplementationsResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:90]
+ * #### Generated from [IndexMcpModel.kt:88]
  */
 data class RdReferenceInfo (
     val filePath: String,
@@ -1237,7 +1237,7 @@ data class RdReferenceInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:195]
+ * #### Generated from [IndexMcpModel.kt:193]
  */
 data class RdRenameSymbolRequest (
     val position: RdSourcePosition,
@@ -1302,7 +1302,7 @@ data class RdRenameSymbolRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:200]
+ * #### Generated from [IndexMcpModel.kt:198]
  */
 data class RdRenameSymbolResult (
     val success: Boolean,
@@ -1391,7 +1391,7 @@ data class RdRenameSymbolResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:110]
+ * #### Generated from [IndexMcpModel.kt:108]
  */
 data class RdResolveSymbolRequest (
     val language: String,
@@ -1456,7 +1456,7 @@ data class RdResolveSymbolRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:34]
+ * #### Generated from [IndexMcpModel.kt:32]
  */
 data class RdSemanticTarget (
     val filePath: String?,
@@ -1539,7 +1539,7 @@ data class RdSemanticTarget (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:28]
+ * #### Generated from [IndexMcpModel.kt:26]
  */
 data class RdSourcePosition (
     val filePath: String,
@@ -1610,7 +1610,7 @@ data class RdSourcePosition (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:159]
+ * #### Generated from [IndexMcpModel.kt:157]
  */
 data class RdSuperMethodInfo (
     val symbol: RdSymbolInfo,
@@ -1693,7 +1693,7 @@ data class RdSuperMethodInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:155]
+ * #### Generated from [IndexMcpModel.kt:153]
  */
 data class RdSuperMethodsRequest (
     val position: RdSourcePosition
@@ -1752,7 +1752,7 @@ data class RdSuperMethodsRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:167]
+ * #### Generated from [IndexMcpModel.kt:165]
  */
 data class RdSuperMethodsResult (
     val method: RdSymbolInfo,
@@ -1817,7 +1817,7 @@ data class RdSuperMethodsResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:42]
+ * #### Generated from [IndexMcpModel.kt:40]
  */
 data class RdSymbolInfo (
     val name: String,
@@ -1924,7 +1924,7 @@ data class RdSymbolInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:117]
+ * #### Generated from [IndexMcpModel.kt:115]
  */
 data class RdTypeHierarchyRequest (
     val position: RdSourcePosition,
@@ -1989,7 +1989,7 @@ data class RdTypeHierarchyRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:122]
+ * #### Generated from [IndexMcpModel.kt:120]
  */
 data class RdTypeHierarchyResult (
     val element: RdSymbolInfo,

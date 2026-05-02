@@ -1,7 +1,7 @@
 package com.jetbrains.rider.plugins.indexmcp
 
 import com.intellij.openapi.project.Project
-import com.jetbrains.rider.plugins.indexmcp.model.IndexMcpModel
+import com.jetbrains.rd.ide.model.IndexMcpModel
 import java.util.concurrent.ConcurrentHashMap
 
 object IndexMcpProtocolModelStore {

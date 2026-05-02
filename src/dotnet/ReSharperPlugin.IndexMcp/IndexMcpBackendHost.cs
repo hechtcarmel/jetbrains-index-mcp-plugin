@@ -36,7 +36,7 @@ namespace ReSharperPlugin.IndexMcp;
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
-    private const string BackendVersion = "4.18.7";
+    private const string BackendVersion = "4.18.8";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(ISolution solution, IndexMcpModel model, Lifetime lifetime)
