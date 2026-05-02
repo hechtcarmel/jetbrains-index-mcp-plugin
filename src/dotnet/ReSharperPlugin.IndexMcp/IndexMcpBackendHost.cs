@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.20.2";
+    private const string BackendVersion = "4.20.3";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -826,7 +826,7 @@ public class IndexMcpBackendHost
         if (presentationLanguage != null && presentationLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
             return true;
 
-        var filePath = element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath ?? "";
+        var filePath = PickPreferredDeclaration(element)?.GetSourceFile()?.GetLocation().FullPath ?? "";
         if (string.IsNullOrWhiteSpace(filePath))
             return language.Equals("C#", StringComparison.OrdinalIgnoreCase);
 
@@ -880,7 +880,7 @@ public class IndexMcpBackendHost
     }
 
     private static string? GetDeclarationPath(IDeclaredElement element) =>
-        element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath;
+        PickPreferredDeclaration(element)?.GetSourceFile()?.GetLocation().FullPath;
 
     // Lower rank = better. Used to prefer hand-written code-behind partials
     // (e.g. MainWindow.axaml.cs) over generator output and over synthetic
@@ -1256,8 +1256,7 @@ public class IndexMcpBackendHost
 
     private static RdSymbolInfo ToSymbolInfo(IDeclaredElement element)
     {
-        var declarations = element.GetDeclarations();
-        var declaration = declarations.FirstOrDefault();
+        var declaration = PickPreferredDeclaration(element);
 
         string? filePath = null;
         int? line = null;

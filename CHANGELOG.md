@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Fixed
+- **AXAML resolver: emitter still picked first declaration even after the v4.20.0–4.20.2 ranker.** The ranking work in v4.20.0/.1/.2 ordered top-level results by `BestDeclarationRank`, but the actual symbol-info builder (`ToSymbolInfo` — used by `find_definition`, `find_class`, `type_hierarchy`, `find_implementations`, `find_super_methods`, `call_hierarchy` to populate `file`/`line`/`column`/`preview`) still called `element.GetDeclarations().FirstOrDefault()`. So the ranker picked the right element, then the builder picked the wrong partial of that element's declaration list and emitted `file:""`. `ToSymbolInfo`, `GetDeclarationPath`, and `MatchesLanguage`'s path probe now all go through `PickPreferredDeclaration`. Resolves the persistent `find_definition file:""` / `find_class file:""` / `type_hierarchy "Class not found"` symptoms on Avalonia AXAML-paired classes that v4.20.0–4.20.2 only partially addressed.
+
+### Known issues (not regressions; deferred)
+- `ide_sync_files` does not invalidate Roslyn source-generator output for files whose inputs changed externally. After a `git reset`, the generator-emitted partial may still hold the pre-reset symbol name. Workaround: rebuild the project to refresh generator output, or restart the IDE.
+
+## [4.20.2]
+
+### Fixed
 - **AXAML resolver: dropped overly broad path heuristics that could misclassify legitimate user folders.** v4.20.1 added `/generators/`, `/sourcegenerator`, and `.namegenerator/` substring matches to the generator-detection heuristic. A user folder named (for example) `MyProject.NameGenerator/` would have all its hand-written `.cs` files ranked as generator output, losing priority to synthetic XAML partials. Since `IPsiSourceFile.Properties.IsGeneratedFile` / `IsNonUserFile` (added in v4.20.1) is the authoritative ReSharper signal for Roslyn source generators including Avalonia's, the broad path patterns were unnecessary belt-and-braces. The path heuristic now keeps only the unambiguous markers `/obj/`, `/generated/`, `*.g.cs`, `*.g.i.cs`.
 
 ## [4.20.1]
