@@ -129,6 +129,8 @@ class FindClassTool : AbstractMcpTool() {
         val riderBackend = RiderBackendSemanticService.findTypes(project, query, matchMode, scope, languageFilter, collectLimit)
         if (riderBackend.handled) {
             val classes = riderBackend.value.orEmpty()
+                .distinctBy { "${it.qualifiedName}:${it.file}:${it.line}" }
+                .take(collectLimit)
             val serializedResults = classes.map { cls ->
                 PaginationService.SerializedResult(
                     key = "${cls.file}:${cls.line}:${cls.column}:${cls.name}",
@@ -168,7 +170,7 @@ class FindClassTool : AbstractMcpTool() {
             val classes = searchClasses(project, query, searchScope, scope, collectLimit, nameFilter, matcher, languageFilter)
 
             val sortedClasses = classes
-                .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+                .distinctBy { "${it.qualifiedName}:${it.file}:${it.line}" }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->

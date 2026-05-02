@@ -18,6 +18,8 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Rider protocol-based handlers for C# and F# code intelligence.
@@ -64,8 +66,20 @@ object RiderDotNetHandlers {
         LOG.info("Registered Rider protocol-based .NET handlers for C# and F#")
     }
 
-    private fun isRiderEnvironment(): Boolean {
-        return try {
+    private fun isRiderEnvironment(): Boolean = RiderEnvironment.isAvailable
+
+    private fun isRiderProtocolGenerated(): Boolean = RiderEnvironment.isProtocolGenerated
+}
+
+/**
+ * Cached Rider environment + protocol-stub detection. The lookups are reflection-based and
+ * never change for the lifetime of the JVM, so we resolve them once via `lazy { }`.
+ *
+ * Using `lazy` (not eager init) avoids ordering hazards if Rider classes load late.
+ */
+internal object RiderEnvironment {
+    val isAvailable: Boolean by lazy {
+        try {
             Class.forName("com.jetbrains.rider.projectView.solution.SolutionLifecycleHost")
             true
         } catch (_: ClassNotFoundException) {
@@ -78,7 +92,7 @@ object RiderDotNetHandlers {
         }
     }
 
-    private fun isRiderProtocolGenerated(): Boolean =
+    val isProtocolGenerated: Boolean by lazy {
         try {
             Class.forName("$MODEL_PKG.IndexMcpModel")
             Class.forName("$MODEL_PKG.IndexMcpModel_GeneratedKt")
@@ -86,6 +100,7 @@ object RiderDotNetHandlers {
         } catch (_: ClassNotFoundException) {
             false
         }
+    }
 }
 
 // ── Reflection-based rd protocol access ─────────────────────────────────────
@@ -99,6 +114,23 @@ object RiderDotNetHandlers {
  */
 object RdProtocolBridge {
     private val LOG = logger<RdProtocolBridge>()
+
+    // Reflection caches. Keys are class-name + member signature; values are immutable per JVM lifetime.
+    // ConcurrentHashMap.computeIfAbsent is safe — Method/Constructor lookups are pure functions.
+    private val methodCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Method>()
+    private val constructorCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Constructor<*>?>()
+
+    private fun cachedMethod(clazz: Class<*>, name: String, vararg paramTypes: Class<*>): java.lang.reflect.Method {
+        val key = "${clazz.name}#$name(${paramTypes.joinToString(",") { it.name }})"
+        return methodCache.computeIfAbsent(key) { clazz.getMethod(name, *paramTypes) }
+    }
+
+    private fun cachedConstructor(clazz: Class<*>, arity: Int): java.lang.reflect.Constructor<*>? {
+        val key = "${clazz.name}#<init>($arity)"
+        return constructorCache.computeIfAbsent(key) {
+            clazz.constructors.firstOrNull { it.parameterCount == arity }
+        }
+    }
 
     /**
      * Gets the IndexMcpModel from a Project's Rider protocol host.
@@ -164,27 +196,95 @@ object RdProtocolBridge {
      */
     fun invokeCall(model: Any, callName: String, request: Any): Any? {
         return try {
-            val callField = model.javaClass.getMethod("get${callName.replaceFirstChar { it.uppercaseChar() }}")
+            val callField = cachedMethod(model.javaClass, "get${callName.replaceFirstChar { it.uppercaseChar() }}")
             val rdCall = callField.invoke(model)
-            val timeoutsClass = Class.forName("com.jetbrains.rd.framework.impl.RpcTimeouts")
-            val companion = timeoutsClass.getField("Companion").get(null)
-            val longRunningTimeouts = companion.javaClass.getMethod("getLongRunning").invoke(companion)
-            val syncMethod = rdCall.javaClass.getMethod("sync", Any::class.java, timeoutsClass)
-            syncMethod.invoke(rdCall, request, longRunningTimeouts)
+            val protocol = cachedMethod(model.javaClass, "getProtocol").invoke(model)
+            var lifetime = cachedMethod(protocol.javaClass, "getLifetime").invoke(protocol)
+            val lifetimeClass = Class.forName("com.jetbrains.rd.util.lifetime.Lifetime")
+            if (!lifetimeClass.isInstance(lifetime)) {
+                lifetime = cachedMethod(lifetime.javaClass, "getLifetime").invoke(lifetime)
+            }
+            val scheduler = cachedMethod(protocol.javaClass, "getScheduler").invoke(protocol)
+            val resultLatch = CountDownLatch(1)
+            var taskResult: Any? = null
+            var failure: Throwable? = null
+            val startRequest: () -> Unit = {
+                try {
+                    val startMethod = cachedMethod(rdCall.javaClass, "start", Any::class.java)
+                    val rdTask = startMethod.invoke(rdCall, request)
+                    val resultView = cachedMethod(rdTask.javaClass, "getResult").invoke(rdTask)
+                    taskResult = cachedMethod(resultView.javaClass, "getValueOrNull").invoke(resultView)
+                    if (taskResult == null) {
+                        val callback: (Any?) -> Unit = {
+                            taskResult = it
+                            resultLatch.countDown()
+                        }
+                        cachedMethod(resultView.javaClass, "advise", lifetimeClass, kotlin.jvm.functions.Function1::class.java)
+                            .invoke(resultView, lifetime, callback)
+                    } else {
+                        resultLatch.countDown()
+                    }
+                } catch (e: Throwable) {
+                    failure = e
+                    resultLatch.countDown()
+                }
+            }
+            val isActive = cachedMethod(scheduler.javaClass, "isActive").invoke(scheduler) as Boolean
+            if (isActive) {
+                startRequest()
+            } else {
+                cachedMethod(scheduler.javaClass, "queue", kotlin.jvm.functions.Function0::class.java)
+                    .invoke(scheduler, startRequest)
+            }
+            val timeoutSeconds = rdCallTimeoutSeconds(callName)
+            if (!resultLatch.await(timeoutSeconds, TimeUnit.SECONDS)) {
+                throw IllegalStateException("Timed out waiting for Rider backend rd call '$callName'")
+            }
+            failure?.let { throw it }
+            unwrapRdTaskResult(taskResult)
         } catch (e: Exception) {
-            LOG.warn("Failed to invoke rd call '$callName': ${e.message}")
+            val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e.cause ?: e
+            LOG.warn("Failed to invoke rd call '$callName': ${cause::class.java.simpleName}: ${cause.message}")
             null
+        }
+    }
+
+    private fun rdCallTimeoutSeconds(callName: String): Long = when (callName) {
+        "renameSymbol", "getCallHierarchy" -> 300L
+        else -> 60L
+    }
+
+    private fun unwrapRdTaskResult(taskResult: Any?): Any? {
+        if (taskResult == null) {
+            return null
+        }
+        return when (taskResult.javaClass.simpleName) {
+            "Success" -> taskResult.javaClass.getMethod("getValue").invoke(taskResult)
+            "Fault" -> {
+                val error = taskResult.javaClass.getMethod("getError").invoke(taskResult)
+                throw IllegalStateException(error.toString())
+            }
+            "Cancelled" -> throw IllegalStateException("Rider backend rd call was cancelled")
+            else -> throw IllegalStateException("Unexpected Rider backend rd task result: ${taskResult.javaClass.name}")
         }
     }
 
     /**
      * Creates an rd struct instance via its constructor reflectively.
+     *
+     * Returns null when no constructor matches the supplied arity. Previous behaviour fell back to
+     * `clazz.constructors.first()` on no match, which would invoke an arbitrary constructor with
+     * mismatched arguments and throw deep inside reflection — masking the real cause from callers.
      */
     fun createStruct(className: String, vararg args: Any?): Any? {
         return try {
             val clazz = Class.forName(className)
-            val constructor = clazz.constructors.firstOrNull { it.parameterCount == args.size }
-                ?: clazz.constructors.first()
+            val constructor = cachedConstructor(clazz, args.size)
+            if (constructor == null) {
+                val available = clazz.constructors.joinToString { "(${it.parameterCount} args)" }
+                LOG.warn("No constructor on '$className' matches arity ${args.size}. Available: $available")
+                return null
+            }
             constructor.newInstance(*args)
         } catch (e: Exception) {
             LOG.warn("Failed to create rd struct '$className': ${e.message}")
@@ -192,20 +292,14 @@ object RdProtocolBridge {
         }
     }
 
-    /** Gets a property value from an rd struct via getter method. */
+    /** Gets a property value from an rd struct via JavaBean getter. */
     fun getProperty(obj: Any, name: String): Any? {
         return try {
-            val getter = obj.javaClass.getMethod("get${name.replaceFirstChar { it.uppercaseChar() }}")
+            val getter = cachedMethod(obj.javaClass, "get${name.replaceFirstChar { it.uppercaseChar() }}")
             getter.invoke(obj)
         } catch (e: Exception) {
-            // Try component-style access
-            try {
-                val getter = obj.javaClass.getMethod("component${name}")
-                getter.invoke(obj)
-            } catch (_: Exception) {
-                LOG.debug("Failed to get property '$name' from ${obj.javaClass.simpleName}: ${e.message}")
-                null
-            }
+            LOG.debug("Failed to get property '$name' from ${obj.javaClass.simpleName}: ${e.message}")
+            null
         }
     }
 }
@@ -250,7 +344,14 @@ object RiderBackendSemanticService {
         val result = RdProtocolBridge.invokeCall(model, "findTypes", request) ?: return RiderBackendResponse(handled = true)
         @Suppress("UNCHECKED_CAST")
         val types = (RdProtocolBridge.getProperty(result, "types") as? List<Any>) ?: emptyList()
-        return RiderBackendResponse(handled = true, value = types.mapNotNull { rdSymbolToSymbolMatch(project, it) })
+        // Backend already merges BCL/standard types into its response when scope = PROJECT_AND_LIBRARIES,
+        // so no frontend-side append/merge is required. See `IndexMcpBackendHost.cs` STANDARD_DOTNET_TYPES.
+        return RiderBackendResponse(
+            handled = true,
+            value = types.mapNotNull { rdSymbolToSymbolMatch(project, it) }
+                .distinctBy { "${it.qualifiedName}:${it.file}:${it.line}" }
+                .take(limit)
+        )
     }
 
     fun findDefinition(
@@ -327,16 +428,30 @@ object RiderBackendSemanticService {
         })
     }
 
+    fun getTypeHierarchy(
+        project: Project,
+        file: String,
+        line: Int,
+        column: Int,
+        scope: BuiltInSearchScope,
+        language: String
+    ): RiderBackendResponse<TypeHierarchyData> {
+        if (!canUseBackend(project) || !isDotNetFile(file)) return RiderBackendResponse(handled = false)
+        val backendFile = resolveBackendFilePath(project, file) ?: return RiderBackendResponse(handled = true)
+        val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", backendFile, line, column)
+            ?: return RiderBackendResponse(handled = true)
+        val result = invokeTypeHierarchy(project, position, scope) ?: return RiderBackendResponse(handled = true)
+        return RiderBackendResponse(handled = true, value = rdTypeHierarchyToData(result, language))
+    }
+
     private fun canUseBackend(project: Project): Boolean =
-        RiderDotNetHandlers.run {
-            try {
-                Class.forName("$MODEL_PKG.IndexMcpModel")
-                Class.forName("$MODEL_PKG.IndexMcpModel_GeneratedKt")
-                RdProtocolBridge.getModel(project) != null
-            } catch (e: Exception) {
-                LOG.debug("Rider backend semantic service unavailable: ${e.message}")
-                false
-            }
+        try {
+            Class.forName("$MODEL_PKG.IndexMcpModel")
+            Class.forName("$MODEL_PKG.IndexMcpModel_GeneratedKt")
+            RdProtocolBridge.getModel(project) != null
+        } catch (e: Exception) {
+            LOG.debug("Rider backend semantic service unavailable: ${e.message}")
+            false
         }
 
     private fun createSemanticTarget(
@@ -370,17 +485,38 @@ object RiderBackendSemanticService {
         return null
     }
 
+    internal fun invokeTypeHierarchy(project: Project, position: Any, scope: BuiltInSearchScope): Any? {
+        val model = RdProtocolBridge.getModel(project) ?: return null
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdTypeHierarchyRequest", position, scope.wireValue)
+            ?: return null
+        return RdProtocolBridge.invokeCall(model, "getTypeHierarchy", request)
+    }
+
+    internal fun rdTypeHierarchyToData(result: Any, language: String): TypeHierarchyData? {
+        val elementInfo = RdProtocolBridge.getProperty(result, "element") ?: return null
+        @Suppress("UNCHECKED_CAST")
+        val supertypes = (RdProtocolBridge.getProperty(result, "supertypes") as? List<Any>) ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val subtypes = (RdProtocolBridge.getProperty(result, "subtypes") as? List<Any>) ?: emptyList()
+
+        return TypeHierarchyData(
+            element = rdSymbolToTypeElementData(elementInfo, language),
+            supertypes = supertypes.map { rdSymbolToTypeElementData(it, language) },
+            subtypes = subtypes.map { rdSymbolToTypeElementData(it, language) }
+        )
+    }
+
     private fun rdSymbolToSymbolMatch(project: Project, symbol: Any): SymbolMatch? {
         val name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: return null
-        val filePath = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null
+        val filePath = RdProtocolBridge.getProperty(symbol, "filePath") as? String
         val qualifiedName = RdProtocolBridge.getProperty(symbol, "qualifiedName") as? String
         return SymbolMatch(
             name = name,
             qualifiedName = qualifiedName,
             kind = (RdProtocolBridge.getProperty(symbol, "kind") as? String ?: "UNKNOWN").lowercase(),
-            file = displayPath(project, filePath),
-            line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: 1,
-            column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 1,
+            file = filePath?.let { displayPath(project, it) } ?: "",
+            line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: 0,
+            column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 0,
             containerName = qualifiedName?.substringBeforeLast('.', missingDelimiterValue = ""),
             language = RdProtocolBridge.getProperty(symbol, "language") as? String
         )
@@ -538,19 +674,7 @@ abstract class BaseRiderHandler<T>(
     private val supportedLanguageIds: Set<String>,
 ) : LanguageHandler<T> {
 
-    override fun isAvailable(): Boolean {
-        return try {
-            Class.forName("com.jetbrains.rider.projectView.SolutionLifecycleHost")
-            true
-        } catch (_: ClassNotFoundException) {
-            try {
-                Class.forName("com.jetbrains.rider.projectView.solution.SolutionLifecycleHost")
-                true
-            } catch (_: ClassNotFoundException) {
-                false
-            }
-        }
-    }
+    override fun isAvailable(): Boolean = RiderEnvironment.isAvailable
 
     override fun canHandle(element: PsiElement): Boolean =
         isAvailable() && isDotNetElement(element, supportedExtensions, supportedLanguageIds)
@@ -567,22 +691,12 @@ abstract class RiderTypeHierarchyHandler(
     TypeHierarchyHandler {
 
     override fun getTypeHierarchy(element: PsiElement, project: Project, scope: BuiltInSearchScope): TypeHierarchyData? {
-        val model = RdProtocolBridge.getModel(project) ?: return null
         val position = createSourcePosition(project, element) ?: return null
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdTypeHierarchyRequest", position, scope.wireValue) ?: return null
-        val result = RdProtocolBridge.invokeCall(model, "getTypeHierarchy", request) ?: return null
-
-        val elementInfo = RdProtocolBridge.getProperty(result, "element") ?: return null
-        @Suppress("UNCHECKED_CAST")
-        val supertypes = (RdProtocolBridge.getProperty(result, "supertypes") as? List<Any>) ?: emptyList()
-        @Suppress("UNCHECKED_CAST")
-        val subtypes = (RdProtocolBridge.getProperty(result, "subtypes") as? List<Any>) ?: emptyList()
-
-        return TypeHierarchyData(
-            element = rdSymbolToTypeElementData(elementInfo, displayLanguage),
-            supertypes = supertypes.map { rdSymbolToTypeElementData(it, displayLanguage) },
-            subtypes = subtypes.map { rdSymbolToTypeElementData(it, displayLanguage) }
-        )
+        val result = RiderBackendSemanticService.run {
+            val hierarchyResult = invokeTypeHierarchy(project, position, scope) ?: return null
+            rdTypeHierarchyToData(hierarchyResult, displayLanguage)
+        }
+        return result
     }
 }
 
@@ -642,12 +756,55 @@ abstract class RiderCallHierarchyHandler(
         val root = RdProtocolBridge.getProperty(result, "root") ?: return null
         @Suppress("UNCHECKED_CAST")
         val calls = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
+        // Single seen set shared across the whole tree so that sibling subtrees do not
+        // re-expand callees they have collectively already visited. Without this dedup,
+        // wide call graphs trigger exponential backend round-trips (root cause of the
+        // historical "deep call hierarchy is slow" symptom).
+        val seen = mutableSetOf<String>()
         val convertedCalls = calls.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+            .filter { seen.add(callKey(it)) }
+            .take(MAX_CHILDREN_PER_LEVEL)
+            .map { call ->
+                expandCallHierarchy(project, call, direction, depth - 1, scope, seen)
+            }
 
         return CallHierarchyData(
             element = rdSymbolToCallElementData(root, displayLanguage) ?: return null,
             calls = convertedCalls
         )
+    }
+
+    private fun expandCallHierarchy(
+        project: Project,
+        call: CallElementData,
+        direction: String,
+        remainingDepth: Int,
+        scope: BuiltInSearchScope,
+        seen: MutableSet<String>
+    ): CallElementData {
+        if (remainingDepth <= 0) return call.copy(children = emptyList())
+        val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", call.file, call.line, call.column)
+            ?: return call.copy(children = emptyList())
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", position, direction, remainingDepth, scope.wireValue)
+            ?: return call.copy(children = emptyList())
+        val model = RdProtocolBridge.getModel(project) ?: return call.copy(children = emptyList())
+        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return call.copy(children = emptyList())
+        @Suppress("UNCHECKED_CAST")
+        val children = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
+        val convertedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+            .filter { seen.add(callKey(it)) }
+            .take(MAX_CHILDREN_PER_LEVEL)
+            .map { child -> expandCallHierarchy(project, child, direction, remainingDepth - 1, scope, seen) }
+        return call.copy(children = convertedChildren)
+    }
+
+    private fun callKey(call: CallElementData): String =
+        "${call.file}:${call.line}:${call.column}:${call.name}"
+
+    private companion object {
+        // Mirrors JavaCallHierarchyHandler.MAX_RESULTS_PER_LEVEL to keep behaviour consistent
+        // across IDEs and to bound RD round-trips for fan-out methods.
+        const val MAX_CHILDREN_PER_LEVEL = 20
     }
 }
 

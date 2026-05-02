@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderEnvironment
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -7,6 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
@@ -50,6 +52,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * 3. **EDT**: Execute the appropriate move backend
  */
 open class MoveFileTool : AbstractRefactoringTool() {
+
+    private val LOG = logger<MoveFileTool>()
 
     override val name = "ide_move_file"
 
@@ -274,16 +278,23 @@ open class MoveFileTool : AbstractRefactoringTool() {
             }
             val backendNote = when (preparation.backend) {
                 MoveBackend.GENERIC_FILE_MOVE -> if (fileName.endsWith(".cs", ignoreCase = true)) {
-                    if (namespaceUpdated) {
-                        " using IDE file move semantics; C# namespace updated, but cross-file using/import updates depend on Rider frontend support"
+                    val riderSuffix = if (RiderEnvironment.isAvailable) {
+                        ", and cross-file using/import updates depend on Rider frontend support"
                     } else {
-                        " using IDE file move semantics; no C# namespace change was needed, and cross-file using/import updates depend on Rider frontend support"
+                        ""
+                    }
+                    if (namespaceUpdated) {
+                        " using IDE file move semantics; C# namespace updated$riderSuffix"
+                    } else {
+                        " using IDE file move semantics; no C# namespace change was needed$riderSuffix"
                     }
                 } else {
                     " using IDE file move semantics"
                 }
                 MoveBackend.PHP_SEMANTIC_MOVE -> " using PhpStorm semantic PHP move"
             }
+            refreshProjectRootsAndCommit(project)
+            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
             createJsonResult(
                 RefactoringResult(
                     success = true,
@@ -351,7 +362,19 @@ open class MoveFileTool : AbstractRefactoringTool() {
         val document = PsiDocumentManager.getInstance(project).getDocument(movedFile) ?: return false
         val text = document.text
         val namespaceRegex = Regex("""(?m)^(\s*namespace\s+)([A-Za-z_][A-Za-z0-9_.]*)(\s*[;{])""")
-        val match = namespaceRegex.find(text) ?: return false
+        val matches = namespaceRegex.findAll(text).toList()
+        if (matches.isEmpty()) return false
+        // Refuse to silently rewrite only the first namespace when the file declares multiple
+        // (e.g. multiple top-level scoped namespaces). Rider's refactoring engine is the right
+        // place to handle that; the heuristic is only safe for the common single-namespace case.
+        if (matches.size > 1) {
+            LOG.info(
+                "Skipping C# namespace update for '${preparation.destinationRelativePath}/$fileName': " +
+                    "file declares ${matches.size} namespaces; manual or Rider-driven update required."
+            )
+            return false
+        }
+        val match = matches.single()
         val oldNamespace = match.groupValues[2]
         val newNamespace = inferMovedCSharpNamespace(oldNamespace, preparation) ?: return false
         if (newNamespace == oldNamespace) return false
@@ -370,6 +393,15 @@ open class MoveFileTool : AbstractRefactoringTool() {
         return true
     }
 
+    /**
+     * Infers a destination C# namespace from the file's source namespace and the move's
+     * old/new directory paths. Heuristic — does not consult `.csproj`/RootNamespace and assumes:
+     *   * `src`, `main`, `test`, `csharp`, and `cs` are infrastructure folders (filtered out).
+     *   * The original namespace's trailing segments mirror the source directory's trailing
+     *     segments (common .NET convention). When that holds, the matching tail is replaced
+     *     by the new directory tail; otherwise a single trailing segment is dropped.
+     * Returns null if no plausible new namespace can be derived (e.g. moving to a project root).
+     */
     private fun inferMovedCSharpNamespace(
         oldNamespace: String,
         preparation: MovePreparation

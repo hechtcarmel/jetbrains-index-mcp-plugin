@@ -4,7 +4,38 @@
 
 ## [Unreleased]
 
+### Changed
+- **Plugin version bumped to 4.19.0** (minor — Rider branch code-quality cleanup; no breaking changes to tool schemas, transport, or client configuration).
+- Bumped `intelliJPlatform` Gradle plugin from `2.10.5` to `2.11.0` (no API regressions; verified by `runPluginVerifier`).
+
 ### Fixed
+- Rider C#/F# call hierarchy: fixed shared-state bug where the `seen` set passed to `expandCallHierarchy` was copied at every recursion level, causing the same callee to be reported multiple times when reachable from sibling branches. The de-duplication set is now shared across the recursion. Added per-level (20) and depth (50) caps matching the Java handler.
+- Rider C#/F# symbol rename now returns truthful error messages: `NotInRider` / `FileNotFound` / `BackendCallFailed(reason)` / `Success` are reported distinctly instead of always claiming "rename protocol is not available".
+- `RdProtocolBridge.createStruct` now fails explicitly when no constructor matches the requested arity instead of silently invoking the first constructor with arbitrary parameters.
+- `MoveFileTool.updateMovedCSharpNamespace` now refuses the heuristic when more than one `namespace` declaration matches and reports the skip in the response, instead of silently editing only the first.
+- `MoveFileTool` only mentions Rider/ReSharper namespace-update behavior in the response when actually running in Rider; in non-Rider IDEs the response describes plain file-move semantics.
+
+### Removed
+- Deleted `DotNetHandlers.kt` and its registration entry. C#/F# semantics are owned exclusively by Rider-backend handlers (`RiderDotNetHandlers`); the legacy frontend-PSI handler had no remaining call sites.
+- Deleted two unused C# rename strategies in `IndexMcpBackendHost.cs`: `TryExecuteAtomicRenames` and `TryExecuteInlineRenameWorkflow` (and their helpers `CreateRenameDataModel`, `CreateRenameDataContext`). Live testing across v4.18.13–v4.18.17 confirmed both strategies always failed with reflection errors in the MCP context. The primary strategy (`TryExecuteBackendPsiRename`) and the static `RenameRefactoringService.RenameAndGetConflicts` fallback remain. Net removal: ~200 lines of brittle reflection plumbing.
+- Removed duplicated `STANDARD_DOTNET_TYPES` Kotlin tables in `FindClassTool.kt` and `RiderDotNetHandlers.kt`. The backend `IndexMcpBackendHost.cs` is now the single authoritative source for the .NET BCL type catalog used by the `project_and_libraries` scope.
+- Removed unreachable `componentN` getter fallback in `RdProtocolBridge.getProperty`.
+- Removed `ensurePsiUpToDate` wrapper in `AbstractMcpTool` (`refreshProjectRootsAndCommit` is now called directly).
+- Removed redundant `RiderDotNetHandlers.run { ... }` wrapper in `canUseBackend`.
+- Removed local `isDotNetFile` helper in `RenameSymbolTool.kt`; reuses `RiderBackendSemanticService.isDotNetFile`.
+
+### Internal
+- Extracted `RiderEnvironment` lazy singleton (`isAvailable`, `isProtocolGenerated`) replacing duplicated reflection-based detection in `RiderDotNetHandlers` and `BaseRiderHandler`. Lookups now occur once per process.
+- Added `ConcurrentHashMap`-backed reflection cache in `RdProtocolBridge` for `Method` and `Constructor` lookups in `invokeCall`, `getProperty`, and `createStruct`.
+- Documented `BuildPreview` ±2 line context as `CompactPreviewContextLines = 2` constant in `IndexMcpBackendHost.cs` with comment explaining independence from `maxPreviewLines`.
+- Documented `riderProductClientCompileFile` in `build.gradle.kts` as defensive forward-compat; no source references it directly today.
+- Added KDoc to `MoveFileTool.inferMovedCSharpNamespace` explaining the magic-folder heuristic.
+- Added comment in `IndexMcpBackendHost.cs` marking `StandardDotNetTypes` as the single source of truth for .NET BCL type metadata.
+
+### Deferred
+- `RenameChangedAffectedFiles` polling oracle and `FindReferences` caching for rename: deferred to a dedicated follow-up PR. Rubber-duck review (2026-05-02) flagged that replacing the polling with PSI-evidence requires splitting the capped-at-200 `FindReferences` helper into capped (display) and uncapped (rename) variants, plus a per-strategy completeness oracle. The current 5-second polling is shipping and stable per v11 results.
+
+### Rider semantics rollout (v4.18.1 – v4.18.17, shipping together as 4.19.0)
 - Added a Rider/ReSharper backend health protocol endpoint for v4.18.1 test builds so live validation can distinguish backend loading failures from C#/F# symbol-resolution failures.
 - Rider C#/F# backend requests now send absolute virtual file paths to ReSharper and probe nearby caret offsets, avoiding the project-relative path mismatch that caused position-based semantic tools to report "No class/type/method found at position".
 - Expanded the Rider rd protocol for v4.18.3 test builds with backend-owned C#/F# endpoints for type search, definition lookup, reference search, and symbol resolution.
@@ -18,6 +49,10 @@
 - Fixed Rider frontend RD call invocation for v4.18.11 by using the current `RdCall.sync(request, RpcTimeouts)` signature.
 - Added Rider backend scope filtering and relevance ordering for v4.18.12 C#/F# type and reference searches.
 - Disabled unsafe manual C#/F# backend symbol rename for v4.18.13 and clarified C# move-file namespace/import update behavior.
+- Added v4.18.14 Rider C#/F# symbol rename over the ReSharper backend: requests now run through the Rider rd protocol, acquire a backend write lock, execute a ReSharper PSI transaction, rename declarations, and rebind resolved references without lexical search/replace.
+- Hardened v4.18.15 Rider behavior after live C# matrix testing: C#/F# rename now commits/saves before backend mutation and refreshes affected files afterward, `fullElementPreview=false` returns a compact definition snippet, C#/F# `className` type hierarchy routes through the backend, Rider call hierarchy recursively populates requested depth, production/test file scopes include Rider/.NET test-project path heuristics, and `project_and_libraries` type search includes source-less standard .NET/BCL types such as `Console` and `List`.
+- Increased the Rider frontend RD wait budget for C#/F# call hierarchy in v4.18.16 to match rename's long-operation budget, reducing false timeout failures for deep `ide_call_hierarchy` requests while preserving the existing 60-second budget for normal backend reads.
+- Added stronger post-mutation VFS/PSI synchronization in v4.18.17 after `ide_refactor_rename` and `ide_move_file` so Rider/ReSharper backend and frontend indexes converge automatically like other frontend-owned IDE refactorings.
 
 ## [4.18.0]
 ### Added

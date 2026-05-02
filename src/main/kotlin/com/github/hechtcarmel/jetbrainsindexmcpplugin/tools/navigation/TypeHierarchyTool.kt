@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeElement
@@ -70,6 +71,9 @@ class TypeHierarchyTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val riderClassNameHierarchy = className?.let { tryResolveRiderClassNameHierarchy(project, it, scope) }
+        if (riderClassNameHierarchy != null) return createJsonResult(riderClassNameHierarchy)
+
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
@@ -123,6 +127,40 @@ class TypeHierarchyTool : AbstractMcpTool() {
                 BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
             })
         })
+
+    private fun tryResolveRiderClassNameHierarchy(
+        project: Project,
+        className: String,
+        scope: BuiltInSearchScope
+    ): TypeHierarchyResult? {
+        for (language in listOf("C#", "F#")) {
+            val typeMatches = RiderBackendSemanticService.findTypes(
+                project = project,
+                query = className,
+                matchMode = "exact",
+                scope = scope,
+                language = language,
+                limit = 5
+            )
+            val match = typeMatches.value
+                ?.firstOrNull { it.qualifiedName.equals(className, ignoreCase = true) || it.name.equals(className, ignoreCase = true) }
+                ?: continue
+            val hierarchy = RiderBackendSemanticService.getTypeHierarchy(
+                project = project,
+                file = match.file,
+                line = match.line,
+                column = match.column,
+                scope = scope,
+                language = language
+            ).value ?: continue
+            return TypeHierarchyResult(
+                element = convertToTypeElement(hierarchy.element),
+                supertypes = hierarchy.supertypes.map { convertToTypeElement(it) },
+                subtypes = hierarchy.subtypes.map { convertToTypeElement(it) }
+            )
+        }
+        return null
+    }
 
     private fun resolveTargetElement(project: Project, arguments: JsonObject): PsiElement? {
         // Try className first (Java/Kotlin specific)

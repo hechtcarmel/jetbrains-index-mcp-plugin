@@ -284,8 +284,6 @@ object LanguageHandlerRegistry {
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.markdown.MarkdownHandlers", "Markdown"),
         // Rider protocol-based handlers. C#/F# semantics require generated rd stubs + backend protocol.
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderDotNetHandlers", ".NET (Rider Protocol)"),
-        // Legacy .NET registration is retained as an entry point but intentionally refuses Rider fallback semantics.
-        HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.DotNetHandlers", ".NET (Backend Required)"),
     )
 
     private fun registerLanguageHandlers(className: String, displayName: String) {

@@ -9,7 +9,8 @@ param(
     [string] $Endpoint = "http://127.0.0.1:29182/index-mcp/streamable-http",
     [int] $InitialDelaySeconds = 30,
     [int] $StartupWaitSeconds = 60,
-    [switch] $FullMatrix
+    [switch] $FullMatrix,
+    [switch] $TestRename
 )
 
 $ErrorActionPreference = "Stop"
@@ -345,15 +346,30 @@ if ($FullMatrix) {
         }).Count -gt 0
     }
 
-    $rename = Invoke-Tool -Id 20 -Name "ide_refactor_rename" -Arguments @{
-        project_path = $ProjectPath
-        file = "Clipthrough/Views/MainWindow.axaml.cs"
-        line = 19
-        column = 22
-        newName = "MainWindowSmokeShouldNotApply"
-    }
-    Assert-ToolError -Name "ide_refactor_rename C# safe error" -Response $rename -Predicate {
-        param($text) $text -like "*No files were modified*"
+    if ($TestRename) {
+        $rename = Invoke-Tool -Id 20 -Name "ide_refactor_rename" -Arguments @{
+            project_path = $ProjectPath
+            file = "Clipthrough/Views/MainWindow.axaml.cs"
+            line = 19
+            column = 22
+            newName = "MainWindowSmokeRenamed"
+        }
+        Assert-ToolOk -Name "ide_refactor_rename C# apply" -Response $rename -Predicate {
+            param($json) $json.success -and $json.message -like "*ReSharper backend*"
+        }
+
+        $renameBack = Invoke-Tool -Id 21 -Name "ide_refactor_rename" -Arguments @{
+            project_path = $ProjectPath
+            file = "Clipthrough/Views/MainWindow.axaml.cs"
+            line = 19
+            column = 22
+            newName = "MainWindow"
+        }
+        Assert-ToolOk -Name "ide_refactor_rename C# revert" -Response $renameBack -Predicate {
+            param($json) $json.success -and $json.message -like "*ReSharper backend*"
+        }
+    } else {
+        Write-Host "SKIP ide_refactor_rename C# apply: pass -TestRename only for disposable project copies."
     }
 
     $fsharpFiles = Get-ChildItem -Path $ProjectPath -Recurse -Include *.fs,*.fsi,*.fsx -File -ErrorAction SilentlyContinue |

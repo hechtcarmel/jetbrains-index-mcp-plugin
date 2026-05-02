@@ -145,6 +145,10 @@ val riderModelCompileFile = configuredRiderModelJar
 val riderRdCompileFile = configuredRiderRdJar
     ?.let { layout.file(providers.provider { it }) }
     ?: layout.buildDirectory.file("rider-model/rd.jar")
+// product-client.jar is included on the compile classpath because some Rider RD frontend
+// types (com.jetbrains.rdclient.protocol.* — used reflectively by RdProtocolBridge in
+// future Rider builds) live there. No source code references it directly today, so it is
+// listed here defensively to keep the IDE-platform bump path forward-compatible.
 val riderProductClientCompileFile = configuredRiderProductClientJar
     ?.let { layout.file(providers.provider { it }) }
     ?: layout.buildDirectory.file("rider-model/product-client.jar")

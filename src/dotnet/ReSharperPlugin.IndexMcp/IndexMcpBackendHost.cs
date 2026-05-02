@@ -2,29 +2,36 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using JetBrains.Application.Parts;
 using JetBrains.Application.Progress;
+using JetBrains.Application.Threading;
 using JetBrains.Core;
 using JetBrains.DocumentModel;
 using JetBrains.Lifetimes;
 using JetBrains.ProjectModel;
 using JetBrains.ReSharper.Resources.Shell;
 using JetBrains.ReSharper.Psi;
+using JetBrains.ReSharper.Psi.Caches;
 using JetBrains.ReSharper.Psi.CSharp;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
 using JetBrains.ReSharper.Psi.Files;
 using JetBrains.ReSharper.Psi.Modules;
 using JetBrains.ReSharper.Psi.Search;
 using JetBrains.ReSharper.Psi.Tree;
+using JetBrains.ReSharper.Psi.Transactions;
 using JetBrains.ReSharper.Psi.Util;
+using JetBrains.ReSharper.Feature.Services.Refactorings;
+using JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename;
 using JetBrains.ReSharper.Feature.Services.Protocol;
 using JetBrains.Rider.Model;
 using JetBrains.Rider.Model.IndexMcp;
 using JetBrains.Rd.Tasks;
 using JetBrains.Util;
 using JetBrains.Util.dataStructures.TypedIntrinsics;
+using JetBrains.Util.Threading.Tasks;
 
 namespace ReSharperPlugin.IndexMcp;
 
@@ -38,12 +45,20 @@ namespace ReSharperPlugin.IndexMcp;
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
-    private const string BackendVersion = "4.18.13";
+    private readonly IShellLocks _shellLocks;
+    private readonly RenameRefactoringService _renameRefactoringService;
+    private const string BackendVersion = "4.19.0";
     private const int MaxResults = 200;
 
-    public IndexMcpBackendHost(Lifetime lifetime, ISolution solution)
+    public IndexMcpBackendHost(
+        Lifetime lifetime,
+        ISolution solution,
+        IShellLocks shellLocks,
+        RenameRefactoringService renameRefactoringService)
     {
         _solution = solution;
+        _shellLocks = shellLocks;
+        _renameRefactoringService = renameRefactoringService;
         var model = solution.GetProtocolSolution().GetIndexMcpModel();
 
         model.GetBackendStatus.SetAsync(HandleGetBackendStatus);
@@ -76,8 +91,15 @@ public class IndexMcpBackendHost
     {
         return Task.Run(() =>
         {
-            var results = EnumerateDeclaredElements()
-                .OfType<ITypeElement>()
+            var declaredTypes = EnumerateDeclaredElements()
+                .OfType<ITypeElement>();
+
+            var indexedTypes = request.Scope == "project_and_libraries"
+                ? EnumerateIndexedTypeElements(request.Query, request.MatchMode)
+                : Enumerable.Empty<ITypeElement>();
+
+            var results = declaredTypes
+                .Concat(indexedTypes)
                 .Where(type => MatchesName(type.ShortName, request.Query, request.MatchMode) ||
                                MatchesName(type.GetClrName().FullName, request.Query, request.MatchMode))
                 .Where(type => MatchesLanguage(type, request.Language))
@@ -86,12 +108,135 @@ public class IndexMcpBackendHost
                 .ThenBy(type => IsTestPath(GetDeclarationPath(type)) ? 1 : 0)
                 .ThenBy(type => type.ShortName, StringComparer.OrdinalIgnoreCase)
                 .Select(ToSymbolInfo)
+                .Concat(EnumerateStandardDotNetTypeSymbols(request.Query, request.MatchMode, request.Scope, request.Language))
                 .GroupBy(symbol => $"{symbol.QualifiedName}:{symbol.FilePath}:{symbol.Line}")
                 .Select(group => group.First())
                 .ToList();
 
             return new RdFindTypesResult(results.Take(Math.Min(request.Limit, MaxResults)).ToList(), results.Count);
         });
+    }
+
+    private static IEnumerable<RdSymbolInfo> EnumerateStandardDotNetTypeSymbols(
+        string query,
+        string matchMode,
+        string scope,
+        string? language)
+    {
+        if (scope != "project_and_libraries") yield break;
+        if (!string.IsNullOrWhiteSpace(language) &&
+            !language.Equals("C#", StringComparison.OrdinalIgnoreCase) &&
+            !language.Equals("CSharp", StringComparison.OrdinalIgnoreCase) &&
+            !language.Equals("F#", StringComparison.OrdinalIgnoreCase) &&
+            !language.Equals("FSharp", StringComparison.OrdinalIgnoreCase))
+            yield break;
+
+        foreach (var type in StandardDotNetTypes)
+        {
+            if (!MatchesName(type.Name, query, matchMode) &&
+                !MatchesName(type.QualifiedName, query, matchMode))
+                continue;
+
+            yield return new RdSymbolInfo(
+                name: type.Name,
+                qualifiedName: type.QualifiedName,
+                kind: type.Kind,
+                filePath: null,
+                line: null,
+                column: null,
+                language: "C#",
+                signature: null,
+                modifiers: new List<string> { "public", "library" });
+        }
+    }
+
+    // Single source of truth for the curated BCL/standard .NET type list surfaced through
+    // ide_find_class with scope=project_and_libraries. Frontend (Kotlin) intentionally does NOT
+    // duplicate this list — backend merges it into the response so the frontend is a thin pass-through.
+    private static readonly IReadOnlyList<(string Name, string QualifiedName, string Kind)> StandardDotNetTypes =
+        new List<(string, string, string)>
+        {
+            ("Object", "System.Object", "CLASS"),
+            ("String", "System.String", "CLASS"),
+            ("Console", "System.Console", "CLASS"),
+            ("DateTime", "System.DateTime", "STRUCT"),
+            ("DateTimeOffset", "System.DateTimeOffset", "STRUCT"),
+            ("Guid", "System.Guid", "STRUCT"),
+            ("Uri", "System.Uri", "CLASS"),
+            ("Exception", "System.Exception", "CLASS"),
+            ("Task", "System.Threading.Tasks.Task", "CLASS"),
+            ("ValueTask", "System.Threading.Tasks.ValueTask", "STRUCT"),
+            ("Enumerable", "System.Linq.Enumerable", "CLASS"),
+            ("List", "System.Collections.Generic.List", "CLASS"),
+            ("Dictionary", "System.Collections.Generic.Dictionary", "CLASS"),
+            ("HashSet", "System.Collections.Generic.HashSet", "CLASS"),
+            ("Queue", "System.Collections.Generic.Queue", "CLASS"),
+            ("Stack", "System.Collections.Generic.Stack", "CLASS"),
+            ("IEnumerable", "System.Collections.IEnumerable", "INTERFACE"),
+            ("IEnumerable", "System.Collections.Generic.IEnumerable", "INTERFACE"),
+            ("ICollection", "System.Collections.Generic.ICollection", "INTERFACE"),
+            ("IList", "System.Collections.Generic.IList", "INTERFACE"),
+            ("IReadOnlyCollection", "System.Collections.Generic.IReadOnlyCollection", "INTERFACE"),
+            ("IReadOnlyList", "System.Collections.Generic.IReadOnlyList", "INTERFACE"),
+            ("IDictionary", "System.Collections.Generic.IDictionary", "INTERFACE"),
+            ("IReadOnlyDictionary", "System.Collections.Generic.IReadOnlyDictionary", "INTERFACE")
+        };
+
+    private IEnumerable<ITypeElement> EnumerateIndexedTypeElements(string query, string matchMode)
+    {
+        foreach (var libraryScope in new[] { LibrarySymbolScope.REFERENCED, LibrarySymbolScope.TRANSITIVE, LibrarySymbolScope.FULL })
+        {
+            foreach (var element in EnumerateSymbolScopeTypes(
+                         _solution.GetPsiServices().Symbols.GetSymbolScope(libraryScope, false),
+                         query,
+                         matchMode))
+            {
+                yield return element;
+            }
+        }
+
+        var seenModules = new HashSet<IPsiModule>();
+        foreach (var module in EnumerateProjectPsiModules().Where(module => seenModules.Add(module)))
+        {
+            foreach (var element in EnumeratePredefinedTypeElements(module))
+                yield return element;
+
+            var symbolScope = _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false);
+            foreach (var element in EnumerateSymbolScopeTypes(symbolScope, query, matchMode))
+                yield return element;
+        }
+    }
+
+    private static IEnumerable<ITypeElement> EnumeratePredefinedTypeElements(IPsiModule module)
+    {
+        var predefinedType = typeof(PredefinedType).GetConstructor(
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+            null,
+            new[] { typeof(IPsiModule) },
+            null)?.Invoke(new object[] { module });
+        if (predefinedType == null) yield break;
+        foreach (var property in typeof(PredefinedType).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!typeof(IDeclaredType).IsAssignableFrom(property.PropertyType)) continue;
+            if (property.GetValue(predefinedType) is not IDeclaredType declaredType) continue;
+            var typeElement = declaredType.GetTypeElement();
+            if (typeElement != null) yield return typeElement;
+        }
+    }
+
+    private static IEnumerable<ITypeElement> EnumerateSymbolScopeTypes(ISymbolScope symbolScope, string query, string matchMode)
+    {
+        if (query.Contains('.', StringComparison.Ordinal))
+        {
+            foreach (var element in symbolScope.GetElementsByQualifiedName(query).OfType<ITypeElement>())
+                yield return element;
+        }
+
+        foreach (var shortName in symbolScope.GetAllShortNames().Where(name => MatchesName(name, query, matchMode)))
+        {
+            foreach (var element in symbolScope.GetElementsByShortName(shortName).OfType<ITypeElement>())
+                yield return element;
+        }
     }
 
     private Task<RdDefinitionResult?> HandleFindDefinition(Lifetime lt, RdFindDefinitionRequest request)
@@ -146,13 +291,208 @@ public class IndexMcpBackendHost
     private Task<RdRenameSymbolResult?> HandleRenameSymbol(
         Lifetime lt, RdRenameSymbolRequest request)
     {
-        return Task.FromResult<RdRenameSymbolResult?>(new RdRenameSymbolResult(
-            false,
-            "",
-            request.NewName,
-            new List<string>(),
-            0,
-            "ReSharper backend rename protocol is reachable, but headless C#/F# symbol rename is not implemented safely yet. No files were modified."));
+        OuterLifetime outerLifetime = lt;
+        RdRenameSymbolResult? result = null;
+        return ExecuteWriteLockedRename(outerLifetime, () => { result = ExecuteRenameSymbol(request); })
+            .ContinueWith<RdRenameSymbolResult?>(task =>
+            {
+                if (!task.IsFaulted)
+                {
+                    return result;
+                }
+
+                var exception = task.Exception?.GetBaseException();
+                return new RdRenameSymbolResult(
+                    false,
+                    "",
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    exception == null
+                        ? "ReSharper backend rename failed while acquiring/executing the write lock."
+                        : $"ReSharper backend rename failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}");
+            });
+    }
+
+    private Task ExecuteWriteLockedRename(OuterLifetime outerLifetime, Action action)
+    {
+        var shellLocksEx = typeof(IShellLocks).Assembly.GetType("JetBrains.Application.Threading.IShellLocksEx")
+            ?? throw new InvalidOperationException("Unable to locate IShellLocksEx in the Rider runtime.");
+
+        var writeLockAsync = shellLocksEx.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "ExecuteOrQueueWriteLockAsyncEx" || method.IsGenericMethodDefinition)
+                {
+                    return false;
+                }
+
+                var parameters = method.GetParameters();
+                return parameters.Length == 8 &&
+                       parameters[0].ParameterType == typeof(IShellLocks) &&
+                       parameters[1].ParameterType == typeof(OuterLifetime) &&
+                       parameters[2].ParameterType == typeof(Action) &&
+                       parameters[3].ParameterType == typeof(TimeSpan) &&
+                       parameters[4].ParameterType == typeof(TaskPriority) &&
+                       parameters[5].ParameterType == typeof(bool) &&
+                       parameters[6].ParameterType == typeof(string) &&
+                       parameters[7].ParameterType == typeof(string);
+            });
+
+        if (writeLockAsync != null)
+        {
+            return (Task)writeLockAsync.Invoke(
+                null,
+                new object[] { _shellLocks, outerLifetime, action, TimeSpan.FromSeconds(30), TaskPriority.Normal, false, "", "" })!;
+        }
+
+        var writeLockWhenAvailable = shellLocksEx.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "ExecuteOrQueueWithWriteLockWhenAvailableEx" || method.IsGenericMethodDefinition)
+                {
+                    return false;
+                }
+
+                var parameters = method.GetParameters();
+                return parameters.Length == 7 &&
+                       parameters[0].ParameterType == typeof(IShellLocks) &&
+                       parameters[1].ParameterType == typeof(OuterLifetime) &&
+                       parameters[2].ParameterType == typeof(string) &&
+                       parameters[3].ParameterType == typeof(Action) &&
+                       parameters[4].ParameterType == typeof(TimeSpan) &&
+                       parameters[5].ParameterType == typeof(string) &&
+                       parameters[6].ParameterType == typeof(string);
+            });
+
+        if (writeLockWhenAvailable != null)
+        {
+            return (Task)writeLockWhenAvailable.Invoke(
+                null,
+                new object[] { _shellLocks, outerLifetime, "Index MCP Rider rename", action, TimeSpan.FromSeconds(30), "", "" })!;
+        }
+
+        throw new MissingMethodException(
+            "No compatible Rider/ReSharper write-lock API was found for headless symbol rename.");
+    }
+
+    private RdRenameSymbolResult ExecuteRenameSymbol(RdRenameSymbolRequest request)
+    {
+        var element = ResolveDeclaredElementAt(request.Position);
+        if (element == null)
+        {
+            return new RdRenameSymbolResult(
+                    false,
+                    "",
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    "No C#/F# symbol found at the requested position. No files were modified.");
+        }
+
+        var oldName = element.ShortName;
+        var availability = _renameRefactoringService.CheckRenameAvailability(element);
+        if (availability != RenameAvailabilityCheckResult.CanBeRenamed)
+        {
+            return new RdRenameSymbolResult(
+                    false,
+                    oldName,
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    $"ReSharper reports that '{oldName}' cannot be renamed ({availability}). No files were modified.");
+        }
+
+        var affectedFiles = GetPotentiallyAffectedFiles(element);
+        try
+        {
+            var dataProvider = new RenameDataProvider(element, request.NewName)
+            {
+                CanBeLocal = false
+            };
+
+            // Strategy 1 (primary): direct PSI rename — declaration.SetName + reference.BindTo inside a
+            // PSI transaction. This is the strategy that consistently succeeds in the MCP context.
+            var workflowMessage = TryExecuteBackendPsiRename(element, request.NewName);
+
+            // Strategy 2 (fallback): static refactoring service. ITextControl is null because we run
+            // headlessly; in practice this fallback only runs when the primary strategy mutates nothing,
+            // and it is mostly defensive. See follow-up plan for redesigning the success oracle.
+            if (!RenameChangedAffectedFiles(affectedFiles, oldName, request.NewName))
+            {
+                var conflicts = RenameRefactoringService.RenameAndGetConflicts(_solution, dataProvider, null!);
+                workflowMessage = string.IsNullOrWhiteSpace(workflowMessage)
+                    ? conflicts?.ToString()
+                    : $"{workflowMessage}; fallback result: {conflicts}";
+            }
+
+            if (!RenameChangedAffectedFiles(affectedFiles, oldName, request.NewName))
+            {
+                return new RdRenameSymbolResult(
+                        false,
+                        oldName,
+                        request.NewName,
+                        affectedFiles,
+                        0,
+                        string.IsNullOrWhiteSpace(workflowMessage)
+                            ? "ReSharper rename completed without reporting an error, but no affected file contained the requested new name. No successful rename was reported."
+                            : $"ReSharper rename did not update affected files: {workflowMessage}");
+            }
+
+            return new RdRenameSymbolResult(
+                    true,
+                    oldName,
+                    request.NewName,
+                    affectedFiles,
+                    affectedFiles.Count,
+                    $"Renamed '{oldName}' to '{request.NewName}' using ReSharper backend rename.");
+        }
+        catch (Exception ex)
+        {
+            return new RdRenameSymbolResult(
+                    false,
+                    oldName,
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    $"ReSharper backend rename failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private string? TryExecuteBackendPsiRename(IDeclaredElement element, string newName)
+    {
+        var stage = "collect references";
+        try
+        {
+            var references = FindReferences(element).ToList();
+            var declarations = element.GetDeclarations().ToList();
+            if (declarations.Count == 0)
+            {
+                return "Backend PSI rename found no declarations to rename";
+            }
+
+            stage = "execute PSI transaction";
+            _solution.GetPsiServices().Transactions.Execute("Index MCP Rider rename", () =>
+            {
+                stage = "rename declarations";
+                foreach (var declaration in declarations)
+                {
+                    declaration.SetName(newName);
+                }
+
+                stage = "rebind references";
+                foreach (var reference in references)
+                {
+                    reference.BindTo(element);
+                }
+            });
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return $"Backend PSI rename failed during {stage}: {ex.GetType().Name}: {ex.Message}";
+        }
     }
 
     // ── Type Hierarchy ──────────────────────────────────────────────────────
@@ -417,6 +757,20 @@ public class IndexMcpBackendHost
         }
     }
 
+    private IEnumerable<IPsiModule> EnumerateProjectPsiModules()
+    {
+        foreach (var project in _solution.GetAllProjects())
+        {
+            foreach (var projectFile in project.GetAllProjectFiles())
+            {
+                foreach (var sourceFile in projectFile.ToSourceFiles())
+                {
+                    yield return sourceFile.PsiModule;
+                }
+            }
+        }
+    }
+
     private static void CollectDeclaredElements(ITreeNode node, List<IDeclaredElement> elements)
     {
         if (node is IDeclaration declaration && declaration.DeclaredElement != null)
@@ -434,6 +788,9 @@ public class IndexMcpBackendHost
             return true;
 
         var filePath = element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath ?? "";
+        if (string.IsNullOrWhiteSpace(filePath))
+            return language.Equals("C#", StringComparison.OrdinalIgnoreCase);
+
         return language.Equals("C#", StringComparison.OrdinalIgnoreCase) && filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
                language.Equals("F#", StringComparison.OrdinalIgnoreCase) && (
                    filePath.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
@@ -516,10 +873,29 @@ public class IndexMcpBackendHost
             return lines.Length <= maxPreviewLines
                 ? text
                 : string.Join("\n", lines.Take(maxPreviewLines)) +
-                  $"\n// ... truncated ({lines.Length} total lines, showing {maxPreviewLines})";
+                   $"\n// ... truncated ({lines.Length} total lines, showing {maxPreviewLines})";
         }
 
-        return text;
+        var sourceFile = declaration.GetSourceFile();
+        var document = sourceFile?.Document;
+        if (document == null) return text.Split('\n').FirstOrDefault() ?? text;
+
+        // Compact preview window: 2 lines above and below the declaration's start line, line-numbered.
+        // The ±2 window is intentional and independent of `maxPreviewLines` (which only governs the
+        // truncation of the full-element preview above). This gives just enough context for an LLM to
+        // identify the symbol's signature without dumping the whole class body.
+        const int CompactPreviewContextLines = 2;
+        var startLine = (int)document.GetCoordsByOffset(declaration.GetNavigationRange().StartOffset.Offset).Line;
+        var sourceLines = document.GetText().Split('\n');
+        var previewStartLine = Math.Max(0, startLine - CompactPreviewContextLines);
+        var previewEndLine = Math.Min(sourceLines.Length - 1, startLine + CompactPreviewContextLines);
+        var previewLines = new List<string>();
+        for (var line = previewStartLine; line <= previewEndLine; line++)
+        {
+            previewLines.Add($"{line + 1}: {sourceLines[line].TrimEnd('\r')}");
+        }
+
+        return string.Join("\n", previewLines);
     }
 
     private static List<string> BuildAstPath(IDeclaration declaration)
@@ -643,6 +1019,43 @@ public class IndexMcpBackendHost
             .Select(result => result.Reference)
             .Where(reference => reference.IsValid())
             .ToList();
+    }
+
+    private List<string> GetPotentiallyAffectedFiles(IDeclaredElement element)
+    {
+        return element.GetDeclarations()
+            .Select(declaration => declaration.GetSourceFile()?.GetLocation().FullPath)
+            .Concat(FindReferences(element)
+                .Select(reference => reference.GetTreeNode().GetSourceFile()?.GetLocation().FullPath))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Cast<string>()
+            .ToList();
+    }
+
+    private static bool RenameChangedAffectedFiles(IEnumerable<string> affectedFiles, string oldName, string newName)
+    {
+        var paths = affectedFiles
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            if (paths.Any(path =>
+                {
+                    if (!File.Exists(path)) return false;
+                    var text = File.ReadAllText(path);
+                    return text.Contains(newName, StringComparison.Ordinal);
+                }))
+            {
+                return true;
+            }
+
+            Task.Delay(100).GetAwaiter().GetResult();
+        }
+
+        return false;
     }
 
     private IFile? GetPsiFileForPath(string filePath)
