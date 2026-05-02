@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using JetBrains.Application.Parts;
 using JetBrains.Application.Progress;
@@ -43,6 +44,10 @@ public class IndexMcpBackendHost
         _solution = solution;
 
         model.GetBackendStatus.SetAsync(HandleGetBackendStatus);
+        model.FindTypes.SetAsync(HandleFindTypes);
+        model.FindDefinition.SetAsync(HandleFindDefinition);
+        model.FindReferences.SetAsync(HandleFindReferences);
+        model.ResolveSymbol.SetAsync(HandleResolveSymbol);
         model.GetTypeHierarchy.SetAsync(HandleGetTypeHierarchy);
         model.FindImplementations.SetAsync(HandleFindImplementations);
         model.GetCallHierarchy.SetAsync(HandleGetCallHierarchy);
@@ -60,6 +65,74 @@ public class IndexMcpBackendHost
             true,
             _solution.GetPsiServices() != null,
             "Rider Index MCP ReSharper backend is loaded and rd endpoints are registered"));
+    }
+
+    // ── Universal Navigation/Search ─────────────────────────────────────────
+
+    private Task<RdFindTypesResult> HandleFindTypes(Lifetime lt, RdFindTypesRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var results = EnumerateDeclaredElements()
+                .OfType<ITypeElement>()
+                .Where(type => MatchesName(type.ShortName, request.Query, request.MatchMode) ||
+                               MatchesName(type.GetClrName().FullName, request.Query, request.MatchMode))
+                .Where(type => MatchesLanguage(type, request.Language))
+                .Select(ToSymbolInfo)
+                .GroupBy(symbol => $"{symbol.QualifiedName}:{symbol.FilePath}:{symbol.Line}")
+                .Select(group => group.First())
+                .Take(Math.Min(request.Limit, MaxResults))
+                .ToList();
+
+            return new RdFindTypesResult(results, results.Count);
+        });
+    }
+
+    private Task<RdDefinitionResult?> HandleFindDefinition(Lifetime lt, RdFindDefinitionRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveTarget(request.Target);
+            if (element == null) return (RdDefinitionResult?)null;
+
+            var navigationElement = element.GetDeclarations().FirstOrDefault();
+            if (navigationElement == null) return (RdDefinitionResult?)null;
+
+            var preview = BuildPreview(navigationElement, request.FullElementPreview, request.MaxPreviewLines);
+            return (RdDefinitionResult?)new RdDefinitionResult(
+                ToSymbolInfo(element),
+                preview,
+                BuildAstPath(navigationElement));
+        });
+    }
+
+    private Task<RdFindReferencesResult> HandleFindReferences(Lifetime lt, RdFindReferencesRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveTarget(request.Target);
+            if (element == null) return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0);
+
+            var references = FindReferences(element)
+                .Take(Math.Min(request.Limit, MaxResults))
+                .Select(ToReferenceInfo)
+                .Where(reference => reference != null)
+                .Cast<RdReferenceInfo>()
+                .GroupBy(reference => $"{reference.FilePath}:{reference.Line}:{reference.Column}")
+                .Select(group => group.First())
+                .ToList();
+
+            return new RdFindReferencesResult(references, references.Count);
+        });
+    }
+
+    private Task<RdSymbolInfo?> HandleResolveSymbol(Lifetime lt, RdResolveSymbolRequest request)
+    {
+        return Task.Run(() =>
+        {
+            var element = ResolveSymbol(request.Language, request.Symbol);
+            return element == null ? null : ToSymbolInfo(element);
+        });
     }
 
     // ── Rename Symbol ───────────────────────────────────────────────────────
@@ -338,6 +411,162 @@ public class IndexMcpBackendHost
     }
 
     // ── Private Helpers ─────────────────────────────────────────────────────
+
+    private IDeclaredElement? ResolveTarget(RdSemanticTarget target)
+    {
+        if (!string.IsNullOrWhiteSpace(target.FilePath) &&
+            target.Line.HasValue &&
+            target.Column.HasValue)
+        {
+            return ResolveDeclaredElementAt(new RdSourcePosition(
+                target.FilePath,
+                target.Line.Value,
+                target.Column.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(target.Language) &&
+            !string.IsNullOrWhiteSpace(target.Symbol))
+        {
+            return ResolveSymbol(target.Language, target.Symbol);
+        }
+
+        return null;
+    }
+
+    private IDeclaredElement? ResolveSymbol(string? language, string symbol)
+    {
+        var normalized = NormalizeSymbolName(symbol);
+        return EnumerateDeclaredElements()
+            .Where(element => MatchesLanguage(element, language))
+            .FirstOrDefault(element =>
+                NormalizeSymbolName(GetQualifiedName(element)).Equals(normalized, StringComparison.OrdinalIgnoreCase) ||
+                NormalizeSymbolName(element.ShortName).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<IDeclaredElement> EnumerateDeclaredElements()
+    {
+        foreach (var psiFile in EnumerateProjectPsiFiles())
+        {
+            var elements = new List<IDeclaredElement>();
+            CollectDeclaredElements(psiFile, elements);
+            foreach (var element in elements) yield return element;
+        }
+    }
+
+    private IEnumerable<IFile> EnumerateProjectPsiFiles()
+    {
+        foreach (var project in _solution.GetAllProjects())
+        {
+            foreach (var projectFile in project.GetAllProjectFiles())
+            {
+                foreach (var sourceFile in projectFile.ToSourceFiles())
+                {
+                    var psiFile = sourceFile.GetPrimaryPsiFile();
+                    if (psiFile != null) yield return psiFile;
+                }
+            }
+        }
+    }
+
+    private static void CollectDeclaredElements(ITreeNode node, List<IDeclaredElement> elements)
+    {
+        if (node is IDeclaration declaration && declaration.DeclaredElement != null)
+            elements.Add(declaration.DeclaredElement);
+
+        foreach (var child in node.Children())
+            CollectDeclaredElements(child, elements);
+    }
+
+    private static bool MatchesLanguage(IDeclaredElement element, string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language)) return true;
+        var presentationLanguage = element.PresentationLanguage?.Name;
+        if (presentationLanguage != null && presentationLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var filePath = element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath ?? "";
+        return language.Equals("C#", StringComparison.OrdinalIgnoreCase) && filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+               language.Equals("F#", StringComparison.OrdinalIgnoreCase) && (
+                   filePath.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
+                   filePath.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase) ||
+                   filePath.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool MatchesName(string name, string query, string matchMode)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return false;
+        if (query.Contains('*'))
+        {
+            var pattern = "^" + Regex.Escape(query).Replace("\\*", ".*") + "$";
+            return Regex.IsMatch(name, pattern, RegexOptions.IgnoreCase);
+        }
+
+        return matchMode.ToLowerInvariant() switch
+        {
+            "exact" => name.Equals(query, StringComparison.OrdinalIgnoreCase),
+            "prefix" => name.StartsWith(query, StringComparison.OrdinalIgnoreCase),
+            _ => name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                 GetCamelCase(name).Contains(query, StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private static string GetCamelCase(string name)
+    {
+        return new string(name.Where(char.IsUpper).ToArray());
+    }
+
+    private static string NormalizeSymbolName(string value)
+    {
+        return value.Replace("#", ".", StringComparison.Ordinal)
+            .Replace("::", ".", StringComparison.Ordinal)
+            .Trim();
+    }
+
+    private static string BuildPreview(IDeclaration declaration, bool fullElementPreview, int maxPreviewLines)
+    {
+        var text = declaration.GetText();
+        if (fullElementPreview)
+        {
+            var lines = text.Split('\n');
+            return lines.Length <= maxPreviewLines
+                ? text
+                : string.Join("\n", lines.Take(maxPreviewLines)) +
+                  $"\n// ... truncated ({lines.Length} total lines, showing {maxPreviewLines})";
+        }
+
+        return text;
+    }
+
+    private static List<string> BuildAstPath(IDeclaration declaration)
+    {
+        var path = new List<string>();
+        for (ITreeNode? node = declaration; node != null; node = node.Parent)
+        {
+            if (node is IDeclaration parentDeclaration && parentDeclaration.DeclaredElement != null)
+                path.Add(GetElementKind(parentDeclaration.DeclaredElement));
+        }
+        path.Reverse();
+        return path;
+    }
+
+    private static RdReferenceInfo? ToReferenceInfo(JetBrains.ReSharper.Psi.Resolve.IReference reference)
+    {
+        var node = reference.GetTreeNode();
+        var sourceFile = node.GetSourceFile();
+        var document = sourceFile?.Document;
+        var filePath = sourceFile?.GetLocation().FullPath;
+        if (document == null || string.IsNullOrEmpty(filePath)) return null;
+
+        var offset = node.GetNavigationRange().StartOffset.Offset;
+        var coords = document.GetCoordsByOffset(offset);
+        return new RdReferenceInfo(
+            filePath,
+            (int)coords.Line + 1,
+            (int)coords.Column + 1,
+            node.GetText().Trim(),
+            "reference",
+            new List<string>());
+    }
 
     private ITypeElement? ResolveTypeElementAt(RdSourcePosition position)
     {
