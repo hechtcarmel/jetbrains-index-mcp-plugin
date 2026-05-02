@@ -452,11 +452,14 @@ abstract class AbstractMcpTool : McpTool {
         arguments: JsonObject,
         allowLibraryFilesForPosition: Boolean = false
     ): Result<PsiElement> {
-        val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
-        val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content
-        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
-        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
-        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
+        val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+        val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+        // Treat line/column = 0 as "unset" — some MCP clients send schema
+        // defaults (file:"", line:0, column:0) alongside language+symbol. The
+        // mutual-exclusivity guard below should not trip on those defaults.
+        val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int?.takeIf { it > 0 }
+        val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int?.takeIf { it > 0 }
 
         val hasSymbol = language != null || symbol != null
         val hasPosition = file != null || line != null || column != null

@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.20.0";
+    private const string BackendVersion = "4.20.1";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -883,18 +883,39 @@ public class IndexMcpBackendHost
         element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath;
 
     // Lower rank = better. Used to prefer hand-written code-behind partials
-    // (e.g. MainWindow.axaml.cs) over generator output (obj/, *.g.cs) and over
-    // synthetic XAML/AXAML partials whose source file may have an empty path.
+    // (e.g. MainWindow.axaml.cs) over generator output and over synthetic
+    // XAML/AXAML partials whose source file may have an empty path.
+    //
+    // Detection layers (cheapest first):
+    //   - empty path                                                -> 4
+    //   - PSI source file IsGeneratedFile / IsNonUserFile           -> 3
+    //   - path heuristic: /obj/, /generated/, *.g.cs, *.g.i.cs,     -> 3
+    //     Roslyn source-generator paths like
+    //     ".../Avalonia.NameGenerator/.../*.cs" produced by the
+    //     Avalonia source generator (no /obj/, virtual generator
+    //     namespace as a path segment)
+    //   - .cs / .fs / .fsi / .fsx hand-written file                 -> 0
+    //   - any other on-disk path (XAML-paired synthetic partial,
+    //     non-source documents)                                     -> 1
     private static int DeclarationRank(IDeclaration? declaration)
     {
-        var path = declaration?.GetSourceFile()?.GetLocation().FullPath ?? "";
+        var sourceFile = declaration?.GetSourceFile();
+        var path = sourceFile?.GetLocation().FullPath ?? "";
         if (string.IsNullOrEmpty(path)) return 4;
+
+        var props = sourceFile!.Properties;
+        if (props.IsGeneratedFile || props.IsNonUserFile) return 3;
+
         var normalized = path.Replace('\\', '/');
-        var isObj = normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase);
-        var isGenerated = normalized.Contains("/generated/", StringComparison.OrdinalIgnoreCase) ||
+        var isGenerated = normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase) ||
+                          normalized.Contains("/generated/", StringComparison.OrdinalIgnoreCase) ||
+                          normalized.Contains("/generators/", StringComparison.OrdinalIgnoreCase) ||
+                          normalized.Contains("/sourcegenerator", StringComparison.OrdinalIgnoreCase) ||
+                          normalized.Contains(".namegenerator/", StringComparison.OrdinalIgnoreCase) ||
                           path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) ||
                           path.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
-        if (isObj || isGenerated) return 3;
+        if (isGenerated) return 3;
+
         var isCsOrFs = path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
                        path.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
                        path.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase) ||

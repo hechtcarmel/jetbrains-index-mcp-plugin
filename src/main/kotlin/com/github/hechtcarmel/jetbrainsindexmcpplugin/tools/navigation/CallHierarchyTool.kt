@@ -144,15 +144,25 @@ class CallHierarchyTool : AbstractMcpTool() {
      * depth/seen-set semantics stay identical to the position-form path.
      */
     private fun rewriteSymbolArgumentsForRider(project: Project, arguments: JsonObject): JsonObject? {
-        val hasPosition = arguments[ParamNames.FILE] != null &&
-                          arguments[ParamNames.LINE] != null &&
-                          arguments[ParamNames.COLUMN] != null
+        // Treat empty/blank file or non-positive line/column as "no position",
+        // since some clients send schema defaults (file:"", line:0, column:0)
+        // alongside language+symbol — those should NOT trip the position check.
+        val filePresent = (arguments[ParamNames.FILE] as? JsonPrimitive)?.content?.isNotBlank() == true
+        val linePresent = (arguments[ParamNames.LINE] as? JsonPrimitive)?.content?.toIntOrNull()?.let { it > 0 } == true
+        val columnPresent = (arguments[ParamNames.COLUMN] as? JsonPrimitive)?.content?.toIntOrNull()?.let { it > 0 } == true
+        val hasPosition = filePresent && linePresent && columnPresent
         if (hasPosition) return null
         val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content ?: return null
         val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content ?: return null
         val (file, line, column) = RiderBackendSemanticService.resolveSymbolToPosition(project, language, symbol) ?: return null
+        // Strip language/symbol AND any blank position keys, then write the
+        // resolved triple. resolveElementFromArguments treats this as a clean
+        // position-form request and won't trip the symbol/position-exclusive
+        // guard.
         return JsonObject(
             arguments.toMutableMap().apply {
+                remove(ParamNames.LANGUAGE)
+                remove(ParamNames.SYMBOL)
                 put(ParamNames.FILE, JsonPrimitive(file))
                 put(ParamNames.LINE, JsonPrimitive(line))
                 put(ParamNames.COLUMN, JsonPrimitive(column))
