@@ -250,9 +250,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 if (preparation.backend == MoveBackend.PHP_SEMANTIC_MOVE) {
                     cleanupMovedPhpFileImports(filePointer.element)
                 }
+                val namespaceUpdated = updateMovedCSharpNamespace(project, preparation, fileName)
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
+                if (namespaceUpdated) {
+                    preparation.targetDirectory.findFile(fileName)?.virtualFile?.let { affectedFiles.add(getRelativePath(project, it)) }
+                }
                 FileDocumentManager.getInstance().saveAllDocuments()
 
                 success = true
@@ -326,6 +330,84 @@ open class MoveFileTool : AbstractRefactoringTool() {
         processor.setPreviewUsages(false)
         processor.run()
     }
+
+    private fun updateMovedCSharpNamespace(
+        project: Project,
+        preparation: MovePreparation,
+        fileName: String
+    ): Boolean {
+        val movedFile = preparation.targetDirectory.findFile(fileName)
+        if (movedFile == null || movedFile.virtualFile?.extension?.lowercase() != "cs") return false
+
+        val document = PsiDocumentManager.getInstance(project).getDocument(movedFile) ?: return false
+        val text = document.text
+        val namespaceRegex = Regex("""(?m)^(\s*namespace\s+)([A-Za-z_][A-Za-z0-9_.]*)(\s*[;{])""")
+        val match = namespaceRegex.find(text) ?: return false
+        val oldNamespace = match.groupValues[2]
+        val newNamespace = inferMovedCSharpNamespace(oldNamespace, preparation) ?: return false
+        if (newNamespace == oldNamespace) return false
+
+        WriteCommandAction.writeCommandAction(project)
+            .withName("Update C# Namespace")
+            .withGroupId("MCP Refactoring")
+            .run<Throwable> {
+                document.replaceString(
+                    match.groups[2]!!.range.first,
+                    match.groups[2]!!.range.last + 1,
+                    newNamespace
+                )
+                PsiDocumentManager.getInstance(project).commitDocument(document)
+            }
+        return true
+    }
+
+    private fun inferMovedCSharpNamespace(
+        oldNamespace: String,
+        preparation: MovePreparation
+    ): String? {
+        val oldDirSegments = preparation.sourceRelativePath
+            .substringBeforeLast('/', "")
+            .split('/', '\\')
+            .filter { it.isNotBlank() && it != "src" && it != "main" && it != "test" }
+            .filterNot { it.equals("csharp", ignoreCase = true) || it.equals("cs", ignoreCase = true) }
+        val newDirSegments = preparation.destinationRelativePath
+            .split('/', '\\')
+            .filter { it.isNotBlank() && it != "src" && it != "main" && it != "test" }
+            .filterNot { it.equals("csharp", ignoreCase = true) || it.equals("cs", ignoreCase = true) }
+
+        if (newDirSegments.isEmpty()) return null
+        val oldNamespaceSegments = oldNamespace.split('.').filter { it.isNotBlank() }
+        val trailingMatchCount = commonTrailingSegmentCount(oldNamespaceSegments, oldDirSegments)
+        val namespacePrefixSegments = if (trailingMatchCount > 0) {
+            oldNamespaceSegments.dropLast(trailingMatchCount)
+        } else {
+            oldNamespaceSegments.dropLast(1)
+        }
+        val newNamespaceSegments = if (
+            namespacePrefixSegments.isNotEmpty() &&
+            newDirSegments.take(namespacePrefixSegments.size) == namespacePrefixSegments
+        ) {
+            newDirSegments
+        } else {
+            namespacePrefixSegments + newDirSegments
+        }
+        return newNamespaceSegments.distinctAdjacent().joinToString(".")
+    }
+
+    private fun commonTrailingSegmentCount(left: List<String>, right: List<String>): Int {
+        var count = 0
+        while (
+            count < left.size &&
+            count < right.size &&
+            left[left.lastIndex - count] == right[right.lastIndex - count]
+        ) {
+            count++
+        }
+        return count
+    }
+
+    private fun List<String>.distinctAdjacent(): List<String> =
+        filterIndexed { index, segment -> index == 0 || this[index - 1] != segment }
 
     internal open fun executePhpSemanticMove(project: Project, preparation: MovePreparation) {
         val declaration = preparation.phpDeclarationPointer?.element
