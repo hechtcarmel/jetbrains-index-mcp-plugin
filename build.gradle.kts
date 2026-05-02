@@ -101,16 +101,39 @@ dependencies {
 
 // Expose rider-model.jar for the protocol module's rdgen code generation.
 // This configuration is consumed by :protocol to get the rd model base classes.
+//
+// Rider is not published through the same IntelliJ Platform dependency path as IC/IU,
+// so protocol generation must be pointed at a local Rider distribution unless the
+// current platformPath already contains rider-model.jar. Supported inputs:
+//   -PriderModelJar=<path> or RIDER_MODEL_JAR=<path>
+//   -PriderSdkPath=<Rider install dir> or RIDER_HOME=<Rider install dir>
 val riderModel: Configuration by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
 }
 
+fun configuredFile(propertyName: String, environmentName: String): File? =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { file(it) }
+
+val explicitRiderModelJar = configuredFile("riderModelJar", "RIDER_MODEL_JAR")
+val riderHomeModelJar = configuredFile("riderSdkPath", "RIDER_HOME")?.resolve("lib/rider-model.jar")
+val configuredRiderModelJar = listOfNotNull(explicitRiderModelJar, riderHomeModelJar).firstOrNull { it.isFile }
+
+if (configuredRiderModelJar != null) {
+    artifacts.add(riderModel.name, configuredRiderModelJar)
+}
+
 afterEvaluate {
-    val platformPath = intellijPlatform.platformPath
-    val riderModelJar = platformPath.resolve("lib/rider-model.jar")
-    if (riderModelJar.toFile().exists()) {
-        artifacts.add(riderModel.name, riderModelJar.toFile())
+    if (configuredRiderModelJar == null) {
+        val platformPath = intellijPlatform.platformPath
+        val riderModelJar = platformPath.resolve("lib/rider-model.jar")
+        if (riderModelJar.toFile().exists()) {
+            artifacts.add(riderModel.name, riderModelJar.toFile())
+        }
     }
 }
 
