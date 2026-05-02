@@ -3,8 +3,6 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.DotNetTextSearchSupport
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -33,6 +31,13 @@ object RiderDotNetHandlers {
             LOG.info("Not running in Rider, skipping Rider protocol handler registration")
             return
         }
+        if (!isRiderProtocolGenerated()) {
+            LOG.warn(
+                "Rider Index MCP protocol stubs are not available. " +
+                    "Skipping C#/F# semantic handlers instead of falling back to frontend PSI heuristics."
+            )
+            return
+        }
 
         // C# handlers
         registry.registerTypeHierarchyHandler(RiderCSharpTypeHierarchyHandler())
@@ -40,7 +45,6 @@ object RiderDotNetHandlers {
         registry.registerCallHierarchyHandler(RiderCSharpCallHierarchyHandler())
         registry.registerSuperMethodsHandler(RiderCSharpSuperMethodsHandler())
         registry.registerStructureHandler(RiderCSharpStructureHandler())
-        registry.registerSymbolReferenceHandler(RiderCSharpSymbolReferenceHandler())
 
         // F# handlers
         registry.registerTypeHierarchyHandler(RiderFSharpTypeHierarchyHandler())
@@ -48,7 +52,6 @@ object RiderDotNetHandlers {
         registry.registerCallHierarchyHandler(RiderFSharpCallHierarchyHandler())
         registry.registerSuperMethodsHandler(RiderFSharpSuperMethodsHandler())
         registry.registerStructureHandler(RiderFSharpStructureHandler())
-        registry.registerSymbolReferenceHandler(RiderFSharpSymbolReferenceHandler())
 
         LOG.info("Registered Rider protocol-based .NET handlers for C# and F#")
     }
@@ -66,6 +69,15 @@ object RiderDotNetHandlers {
             }
         }
     }
+
+    private fun isRiderProtocolGenerated(): Boolean =
+        try {
+            Class.forName("$MODEL_PKG.IndexMcpModel")
+            Class.forName("$MODEL_PKG.IndexMcpModelKt")
+            true
+        } catch (_: ClassNotFoundException) {
+            false
+        }
 }
 
 // ── Reflection-based rd protocol access ─────────────────────────────────────
@@ -370,13 +382,7 @@ abstract class RiderImplementationsHandler(
         @Suppress("UNCHECKED_CAST")
         val subtypes = (RdProtocolBridge.getProperty(hierarchyResult, "subtypes") as? List<Any>) ?: emptyList()
         val subtypeResults = subtypes.mapNotNull { rdSymbolToImplementationData(it, displayLanguage) }
-        if (subtypeResults.isNotEmpty()) return subtypeResults
-
-        val root = RdProtocolBridge.getProperty(hierarchyResult, "element")
-        val typeName = root?.let { RdProtocolBridge.getProperty(it, "name") as? String }
-            ?: DotNetTextSearchSupport.wordAt(element)
-            ?: return subtypeResults
-        return DotNetTextSearchSupport.findImplementations(project, typeName, scope, displayLanguage, 200)
+        return subtypeResults
     }
 }
 
@@ -397,20 +403,16 @@ abstract class RiderCallHierarchyHandler(
         depth: Int,
         scope: BuiltInSearchScope
     ): CallHierarchyData? {
-        val fallback = {
-            DotNetTextSearchSupport.findCallHierarchy(project, element, direction, scope, displayLanguage, 200)
-        }
-        val model = RdProtocolBridge.getModel(project) ?: return fallback()
-        val position = createSourcePosition(project, element) ?: return fallback()
+        val model = RdProtocolBridge.getModel(project) ?: return null
+        val position = createSourcePosition(project, element) ?: return null
         val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", position, direction, depth, scope.wireValue)
-            ?: return fallback()
-        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return fallback()
+            ?: return null
+        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return null
 
         val root = RdProtocolBridge.getProperty(result, "root") ?: return null
         @Suppress("UNCHECKED_CAST")
         val calls = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
         val convertedCalls = calls.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
-        if (convertedCalls.isEmpty()) return fallback()
 
         return CallHierarchyData(
             element = rdSymbolToCallElementData(root, displayLanguage) ?: return null,
@@ -439,9 +441,8 @@ abstract class RiderSuperMethodsHandler(
         @Suppress("UNCHECKED_CAST")
         val hierarchy = (RdProtocolBridge.getProperty(result, "hierarchy") as? List<Any>) ?: emptyList()
 
-        val fallbackMethodName = DotNetTextSearchSupport.methodNameAt(project, element).orEmpty()
         fun usableName(value: String?): String =
-            value?.takeUnless { it.isBlank() || it.equals("unknown", ignoreCase = true) } ?: fallbackMethodName
+            value?.takeUnless { it.isBlank() } ?: "unknown"
         val methodName = usableName(RdProtocolBridge.getProperty(method, "name") as? String)
 
         return SuperMethodsData(
@@ -500,26 +501,6 @@ abstract class RiderStructureHandler(
     }
 }
 
-// ── Symbol Reference Handlers ────────────────────────────────────────────────
-
-abstract class RiderSymbolReferenceHandler(
-    languageId: String,
-    displayLanguage: String,
-    supportedExtensions: Set<String>,
-    supportedLanguageIds: Set<String>,
-) : BaseRiderHandler<PsiNamedElement>(languageId, displayLanguage, supportedExtensions, supportedLanguageIds),
-    SymbolReferenceHandler {
-
-    override val languageName: String = displayLanguage
-
-    override fun resolveSymbol(project: Project, symbol: String): Result<PsiNamedElement> {
-        val typeName = symbol.substringBefore('#').substringBefore('(')
-        val element = ClassResolver.findClassByName(project, typeName) as? PsiNamedElement
-            ?: return Result.failure(IllegalArgumentException("Could not resolve $displayLanguage symbol: $symbol"))
-        return Result.success(element)
-    }
-}
-
 // ── Concrete C# Handlers ────────────────────────────────────────────────────
 
 class RiderCSharpTypeHierarchyHandler : RiderTypeHierarchyHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
@@ -527,7 +508,6 @@ class RiderCSharpImplementationsHandler : RiderImplementationsHandler("C#", "C#"
 class RiderCSharpCallHierarchyHandler : RiderCallHierarchyHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpSuperMethodsHandler : RiderSuperMethodsHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpStructureHandler : RiderStructureHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
-class RiderCSharpSymbolReferenceHandler : RiderSymbolReferenceHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 
 // ── Concrete F# Handlers ────────────────────────────────────────────────────
 
@@ -536,4 +516,3 @@ class RiderFSharpImplementationsHandler : RiderImplementationsHandler("F#", "F#"
 class RiderFSharpCallHierarchyHandler : RiderCallHierarchyHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
 class RiderFSharpSuperMethodsHandler : RiderSuperMethodsHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
 class RiderFSharpStructureHandler : RiderStructureHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
-class RiderFSharpSymbolReferenceHandler : RiderSymbolReferenceHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)

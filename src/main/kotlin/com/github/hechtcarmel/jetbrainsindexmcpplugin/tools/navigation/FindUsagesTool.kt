@@ -174,14 +174,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 return@suspendingReadAction null to createErrorResult(searchInfrastructureErrorMessage(e))
             }
 
-            val fallbackUsages = if (usages.isEmpty() && DotNetTextSearchSupport.isDotNetElement(element)) {
-                val word = DotNetTextSearchSupport.wordAt(targetElement) ?: DotNetTextSearchSupport.wordAt(element)
-                if (word != null) DotNetTextSearchSupport.findWordUsages(project, word, scope, collectLimit) else emptyList()
-            } else {
-                emptyList()
-            }
-
-            val usagesList = (usages.toList() + fallbackUsages)
+            val usagesList = usages.toList()
                 .distinctBy { "${it.file}:${it.line}:${it.column}" }
 
             val smartPointer = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(targetElement)

@@ -35,34 +35,12 @@ object DotNetHandlers {
             return
         }
 
-        // Skip if Rider protocol-based handlers already registered (they are preferred)
-        if (isRiderProtocolAvailable()) {
-            LOG.info("Rider protocol handlers already available, skipping heuristic .NET handler registration")
-            return
-        }
+        LOG.warn(
+            "Rider is available but generated Index MCP protocol handlers were not registered. " +
+                "Skipping legacy .NET frontend handlers; C#/F# semantic tools require the ReSharper backend protocol."
+        )
+        return
 
-        registry.registerTypeHierarchyHandler(CSharpTypeHierarchyHandler())
-        registry.registerImplementationsHandler(CSharpImplementationsHandler())
-        registry.registerCallHierarchyHandler(CSharpCallHierarchyHandler())
-        registry.registerSuperMethodsHandler(CSharpSuperMethodsHandler())
-        registry.registerStructureHandler(CSharpStructureHandler())
-
-        registry.registerTypeHierarchyHandler(FSharpTypeHierarchyHandler())
-        registry.registerImplementationsHandler(FSharpImplementationsHandler())
-        registry.registerCallHierarchyHandler(FSharpCallHierarchyHandler())
-        registry.registerSuperMethodsHandler(FSharpSuperMethodsHandler())
-        registry.registerStructureHandler(FSharpStructureHandler())
-
-        LOG.info("Registered Rider .NET handlers for C# and F#")
-    }
-
-    private fun isRiderProtocolAvailable(): Boolean {
-        return try {
-            Class.forName("com.jetbrains.rider.plugins.indexmcp.model.IndexMcpModel")
-            true
-        } catch (_: ClassNotFoundException) {
-            false
-        }
     }
 }
 

@@ -130,8 +130,7 @@ class FindClassTool : AbstractMcpTool() {
 
             val matcher = createMatcher(query, matchMode)
             val nameFilter = createNameFilter(query, matchMode, matcher)
-            val classes = searchClasses(project, query, searchScope, scope, collectLimit, nameFilter, matcher, languageFilter) +
-                DotNetTextSearchSupport.searchTypes(project, query, scope, matchMode, languageFilter, collectLimit)
+            val classes = searchClasses(project, query, searchScope, scope, collectLimit, nameFilter, matcher, languageFilter)
 
             val sortedClasses = classes
                 .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
@@ -195,8 +194,7 @@ class FindClassTool : AbstractMcpTool() {
         val searchScope = resolveSearchScope(project, scope)
         val matcher = createMatcher(query, matchMode)
         val nameFilter = createNameFilter(query, matchMode, matcher)
-        val classes = searchClasses(project, query, searchScope, scope, limit + seenKeys.size, nameFilter, matcher, languageFilter) +
-            DotNetTextSearchSupport.searchTypes(project, query, scope, matchMode, languageFilter, limit + seenKeys.size)
+        val classes = searchClasses(project, query, searchScope, scope, limit + seenKeys.size, nameFilter, matcher, languageFilter)
 
         return classes
             .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }

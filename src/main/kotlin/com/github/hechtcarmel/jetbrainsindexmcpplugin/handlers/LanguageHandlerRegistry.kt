@@ -282,10 +282,10 @@ object LanguageHandlerRegistry {
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php.PhpHandlers", "PHP"),
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.rust.RustHandlers", "Rust"),
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.markdown.MarkdownHandlers", "Markdown"),
-        // Rider protocol-based handlers (preferred over heuristic DotNetHandlers when running in Rider)
+        // Rider protocol-based handlers. C#/F# semantics require generated rd stubs + backend protocol.
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderDotNetHandlers", ".NET (Rider Protocol)"),
-        // Heuristic-based fallback — only registers if protocol handlers didn't (i.e., not in Rider)
-        HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.DotNetHandlers", ".NET (Fallback)"),
+        // Legacy .NET registration is retained as an entry point but intentionally refuses Rider fallback semantics.
+        HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.DotNetHandlers", ".NET (Backend Required)"),
     )
 
     private fun registerLanguageHandlers(className: String, displayName: String) {
