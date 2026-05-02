@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.19.0";
+    private const string BackendVersion = "4.19.1";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -378,7 +378,11 @@ public class IndexMcpBackendHost
 
     private RdRenameSymbolResult ExecuteRenameSymbol(RdRenameSymbolRequest request)
     {
-        var element = ResolveDeclaredElementAt(request.Position);
+        // Use the stricter resolver: rename must act on the symbol literally at the requested
+        // coordinates. If the local declaration's textual name disagrees with the resolved type
+        // element's ShortName (e.g. desynced AXAML/code-behind partial classes), the resolver will
+        // reject that candidate, returning null and surfacing a clearer error here.
+        var element = ResolveDeclaredElementAt(request.Position, requireConsistentLocalDeclaration: true);
         if (element == null)
         {
             return new RdRenameSymbolResult(
@@ -387,10 +391,29 @@ public class IndexMcpBackendHost
                     request.NewName,
                     new List<string>(),
                     0,
-                    "No C#/F# symbol found at the requested position. No files were modified.");
+                    $"No C#/F# symbol found at {request.Position.FilePath}:{request.Position.Line}:{request.Position.Column}, " +
+                    "or the local declaration's textual name disagrees with the resolved type element " +
+                    "(this can happen with desynced partial-class pairs such as AXAML/code-behind " +
+                    "where one partial was renamed without the other). No files were modified.");
         }
 
         var oldName = element.ShortName;
+
+        // Bug guard: a no-op rename (oldName == newName) cannot be detected by the file-content
+        // polling oracle (the new name is always present, since it equals the existing name), so it
+        // would falsely report success without actually doing anything. Fail explicitly instead.
+        if (string.Equals(oldName, request.NewName, StringComparison.Ordinal))
+        {
+            return new RdRenameSymbolResult(
+                    false,
+                    oldName,
+                    request.NewName,
+                    new List<string>(),
+                    0,
+                    $"Rename refused: new name '{request.NewName}' equals current name '{oldName}' (no-op rename). " +
+                    "No files were modified.");
+        }
+
         var availability = _renameRefactoringService.CheckRenameAvailability(element);
         if (availability != RenameAvailabilityCheckResult.CanBeRenamed)
         {
@@ -938,6 +961,20 @@ public class IndexMcpBackendHost
 
     private IDeclaredElement? ResolveDeclaredElementAt(RdSourcePosition position)
     {
+        return ResolveDeclaredElementAt(position, requireConsistentLocalDeclaration: false);
+    }
+
+    /// <summary>
+    /// Position-based PSI resolver. When <paramref name="requireConsistentLocalDeclaration"/> is
+    /// true, additionally enforces that if the symbol is resolved via a local <see cref="IDeclaration"/>
+    /// at the requested position, the local declaration's textual name matches the resolved
+    /// <see cref="IDeclaredElement.ShortName"/>. This guards against partial-class drift (e.g. an
+    /// AXAML/code-behind pair whose names have desynced) where the resolver would otherwise return a
+    /// unified type element whose ShortName disagrees with the local source text — a footgun for
+    /// rename callers that expect to act on what's literally at the requested coordinates.
+    /// </summary>
+    private IDeclaredElement? ResolveDeclaredElementAt(RdSourcePosition position, bool requireConsistentLocalDeclaration)
+    {
         var psiFile = GetPsiFileForPath(position.FilePath);
         if (psiFile == null) return null;
 
@@ -956,11 +993,33 @@ public class IndexMcpBackendHost
             if (node == null) continue;
 
             var resolved = ResolveFromNode(node);
-            if (resolved != null) return resolved;
+            if (resolved == null) continue;
+
+            if (requireConsistentLocalDeclaration)
+            {
+                var localDeclaration = node.GetContainingNode<IDeclaration>();
+                if (localDeclaration != null && !DeclarationNameMatches(localDeclaration, resolved.ShortName))
+                {
+                    // The local declaration token at this position uses a different name than the
+                    // resolved element. Skip this candidate; another offset (or a higher caller)
+                    // will surface a clearer error.
+                    continue;
+                }
+            }
+
+            return resolved;
         }
 
         return null;
     }
+
+    private static bool DeclarationNameMatches(IDeclaration declaration, string expectedName)
+    {
+        var localName = declaration.DeclaredName;
+        return string.IsNullOrEmpty(localName)
+               || string.Equals(localName, expectedName, StringComparison.Ordinal);
+    }
+
 
     private static IEnumerable<int> CandidateOffsets(int offset)
     {

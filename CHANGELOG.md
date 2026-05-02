@@ -4,9 +4,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Rider C#/F# rename: false-success on no-op rename and partial-class desync.** Two related bug fixes for the v4.19.0 rename pipeline that surfaced during v4.19.0 live smoke testing:
+  - **No-op rename guard**: when the resolved symbol's current name equals the requested new name (e.g. AXAML `x:Class` partial still named `MainWindow` while the .cs partial was renamed to `MainWindowSmokeRenamed`, then a second rename request to `MainWindow` resolves to the AXAML partial whose name already is `MainWindow`), the file-content polling oracle would always find the "new" name in the file and report `success: true` without touching anything. The backend now refuses no-op renames with an explicit error message.
+  - **Partial-class desync detection**: `ResolveDeclaredElementAt` now (in rename mode only) verifies that the local `IDeclaration` at the requested offset has a textual name matching the resolved type element's `ShortName`. If they differ — the symptom of a desynced partial-class pair such as AXAML/code-behind where one partial was renamed without the other — the candidate is skipped instead of silently returning the wrong partial. Read-only tools (`find_definition`, `find_references`, hierarchy, etc.) are unchanged and remain tolerant of partial drift for navigation purposes.
+- **Smoke-test script**: `scripts/rider-live-smoke.ps1 -TestRename` now (a) records the `affectedFiles` count from the apply step, (b) asserts the revert step modifies a comparable number of files (`>= apply - 1`), and (c) cross-verifies the result via `ide_find_class` (original name must reappear, renamed name must be gone). Catches the v4.19.0-class false-success regression that the prior `success && message ~= "ReSharper backend"` predicate missed.
+
+## [4.19.0]
+
 ### Changed
 - **Plugin version bumped to 4.19.0** (minor — Rider branch code-quality cleanup; no breaking changes to tool schemas, transport, or client configuration).
-- Bumped `intelliJPlatform` Gradle plugin from `2.10.5` to `2.11.0` (no API regressions; verified by `runPluginVerifier`).
 
 ### Fixed
 - Rider C#/F# call hierarchy: fixed shared-state bug where the `seen` set passed to `expandCallHierarchy` was copied at every recursion level, causing the same callee to be reported multiple times when reachable from sibling branches. The de-duplication set is now shared across the recursion. Added per-level (20) and depth (50) caps matching the Java handler.
@@ -27,6 +34,7 @@
 ### Internal
 - Extracted `RiderEnvironment` lazy singleton (`isAvailable`, `isProtocolGenerated`) replacing duplicated reflection-based detection in `RiderDotNetHandlers` and `BaseRiderHandler`. Lookups now occur once per process.
 - Added `ConcurrentHashMap`-backed reflection cache in `RdProtocolBridge` for `Method` and `Constructor` lookups in `invokeCall`, `getProperty`, and `createStruct`.
+- Bumped `intelliJPlatform` Gradle plugin from `2.10.5` to `2.11.0` (no API regressions; verified by `runPluginVerifier`).
 - Documented `BuildPreview` ±2 line context as `CompactPreviewContextLines = 2` constant in `IndexMcpBackendHost.cs` with comment explaining independence from `maxPreviewLines`.
 - Documented `riderProductClientCompileFile` in `build.gradle.kts` as defensive forward-compat; no source references it directly today.
 - Added KDoc to `MoveFileTool.inferMovedCSharpNamespace` explaining the magic-folder heuristic.

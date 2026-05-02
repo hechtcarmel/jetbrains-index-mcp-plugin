@@ -354,10 +354,22 @@ if ($FullMatrix) {
             column = 22
             newName = "MainWindowSmokeRenamed"
         }
+        $applyAffected = 0
         Assert-ToolOk -Name "ide_refactor_rename C# apply" -Response $rename -Predicate {
-            param($json) $json.success -and $json.message -like "*ReSharper backend*"
+            param($json)
+            $script:applyAffected = if ($json.affectedFiles) { @($json.affectedFiles).Count } else { 0 }
+            $json.success -and $json.message -like "*ReSharper backend*" -and $script:applyAffected -ge 2
         }
 
+        # After the apply step the resolver at the same coords now points at MainWindowSmokeRenamed.
+        # Renaming back to "MainWindow" must:
+        #  (a) succeed (oldName != newName, since on-disk symbol is the renamed one), AND
+        #  (b) actually update at least as many files as the apply step did (within +/- 1 to allow
+        #      for AXAML sync timing).
+        # If the resolver returns a desynced AXAML partial whose name is still "MainWindow", the
+        # plugin now refuses with the no-op guard and success will be false. If the plugin instead
+        # returns success but only updates 1 file (the false-positive bug from v4.19.0 testing),
+        # the affectedFiles count will not match.
         $renameBack = Invoke-Tool -Id 21 -Name "ide_refactor_rename" -Arguments @{
             project_path = $ProjectPath
             file = "Clipthrough/Views/MainWindow.axaml.cs"
@@ -366,7 +378,34 @@ if ($FullMatrix) {
             newName = "MainWindow"
         }
         Assert-ToolOk -Name "ide_refactor_rename C# revert" -Response $renameBack -Predicate {
-            param($json) $json.success -and $json.message -like "*ReSharper backend*"
+            param($json)
+            if (-not $json.success) { return $false }
+            if ($json.message -notlike "*ReSharper backend*") { return $false }
+            $revertAffected = if ($json.affectedFiles) { @($json.affectedFiles).Count } else { 0 }
+            return $revertAffected -ge ($script:applyAffected - 1)
+        }
+
+        # Cross-verify by re-querying ide_find_class — the renamed name must no longer exist and
+        # the original must be back.
+        $verifyOriginal = Invoke-Tool -Id 22 -Name "ide_find_class" -Arguments @{
+            project_path = $ProjectPath
+            query        = "MainWindow"
+            matchMode    = "exact"
+            language     = "C#"
+        }
+        Assert-ToolOk -Name "ide_find_class MainWindow exists after revert" -Response $verifyOriginal -Predicate {
+            param($json) @($json.classes | Where-Object {
+                $_.name -eq "MainWindow" -and $_.file -like "*MainWindow.axaml.cs*"
+            }).Count -ge 1
+        }
+        $verifyRenamed = Invoke-Tool -Id 23 -Name "ide_find_class" -Arguments @{
+            project_path = $ProjectPath
+            query        = "MainWindowSmokeRenamed"
+            matchMode    = "exact"
+            language     = "C#"
+        }
+        Assert-ToolOk -Name "ide_find_class MainWindowSmokeRenamed gone after revert" -Response $verifyRenamed -Predicate {
+            param($json) @($json.classes | Where-Object { $_.name -eq "MainWindowSmokeRenamed" }).Count -eq 0
         }
     } else {
         Write-Host "SKIP ide_refactor_rename C# apply: pass -TestRename only for disposable project copies."
