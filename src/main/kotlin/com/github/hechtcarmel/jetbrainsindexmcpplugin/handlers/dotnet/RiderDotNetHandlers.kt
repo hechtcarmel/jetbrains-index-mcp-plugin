@@ -3,8 +3,14 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
@@ -174,6 +180,189 @@ object RdProtocolBridge {
 }
 
 const val MODEL_PKG = "com.jetbrains.rider.plugins.indexmcp.model"
+
+data class RiderBackendResponse<T>(
+    val handled: Boolean,
+    val value: T? = null
+)
+
+object RiderBackendSemanticService {
+    private val LOG = logger<RiderBackendSemanticService>()
+
+    fun canHandleLanguage(language: String?): Boolean =
+        language == null || CSHARP_LANGUAGE_IDS.any { it.equals(language, ignoreCase = true) } ||
+            FSHARP_LANGUAGE_IDS.any { it.equals(language, ignoreCase = true) }
+
+    fun isDotNetFile(file: String?): Boolean {
+        val ext = file?.substringAfterLast('.', missingDelimiterValue = "")?.lowercase()
+        return ext in CSHARP_EXTENSIONS || ext in FSHARP_EXTENSIONS
+    }
+
+    fun findTypes(
+        project: Project,
+        query: String,
+        matchMode: String,
+        scope: BuiltInSearchScope,
+        language: String?,
+        limit: Int
+    ): RiderBackendResponse<List<SymbolMatch>> {
+        if (!canUseBackend(project) || !canHandleLanguage(language)) return RiderBackendResponse(handled = false)
+        val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdFindTypesRequest",
+            query,
+            matchMode,
+            scope.wireValue,
+            language,
+            limit
+        ) ?: return RiderBackendResponse(handled = true)
+        val result = RdProtocolBridge.invokeCall(model, "findTypes", request) ?: return RiderBackendResponse(handled = true)
+        @Suppress("UNCHECKED_CAST")
+        val types = (RdProtocolBridge.getProperty(result, "types") as? List<Any>) ?: emptyList()
+        return RiderBackendResponse(handled = true, value = types.mapNotNull { rdSymbolToSymbolMatch(project, it) })
+    }
+
+    fun findDefinition(
+        project: Project,
+        file: String?,
+        line: Int?,
+        column: Int?,
+        language: String?,
+        symbol: String?,
+        fullElementPreview: Boolean,
+        maxPreviewLines: Int
+    ): RiderBackendResponse<DefinitionResult> {
+        val positionTarget = file != null && line != null && column != null && isDotNetFile(file)
+        val symbolTarget = language != null && symbol != null && canHandleLanguage(language)
+        if (!canUseBackend(project) || (!positionTarget && !symbolTarget)) return RiderBackendResponse(handled = false)
+
+        val target = createSemanticTarget(project, file, line, column, language, symbol)
+            ?: return RiderBackendResponse(handled = true)
+        val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdFindDefinitionRequest",
+            target,
+            fullElementPreview,
+            maxPreviewLines
+        ) ?: return RiderBackendResponse(handled = true)
+        val result = RdProtocolBridge.invokeCall(model, "findDefinition", request) ?: return RiderBackendResponse(handled = true)
+        val definition = RdProtocolBridge.getProperty(result, "definition") ?: return RiderBackendResponse(handled = true)
+        @Suppress("UNCHECKED_CAST")
+        val astPath = (RdProtocolBridge.getProperty(result, "astPath") as? List<String>) ?: emptyList()
+        return RiderBackendResponse(
+            handled = true,
+            value = DefinitionResult(
+                file = displayPath(project, RdProtocolBridge.getProperty(definition, "filePath") as? String),
+                line = RdProtocolBridge.getProperty(definition, "line") as? Int ?: 1,
+                column = RdProtocolBridge.getProperty(definition, "column") as? Int ?: 1,
+                preview = RdProtocolBridge.getProperty(result, "preview") as? String ?: "",
+                symbolName = RdProtocolBridge.getProperty(definition, "name") as? String ?: "unknown",
+                astPath = astPath
+            )
+        )
+    }
+
+    fun findReferences(
+        project: Project,
+        file: String?,
+        line: Int?,
+        column: Int?,
+        language: String?,
+        symbol: String?,
+        scope: BuiltInSearchScope,
+        limit: Int
+    ): RiderBackendResponse<List<UsageLocation>> {
+        val positionTarget = file != null && line != null && column != null && isDotNetFile(file)
+        val symbolTarget = language != null && symbol != null && canHandleLanguage(language)
+        if (!canUseBackend(project) || (!positionTarget && !symbolTarget)) return RiderBackendResponse(handled = false)
+
+        val target = createSemanticTarget(project, file, line, column, language, symbol)
+            ?: return RiderBackendResponse(handled = true)
+        val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdFindReferencesRequest", target, scope.wireValue, limit)
+            ?: return RiderBackendResponse(handled = true)
+        val result = RdProtocolBridge.invokeCall(model, "findReferences", request) ?: return RiderBackendResponse(handled = true)
+        @Suppress("UNCHECKED_CAST")
+        val references = (RdProtocolBridge.getProperty(result, "references") as? List<Any>) ?: emptyList()
+        return RiderBackendResponse(handled = true, value = references.map { reference ->
+            UsageLocation(
+                file = displayPath(project, RdProtocolBridge.getProperty(reference, "filePath") as? String),
+                line = RdProtocolBridge.getProperty(reference, "line") as? Int ?: 1,
+                column = RdProtocolBridge.getProperty(reference, "column") as? Int ?: 1,
+                context = RdProtocolBridge.getProperty(reference, "context") as? String ?: "",
+                type = RdProtocolBridge.getProperty(reference, "kind") as? String ?: "reference",
+                astPath = (RdProtocolBridge.getProperty(reference, "astPath") as? List<String>) ?: emptyList()
+            )
+        })
+    }
+
+    private fun canUseBackend(project: Project): Boolean =
+        RiderDotNetHandlers.run {
+            try {
+                Class.forName("$MODEL_PKG.IndexMcpModel")
+                Class.forName("$MODEL_PKG.IndexMcpModel_GeneratedKt")
+                RdProtocolBridge.getModel(project) != null
+            } catch (e: Exception) {
+                LOG.debug("Rider backend semantic service unavailable: ${e.message}")
+                false
+            }
+        }
+
+    private fun createSemanticTarget(
+        project: Project,
+        file: String?,
+        line: Int?,
+        column: Int?,
+        language: String?,
+        symbol: String?
+    ): Any? {
+        val backendFile = file?.let { resolveBackendFilePath(project, it) }
+        return RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdSemanticTarget",
+            backendFile,
+            line,
+            column,
+            language,
+            symbol
+        )
+    }
+
+    private fun resolveBackendFilePath(project: Project, file: String): String? {
+        val direct = File(file)
+        if (direct.isAbsolute && direct.exists()) return direct.canonicalPath
+
+        val roots = listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project)
+        for (root in roots) {
+            val candidate = File(root, file)
+            if (candidate.exists()) return candidate.canonicalPath
+        }
+        return null
+    }
+
+    private fun rdSymbolToSymbolMatch(project: Project, symbol: Any): SymbolMatch? {
+        val name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: return null
+        val filePath = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null
+        val qualifiedName = RdProtocolBridge.getProperty(symbol, "qualifiedName") as? String
+        return SymbolMatch(
+            name = name,
+            qualifiedName = qualifiedName,
+            kind = (RdProtocolBridge.getProperty(symbol, "kind") as? String ?: "UNKNOWN").lowercase(),
+            file = displayPath(project, filePath),
+            line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: 1,
+            column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 1,
+            containerName = qualifiedName?.substringBeforeLast('.', missingDelimiterValue = ""),
+            language = RdProtocolBridge.getProperty(symbol, "language") as? String
+        )
+    }
+
+    private fun displayPath(project: Project, filePath: String?): String {
+        if (filePath.isNullOrBlank()) return ""
+        val normalized = filePath.replace('\\', File.separatorChar).replace('/', File.separatorChar)
+        val virtualFile = LocalFileSystem.getInstance().findFileByPath(normalized)
+        if (virtualFile != null) return ProjectUtils.getToolFilePath(project, virtualFile)
+        return normalized
+    }
+}
 
 // ── Helper functions ────────────────────────────────────────────────────────
 
