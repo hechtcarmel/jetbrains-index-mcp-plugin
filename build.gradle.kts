@@ -339,6 +339,7 @@ val testDotNet by tasks.registering(Exec::class) {
 // Copy .NET backend DLLs into the plugin sandbox so Rider can load them
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Constants.Tasks.PREPARE_SANDBOX) {
     dependsOn(compileDotNet)
+    notCompatibleWithConfigurationCache("Aggregates the compileDotNet Exec task output")
     val pluginName = providers.gradleProperty("pluginName").get()
     from(dotNetOutputDir) {
         include("*.dll")
@@ -354,6 +355,7 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Con
 
 tasks.named<Zip>(Constants.Tasks.BUILD_PLUGIN) {
     dependsOn(compileDotNet)
+    notCompatibleWithConfigurationCache("Aggregates the compileDotNet Exec task output")
     from(dotNetOutputDir) {
         include("*.dll")
         include("*.pdb")

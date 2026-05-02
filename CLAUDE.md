@@ -56,7 +56,7 @@ src/
 │   │   │   ├── go/GoHandlers.kt        # Go handlers (reflection)
 │   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
 │   │   │   ├── rust/RustHandlers.kt    # Rust handlers (reflection)
-│   │   │   └── dotnet/DotNetHandlers.kt # Rider C#/F# handlers (frontend bridge)
+│   │   │   └── dotnet/RiderDotNetHandlers.kt # Rider C#/F# handlers (rd-protocol bridge to ReSharper backend)
 │   │   ├── server/                     # MCP server infrastructure
 │   │   │   ├── McpServerService.kt     # App-level service managing server lifecycle
 │   │   │   ├── JsonRpcHandler.kt       # JSON-RPC 2.0 request routing
@@ -255,19 +255,31 @@ override val inputSchema = SchemaBuilder.tool()
 
 ## Building and Running
 
+**Prerequisites for the Rider backend**: building `buildPlugin` triggers `compileDotNet`, which shells out to `dotnet build` against `src/dotnet/ReSharperPlugin.IndexMcp.sln`. You need the **.NET 8 SDK** installed (`dotnet --version` ≥ 8.0). The CI workflow installs it via `actions/setup-dotnet@v4`. If you don't have `dotnet` on `PATH`, the build will fail at the `compileDotNet` task. The .NET solution file is detected via `onlyIf { dotNetSolution.exists() }`, so a sparse checkout that excludes `src/dotnet/` skips the .NET build entirely.
+
 ```bash
-# Build the plugin
-./gradlew build
+# Build the plugin (includes the ReSharper backend DLL packaged into the ZIP)
+./gradlew buildPlugin
 
 # Run IDE with plugin installed
 ./gradlew runIde
 
-# Run tests
+# Run tests (Kotlin unit + platform tests; .NET backend tests run via :testDotNet)
 ./gradlew test
 
 # Run plugin verification
-./gradlew runPluginVerifier
+./gradlew verifyPlugin
 ```
+
+**Configuration cache note**: `compileDotNet`, `prepareSandbox`, and `buildPlugin` are marked `notCompatibleWithConfigurationCache` because the Rider backend integration relies on Gradle script object references that the configuration cache cannot serialize. Other tasks remain config-cache enabled.
+
+**Regenerating the rd protocol model** (only when `protocol/src/main/kotlin/model/rider/IndexMcpModel.kt` changes):
+
+```bash
+INCLUDE_PROTOCOL_MODULE=1 ./gradlew :protocol:rdgen
+```
+
+The generated stubs (`src/rider/.../IndexMcpModel.Generated.kt`, `src/dotnet/.../IndexMcpModel.Generated.cs`) are committed; regen is only needed when the model definition changes.
 
 ### Run Configurations (in `.run/`)
 - **Run Plugin** - Launch IDE with plugin for manual testing
@@ -413,7 +425,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
-- `handlers/dotnet/DotNetHandlers.kt` - Rider C#/F# handlers using frontend navigation/search bridges to the ReSharper backend
+- `handlers/dotnet/RiderDotNetHandlers.kt` - Rider C#/F# handlers that issue rd-protocol RPCs to the in-process ReSharper backend (`src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpBackendHost.cs`). The backend executes against the ReSharper PSI/caches in the same process as Rider; the Kotlin side only orchestrates and adapts protocol DTOs to the universal `LanguageHandler` interfaces.
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
