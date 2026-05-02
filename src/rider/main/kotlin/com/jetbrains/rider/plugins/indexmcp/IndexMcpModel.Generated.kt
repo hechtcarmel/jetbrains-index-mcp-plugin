@@ -77,7 +77,7 @@ class IndexMcpModel private constructor(
         private val __RdFileStructureResultNullableSerializer = RdFileStructureResult.nullable()
         private val __RdRenameSymbolResultNullableSerializer = RdRenameSymbolResult.nullable()
         
-        const val serializationHash = 1737773450648360157L
+        const val serializationHash = -6211285361720734218L
         
     }
     override val serializersOwner: ISerializersOwner get() = IndexMcpModel
@@ -252,7 +252,7 @@ data class RdBackendStatusResult (
  * #### Generated from [IndexMcpModel.kt:139]
  */
 data class RdCallHierarchyRequest (
-    val position: RdSourcePosition,
+    val target: RdSemanticTarget,
     val direction: String,
     val depth: Int,
     val scope: String
@@ -265,15 +265,15 @@ data class RdCallHierarchyRequest (
         
         @Suppress("UNCHECKED_CAST")
         override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdCallHierarchyRequest  {
-            val position = RdSourcePosition.read(ctx, buffer)
+            val target = RdSemanticTarget.read(ctx, buffer)
             val direction = buffer.readString()
             val depth = buffer.readInt()
             val scope = buffer.readString()
-            return RdCallHierarchyRequest(position, direction, depth, scope)
+            return RdCallHierarchyRequest(target, direction, depth, scope)
         }
         
         override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdCallHierarchyRequest)  {
-            RdSourcePosition.write(ctx, buffer, value.position)
+            RdSemanticTarget.write(ctx, buffer, value.target)
             buffer.writeString(value.direction)
             buffer.writeInt(value.depth)
             buffer.writeString(value.scope)
@@ -292,7 +292,7 @@ data class RdCallHierarchyRequest (
         
         other as RdCallHierarchyRequest
         
-        if (position != other.position) return false
+        if (target != other.target) return false
         if (direction != other.direction) return false
         if (depth != other.depth) return false
         if (scope != other.scope) return false
@@ -302,7 +302,7 @@ data class RdCallHierarchyRequest (
     //hash code trait
     override fun hashCode(): Int  {
         var __r = 0
-        __r = __r*31 + position.hashCode()
+        __r = __r*31 + target.hashCode()
         __r = __r*31 + direction.hashCode()
         __r = __r*31 + depth.hashCode()
         __r = __r*31 + scope.hashCode()
@@ -312,7 +312,7 @@ data class RdCallHierarchyRequest (
     override fun print(printer: PrettyPrinter)  {
         printer.println("RdCallHierarchyRequest (")
         printer.indent {
-            print("position = "); position.print(printer); println()
+            print("target = "); target.print(printer); println()
             print("direction = "); direction.print(printer); println()
             print("depth = "); depth.print(printer); println()
             print("scope = "); scope.print(printer); println()

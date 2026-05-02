@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.19.2";
+    private const string BackendVersion = "4.20.0";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -105,6 +105,7 @@ public class IndexMcpBackendHost
                 .Where(type => MatchesLanguage(type, request.Language))
                 .Where(type => MatchesScope(type, request.Scope))
                 .OrderBy(type => MatchRank(type.ShortName, request.Query, request.MatchMode))
+                .ThenBy(BestDeclarationRank)
                 .ThenBy(type => IsTestPath(GetDeclarationPath(type)) ? 1 : 0)
                 .ThenBy(type => type.ShortName, StringComparer.OrdinalIgnoreCase)
                 .Select(ToSymbolInfo)
@@ -246,7 +247,7 @@ public class IndexMcpBackendHost
             var element = ResolveTarget(request.Target);
             if (element == null) return (RdDefinitionResult?)null;
 
-            var navigationElement = element.GetDeclarations().FirstOrDefault();
+            var navigationElement = PickPreferredDeclaration(element);
             if (navigationElement == null) return (RdDefinitionResult?)null;
 
             var preview = BuildPreview(navigationElement, request.FullElementPreview, request.MaxPreviewLines);
@@ -616,7 +617,7 @@ public class IndexMcpBackendHost
     {
         return Task.Run(() =>
         {
-            var element = ResolveDeclaredElementAt(request.Position);
+            var element = ResolveTarget(request.Target);
             if (element is not IMethod method) return null;
 
             var root = ToSymbolInfo(method);
@@ -758,9 +759,16 @@ public class IndexMcpBackendHost
         var normalized = NormalizeSymbolName(symbol);
         return EnumerateDeclaredElements()
             .Where(element => MatchesLanguage(element, language))
-            .FirstOrDefault(element =>
+            .Where(element =>
                 NormalizeSymbolName(GetQualifiedName(element)).Equals(normalized, StringComparison.OrdinalIgnoreCase) ||
-                NormalizeSymbolName(element.ShortName).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                NormalizeSymbolName(element.ShortName).Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            // Prefer partials whose primary declaration lives in a real hand-written
+            // .cs/.fs file over source-generator output (obj/, *.g.cs) and over
+            // synthetic XAML/AXAML partials whose source file may have an empty
+            // location. Without this, AXAML-paired classes resolve to the
+            // generator partial and HandleFindDefinition returns file:"".
+            .OrderBy(BestDeclarationRank)
+            .FirstOrDefault();
     }
 
     private IEnumerable<IDeclaredElement> EnumerateDeclaredElements()
@@ -873,6 +881,32 @@ public class IndexMcpBackendHost
 
     private static string? GetDeclarationPath(IDeclaredElement element) =>
         element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath;
+
+    // Lower rank = better. Used to prefer hand-written code-behind partials
+    // (e.g. MainWindow.axaml.cs) over generator output (obj/, *.g.cs) and over
+    // synthetic XAML/AXAML partials whose source file may have an empty path.
+    private static int DeclarationRank(IDeclaration? declaration)
+    {
+        var path = declaration?.GetSourceFile()?.GetLocation().FullPath ?? "";
+        if (string.IsNullOrEmpty(path)) return 4;
+        var normalized = path.Replace('\\', '/');
+        var isObj = normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase);
+        var isGenerated = normalized.Contains("/generated/", StringComparison.OrdinalIgnoreCase) ||
+                          path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase) ||
+                          path.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
+        if (isObj || isGenerated) return 3;
+        var isCsOrFs = path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                       path.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
+                       path.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase) ||
+                       path.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase);
+        return isCsOrFs ? 0 : 1;
+    }
+
+    private static int BestDeclarationRank(IDeclaredElement element) =>
+        element.GetDeclarations().Select(DeclarationRank).DefaultIfEmpty(4).Min();
+
+    private static IDeclaration? PickPreferredDeclaration(IDeclaredElement element) =>
+        element.GetDeclarations().OrderBy(DeclarationRank).FirstOrDefault();
 
     private static bool IsTestPath(string path)
     {

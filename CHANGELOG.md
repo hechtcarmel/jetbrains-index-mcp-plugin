@@ -5,13 +5,23 @@
 ## [Unreleased]
 
 ### Fixed
+- **Rider C#/F#: AXAML / source-generator partial pollution affecting `find_definition`, `find_class`, and `type_hierarchy`.** When a class has multiple partials (e.g. an Avalonia `MainWindow` with an `x:Class` declaration in `MainWindow.axaml` and code-behind in `MainWindow.axaml.cs`, plus an Avalonia source-generator partial under `obj/Debug/.../*.g.cs`), the previous resolver picked the first declaration enumerated by the PSI — frequently the synthetic XAML partial (whose `GetSourceFile()?.GetLocation().FullPath` is empty) or the generator output. Symptoms: `ide_find_definition` returned `file: ""`, `ide_find_class` listed the user's class twice (once with empty file), `ide_type_hierarchy` with `className` form returned `Class not found`. The backend now ranks declarations by where they live: real hand-written `.cs`/`.fs`/`.fsi`/`.fsx` files win over synthetic XAML partials, which win over generator output (paths under `obj/`, paths containing `/generated/`, files ending in `.g.cs` or `.g.i.cs`), which win over empty-path declarations. Affects `ResolveSymbol`, `HandleFindDefinition`, and `HandleFindTypes`.
+- **Rider C#/F#: `ide_call_hierarchy` symbol-form support.** `CallHierarchyTool` previously routed all symbol-form requests through `LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName`, which is Java-only. Calling the tool with `language: "C#"` + `symbol: "Foo.Bar#Baz"` returned `Unsupported language for symbol references: C#`. The tool now rewrites such requests via `RiderBackendSemanticService.resolveSymbolToPosition` (using the existing Rider `findDefinition` RPC), then falls through to the regular position-based path so depth, scope, and the seen-set dedup behave identically to position-form. The RD model's `RdCallHierarchyRequest` now uses `RdSemanticTarget` (file/line/column OR language/symbol) instead of `RdSourcePosition`, matching the shape already used by `findDefinition` and `findReferences`.
+
+### Removed (from "Known issues" in the v4.19.2 changelog)
+- AXAML-paired classes (`find_definition` / `find_class.file` / `type_hierarchy className`) returning empty file paths or `Class not found`.
+- `ide_call_hierarchy` `language: "C#"` + `symbol: ...` returning `Unsupported language for symbol references: C#`.
+
+## [4.19.2]
+
+### Fixed
 - **Rider C#/F# rename: false-success on substring/revert renames (general case beyond v4.19.1's AXAML guard).** Live smoke testing on Clipthrough revealed the v4.19.1 fixes did not cover the general case: renaming `MainWindowViewModel` → `MainWindowViewModelRenameTest` succeeds (8 files updated), then reverting at the same coordinates returns `success: true, changesCount: 8` with no actual disk changes. Root cause: `RenameChangedAffectedFiles` used `text.Contains(newName, Ordinal)` substring check. When `newName` is a substring of the on-disk identifiers (e.g. `MainWindowViewModel` is a substring of `MainWindowViewModelRenameTest`, which is still in every affected file before the revert), the oracle returned true even though nothing was rewritten.
   - **Fix**: replaced the substring oracle with a word-boundary occurrence-count snapshot. Before any rename strategy runs, `SnapshotIdentifierCounts` records the count of `\b{oldName}\b` in each potentially-affected file. After each strategy, `RenameChangedAffectedFiles` polls (5s @ 100ms) for any file whose current count is strictly less than the snapshot, OR which has disappeared on disk (rename-on-disk). Without an actual rewrite, no file's count decreases → oracle returns false → caller gets a clear failure message.
   - This subsumes the v4.19.1 `oldName == newName` no-op guard (kept as defense-in-depth: faster, clearer error).
 
-### Known issues (not regressions; pre-existing, out of scope for v4.19.2)
-- `ide_find_definition` (symbol or position form) for AXAML-paired classes (e.g. `MainWindow` with `x:Class`) may return `file:""` because the resolver picks the source-generator partial output instead of the user-authored `.axaml.cs` partial. Workaround: use `ide_find_class` and navigate via the file path from the result. Tracked separately for an `ide_find_definition` source-file preference fix.
-- `ide_call_hierarchy` with `language: "C#"` + `symbol: "..."` returns `Unsupported language for symbol references: C#`. The Rider backend can resolve C# symbols (used by `ide_find_definition` symbol form) but `CallHierarchyTool` doesn't have an equivalent Rider intercept. Use position form (`file` + `line` + `column`). Tracked separately.
+### Known issues at v4.19.2 (resolved in 4.20.0)
+- `ide_find_definition` (symbol or position form) for AXAML-paired classes (e.g. `MainWindow` with `x:Class`) may return `file:""` because the resolver picks the source-generator partial output instead of the user-authored `.axaml.cs` partial.
+- `ide_call_hierarchy` with `language: "C#"` + `symbol: "..."` returns `Unsupported language for symbol references: C#`.
 - `ide_type_hierarchy` with `className: "Clipthrough.Views.MainWindow"` returns `Class not found` for AXAML-paired classes (same root cause as the `ide_find_definition` issue above).
 
 ## [4.19.1]

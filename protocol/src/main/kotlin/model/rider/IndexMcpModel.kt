@@ -137,7 +137,7 @@ object IndexMcpModel : Ext(SolutionModel.Solution) {
     // ── Call Hierarchy ──────────────────────────────────────────────────────
 
     private val RdCallHierarchyRequest = structdef {
-        field("position", RdSourcePosition)
+        field("target", RdSemanticTarget)
         field("direction", string)
         field("depth", int)
         field("scope", string)

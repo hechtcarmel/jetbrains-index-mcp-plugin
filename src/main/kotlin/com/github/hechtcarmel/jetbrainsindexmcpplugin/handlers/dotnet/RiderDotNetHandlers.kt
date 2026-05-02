@@ -444,6 +444,33 @@ object RiderBackendSemanticService {
         return RiderBackendResponse(handled = true, value = rdTypeHierarchyToData(result, language))
     }
 
+    /**
+     * Resolve a (language, symbol) pair to a (file, line, column) position via the
+     * Rider backend's symbol resolver, returning null if it couldn't be resolved or
+     * if the backend is unavailable. Used by CallHierarchyTool to satisfy symbol-
+     * form requests for C#/F# without going through the Java-only
+     * `LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName` path.
+     */
+    fun resolveSymbolToPosition(project: Project, language: String, symbol: String): Triple<String, Int, Int>? {
+        if (!canUseBackend(project) || !canHandleLanguage(language)) return null
+        val target = createSemanticTarget(project, null, null, null, language, symbol) ?: return null
+        val model = RdProtocolBridge.getModel(project) ?: return null
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdFindDefinitionRequest",
+            target,
+            false,
+            1
+        ) ?: return null
+        val result = RdProtocolBridge.invokeCall(model, "findDefinition", request) ?: return null
+        val definition = RdProtocolBridge.getProperty(result, "definition") ?: return null
+        val backendPath = RdProtocolBridge.getProperty(definition, "filePath") as? String ?: return null
+        if (backendPath.isBlank()) return null
+        val displayedPath = displayPath(project, backendPath) ?: return null
+        val line = RdProtocolBridge.getProperty(definition, "line") as? Int ?: return null
+        val column = RdProtocolBridge.getProperty(definition, "column") as? Int ?: return null
+        return Triple(displayedPath, line, column)
+    }
+
     private fun canUseBackend(project: Project): Boolean =
         try {
             Class.forName("$MODEL_PKG.IndexMcpModel")
@@ -557,6 +584,22 @@ private fun createSourcePosition(project: Project, element: PsiElement): Any? {
     val line = document?.getLineNumber(offset)?.plus(1) ?: 1
     val column = document?.let { offset - it.getLineStartOffset(it.getLineNumber(offset)) + 1 } ?: 1
     return RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", filePath, line, column)
+}
+
+// Wrap a (file, line, column) triple in a RdSemanticTarget so that backend
+// RPCs migrated to RdSemanticTarget can keep accepting position-based requests.
+private fun createPositionTarget(filePath: String?, line: Int?, column: Int?): Any? =
+    RdProtocolBridge.createStruct("$MODEL_PKG.RdSemanticTarget", filePath, line, column, null, null)
+
+private fun createPositionTarget(project: Project, element: PsiElement): Any? {
+    val file = element.containingFile
+    val vf = file?.virtualFile
+    val filePath = vf?.let { riderBackendPath(it) } ?: ""
+    val document = file?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
+    val offset = element.textOffset
+    val line = document?.getLineNumber(offset)?.plus(1) ?: 1
+    val column = document?.let { offset - it.getLineStartOffset(it.getLineNumber(offset)) + 1 } ?: 1
+    return createPositionTarget(filePath, line, column)
 }
 
 private fun rdSymbolToTypeElementData(symbol: Any, language: String): TypeElementData {
@@ -748,8 +791,8 @@ abstract class RiderCallHierarchyHandler(
         scope: BuiltInSearchScope
     ): CallHierarchyData? {
         val model = RdProtocolBridge.getModel(project) ?: return null
-        val position = createSourcePosition(project, element) ?: return null
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", position, direction, depth, scope.wireValue)
+        val target = createPositionTarget(project, element) ?: return null
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", target, direction, depth, scope.wireValue)
             ?: return null
         val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return null
 
@@ -783,9 +826,9 @@ abstract class RiderCallHierarchyHandler(
         seen: MutableSet<String>
     ): CallElementData {
         if (remainingDepth <= 0) return call.copy(children = emptyList())
-        val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", call.file, call.line, call.column)
+        val target = createPositionTarget(call.file, call.line, call.column)
             ?: return call.copy(children = emptyList())
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", position, direction, remainingDepth, scope.wireValue)
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", target, direction, remainingDepth, scope.wireValue)
             ?: return call.copy(children = emptyList())
         val model = RdProtocolBridge.getModel(project) ?: return call.copy(children = emptyList())
         val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return call.copy(children = emptyList())

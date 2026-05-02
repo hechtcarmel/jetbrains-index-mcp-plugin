@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
@@ -89,7 +90,13 @@ class CallHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            // For C#/F# symbol-form requests, the universal SymbolReferenceHandler
+            // registry only knows about Java. Resolve the symbol to a position via
+            // the Rider backend first, then fall through to the position-based
+            // handler so depth/scope/seen-set semantics are identical.
+            val effectiveArguments = rewriteSymbolArgumentsForRider(project, arguments) ?: arguments
+
+            val element = resolveElementFromArguments(project, effectiveArguments, allowLibraryFilesForPosition = true).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
 
@@ -125,6 +132,32 @@ class CallHierarchyTool : AbstractMcpTool() {
         null -> ""
         is JsonPrimitive -> scopeElement.content
         else -> scopeElement.toString()
+    }
+
+    /**
+     * If [arguments] carries a (`language`, `symbol`) pair for a Rider-supported
+     * language but no position, ask the Rider backend to resolve the symbol to a
+     * (file, line, column) and return a new JsonObject augmented with those keys.
+     * Returns null when no rewrite is needed (already has position, language not
+     * supported, or symbol not resolvable). The caller then falls through to
+     * `resolveElementFromArguments` and the standard call-hierarchy handler so
+     * depth/seen-set semantics stay identical to the position-form path.
+     */
+    private fun rewriteSymbolArgumentsForRider(project: Project, arguments: JsonObject): JsonObject? {
+        val hasPosition = arguments[ParamNames.FILE] != null &&
+                          arguments[ParamNames.LINE] != null &&
+                          arguments[ParamNames.COLUMN] != null
+        if (hasPosition) return null
+        val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content ?: return null
+        val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content ?: return null
+        val (file, line, column) = RiderBackendSemanticService.resolveSymbolToPosition(project, language, symbol) ?: return null
+        return JsonObject(
+            arguments.toMutableMap().apply {
+                put(ParamNames.FILE, JsonPrimitive(file))
+                put(ParamNames.LINE, JsonPrimitive(line))
+                put(ParamNames.COLUMN, JsonPrimitive(column))
+            }
+        )
     }
 
     private fun createInvalidScopeError(provided: String): ToolCallResult =

@@ -161,7 +161,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static  CtxWriteDelegate<RdFileStructureResult> WriteRdFileStructureResultNullable = RdFileStructureResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdRenameSymbolResult> WriteRdRenameSymbolResultNullable = RdRenameSymbolResult.Write.NullableClass();
     
-    protected override long SerializationHash => 1737773450648360157L;
+    protected override long SerializationHash => -6211285361720734218L;
     
     protected override Action<ISerializers> Register => RegisterDeclaredTypesSerializers;
     public static void RegisterDeclaredTypesSerializers(ISerializers serializers)
@@ -330,7 +330,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   {
     //fields
     //public fields
-    [NotNull] public RdSourcePosition Position {get; private set;}
+    [NotNull] public RdSemanticTarget Target {get; private set;}
     [NotNull] public string Direction {get; private set;}
     public int Depth {get; private set;}
     [NotNull] public string Scope {get; private set;}
@@ -338,26 +338,26 @@ namespace JetBrains.Rider.Model.IndexMcp
     //private fields
     //primary constructor
     public RdCallHierarchyRequest(
-      [NotNull] RdSourcePosition position,
+      [NotNull] RdSemanticTarget target,
       [NotNull] string direction,
       int depth,
       [NotNull] string scope
     )
     {
-      if (position == null) throw new ArgumentNullException("position");
+      if (target == null) throw new ArgumentNullException("target");
       if (direction == null) throw new ArgumentNullException("direction");
       if (scope == null) throw new ArgumentNullException("scope");
       
-      Position = position;
+      Target = target;
       Direction = direction;
       Depth = depth;
       Scope = scope;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct([NotNull] out RdSourcePosition position, [NotNull] out string direction, out int depth, [NotNull] out string scope)
+    public void Deconstruct([NotNull] out RdSemanticTarget target, [NotNull] out string direction, out int depth, [NotNull] out string scope)
     {
-      position = Position;
+      target = Target;
       direction = Direction;
       depth = Depth;
       scope = Scope;
@@ -366,17 +366,17 @@ namespace JetBrains.Rider.Model.IndexMcp
     
     public static CtxReadDelegate<RdCallHierarchyRequest> Read = (ctx, reader) => 
     {
-      var position = RdSourcePosition.Read(ctx, reader);
+      var target = RdSemanticTarget.Read(ctx, reader);
       var direction = reader.ReadString();
       var depth = reader.ReadInt();
       var scope = reader.ReadString();
-      var _result = new RdCallHierarchyRequest(position, direction, depth, scope);
+      var _result = new RdCallHierarchyRequest(target, direction, depth, scope);
       return _result;
     };
     
     public static CtxWriteDelegate<RdCallHierarchyRequest> Write = (ctx, writer, value) => 
     {
-      RdSourcePosition.Write(ctx, writer, value.Position);
+      RdSemanticTarget.Write(ctx, writer, value.Target);
       writer.Write(value.Direction);
       writer.Write(value.Depth);
       writer.Write(value.Scope);
@@ -398,14 +398,14 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return Equals(Position, other.Position) && Direction == other.Direction && Depth == other.Depth && Scope == other.Scope;
+      return Equals(Target, other.Target) && Direction == other.Direction && Depth == other.Depth && Scope == other.Scope;
     }
     //hash code trait
     public override int GetHashCode()
     {
       unchecked {
         var hash = 0;
-        hash = hash * 31 + Position.GetHashCode();
+        hash = hash * 31 + Target.GetHashCode();
         hash = hash * 31 + Direction.GetHashCode();
         hash = hash * 31 + Depth.GetHashCode();
         hash = hash * 31 + Scope.GetHashCode();
@@ -417,7 +417,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       printer.Println("RdCallHierarchyRequest (");
       using (printer.IndentCookie()) {
-        printer.Print("position = "); Position.PrintEx(printer); printer.Println();
+        printer.Print("target = "); Target.PrintEx(printer); printer.Println();
         printer.Print("direction = "); Direction.PrintEx(printer); printer.Println();
         printer.Print("depth = "); Depth.PrintEx(printer); printer.Println();
         printer.Print("scope = "); Scope.PrintEx(printer); printer.Println();
