@@ -5,10 +5,21 @@
 ## [Unreleased]
 
 ### Fixed
-- **AXAML resolver: emitter still picked first declaration even after the v4.20.0–4.20.2 ranker.** The ranking work in v4.20.0/.1/.2 ordered top-level results by `BestDeclarationRank`, but the actual symbol-info builder (`ToSymbolInfo` — used by `find_definition`, `find_class`, `type_hierarchy`, `find_implementations`, `find_super_methods`, `call_hierarchy` to populate `file`/`line`/`column`/`preview`) still called `element.GetDeclarations().FirstOrDefault()`. So the ranker picked the right element, then the builder picked the wrong partial of that element's declaration list and emitted `file:""`. `ToSymbolInfo`, `GetDeclarationPath`, and `MatchesLanguage`'s path probe now all go through `PickPreferredDeclaration`. Resolves the persistent `find_definition file:""` / `find_class file:""` / `type_hierarchy "Class not found"` symptoms on Avalonia AXAML-paired classes that v4.20.0–4.20.2 only partially addressed.
+- **Refactor revert error message: `ConflictSearchResult` collection rendered as type name.** When the rename fallback strategy runs and `RenameRefactoringService.RenameAndGetConflicts` returns a list of `ConflictSearchResult`, the message was built with `conflicts?.ToString()`, which produces `System.Collections.Generic.List\`1[JetBrains.ReSharper.Refactorings.Conflicts.Common.ConflictSearchResult]` — useless for diagnosing what blocked the rename. The new `FormatConflicts` helper reflectively reads the conventional `Description` / `Message` / `Conflict` / `Text` properties of each entry and joins them with `; `, falling back to per-item `ToString()`. Reflection avoids a hard compile-time dependency on the ConflictSearchResult API surface (which has shifted across ReSharper SDK versions).
 
 ### Known issues (not regressions; deferred)
-- `ide_sync_files` does not invalidate Roslyn source-generator output for files whose inputs changed externally. After a `git reset`, the generator-emitted partial may still hold the pre-reset symbol name. Workaround: rebuild the project to refresh generator output, or restart the IDE.
+- **Roslyn source-generator cache invalidation in `ide_sync_files`.** After external file changes (e.g. `git reset --hard`, manual edits outside the IDE), the Roslyn source-generator output for AXAML inputs may still reflect the pre-change identifiers. This now matters beyond stale previews: a refactor planned against the stale generator output can corrupt files (the rename plans to rewrite an identifier in the generator's view of the world, but the generator's view diverges from disk). Workarounds, in order of preference:
+  1. Rebuild the project (`dotnet build` or IDE Build menu) to re-run source generators after any external file change.
+  2. Reload the IDE.
+  3. Restart the IDE.
+
+  A proper fix requires a generator-output invalidation API in ReSharper that we do not currently have a stable public surface for. Tracked separately.
+- AXAML / WPF projects that author the synthetic XAML partial in *.xaml*.cs and additionally pull a generated partial from a non-Avalonia generator may still see the wrong file in `find_definition`. Please report the generator name and a path snippet so the heuristic can be extended.
+
+## [4.20.3]
+
+### Fixed
+- **AXAML resolver: emitter still picked first declaration even after the v4.20.0–4.20.2 ranker.** The ranking work in v4.20.0/.1/.2 ordered top-level results by `BestDeclarationRank`, but the actual symbol-info builder (`ToSymbolInfo` — used by `find_definition`, `find_class`, `type_hierarchy`, `find_implementations`, `find_super_methods`, `call_hierarchy` to populate `file`/`line`/`column`/`preview`) still called `element.GetDeclarations().FirstOrDefault()`. So the ranker picked the right element, then the builder picked the wrong partial of that element's declaration list and emitted `file:""`. `ToSymbolInfo`, `GetDeclarationPath`, and `MatchesLanguage`'s path probe now all go through `PickPreferredDeclaration`. Resolves the persistent `find_definition file:""` / `find_class file:""` / `type_hierarchy "Class not found"` symptoms on Avalonia AXAML-paired classes that v4.20.0–4.20.2 only partially addressed.
 
 ## [4.20.2]
 

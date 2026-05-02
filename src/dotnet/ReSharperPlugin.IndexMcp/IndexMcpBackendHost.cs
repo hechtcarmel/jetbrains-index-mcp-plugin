@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.20.3";
+    private const string BackendVersion = "4.20.4";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -453,9 +453,10 @@ public class IndexMcpBackendHost
             if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
             {
                 var conflicts = RenameRefactoringService.RenameAndGetConflicts(_solution, dataProvider, null!);
+                var conflictsMsg = FormatConflicts(conflicts);
                 workflowMessage = string.IsNullOrWhiteSpace(workflowMessage)
-                    ? conflicts?.ToString()
-                    : $"{workflowMessage}; fallback result: {conflicts}";
+                    ? conflictsMsg
+                    : $"{workflowMessage}; fallback result: {conflictsMsg}";
             }
 
             if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
@@ -1232,6 +1233,58 @@ public class IndexMcpBackendHost
     private static Regex BuildIdentifierRegex(string identifier)
     {
         return new Regex(@"\b" + Regex.Escape(identifier) + @"\b", RegexOptions.Compiled);
+    }
+
+    /// <summary>
+    /// Renders a ConflictSearchResult collection (or single instance) into a
+    /// human-readable string. Uses reflection to read the conventional
+    /// `Description`/`Message`/`Conflict` properties so we don't depend on the
+    /// exact ReSharper SDK API surface (which has shifted across versions).
+    /// Falls back to the element's ToString and finally to "(no conflicts)".
+    /// </summary>
+    private static string FormatConflicts(object? conflicts)
+    {
+        if (conflicts == null) return "(no conflict info)";
+        if (conflicts is string s) return s;
+
+        if (conflicts is System.Collections.IEnumerable enumerable && conflicts is not string)
+        {
+            var rendered = new List<string>();
+            foreach (var item in enumerable)
+            {
+                if (item == null) continue;
+                var text = ExtractConflictText(item);
+                if (!string.IsNullOrWhiteSpace(text)) rendered.Add(text);
+            }
+            return rendered.Count == 0
+                ? "(no conflicts)"
+                : string.Join("; ", rendered);
+        }
+
+        return ExtractConflictText(conflicts);
+    }
+
+    private static string ExtractConflictText(object item)
+    {
+        var type = item.GetType();
+        foreach (var prop in new[] { "Description", "Message", "Conflict", "Text" })
+        {
+            try
+            {
+                var value = type.GetProperty(prop)?.GetValue(item);
+                if (value is string str && !string.IsNullOrWhiteSpace(str)) return str;
+                if (value != null && value is not System.Collections.IEnumerable)
+                {
+                    var rendered = value.ToString();
+                    if (!string.IsNullOrWhiteSpace(rendered)) return rendered!;
+                }
+            }
+            catch
+            {
+                // Reflection probe is best-effort; ignore and try the next property.
+            }
+        }
+        return item.ToString() ?? "(unrenderable conflict)";
     }
 
     private IFile? GetPsiFileForPath(string filePath)
