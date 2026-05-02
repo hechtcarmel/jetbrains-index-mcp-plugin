@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.20.4";
+    private const string BackendVersion = "4.18.0";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(

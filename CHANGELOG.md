@@ -4,137 +4,48 @@
 
 ## [Unreleased]
 
-### Fixed
-- **Refactor revert error message: `ConflictSearchResult` collection rendered as type name.** When the rename fallback strategy runs and `RenameRefactoringService.RenameAndGetConflicts` returns a list of `ConflictSearchResult`, the message was built with `conflicts?.ToString()`, which produces `System.Collections.Generic.List\`1[JetBrains.ReSharper.Refactorings.Conflicts.Common.ConflictSearchResult]` — useless for diagnosing what blocked the rename. The new `FormatConflicts` helper reflectively reads the conventional `Description` / `Message` / `Conflict` / `Text` properties of each entry and joins them with `; `, falling back to per-item `ToString()`. Reflection avoids a hard compile-time dependency on the ConflictSearchResult API surface (which has shifted across ReSharper SDK versions).
-
-### Known issues (not regressions; deferred)
-- **Roslyn source-generator cache invalidation in `ide_sync_files`.** After external file changes (e.g. `git reset --hard`, manual edits outside the IDE), the Roslyn source-generator output for AXAML inputs may still reflect the pre-change identifiers. This now matters beyond stale previews: a refactor planned against the stale generator output can corrupt files (the rename plans to rewrite an identifier in the generator's view of the world, but the generator's view diverges from disk). Workarounds, in order of preference:
-  1. Rebuild the project (`dotnet build` or IDE Build menu) to re-run source generators after any external file change.
-  2. Reload the IDE.
-  3. Restart the IDE.
-
-  A proper fix requires a generator-output invalidation API in ReSharper that we do not currently have a stable public surface for. Tracked separately.
-- AXAML / WPF projects that author the synthetic XAML partial in *.xaml*.cs and additionally pull a generated partial from a non-Avalonia generator may still see the wrong file in `find_definition`. Please report the generator name and a path snippet so the heuristic can be extended.
-
-## [4.20.3]
-
-### Fixed
-- **AXAML resolver: emitter still picked first declaration even after the v4.20.0–4.20.2 ranker.** The ranking work in v4.20.0/.1/.2 ordered top-level results by `BestDeclarationRank`, but the actual symbol-info builder (`ToSymbolInfo` — used by `find_definition`, `find_class`, `type_hierarchy`, `find_implementations`, `find_super_methods`, `call_hierarchy` to populate `file`/`line`/`column`/`preview`) still called `element.GetDeclarations().FirstOrDefault()`. So the ranker picked the right element, then the builder picked the wrong partial of that element's declaration list and emitted `file:""`. `ToSymbolInfo`, `GetDeclarationPath`, and `MatchesLanguage`'s path probe now all go through `PickPreferredDeclaration`. Resolves the persistent `find_definition file:""` / `find_class file:""` / `type_hierarchy "Class not found"` symptoms on Avalonia AXAML-paired classes that v4.20.0–4.20.2 only partially addressed.
-
-## [4.20.2]
-
-### Fixed
-- **AXAML resolver: dropped overly broad path heuristics that could misclassify legitimate user folders.** v4.20.1 added `/generators/`, `/sourcegenerator`, and `.namegenerator/` substring matches to the generator-detection heuristic. A user folder named (for example) `MyProject.NameGenerator/` would have all its hand-written `.cs` files ranked as generator output, losing priority to synthetic XAML partials. Since `IPsiSourceFile.Properties.IsGeneratedFile` / `IsNonUserFile` (added in v4.20.1) is the authoritative ReSharper signal for Roslyn source generators including Avalonia's, the broad path patterns were unnecessary belt-and-braces. The path heuristic now keeps only the unambiguous markers `/obj/`, `/generated/`, `*.g.cs`, `*.g.i.cs`.
-
-## [4.20.1]
-
-### Fixed
-- **Rider C#/F#: AXAML resolver still picked source-generator partials in v4.20.0 for some Avalonia projects.** The v4.20.0 path heuristic only caught `/obj/`, `/generated/`, `*.g.cs`, and `*.g.i.cs`. Avalonia's Roslyn source generator emits files under virtual generator paths (e.g. `.../Avalonia.NameGenerator/.../*.cs`) that don't match those patterns, so the generator partial still won the rank. The ranker now consults `IPsiSourceFile.Properties.IsGeneratedFile` / `IsNonUserFile` first (the authoritative ReSharper signal), then falls back to a widened path heuristic that also catches `/generators/`, `/sourcegenerator`, and `*.NameGenerator/` segments. Affects `find_definition`, `find_class`, `type_hierarchy` for Avalonia/WPF code-behind classes.
-- **`ide_call_hierarchy` symbol-only request rejected as `Cannot specify both language+symbol and file+line+column`.** When MCP clients send schema defaults for unset position fields (e.g. `file: ""`, `line: 0`, `column: 0`) alongside `language` + `symbol`, the mutual-exclusivity guard in `resolveElementFromArguments` saw both groups as "present" and errored out before the Rider symbol-form rewrite could run. Two fixes:
-  - `resolveElementFromArguments` now treats blank strings and non-positive line/column as unset, so default values from the request schema no longer trip the conflict guard. This applies to every navigation tool that accepts both forms (`find_definition`, `find_references`, `find_implementations`, `find_super_methods`, `call_hierarchy`).
-  - `CallHierarchyTool.rewriteSymbolArgumentsForRider` now strips `language` and `symbol` keys after resolving them to a position, so the downstream conflict check sees a clean position-form request.
-
-### Known issues (not regressions; deferred)
-- `ide_sync_files` does not invalidate Roslyn source-generator output for files whose inputs changed externally. Workaround: rebuild the project to refresh generator output, or restart the IDE. Tracked separately.
-
-## [4.20.0]
-
-### Fixed
-- **Rider C#/F#: AXAML / source-generator partial pollution affecting `find_definition`, `find_class`, and `type_hierarchy`.** When a class has multiple partials (e.g. an Avalonia `MainWindow` with an `x:Class` declaration in `MainWindow.axaml` and code-behind in `MainWindow.axaml.cs`, plus an Avalonia source-generator partial under `obj/Debug/.../*.g.cs`), the previous resolver picked the first declaration enumerated by the PSI — frequently the synthetic XAML partial (whose `GetSourceFile()?.GetLocation().FullPath` is empty) or the generator output. Symptoms: `ide_find_definition` returned `file: ""`, `ide_find_class` listed the user's class twice (once with empty file), `ide_type_hierarchy` with `className` form returned `Class not found`. The backend now ranks declarations by where they live: real hand-written `.cs`/`.fs`/`.fsi`/`.fsx` files win over synthetic XAML partials, which win over generator output (paths under `obj/`, paths containing `/generated/`, files ending in `.g.cs` or `.g.i.cs`), which win over empty-path declarations. Affects `ResolveSymbol`, `HandleFindDefinition`, and `HandleFindTypes`.
-- **Rider C#/F#: `ide_call_hierarchy` symbol-form support.** `CallHierarchyTool` previously routed all symbol-form requests through `LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName`, which is Java-only. Calling the tool with `language: "C#"` + `symbol: "Foo.Bar#Baz"` returned `Unsupported language for symbol references: C#`. The tool now rewrites such requests via `RiderBackendSemanticService.resolveSymbolToPosition` (using the existing Rider `findDefinition` RPC), then falls through to the regular position-based path so depth, scope, and the seen-set dedup behave identically to position-form. The RD model's `RdCallHierarchyRequest` now uses `RdSemanticTarget` (file/line/column OR language/symbol) instead of `RdSourcePosition`, matching the shape already used by `findDefinition` and `findReferences`.
-
-### Removed (from "Known issues" in the v4.19.2 changelog)
-- AXAML-paired classes (`find_definition` / `find_class.file` / `type_hierarchy className`) returning empty file paths or `Class not found`.
-- `ide_call_hierarchy` `language: "C#"` + `symbol: ...` returning `Unsupported language for symbol references: C#`.
-
-## [4.19.2]
-
-### Fixed
-- **Rider C#/F# rename: false-success on substring/revert renames (general case beyond v4.19.1's AXAML guard).** Live smoke testing on Clipthrough revealed the v4.19.1 fixes did not cover the general case: renaming `MainWindowViewModel` → `MainWindowViewModelRenameTest` succeeds (8 files updated), then reverting at the same coordinates returns `success: true, changesCount: 8` with no actual disk changes. Root cause: `RenameChangedAffectedFiles` used `text.Contains(newName, Ordinal)` substring check. When `newName` is a substring of the on-disk identifiers (e.g. `MainWindowViewModel` is a substring of `MainWindowViewModelRenameTest`, which is still in every affected file before the revert), the oracle returned true even though nothing was rewritten.
-  - **Fix**: replaced the substring oracle with a word-boundary occurrence-count snapshot. Before any rename strategy runs, `SnapshotIdentifierCounts` records the count of `\b{oldName}\b` in each potentially-affected file. After each strategy, `RenameChangedAffectedFiles` polls (5s @ 100ms) for any file whose current count is strictly less than the snapshot, OR which has disappeared on disk (rename-on-disk). Without an actual rewrite, no file's count decreases → oracle returns false → caller gets a clear failure message.
-  - This subsumes the v4.19.1 `oldName == newName` no-op guard (kept as defense-in-depth: faster, clearer error).
-
-### Known issues at v4.19.2 (resolved in 4.20.0)
-- `ide_find_definition` (symbol or position form) for AXAML-paired classes (e.g. `MainWindow` with `x:Class`) may return `file:""` because the resolver picks the source-generator partial output instead of the user-authored `.axaml.cs` partial.
-- `ide_call_hierarchy` with `language: "C#"` + `symbol: "..."` returns `Unsupported language for symbol references: C#`.
-- `ide_type_hierarchy` with `className: "Clipthrough.Views.MainWindow"` returns `Class not found` for AXAML-paired classes (same root cause as the `ide_find_definition` issue above).
-
-## [4.19.1]
-
-### Fixed
-- **Rider C#/F# rename: false-success on no-op rename and partial-class desync.** Two related bug fixes for the v4.19.0 rename pipeline that surfaced during v4.19.0 live smoke testing:
-  - **No-op rename guard**: when the resolved symbol's current name equals the requested new name (e.g. AXAML `x:Class` partial still named `MainWindow` while the .cs partial was renamed to `MainWindowSmokeRenamed`, then a second rename request to `MainWindow` resolves to the AXAML partial whose name already is `MainWindow`), the file-content polling oracle would always find the "new" name in the file and report `success: true` without touching anything. The backend now refuses no-op renames with an explicit error message.
-  - **Partial-class desync detection**: `ResolveDeclaredElementAt` now (in rename mode only) verifies that the local `IDeclaration` at the requested offset has a textual name matching the resolved type element's `ShortName`. If they differ — the symptom of a desynced partial-class pair such as AXAML/code-behind where one partial was renamed without the other — the candidate is skipped instead of silently returning the wrong partial. Read-only tools (`find_definition`, `find_references`, hierarchy, etc.) are unchanged and remain tolerant of partial drift for navigation purposes.
-- **Smoke-test script**: `scripts/rider-live-smoke.ps1 -TestRename` now (a) records the `affectedFiles` count from the apply step, (b) asserts the revert step modifies a comparable number of files (`>= apply - 1`), and (c) cross-verifies the result via `ide_find_class` (original name must reappear, renamed name must be gone). Catches the v4.19.0-class false-success regression that the prior `success && message ~= "ReSharper backend"` predicate missed.
-
-## [4.19.0]
+### Added
+- **Rider C# / F# semantics powered by an in-process ReSharper backend** — Replaces the previous frontend-only navigation bridge with a real backend integration following the Rider plugin SDK pattern. The plugin now ships a ReSharper backend assembly (`ReSharperPlugin.IndexMcp.dll`) packaged under `dotnet/` in the plugin ZIP and bound through the rd protocol (`IndexMcpModel`). All position-based and symbol-based semantic operations for C# and F# (`ide_find_class`, `ide_find_definition`, `ide_find_references`, `ide_type_hierarchy`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`, `ide_refactor_rename`, `ide_move_file`) execute against ReSharper PSI/caches in the same process as Rider, instead of the limited frontend heuristics that previous versions used.
+- **`language` + `symbol` form for C# and F#.** `ide_find_definition`, `ide_find_references`, `ide_find_implementations`, `ide_find_super_methods`, and `ide_call_hierarchy` accept `language: "C#"` (or `"CSHARP"` / `"F#"` / `"FSHARP"`) plus a fully qualified `symbol` (e.g. `Namespace.TypeName`, `Namespace.TypeName#MethodName`, `Namespace.TypeName.PropertyName`) as an alternative to `file` + `line` + `column`.
+- **C# / F# rename and move use ReSharper's refactoring engine.** `ide_refactor_rename` for C# and F# acquires a backend write lock, runs a ReSharper PSI transaction, renames declarations, and rebinds references — no lexical search/replace fallback. `ide_move_file` adjusts namespaces and imports through ReSharper when moving `.cs` files between project folders.
+- **`project_and_libraries` scope returns BCL types.** `ide_find_class` for C# / F# in `project_and_libraries` scope returns source-less standard .NET / BCL types such as `System.Console` and `System.Collections.Generic.List<T>` from a curated catalog (single source of truth in `IndexMcpBackendHost.StandardDotNetTypes`).
+- **Live smoke harness for Rider** — `scripts/rider-live-smoke.ps1` exercises the full MCP tool surface against a real solution. Includes apply + revert assertions for `ide_refactor_rename` that cross-verify via `ide_find_class` to catch silent no-op renames.
 
 ### Changed
-- **Plugin version bumped to 4.19.0** (minor — Rider branch code-quality cleanup; no breaking changes to tool schemas, transport, or client configuration).
-
-### Fixed
-- Rider C#/F# call hierarchy: fixed shared-state bug where the `seen` set passed to `expandCallHierarchy` was copied at every recursion level, causing the same callee to be reported multiple times when reachable from sibling branches. The de-duplication set is now shared across the recursion. Added per-level (20) and depth (50) caps matching the Java handler.
-- Rider C#/F# symbol rename now returns truthful error messages: `NotInRider` / `FileNotFound` / `BackendCallFailed(reason)` / `Success` are reported distinctly instead of always claiming "rename protocol is not available".
-- `RdProtocolBridge.createStruct` now fails explicitly when no constructor matches the requested arity instead of silently invoking the first constructor with arbitrary parameters.
-- `MoveFileTool.updateMovedCSharpNamespace` now refuses the heuristic when more than one `namespace` declaration matches and reports the skip in the response, instead of silently editing only the first.
+- README promotes Rider from "may work, untested" to **fully tested**.
+- The plugin no longer declares `<incompatible-with>com.intellij.modules.rider</incompatible-with>` and registers Rider-specific protocol listeners (`IndexMcpProtocolListener`, `IndexMcpProtocolModelStore`) when running in Rider.
 - `MoveFileTool` only mentions Rider/ReSharper namespace-update behavior in the response when actually running in Rider; in non-Rider IDEs the response describes plain file-move semantics.
 
+### Fixed
+- **AXAML / source-generator partial pollution affecting `find_definition`, `find_class`, `type_hierarchy`, and dependent tools.** When a class has multiple partials (e.g. an Avalonia `MainWindow` with an `x:Class` declaration in `MainWindow.axaml` and code-behind in `MainWindow.axaml.cs`, plus an Avalonia source-generator partial), the resolver previously picked the synthetic XAML partial (whose `GetSourceFile()?.GetLocation().FullPath` is empty) or the generator output, producing `file: ""`, duplicated `find_class` entries, and `Class not found` from `type_hierarchy className`. The backend now ranks declarations using `IPsiSourceFile.Properties.IsGeneratedFile` / `IsNonUserFile` (the authoritative ReSharper signal) plus an unambiguous path fallback (`/obj/`, `/generated/`, `*.g.cs`, `*.g.i.cs`), preferring real hand-written `.cs` / `.fs` / `.fsi` / `.fsx` files. The ranker is applied at every read site that emits a file path: `ResolveSymbol`, `HandleFindDefinition`, `HandleFindTypes`, `ToSymbolInfo`, `GetDeclarationPath`, and `MatchesLanguage`.
+- **`ide_call_hierarchy` symbol-form support for C# / F#.** `CallHierarchyTool` previously routed all symbol-form requests through a Java-only handler. Calling with `language: "C#"` returned `Unsupported language for symbol references: C#`. Symbol-form requests now resolve via `RiderBackendSemanticService.resolveSymbolToPosition` (using the existing Rider `findDefinition` RPC), then reuse the regular position-based path so depth, scope, and seen-set dedup behave identically to position-form. The RD model's `RdCallHierarchyRequest` now carries `target: RdSemanticTarget` matching the shape already used by `findDefinition` and `findReferences`.
+- **Default schema values from MCP clients no longer trip mutual-exclusivity guards.** `resolveElementFromArguments` now treats blank `file` strings and non-positive `line` / `column` as "unset", so clients sending `file: ""` / `line: 0` / `column: 0` alongside `language` + `symbol` no longer get rejected. Applies to every navigation tool that accepts both forms.
+- **Rename success oracle uses word-boundary occurrence counts, not substring presence.** Earlier iterations of the C# / F# rename returned `success: true` on no-op or revert renames where the new name was a substring of the old (e.g. reverting `MainWindowViewModelRenameTest` → `MainWindowViewModel`). `SnapshotIdentifierCounts` records the count of `\b{oldName}\b` in each potentially-affected file before any strategy runs; `RenameChangedAffectedFiles` then polls (5s @ 100ms) for any file whose count strictly decreases or which disappeared on disk. No actual rewrite ⇒ no count change ⇒ caller gets a clear failure message.
+- **Partial-class desync detection in rename.** If the local `IDeclaration` at the requested offset has a textual name that differs from the resolved type element's `ShortName` (the symptom of a desynced AXAML / code-behind partial pair), rename refuses the candidate instead of silently mutating the wrong partial. Read-only tools remain tolerant of partial drift for navigation.
+- **`RenameAndGetConflicts` fallback now prints conflict descriptions.** The fallback path in `HandleRenameSymbol` previously interpolated the raw `IList<ConflictSearchResult>`, producing `System.Collections.Generic.List`1[…ConflictSearchResult]` in the error message. A new `FormatConflicts` helper reflectively reads `Description` / `Message` / `Conflict` / `Text` per entry and joins them with `; `, falling back to per-item `ToString()`. Reflection avoids a hard compile-time bind to a moving SDK API.
+- **C# / F# call hierarchy de-duplication.** Fixed shared-state bug where the `seen` set passed to `expandCallHierarchy` was copied at every recursion level, causing the same callee to appear multiple times when reachable from sibling branches. Added per-level (20) and depth (50) caps matching the Java handler.
+- **Rider RD wait budget for call hierarchy** raised to match rename's long-operation budget, reducing false timeouts for deep `ide_call_hierarchy` requests while preserving the existing 60-second budget for normal backend reads.
+- **Post-mutation VFS / PSI synchronization** after `ide_refactor_rename` and `ide_move_file` so Rider/ReSharper backend and frontend indexes converge automatically (matching the auto-sync behavior of frontend-owned IDE refactorings in other languages).
+- **Backend-side hardening**: backend C# / F# rename returns truthful error codes (`NotInRider` / `FileNotFound` / `BackendCallFailed(reason)` / `Success`) instead of always claiming "rename protocol is not available". `RdProtocolBridge.createStruct` fails explicitly when no constructor matches the requested arity instead of silently invoking a wrong one. `MoveFileTool.updateMovedCSharpNamespace` refuses the heuristic when more than one `namespace` declaration matches and reports the skip.
+- **CI installs the .NET 8 SDK.** The `compileDotNet` task (transitively required by `prepareSandbox` and `buildPlugin`) needs `dotnet` on `PATH`; `Setup .NET 8.0.x` was added to the build, test, verify, and release jobs.
+- **`prepareSandbox` and `buildPlugin` marked `notCompatibleWithConfigurationCache`.** Both tasks captured Gradle script object references that the configuration cache cannot serialize. With these markers, the CI command `./gradlew buildPlugin` now succeeds with the project's default `org.gradle.configuration-cache=true` (no more `--no-configuration-cache` needed).
+
 ### Removed
-- Deleted `DotNetHandlers.kt` and its registration entry. C#/F# semantics are owned exclusively by Rider-backend handlers (`RiderDotNetHandlers`); the legacy frontend-PSI handler had no remaining call sites.
-- Deleted two unused C# rename strategies in `IndexMcpBackendHost.cs`: `TryExecuteAtomicRenames` and `TryExecuteInlineRenameWorkflow` (and their helpers `CreateRenameDataModel`, `CreateRenameDataContext`). Live testing across v4.18.13–v4.18.17 confirmed both strategies always failed with reflection errors in the MCP context. The primary strategy (`TryExecuteBackendPsiRename`) and the static `RenameRefactoringService.RenameAndGetConflicts` fallback remain. Net removal: ~200 lines of brittle reflection plumbing.
-- Removed duplicated `STANDARD_DOTNET_TYPES` Kotlin tables in `FindClassTool.kt` and `RiderDotNetHandlers.kt`. The backend `IndexMcpBackendHost.cs` is now the single authoritative source for the .NET BCL type catalog used by the `project_and_libraries` scope.
-- Removed unreachable `componentN` getter fallback in `RdProtocolBridge.getProperty`.
-- Removed `ensurePsiUpToDate` wrapper in `AbstractMcpTool` (`refreshProjectRootsAndCommit` is now called directly).
-- Removed redundant `RiderDotNetHandlers.run { ... }` wrapper in `canUseBackend`.
-- Removed local `isDotNetFile` helper in `RenameSymbolTool.kt`; reuses `RiderBackendSemanticService.isDotNetFile`.
+- Deleted the legacy frontend-only `DotNetHandlers.kt` (and its registration). C# / F# semantics are owned exclusively by the Rider-backend handlers in `RiderDotNetHandlers.kt`.
+- Deleted unused C# rename strategies (`TryExecuteAtomicRenames`, `TryExecuteInlineRenameWorkflow`, and helpers `CreateRenameDataModel` / `CreateRenameDataContext`) — both always failed with reflection errors in the MCP context. The primary backend PSI rename and the static `RenameRefactoringService.RenameAndGetConflicts` fallback remain. Net removal: ~200 lines of brittle reflection plumbing.
+- Removed duplicated `STANDARD_DOTNET_TYPES` Kotlin tables in `FindClassTool.kt` and `RiderDotNetHandlers.kt`. The backend `IndexMcpBackendHost.cs` is now the single authoritative source for the .NET BCL type catalog.
+- Removed unreachable `componentN` getter fallback in `RdProtocolBridge.getProperty`, the `ensurePsiUpToDate` wrapper in `AbstractMcpTool`, the redundant `RiderDotNetHandlers.run { ... }` wrapper in `canUseBackend`, and the local `isDotNetFile` helper in `RenameSymbolTool.kt` (now reuses `RiderBackendSemanticService.isDotNetFile`).
 
 ### Internal
-- Extracted `RiderEnvironment` lazy singleton (`isAvailable`, `isProtocolGenerated`) replacing duplicated reflection-based detection in `RiderDotNetHandlers` and `BaseRiderHandler`. Lookups now occur once per process.
+- Added `RiderEnvironment` lazy singleton (`isAvailable`, `isProtocolGenerated`) replacing duplicated reflection-based detection in `RiderDotNetHandlers` and `BaseRiderHandler`. Lookups now occur once per process.
 - Added `ConcurrentHashMap`-backed reflection cache in `RdProtocolBridge` for `Method` and `Constructor` lookups in `invokeCall`, `getProperty`, and `createStruct`.
 - Bumped `intelliJPlatform` Gradle plugin from `2.10.5` to `2.11.0` (no API regressions; verified by `runPluginVerifier`).
-- Documented `BuildPreview` ±2 line context as `CompactPreviewContextLines = 2` constant in `IndexMcpBackendHost.cs` with comment explaining independence from `maxPreviewLines`.
-- Documented `riderProductClientCompileFile` in `build.gradle.kts` as defensive forward-compat; no source references it directly today.
-- Added KDoc to `MoveFileTool.inferMovedCSharpNamespace` explaining the magic-folder heuristic.
-- Added comment in `IndexMcpBackendHost.cs` marking `StandardDotNetTypes` as the single source of truth for .NET BCL type metadata.
+- Documented the `BuildPreview` ±2 line context as `CompactPreviewContextLines = 2` in `IndexMcpBackendHost.cs` and added KDoc to `MoveFileTool.inferMovedCSharpNamespace` explaining the magic-folder heuristic.
+- The `protocol` Gradle subproject is gated behind `INCLUDE_PROTOCOL_MODULE=1`. Generated rd stubs (`src/rider/.../IndexMcpModel.Generated.kt`, `src/dotnet/.../IndexMcpModel.Generated.cs`) are committed; regen is only needed when the model definition changes.
 
-### Deferred
-- `RenameChangedAffectedFiles` polling oracle and `FindReferences` caching for rename: deferred to a dedicated follow-up PR. Rubber-duck review (2026-05-02) flagged that replacing the polling with PSI-evidence requires splitting the capped-at-200 `FindReferences` helper into capped (display) and uncapped (rename) variants, plus a per-strategy completeness oracle. The current 5-second polling is shipping and stable per v11 results.
-
-### Rider semantics rollout (v4.18.1 – v4.18.17, shipping together as 4.19.0)
-- Added a Rider/ReSharper backend health protocol endpoint for v4.18.1 test builds so live validation can distinguish backend loading failures from C#/F# symbol-resolution failures.
-- Rider C#/F# backend requests now send absolute virtual file paths to ReSharper and probe nearby caret offsets, avoiding the project-relative path mismatch that caused position-based semantic tools to report "No class/type/method found at position".
-- Expanded the Rider rd protocol for v4.18.3 test builds with backend-owned C#/F# endpoints for type search, definition lookup, reference search, and symbol resolution.
-- Routed `ide_find_class`, `ide_find_definition`, and `ide_find_references` to the Rider/ReSharper backend for C#/F# in v4.18.4 test builds instead of using Rider frontend PSI/index fallbacks.
-- Registered the generated Rider rd model through `rd.solutionExtListener` and synchronized the MCP server version for v4.18.5 test builds so backend protocol lifecycle failures are visible during live validation.
-- Moved the generated Rider rd model from the global IDE root to the Rider solution model for v4.18.6 test builds so `rd.solutionExtListener` can bind it for the opened `.slnx`.
-- Stored the live Rider solution rd model from `rd.solutionExtListener` for v4.18.7 test builds so MCP tool handlers use the same generated model instance Rider created for the loaded solution.
-- Generated the Rider frontend rd model in the standard `com.jetbrains.rd.ide.model` package for v4.18.8 test builds to match Rider's `rd.solutionExtListener` model discovery pattern.
-- Added a direct Rider solution model lookup for v4.18.9 test builds using `SolutionHostExtensionsKt.getSolution(project).indexMcpModel`, avoiding dependency on listener callback timing.
-- Fixed Rider backend component model binding for v4.18.10 by retrieving the RD model with `solution.GetProtocolSolution().GetIndexMcpModel()` instead of constructor injection.
-- Fixed Rider frontend RD call invocation for v4.18.11 by using the current `RdCall.sync(request, RpcTimeouts)` signature.
-- Added Rider backend scope filtering and relevance ordering for v4.18.12 C#/F# type and reference searches.
-- Disabled unsafe manual C#/F# backend symbol rename for v4.18.13 and clarified C# move-file namespace/import update behavior.
-- Added v4.18.14 Rider C#/F# symbol rename over the ReSharper backend: requests now run through the Rider rd protocol, acquire a backend write lock, execute a ReSharper PSI transaction, rename declarations, and rebind resolved references without lexical search/replace.
-- Hardened v4.18.15 Rider behavior after live C# matrix testing: C#/F# rename now commits/saves before backend mutation and refreshes affected files afterward, `fullElementPreview=false` returns a compact definition snippet, C#/F# `className` type hierarchy routes through the backend, Rider call hierarchy recursively populates requested depth, production/test file scopes include Rider/.NET test-project path heuristics, and `project_and_libraries` type search includes source-less standard .NET/BCL types such as `Console` and `List`.
-- Increased the Rider frontend RD wait budget for C#/F# call hierarchy in v4.18.16 to match rename's long-operation budget, reducing false timeout failures for deep `ide_call_hierarchy` requests while preserving the existing 60-second budget for normal backend reads.
-- Added stronger post-mutation VFS/PSI synchronization in v4.18.17 after `ide_refactor_rename` and `ide_move_file` so Rider/ReSharper backend and frontend indexes converge automatically like other frontend-owned IDE refactorings.
-
-## [4.18.0]
-### Added
-- **Rider ReSharper backend integration scaffolding for C# and F#** — Added rd protocol model, generated Kotlin/C# rd stubs, backend project, and frontend protocol handlers for a backend-only semantic implementation. C#/F# semantic handlers now require generated Rider rd stubs at runtime instead of falling back to frontend PSI heuristics.
-- Removed `<incompatible-with>com.intellij.modules.rider</incompatible-with>` to enable the plugin to run in Rider.
-- Added rd protocol model (`IndexMcpModel`) defining 5 RPC calls between Kotlin frontend and C# backend.
-- Added ReSharper backend component (`IndexMcpBackendHost`) implementing all protocol handlers.
-- Added .NET build integration (compileDotNet, testDotNet tasks) and plugin sandbox packaging for backend DLLs.
-
-### Fixed
-- Implemented Rider backend caller collection for C# call hierarchy instead of returning an empty caller list.
-- Prevented C#/F# semantic tools from registering legacy frontend heuristic handlers when generated Rider protocol stubs are unavailable.
-- Prevented C# symbol rename requests from falling back to whole-file rename when Rider frontend PSI cannot expose a renameable symbol at the requested position.
-- Added Rider/ReSharper backend symbol rename RPC for C#/F# that renames declarations and rebinds references through ReSharper PSI.
-- C#/F# symbol rename now fails safely if the Rider/ReSharper rename protocol is unavailable, instead of applying a lexical fallback that could rename unrelated symbols in real projects.
-- Added C# namespace adjustment after `ide_move_file` when moving `.cs` files between project folders.
-- Packaged the Rider/ReSharper backend DLL under the plugin ZIP's `dotnet/` directory so Rider can load the generated rd protocol endpoints at runtime.
+### Known issues (not regressions; deferred)
+- **Roslyn source-generator output cache invalidation in `ide_sync_files`.** After external file changes (e.g. `git reset --hard`, manual edits outside the IDE), the Roslyn source-generator output for AXAML inputs may still reflect the pre-change identifiers. A refactor planned against the stale generator output can corrupt files (the rename plans to rewrite an identifier in the generator's view of the world, but the generator's view diverges from disk). Workarounds, in order of preference: rebuild the project (`dotnet build` or IDE Build menu) → reload the IDE → restart the IDE. A proper fix requires a generator-output invalidation API in ReSharper that we do not currently have a stable public surface for; tracked separately.
+- AXAML / WPF projects that author the synthetic XAML partial in `*.xaml*.cs` and additionally pull a generated partial from a non-Avalonia generator may still see the wrong file in `find_definition`. Please report the generator name and a path snippet so the heuristic can be extended.
 
 ## [4.17.0] - 2026-05-01
 ### Added
