@@ -4,7 +4,7 @@ import com.jetbrains.rd.generator.nova.*
 import com.jetbrains.rd.generator.nova.PredefinedType.*
 import com.jetbrains.rd.generator.nova.csharp.CSharp50Generator
 import com.jetbrains.rd.generator.nova.kotlin.Kotlin11Generator
-import com.jetbrains.rider.model.nova.ide.IdeRoot
+import com.jetbrains.rider.model.nova.ide.SolutionModel
 
 /**
  * Rider Protocol Model for IDE Index MCP Server.
@@ -16,7 +16,7 @@ import com.jetbrains.rider.model.nova.ide.IdeRoot
  * them using ReSharper's full semantic model.
  */
 @Suppress("unused")
-object IndexMcpModel : Ext(IdeRoot) {
+object IndexMcpModel : Ext(SolutionModel.Solution) {
 
     init {
         setting(Kotlin11Generator.Namespace, "com.jetbrains.rider.plugins.indexmcp.model")

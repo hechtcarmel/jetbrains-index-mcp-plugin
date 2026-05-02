@@ -8,6 +8,10 @@ import com.jetbrains.rider.plugins.indexmcp.model.IndexMcpModel
 
 class IndexMcpProtocolListener : SolutionExtListener<IndexMcpModel> {
     override fun extensionCreated(lifetime: Lifetime, session: ClientProjectSession, model: IndexMcpModel) {
+        IndexMcpProtocolModelStore.put(session.project, model)
+        lifetime.onTermination {
+            IndexMcpProtocolModelStore.remove(session.project)
+        }
         LOG.info("Index MCP Rider protocol extension created for project: ${session.project.name}")
     }
 

@@ -105,6 +105,7 @@ object RdProtocolBridge {
      * Returns null if Rider classes aren't available.
      */
     fun getModel(project: Project): Any? {
+        getModelFromProtocolListener(project)?.let { return it }
         return try {
             // ProtocolManager.getOrCreate(project).protocol.indexMcpModel → IndexMcpModel
             val protocol = getProtocol(project) ?: return null
@@ -114,6 +115,17 @@ object RdProtocolBridge {
             getModel.invoke(null, protocol)
         } catch (e: Exception) {
             LOG.warn("Failed to get IndexMcpModel via reflection: ${e.message}")
+            null
+        }
+    }
+
+    private fun getModelFromProtocolListener(project: Project): Any? {
+        return try {
+            val storeClass = Class.forName("com.jetbrains.rider.plugins.indexmcp.IndexMcpProtocolModelStore")
+            val get = storeClass.getMethod("get", Project::class.java)
+            get.invoke(null, project)
+        } catch (e: Exception) {
+            LOG.debug("IndexMcpProtocolModelStore is not available: ${e.message}")
             null
         }
     }

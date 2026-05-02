@@ -10,6 +10,8 @@
 - Expanded the Rider rd protocol for v4.18.3 test builds with backend-owned C#/F# endpoints for type search, definition lookup, reference search, and symbol resolution.
 - Routed `ide_find_class`, `ide_find_definition`, and `ide_find_references` to the Rider/ReSharper backend for C#/F# in v4.18.4 test builds instead of using Rider frontend PSI/index fallbacks.
 - Registered the generated Rider rd model through `rd.solutionExtListener` and synchronized the MCP server version for v4.18.5 test builds so backend protocol lifecycle failures are visible during live validation.
+- Moved the generated Rider rd model from the global IDE root to the Rider solution model for v4.18.6 test builds so `rd.solutionExtListener` can bind it for the opened `.slnx`.
+- Stored the live Rider solution rd model from `rd.solutionExtListener` for v4.18.7 test builds so MCP tool handlers use the same generated model instance Rider created for the loaded solution.
 
 ## [4.18.0]
 ### Added

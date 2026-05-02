@@ -38,7 +38,6 @@ namespace JetBrains.Rider.Model.IndexMcp
   /// <summary>
   /// <p>Generated from: IndexMcpModel.kt:19</p>
   /// </summary>
-  [JetBrains.Application.ShellComponent(Application.Parts.Instantiation.DemandAnyThreadSafe)]
   public class IndexMcpModel : RdExtBase
   {
     //fields
@@ -127,7 +126,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       BindableChildren.Add(new KeyValuePair<string, object>("renameSymbol", _RenameSymbol));
     }
     //secondary constructor
-    private IndexMcpModel (
+    internal IndexMcpModel (
     ) : this (
       new RdCall<Unit, RdBackendStatusResult>(JetBrains.Rd.Impl.Serializers.ReadVoid, JetBrains.Rd.Impl.Serializers.WriteVoid, RdBackendStatusResult.Read, RdBackendStatusResult.Write),
       new RdCall<RdFindTypesRequest, RdFindTypesResult>(RdFindTypesRequest.Read, RdFindTypesRequest.Write, RdFindTypesResult.Read, RdFindTypesResult.Write),
@@ -171,11 +170,6 @@ namespace JetBrains.Rider.Model.IndexMcp
       serializers.RegisterToplevelOnce(typeof(JetBrains.Rider.Model.IdeRoot), JetBrains.Rider.Model.IdeRoot.RegisterDeclaredTypesSerializers);
     }
     
-    public IndexMcpModel(Lifetime lifetime, IProtocol protocol) : this()
-    {
-      Identify(protocol.Identities, RdId.Root.Mix("IndexMcpModel"));
-      this.BindTopLevel(lifetime, protocol, "IndexMcpModel");
-    }
     
     //constants
     
@@ -208,6 +202,13 @@ namespace JetBrains.Rider.Model.IndexMcp
       var printer = new SingleLinePrettyPrinter();
       Print(printer);
       return printer.ToString();
+    }
+  }
+  public static class SolutionIndexMcpModelEx
+   {
+    public static IndexMcpModel GetIndexMcpModel(this JetBrains.Rider.Model.Solution solution)
+    {
+      return solution.GetOrCreateExtension("indexMcpModel", () => new IndexMcpModel());
     }
   }
   

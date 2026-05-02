@@ -66,19 +66,7 @@ class IndexMcpModel private constructor(
         }
         
         
-        @JvmStatic
-        @JvmName("internalCreateModel")
-        @Deprecated("Use create instead", ReplaceWith("create(lifetime, protocol)"))
-        internal fun createModel(lifetime: Lifetime, protocol: IProtocol): IndexMcpModel  {
-            @Suppress("DEPRECATION")
-            return create(lifetime, protocol)
-        }
         
-        @JvmStatic
-        @Deprecated("Use protocol.indexMcpModel or revise the extension scope instead", ReplaceWith("protocol.indexMcpModel"))
-        fun create(lifetime: Lifetime, protocol: IProtocol): IndexMcpModel  {
-            return IndexMcpModel()
-        }
         
         private val __RdDefinitionResultNullableSerializer = RdDefinitionResult.nullable()
         private val __RdSymbolInfoNullableSerializer = RdSymbolInfo.nullable()
@@ -124,7 +112,7 @@ class IndexMcpModel private constructor(
     }
     
     //secondary constructor
-    private constructor(
+    internal constructor(
     ) : this(
         RdCall<Unit, RdBackendStatusResult>(FrameworkMarshallers.Void, RdBackendStatusResult),
         RdCall<RdFindTypesRequest, RdFindTypesResult>(RdFindTypesRequest, RdFindTypesResult),
@@ -179,7 +167,7 @@ class IndexMcpModel private constructor(
     //threading
     override val extThreading: ExtThreadingKind get() = ExtThreadingKind.Default
 }
-val IProtocol.indexMcpModel get() = getOrCreateExtension(IndexMcpModel::class) { @Suppress("DEPRECATION") IndexMcpModel.create(lifetime, this) }
+val com.jetbrains.rd.ide.model.Solution.indexMcpModel get() = getOrCreateExtension("indexMcpModel", ::IndexMcpModel)
 
 
 
