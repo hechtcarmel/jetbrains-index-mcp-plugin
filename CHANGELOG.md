@@ -17,6 +17,7 @@
 - Fixed Rider backend component model binding for v4.18.10 by retrieving the RD model with `solution.GetProtocolSolution().GetIndexMcpModel()` instead of constructor injection.
 - Fixed Rider frontend RD call invocation for v4.18.11 by using the current `RdCall.sync(request, RpcTimeouts)` signature.
 - Added Rider backend scope filtering and relevance ordering for v4.18.12 C#/F# type and reference searches.
+- Disabled unsafe manual C#/F# backend symbol rename for v4.18.13 and clarified C# move-file namespace/import update behavior.
 
 ## [4.18.0]
 ### Added

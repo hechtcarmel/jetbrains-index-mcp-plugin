@@ -38,7 +38,7 @@ namespace ReSharperPlugin.IndexMcp;
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
-    private const string BackendVersion = "4.18.12";
+    private const string BackendVersion = "4.18.13";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(Lifetime lifetime, ISolution solution)
@@ -146,70 +146,13 @@ public class IndexMcpBackendHost
     private Task<RdRenameSymbolResult?> HandleRenameSymbol(
         Lifetime lt, RdRenameSymbolRequest request)
     {
-        return Task.Run(() =>
-        {
-            var element = ResolveDeclaredElementAt(request.Position);
-            if (element == null)
-            {
-                return (RdRenameSymbolResult?)new RdRenameSymbolResult(
-                    false,
-                    "",
-                    request.NewName,
-                    new List<string>(),
-                    0,
-                    "No declared C#/F# symbol found at position");
-            }
-
-            var oldName = element.ShortName;
-            if (oldName == request.NewName)
-            {
-                return (RdRenameSymbolResult?)new RdRenameSymbolResult(
-                    false,
-                    oldName,
-                    request.NewName,
-                    new List<string>(),
-                    0,
-                    "New name is the same as the current name");
-            }
-
-            var references = FindReferences(element);
-            var affectedFiles = new HashSet<string>(
-                element.GetDeclarations()
-                    .Select(d => d.GetSourceFile()?.GetLocation().FullPath)
-                    .Where(path => !string.IsNullOrEmpty(path))!);
-
-            foreach (var reference in references)
-            {
-                var sourceFile = reference.GetTreeNode().GetSourceFile();
-                var path = sourceFile?.GetLocation().FullPath;
-                if (!string.IsNullOrEmpty(path)) affectedFiles.Add(path);
-            }
-
-            var changes = 0;
-            WriteLockCookie.Execute(() =>
-            {
-                foreach (var declaration in element.GetDeclarations())
-                {
-                    declaration.SetName(request.NewName);
-                    changes++;
-                }
-
-                foreach (var reference in references)
-                {
-                    if (!reference.IsValid()) continue;
-                    reference.BindTo(element);
-                    changes++;
-                }
-            });
-
-            return (RdRenameSymbolResult?)new RdRenameSymbolResult(
-                true,
-                oldName,
-                request.NewName,
-                affectedFiles.ToList(),
-                changes,
-                $"Renamed '{oldName}' to '{request.NewName}' using ReSharper backend");
-        });
+        return Task.FromResult<RdRenameSymbolResult?>(new RdRenameSymbolResult(
+            false,
+            "",
+            request.NewName,
+            new List<string>(),
+            0,
+            "ReSharper backend rename protocol is reachable, but headless C#/F# symbol rename is not implemented safely yet. No files were modified."));
     }
 
     // ── Type Hierarchy ──────────────────────────────────────────────────────

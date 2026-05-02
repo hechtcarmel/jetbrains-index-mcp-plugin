@@ -230,6 +230,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         var success = false
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()
+        var namespaceUpdated = false
         val fileName = preparation.psiFile.name
 
         edtAction {
@@ -250,7 +251,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 if (preparation.backend == MoveBackend.PHP_SEMANTIC_MOVE) {
                     cleanupMovedPhpFileImports(filePointer.element)
                 }
-                val namespaceUpdated = updateMovedCSharpNamespace(project, preparation, fileName)
+                namespaceUpdated = updateMovedCSharpNamespace(project, preparation, fileName)
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
@@ -272,7 +273,15 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 "${preparation.destinationRelativePath}/$fileName"
             }
             val backendNote = when (preparation.backend) {
-                MoveBackend.GENERIC_FILE_MOVE -> " using IDE file move semantics"
+                MoveBackend.GENERIC_FILE_MOVE -> if (fileName.endsWith(".cs", ignoreCase = true)) {
+                    if (namespaceUpdated) {
+                        " using IDE file move semantics; C# namespace updated, but cross-file using/import updates depend on Rider frontend support"
+                    } else {
+                        " using IDE file move semantics; no C# namespace change was needed, and cross-file using/import updates depend on Rider frontend support"
+                    }
+                } else {
+                    " using IDE file move semantics"
+                }
                 MoveBackend.PHP_SEMANTIC_MOVE -> " using PhpStorm semantic PHP move"
             }
             createJsonResult(
