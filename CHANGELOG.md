@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [4.18.0]
+### Added
+- **Rider ReSharper backend integration for C# and F#** — Replaced heuristic-based .NET handlers with proper rd protocol integration that calls the ReSharper backend for full semantic analysis. Type hierarchy, implementations, call hierarchy, super methods, and file structure now use ReSharper's resolved type system instead of text-parsing heuristics.
+- Removed `<incompatible-with>com.intellij.modules.rider</incompatible-with>` to enable the plugin to run in Rider.
+- Added rd protocol model (`IndexMcpModel`) defining 5 RPC calls between Kotlin frontend and C# backend.
+- Added ReSharper backend component (`IndexMcpBackendHost`) implementing all protocol handlers.
+- Added .NET build integration (compileDotNet, testDotNet tasks) and plugin sandbox packaging for backend DLLs.
+
+### Fixed
+- Added Rider C#/F# fallback paths for class search, position-based definitions, reference search, and `language` + `symbol` resolution when frontend PSI indexes do not expose ReSharper semantic results.
+- Implemented Rider backend caller collection for C# call hierarchy instead of returning an empty caller list.
+- Prevented C# symbol rename requests from falling back to whole-file rename when Rider frontend PSI cannot expose a renameable symbol at the requested position.
+- Added Rider/ReSharper backend symbol rename RPC for C#/F# that renames declarations and rebinds references through ReSharper PSI.
+- C#/F# symbol rename now fails safely if the Rider/ReSharper rename protocol is unavailable, instead of applying a lexical fallback that could rename unrelated symbols in real projects.
+- Added C# namespace adjustment after `ide_move_file` when moving `.cs` files between project folders.
+
 ## [4.17.0] - 2026-05-01
 ### Added
 - Added Rider C# and F# language handlers for hierarchy, implementation, call hierarchy, super-method, and file-structure tools using Rider's frontend navigation bridge to the ReSharper backend.
