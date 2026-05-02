@@ -47,7 +47,7 @@ public class IndexMcpBackendHost
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
     private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.19.1";
+    private const string BackendVersion = "4.19.2";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(
@@ -427,6 +427,14 @@ public class IndexMcpBackendHost
         }
 
         var affectedFiles = GetPotentiallyAffectedFiles(element);
+
+        // Capture per-file count of the OLD identifier (as a standalone identifier, not substring).
+        // The success oracle below uses this snapshot: a real rename must reduce the old-name count
+        // in at least one affected file. Substring-only checks (the v4.19.0/v4.19.1 oracle) gave
+        // false positives whenever the new name was a substring of the old name (e.g. revert
+        // Foo→Bar→Foo where Bar contains Foo, or any AXAML/code-behind partial pair).
+        var oldNameCountsBefore = SnapshotIdentifierCounts(affectedFiles, oldName);
+
         try
         {
             var dataProvider = new RenameDataProvider(element, request.NewName)
@@ -440,8 +448,8 @@ public class IndexMcpBackendHost
 
             // Strategy 2 (fallback): static refactoring service. ITextControl is null because we run
             // headlessly; in practice this fallback only runs when the primary strategy mutates nothing,
-            // and it is mostly defensive. See follow-up plan for redesigning the success oracle.
-            if (!RenameChangedAffectedFiles(affectedFiles, oldName, request.NewName))
+            // and it is mostly defensive.
+            if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
             {
                 var conflicts = RenameRefactoringService.RenameAndGetConflicts(_solution, dataProvider, null!);
                 workflowMessage = string.IsNullOrWhiteSpace(workflowMessage)
@@ -449,7 +457,7 @@ public class IndexMcpBackendHost
                     : $"{workflowMessage}; fallback result: {conflicts}";
             }
 
-            if (!RenameChangedAffectedFiles(affectedFiles, oldName, request.NewName))
+            if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
             {
                 return new RdRenameSymbolResult(
                         false,
@@ -458,7 +466,7 @@ public class IndexMcpBackendHost
                         affectedFiles,
                         0,
                         string.IsNullOrWhiteSpace(workflowMessage)
-                            ? "ReSharper rename completed without reporting an error, but no affected file contained the requested new name. No successful rename was reported."
+                            ? $"ReSharper rename completed without error, but no affected file's count of the identifier '{oldName}' decreased. The rename did not actually rewrite anything on disk."
                             : $"ReSharper rename did not update affected files: {workflowMessage}");
             }
 
@@ -1092,20 +1100,67 @@ public class IndexMcpBackendHost
             .ToList();
     }
 
-    private static bool RenameChangedAffectedFiles(IEnumerable<string> affectedFiles, string oldName, string newName)
+    /// <summary>
+    /// Snapshot the per-file occurrence count of <paramref name="identifier"/> as a standalone
+    /// identifier (word-boundary regex) before a rename runs. Used by
+    /// <see cref="RenameChangedAffectedFiles"/> to detect whether the rename actually rewrote any
+    /// occurrences. Files that don't exist on disk yet are skipped (count == 0 is recorded only for
+    /// existing files; missing files surface in <c>RenameChangedAffectedFiles</c> as "file disappeared").
+    /// </summary>
+    private static Dictionary<string, int> SnapshotIdentifierCounts(IEnumerable<string> affectedFiles, string identifier)
     {
-        var paths = affectedFiles
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var pattern = BuildIdentifierRegex(identifier);
+        var snapshot = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in affectedFiles
+                     .Where(p => !string.IsNullOrWhiteSpace(p))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (!File.Exists(path)) continue;
+                var text = File.ReadAllText(path);
+                snapshot[path] = pattern.Matches(text).Count;
+            }
+            catch (IOException)
+            {
+                // Treat unreadable files as "we cannot prove anything about them"; they are excluded
+                // from the snapshot, so they cannot signal success either. The other affected files
+                // will carry the oracle.
+            }
+        }
+        return snapshot;
+    }
 
+    /// <summary>
+    /// Polls the affected files for evidence that <paramref name="oldName"/> was rewritten. A file
+    /// is considered "changed by rename" when either:
+    /// <list type="bullet">
+    ///   <item>the file no longer exists on disk (renamed/moved by the refactoring), OR</item>
+    ///   <item>the current word-boundary occurrence count of <paramref name="oldName"/> is strictly
+    ///         less than the snapshot count.</item>
+    /// </list>
+    /// Returns true as soon as ANY snapshotted file shows a decrease (or disappears).
+    /// </summary>
+    private static bool RenameChangedAffectedFiles(IReadOnlyDictionary<string, int> oldNameCountsBefore, string oldName)
+    {
+        if (oldNameCountsBefore.Count == 0) return false;
+
+        var pattern = BuildIdentifierRegex(oldName);
         for (var attempt = 0; attempt < 50; attempt++)
         {
-            if (paths.Any(path =>
+            if (oldNameCountsBefore.Any(kv =>
                 {
-                    if (!File.Exists(path)) return false;
-                    var text = File.ReadAllText(path);
-                    return text.Contains(newName, StringComparison.Ordinal);
+                    if (!File.Exists(kv.Key)) return true; // disappeared = rename-on-disk
+                    try
+                    {
+                        var text = File.ReadAllText(kv.Key);
+                        return pattern.Matches(text).Count < kv.Value;
+                    }
+                    catch (IOException)
+                    {
+                        // Transient IO during ReSharper write; treat as "no evidence yet" and keep polling.
+                        return false;
+                    }
                 }))
             {
                 return true;
@@ -1115,6 +1170,11 @@ public class IndexMcpBackendHost
         }
 
         return false;
+    }
+
+    private static Regex BuildIdentifierRegex(string identifier)
+    {
+        return new Regex(@"\b" + Regex.Escape(identifier) + @"\b", RegexOptions.Compiled);
     }
 
     private IFile? GetPsiFileForPath(string filePath)

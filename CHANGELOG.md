@@ -5,6 +5,18 @@
 ## [Unreleased]
 
 ### Fixed
+- **Rider C#/F# rename: false-success on substring/revert renames (general case beyond v4.19.1's AXAML guard).** Live smoke testing on Clipthrough revealed the v4.19.1 fixes did not cover the general case: renaming `MainWindowViewModel` → `MainWindowViewModelRenameTest` succeeds (8 files updated), then reverting at the same coordinates returns `success: true, changesCount: 8` with no actual disk changes. Root cause: `RenameChangedAffectedFiles` used `text.Contains(newName, Ordinal)` substring check. When `newName` is a substring of the on-disk identifiers (e.g. `MainWindowViewModel` is a substring of `MainWindowViewModelRenameTest`, which is still in every affected file before the revert), the oracle returned true even though nothing was rewritten.
+  - **Fix**: replaced the substring oracle with a word-boundary occurrence-count snapshot. Before any rename strategy runs, `SnapshotIdentifierCounts` records the count of `\b{oldName}\b` in each potentially-affected file. After each strategy, `RenameChangedAffectedFiles` polls (5s @ 100ms) for any file whose current count is strictly less than the snapshot, OR which has disappeared on disk (rename-on-disk). Without an actual rewrite, no file's count decreases → oracle returns false → caller gets a clear failure message.
+  - This subsumes the v4.19.1 `oldName == newName` no-op guard (kept as defense-in-depth: faster, clearer error).
+
+### Known issues (not regressions; pre-existing, out of scope for v4.19.2)
+- `ide_find_definition` (symbol or position form) for AXAML-paired classes (e.g. `MainWindow` with `x:Class`) may return `file:""` because the resolver picks the source-generator partial output instead of the user-authored `.axaml.cs` partial. Workaround: use `ide_find_class` and navigate via the file path from the result. Tracked separately for an `ide_find_definition` source-file preference fix.
+- `ide_call_hierarchy` with `language: "C#"` + `symbol: "..."` returns `Unsupported language for symbol references: C#`. The Rider backend can resolve C# symbols (used by `ide_find_definition` symbol form) but `CallHierarchyTool` doesn't have an equivalent Rider intercept. Use position form (`file` + `line` + `column`). Tracked separately.
+- `ide_type_hierarchy` with `className: "Clipthrough.Views.MainWindow"` returns `Class not found` for AXAML-paired classes (same root cause as the `ide_find_definition` issue above).
+
+## [4.19.1]
+
+### Fixed
 - **Rider C#/F# rename: false-success on no-op rename and partial-class desync.** Two related bug fixes for the v4.19.0 rename pipeline that surfaced during v4.19.0 live smoke testing:
   - **No-op rename guard**: when the resolved symbol's current name equals the requested new name (e.g. AXAML `x:Class` partial still named `MainWindow` while the .cs partial was renamed to `MainWindowSmokeRenamed`, then a second rename request to `MainWindow` resolves to the AXAML partial whose name already is `MainWindow`), the file-content polling oracle would always find the "new" name in the file and report `success: true` without touching anything. The backend now refuses no-op renames with an explicit error message.
   - **Partial-class desync detection**: `ResolveDeclaredElementAt` now (in rename mode only) verifies that the local `IDeclaration` at the requested offset has a textual name matching the resolved type element's `ShortName`. If they differ — the symptom of a desynced partial-class pair such as AXAML/code-behind where one partial was renamed without the other — the candidate is skipped instead of silently returning the wrong partial. Read-only tools (`find_definition`, `find_references`, hierarchy, etc.) are unchanged and remain tolerant of partial drift for navigation purposes.
