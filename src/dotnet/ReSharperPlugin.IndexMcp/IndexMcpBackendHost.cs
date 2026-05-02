@@ -17,6 +17,7 @@ using JetBrains.ReSharper.Psi.Search;
 using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
 using JetBrains.Rider.Model.IndexMcp;
+using JetBrains.Rd.Tasks;
 using JetBrains.Util;
 using JetBrains.Util.dataStructures.TypedIntrinsics;
 

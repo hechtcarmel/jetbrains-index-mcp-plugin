@@ -82,7 +82,7 @@ dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         pluginVerifier()
-        
+
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
 
         // Plugin Dependencies. Uses `platformBundledPlugins` property from the gradle.properties file for bundled IntelliJ Platform plugins.
@@ -102,14 +102,21 @@ dependencies {
 // Expose rider-model.jar for the protocol module's rdgen code generation.
 // This configuration is consumed by :protocol to get the rd model base classes.
 //
-// Rider is not published through the same IntelliJ Platform dependency path as IC/IU,
-// so protocol generation must be pointed at a local Rider distribution unless the
-// current platformPath already contains rider-model.jar. Supported inputs:
+// Rider protocol generation uses the Rider RD distribution directly instead of
+// switching this multi-IDE plugin's compile platform from IC to Rider. Supported
+// inputs, in priority order:
 //   -PriderModelJar=<path> or RIDER_MODEL_JAR=<path>
 //   -PriderSdkPath=<Rider install dir> or RIDER_HOME=<Rider install dir>
+//   -PriderProtocolVersion=<version>, otherwise platformVersion, to download riderRD
+// Modern Rider distributions keep the model at lib/rd/rider-model.jar.
 val riderModel: Configuration by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
+}
+
+val riderDistribution: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
 }
 
 fun configuredFile(propertyName: String, environmentName: String): File? =
@@ -120,21 +127,64 @@ fun configuredFile(propertyName: String, environmentName: String): File? =
         ?.let { file(it) }
 
 val explicitRiderModelJar = configuredFile("riderModelJar", "RIDER_MODEL_JAR")
-val riderHomeModelJar = configuredFile("riderSdkPath", "RIDER_HOME")?.resolve("lib/rider-model.jar")
-val configuredRiderModelJar = listOfNotNull(explicitRiderModelJar, riderHomeModelJar).firstOrNull { it.isFile }
+val explicitRiderRdJar = configuredFile("riderRdJar", "RIDER_RD_JAR")
+val riderHome = configuredFile("riderSdkPath", "RIDER_HOME")
+val configuredRiderModelJar = listOfNotNull(
+    explicitRiderModelJar,
+    riderHome?.resolve("lib/rd/rider-model.jar"),
+    riderHome?.resolve("lib/rider-model.jar"),
+).firstOrNull { it.isFile }
+val configuredRiderRdJar = listOfNotNull(
+    explicitRiderRdJar,
+    riderHome?.resolve("lib/rd.jar"),
+).firstOrNull { it.isFile }
+val configuredRiderProductClientJar = riderHome?.resolve("lib/product-client.jar")?.takeIf { it.isFile }
+val riderModelCompileFile = configuredRiderModelJar
+    ?.let { layout.file(providers.provider { it }) }
+    ?: layout.buildDirectory.file("rider-model/rider-model.jar")
+val riderRdCompileFile = configuredRiderRdJar
+    ?.let { layout.file(providers.provider { it }) }
+    ?: layout.buildDirectory.file("rider-model/rd.jar")
+val riderProductClientCompileFile = configuredRiderProductClientJar
+    ?.let { layout.file(providers.provider { it }) }
+    ?: layout.buildDirectory.file("rider-model/product-client.jar")
+val riderProtocolCompileFiles = files(riderModelCompileFile, riderRdCompileFile, riderProductClientCompileFile)
 
 if (configuredRiderModelJar != null) {
     artifacts.add(riderModel.name, configuredRiderModelJar)
+} else {
+    val riderProtocolVersion = providers.gradleProperty("riderProtocolVersion")
+        .orElse(providers.gradleProperty("platformVersion"))
+    dependencies.add(
+        riderDistribution.name,
+        riderProtocolVersion.map { "com.jetbrains.intellij.rider:riderRD:$it@zip" }
+    )
+
+    val extractRiderModelJar by tasks.registering(Copy::class) {
+        group = "build"
+        description = "Extract rider-model.jar from the Rider RD distribution"
+        from({ riderDistribution.files.map { zipTree(it) } }) {
+            include("lib/rd/rider-model.jar")
+            include("lib/rider-model.jar")
+            include("lib/rd.jar")
+            include("lib/product-client.jar")
+            eachFile {
+                relativePath = RelativePath(true, name)
+            }
+            includeEmptyDirs = false
+        }
+        into(riderModelCompileFile.map { it.asFile.parentFile })
+    }
+
+    riderProtocolCompileFiles.builtBy(extractRiderModelJar)
+
+    artifacts.add(riderModel.name, riderModelCompileFile) {
+        builtBy(extractRiderModelJar)
+    }
 }
 
-afterEvaluate {
-    if (configuredRiderModelJar == null) {
-        val platformPath = intellijPlatform.platformPath
-        val riderModelJar = platformPath.resolve("lib/rider-model.jar")
-        if (riderModelJar.toFile().exists()) {
-            artifacts.add(riderModel.name, riderModelJar.toFile())
-        }
-    }
+dependencies {
+    compileOnly(riderProtocolCompileFiles)
 }
 
 // Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html

@@ -6,7 +6,7 @@
 
 ## [4.18.0]
 ### Added
-- **Rider ReSharper backend integration scaffolding for C# and F#** — Added rd protocol model, backend project, and frontend protocol handlers for a backend-only semantic implementation. C#/F# semantic handlers now require generated Rider rd stubs at runtime instead of falling back to frontend PSI heuristics.
+- **Rider ReSharper backend integration scaffolding for C# and F#** — Added rd protocol model, generated Kotlin/C# rd stubs, backend project, and frontend protocol handlers for a backend-only semantic implementation. C#/F# semantic handlers now require generated Rider rd stubs at runtime instead of falling back to frontend PSI heuristics.
 - Removed `<incompatible-with>com.intellij.modules.rider</incompatible-with>` to enable the plugin to run in Rider.
 - Added rd protocol model (`IndexMcpModel`) defining 5 RPC calls between Kotlin frontend and C# backend.
 - Added ReSharper backend component (`IndexMcpBackendHost`) implementing all protocol handlers.
