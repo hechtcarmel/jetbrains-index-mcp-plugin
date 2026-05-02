@@ -38,7 +38,7 @@ namespace ReSharperPlugin.IndexMcp;
 public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
-    private const string BackendVersion = "4.18.11";
+    private const string BackendVersion = "4.18.12";
     private const int MaxResults = 200;
 
     public IndexMcpBackendHost(Lifetime lifetime, ISolution solution)
@@ -81,13 +81,16 @@ public class IndexMcpBackendHost
                 .Where(type => MatchesName(type.ShortName, request.Query, request.MatchMode) ||
                                MatchesName(type.GetClrName().FullName, request.Query, request.MatchMode))
                 .Where(type => MatchesLanguage(type, request.Language))
+                .Where(type => MatchesScope(type, request.Scope))
+                .OrderBy(type => MatchRank(type.ShortName, request.Query, request.MatchMode))
+                .ThenBy(type => IsTestPath(GetDeclarationPath(type)) ? 1 : 0)
+                .ThenBy(type => type.ShortName, StringComparer.OrdinalIgnoreCase)
                 .Select(ToSymbolInfo)
                 .GroupBy(symbol => $"{symbol.QualifiedName}:{symbol.FilePath}:{symbol.Line}")
                 .Select(group => group.First())
-                .Take(Math.Min(request.Limit, MaxResults))
                 .ToList();
 
-            return new RdFindTypesResult(results, results.Count);
+            return new RdFindTypesResult(results.Take(Math.Min(request.Limit, MaxResults)).ToList(), results.Count);
         });
     }
 
@@ -117,15 +120,15 @@ public class IndexMcpBackendHost
             if (element == null) return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0);
 
             var references = FindReferences(element)
-                .Take(Math.Min(request.Limit, MaxResults))
                 .Select(ToReferenceInfo)
                 .Where(reference => reference != null)
                 .Cast<RdReferenceInfo>()
+                .Where(reference => MatchesScope(reference.FilePath, request.Scope))
                 .GroupBy(reference => $"{reference.FilePath}:{reference.Line}:{reference.Column}")
                 .Select(group => group.First())
                 .ToList();
 
-            return new RdFindReferencesResult(references, references.Count);
+            return new RdFindReferencesResult(references.Take(Math.Min(request.Limit, MaxResults)).ToList(), references.Count);
         });
     }
 
@@ -511,6 +514,42 @@ public class IndexMcpBackendHost
             _ => name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                  GetCamelCase(name).Contains(query, StringComparison.OrdinalIgnoreCase)
         };
+    }
+
+    private static int MatchRank(string name, string query, string matchMode)
+    {
+        if (name.Equals(query, StringComparison.OrdinalIgnoreCase)) return 0;
+        if (name.StartsWith(query, StringComparison.OrdinalIgnoreCase)) return 1;
+        if (GetCamelCase(name).Equals(query, StringComparison.OrdinalIgnoreCase)) return 2;
+        if (matchMode.Equals("exact", StringComparison.OrdinalIgnoreCase)) return 3;
+        return 4;
+    }
+
+    private static bool MatchesScope(IDeclaredElement element, string scope) =>
+        MatchesScope(GetDeclarationPath(element), scope);
+
+    private static bool MatchesScope(string? path, string scope)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return true;
+        var isTest = IsTestPath(path);
+        return scope switch
+        {
+            "project_test_files" => isTest,
+            "project_production_files" => !isTest,
+            _ => true
+        };
+    }
+
+    private static string? GetDeclarationPath(IDeclaredElement element) =>
+        element.GetDeclarations().FirstOrDefault()?.GetSourceFile()?.GetLocation().FullPath;
+
+    private static bool IsTestPath(string path)
+    {
+        var normalized = path.Replace('\\', '/');
+        return normalized.Contains(".Tests/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("/Tests/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(".Test/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("/Test/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetCamelCase(string name)

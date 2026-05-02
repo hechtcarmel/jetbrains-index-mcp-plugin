@@ -16,6 +16,7 @@
 - Added a direct Rider solution model lookup for v4.18.9 test builds using `SolutionHostExtensionsKt.getSolution(project).indexMcpModel`, avoiding dependency on listener callback timing.
 - Fixed Rider backend component model binding for v4.18.10 by retrieving the RD model with `solution.GetProtocolSolution().GetIndexMcpModel()` instead of constructor injection.
 - Fixed Rider frontend RD call invocation for v4.18.11 by using the current `RdCall.sync(request, RpcTimeouts)` signature.
+- Added Rider backend scope filtering and relevance ordering for v4.18.12 C#/F# type and reference searches.
 
 ## [4.18.0]
 ### Added
