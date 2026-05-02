@@ -283,7 +283,25 @@ if ($FullMatrix) {
         param($json) $json.file -like "*MainWindow.axaml.cs" -and $json.symbolName -eq "MainWindow"
     }
 
-    $methodReferences = Invoke-Tool -Id 14 -Name "ide_find_references" -Arguments @{
+    $definitionMember = Invoke-Tool -Id 14 -Name "ide_find_definition" -Arguments @{
+        project_path = $ProjectPath
+        language = "C#"
+        symbol = "Clipthrough.Views.MainWindow#TryConnectClipListScrollViewer"
+    }
+    Assert-ToolOk -Name "ide_find_definition member symbol C#" -Response $definitionMember -Predicate {
+        param($json) $json.file -like "*MainWindow.axaml.cs" -and $json.symbolName -eq "TryConnectClipListScrollViewer"
+    }
+
+    $definitionProperty = Invoke-Tool -Id 15 -Name "ide_find_definition" -Arguments @{
+        project_path = $ProjectPath
+        language = "C#"
+        symbol = "Clipthrough.ViewModels.MainWindowViewModel.IsBusy"
+    }
+    Assert-ToolOk -Name "ide_find_definition property symbol C#" -Response $definitionProperty -Predicate {
+        param($json) $json.file -like "*MainWindowViewModel.cs" -and $json.symbolName -eq "IsBusy"
+    }
+
+    $methodReferences = Invoke-Tool -Id 16 -Name "ide_find_references" -Arguments @{
         project_path = $ProjectPath
         file = "Clipthrough/Views/MainWindow.axaml.cs"
         line = 89
@@ -294,7 +312,7 @@ if ($FullMatrix) {
         param($json) $json.totalCount -gt 0
     }
 
-    $typeHierarchyClass = Invoke-Tool -Id 15 -Name "ide_type_hierarchy" -Arguments @{
+    $typeHierarchyClass = Invoke-Tool -Id 17 -Name "ide_type_hierarchy" -Arguments @{
         project_path = $ProjectPath
         file = "Clipthrough/Views/MainWindow.axaml.cs"
         line = 19
@@ -304,7 +322,7 @@ if ($FullMatrix) {
         param($json) ($json.supertypes | Where-Object { $_.name -eq "Window" }).Count -gt 0
     }
 
-    $typeHierarchyInterface = Invoke-Tool -Id 16 -Name "ide_type_hierarchy" -Arguments @{
+    $typeHierarchyInterface = Invoke-Tool -Id 18 -Name "ide_type_hierarchy" -Arguments @{
         project_path = $ProjectPath
         file = "Clipthrough/Services/Storage/IClipStoreService.cs"
         line = 8
@@ -314,7 +332,7 @@ if ($FullMatrix) {
         param($json) ($json.subtypes | Where-Object { $_.name -eq "ClipStoreService" }).Count -gt 0
     }
 
-    $superMethods = Invoke-Tool -Id 17 -Name "ide_find_super_methods" -Arguments @{
+    $superMethods = Invoke-Tool -Id 19 -Name "ide_find_super_methods" -Arguments @{
         project_path = $ProjectPath
         file = "Clipthrough/App.axaml.cs"
         line = 51
@@ -327,7 +345,7 @@ if ($FullMatrix) {
         }).Count -gt 0
     }
 
-    $rename = Invoke-Tool -Id 18 -Name "ide_refactor_rename" -Arguments @{
+    $rename = Invoke-Tool -Id 20 -Name "ide_refactor_rename" -Arguments @{
         project_path = $ProjectPath
         file = "Clipthrough/Views/MainWindow.axaml.cs"
         line = 19
