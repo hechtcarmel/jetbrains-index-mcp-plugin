@@ -113,7 +113,7 @@ class CallHierarchyTool : AbstractMcpTool() {
 
             val hierarchyData = handler.getCallHierarchy(element, project, direction, depth, scope)
             if (hierarchyData == null) {
-                val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
+                val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
                 return@suspendingReadAction createErrorResult(
                     if (isSymbolMode) "No method/function found for the specified symbol"
                     else "No method/function found at position"
@@ -126,12 +126,6 @@ class CallHierarchyTool : AbstractMcpTool() {
                 calls = hierarchyData.calls.map { convertToCallElement(it) }
             ))
         }
-    }
-
-    private fun rawScopeValue(scopeElement: JsonElement?): String = when (scopeElement) {
-        null -> ""
-        is JsonPrimitive -> scopeElement.content
-        else -> scopeElement.toString()
     }
 
     /**
@@ -169,16 +163,6 @@ class CallHierarchyTool : AbstractMcpTool() {
             }
         )
     }
-
-    private fun createInvalidScopeError(provided: String): ToolCallResult =
-        createStructuredErrorResult(buildJsonObject {
-            put("error", JsonPrimitive("invalid_scope"))
-            put("parameter", JsonPrimitive(ParamNames.SCOPE))
-            put("provided", JsonPrimitive(provided))
-            put("supportedValues", buildJsonArray {
-                BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
-            })
-        })
 
     /**
      * Converts handler CallElementData to tool CallElement.

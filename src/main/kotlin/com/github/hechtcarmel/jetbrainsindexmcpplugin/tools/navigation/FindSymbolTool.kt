@@ -66,7 +66,7 @@ class FindSymbolTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val cursor = arguments["cursor"]?.jsonPrimitive?.content
+        val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
             return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
@@ -206,19 +206,5 @@ class FindSymbolTool : AbstractMcpTool() {
 
     private fun SymbolMatch.paginationKey(): String = "$file:$line:$column:$name"
 
-    private fun rawScopeValue(scopeElement: JsonElement?): String = when (scopeElement) {
-        null -> ""
-        is JsonPrimitive -> scopeElement.content
-        else -> scopeElement.toString()
-    }
 
-    private fun createInvalidScopeError(provided: String): ToolCallResult =
-        createStructuredErrorResult(buildJsonObject {
-            put("error", JsonPrimitive("invalid_scope"))
-            put("parameter", JsonPrimitive(ParamNames.SCOPE))
-            put("provided", JsonPrimitive(provided))
-            put("supportedValues", buildJsonArray {
-                BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
-            })
-        })
 }

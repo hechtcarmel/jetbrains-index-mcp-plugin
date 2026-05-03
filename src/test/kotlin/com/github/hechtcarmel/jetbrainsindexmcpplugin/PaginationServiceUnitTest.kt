@@ -40,6 +40,23 @@ class PaginationServiceUnitTest : TestCase() {
         assertNull(service.decodeCursor("YWJj"))  // base64 of "abc" - no colon separator
     }
 
+    /**
+     * Contract: PaginationService maintains strict decode behavior for non-empty malformed cursors.
+     * Blank-cursor bypass (treating "" and whitespace as fresh-search signals) is a tool-layer
+     * concern, handled by paginated tools (FindUsagesTool, FindClassTool, etc.) via argument
+     * normalization helpers in AbstractMcpTool. This separation ensures:
+     * - PaginationService remains a pure cursor codec with no knowledge of tool semantics
+     * - Tools control when blank cursors trigger fresh searches vs. cursor-path validation
+     * - Malformed non-empty cursors always fail decode, preventing accidental fallthrough
+     */
+    fun testMalformedNonEmptyCursorFailsDecodeStrictly() {
+        val service = createTestService()
+        // Non-empty malformed cursors must fail decode — tools cannot accidentally bypass validation
+        assertNull(service.decodeCursor("invalid-token-format"))
+        assertNull(service.decodeCursor("not-base64!!"))
+        assertNull(service.decodeCursor("YWJj"))  // base64 of "abc" - no colon separator
+    }
+
     fun testDecodeCursorWithZeroOffset() {
         val service = createTestService()
         val token = service.encodeCursor("id", 0)
@@ -136,6 +153,20 @@ class PaginationServiceUnitTest : TestCase() {
     fun testGetPageMalformedToken() = runBlocking {
         val service = createTestService()
         val result = service.getPage("garbage", 10, "/project", 42L)
+        assertTrue(result is PaginationService.GetPageResult.Error)
+        assertEquals(PaginationService.CursorError.MALFORMED, (result as PaginationService.GetPageResult.Error).reason)
+    }
+
+    /**
+     * Contract: PaginationService.getPage() rejects malformed non-empty cursors with MALFORMED error.
+     * Blank cursors ("", whitespace) are NOT normalized here — that is a tool-layer responsibility.
+     * Tools must normalize blank cursors to null before calling getPage(), triggering fresh-search logic.
+     * This ensures PaginationService remains a pure cursor codec without tool-specific semantics.
+     */
+    fun testGetPageRejectsNonEmptyMalformedCursorStrictly() = runBlocking {
+        val service = createTestService()
+        // Non-empty malformed cursors fail decode — tools cannot accidentally bypass validation
+        val result = service.getPage("not-a-valid-cursor-token", 10, "/project", 42L)
         assertTrue(result is PaginationService.GetPageResult.Error)
         assertEquals(PaginationService.CursorError.MALFORMED, (result as PaginationService.GetPageResult.Error).reason)
     }

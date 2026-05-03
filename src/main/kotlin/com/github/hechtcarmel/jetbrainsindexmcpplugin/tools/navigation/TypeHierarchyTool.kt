@@ -112,21 +112,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         }
     }
 
-    private fun rawScopeValue(scopeElement: JsonElement?): String = when (scopeElement) {
-        null -> ""
-        is JsonPrimitive -> scopeElement.content
-        else -> scopeElement.toString()
-    }
 
-    private fun createInvalidScopeError(provided: String): ToolCallResult =
-        createStructuredErrorResult(buildJsonObject {
-            put("error", JsonPrimitive("invalid_scope"))
-            put("parameter", JsonPrimitive(ParamNames.SCOPE))
-            put("provided", JsonPrimitive(provided))
-            put("supportedValues", buildJsonArray {
-                BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
-            })
-        })
 
     private fun tryResolveRiderClassNameHierarchy(
         project: Project,

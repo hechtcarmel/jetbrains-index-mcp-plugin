@@ -69,7 +69,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
             val superMethodsData = handler.findSuperMethods(element, project)
             if (superMethodsData == null) {
-                val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
+                val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
                 return@suspendingReadAction createErrorResult(
                     if (isSymbolMode) "No method found for the specified symbol. Ensure the symbol refers to a method declaration."
                     else "No method found at position. Ensure the position is within a method declaration or body."

@@ -104,10 +104,12 @@ open class MoveFileTool : AbstractRefactoringTool() {
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
-        val destination = arguments["destination"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: destination")
+        val file = requiredStringArg(arguments, "file").getOrElse {
+            return createErrorResult(it.message ?: "Missing required parameter: file")
+        }
+        val destination = requiredStringArg(arguments, "destination").getOrElse {
+            return createErrorResult(it.message ?: "Missing required parameter: destination")
+        }
 
         requireSmartMode(project)
 
