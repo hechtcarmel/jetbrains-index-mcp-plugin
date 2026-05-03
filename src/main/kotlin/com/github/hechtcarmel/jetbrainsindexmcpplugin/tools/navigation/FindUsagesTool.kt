@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -112,6 +113,48 @@ class FindUsagesTool : AbstractMcpTool() {
             return createInvalidScopeError(rawScope)
         }
         requireSmartMode(project)
+
+        val riderReferences = RiderBackendSemanticService.findReferences(
+            project = project,
+            file = arguments[ParamNames.FILE]?.jsonPrimitive?.content,
+            line = arguments[ParamNames.LINE]?.jsonPrimitive?.content?.toIntOrNull(),
+            column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.content?.toIntOrNull(),
+            language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content,
+            symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content,
+            scope = scope,
+            limit = collectLimit
+        )
+        if (riderReferences.handled) {
+            val usages = riderReferences.value.orEmpty()
+            val serializedResults = usages.map { usage ->
+                PaginationService.SerializedResult(
+                    key = "${usage.file}:${usage.line}:${usage.column}",
+                    data = json.encodeToJsonElement(usage)
+                )
+            }
+            val paginationService = ApplicationManager.getApplication().getService(PaginationService::class.java)
+            val token = paginationService.createCursor(
+                toolName = name,
+                results = serializedResults,
+                seenKeys = serializedResults.map { it.key }.toSet(),
+                searchExtender = null,
+                psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
+                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: "")
+            )
+            return buildPaginatedResult<UsageLocation, FindUsagesResult>(getPageFromCache(token, pageSize, project)) { items, page ->
+                FindUsagesResult(
+                    usages = items,
+                    totalCount = page.totalCollected,
+                    truncated = page.hasMore,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
+        }
 
         val cursorToken = suspendingReadAction {
             val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {

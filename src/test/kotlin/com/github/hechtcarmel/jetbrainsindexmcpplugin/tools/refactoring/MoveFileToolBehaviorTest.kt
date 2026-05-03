@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderEnvironment
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.psi.PsiElement
@@ -106,5 +107,37 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         assertFalse(message.contains("references updated"))
         assertFalse(Files.exists(sourceFile))
         assertTrue(Files.exists(Path.of(requireNotNull(project.basePath), "archive/todo.txt")))
+    }
+
+    fun testMoveFileToolReportsCSharpNamespaceImportLimitations() = runBlocking {
+        val sourceFile = writeProjectFile(
+            "Clipthrough/Models/SampleThing.cs",
+            """
+            namespace Clipthrough.Models;
+
+            public sealed class SampleThing
+            {
+            }
+            """.trimIndent()
+        )
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "Clipthrough/Models/SampleThing.cs")
+            put("destination", "Clipthrough/Services")
+        })
+
+        assertFalse("C# file move should succeed", result.isError)
+        val resultJson = json.parseToJsonElement(textResult(result)).jsonObject
+        val message = resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
+        assertTrue(message.contains("C# namespace updated"))
+        if (RiderEnvironment.isAvailable) {
+            assertTrue(message.contains("cross-file using/import updates depend on Rider frontend support"))
+        } else {
+            assertFalse(message.contains("cross-file using/import updates depend on Rider frontend support"))
+        }
+        assertFalse("Source file should be moved away", Files.exists(sourceFile))
+        val movedFile = Path.of(requireNotNull(project.basePath), "Clipthrough/Services/SampleThing.cs")
+        assertTrue("Moved file should exist in target directory", Files.exists(movedFile))
+        assertTrue(Files.readString(movedFile).contains("namespace Clipthrough.Services;"))
     }
 }

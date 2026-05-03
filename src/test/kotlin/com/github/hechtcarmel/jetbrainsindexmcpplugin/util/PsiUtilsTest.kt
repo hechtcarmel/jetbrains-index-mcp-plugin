@@ -230,14 +230,14 @@ class PsiUtilsTest : BasePlatformTestCase() {
         LocalFileSystem.getInstance().refreshAndFindFileByPath(jarFile.absolutePath)
 
         // Use forward slashes in jar URL — backslashes produce invalid URLs on Windows
-        val jarUrlPath = jarFile.absolutePath.replace('\\', '/')
+        val jarUrlPath = jarFile.toPath().toRealPath().toString().replace('\\', '/')
         ModuleRootModificationUtil.addModuleLibrary(module, "jar://$jarUrlPath!/")
 
-        val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "${jarFile.absolutePath}!/$entryPath")
+        val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "$jarUrlPath!/$entryPath")
         assertNotNull("Jar entry should resolve to a VirtualFile", resolved)
         assertEquals("Sample.txt", resolved?.name)
 
-        val resolvedByUrl = PsiUtils.resolveVirtualFileAnywhere(project, "jar://${jarFile.absolutePath}!/$entryPath")
+        val resolvedByUrl = PsiUtils.resolveVirtualFileAnywhere(project, "jar://$jarUrlPath!/$entryPath")
         assertNotNull("Jar URL should resolve to a VirtualFile", resolvedByUrl)
         assertEquals("Sample.txt", resolvedByUrl?.name)
     }

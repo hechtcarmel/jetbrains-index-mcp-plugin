@@ -1,0 +1,8 @@
+<idea-plugin>
+    <!-- Rider-specific extensions for C#/F# support via ReSharper backend protocol -->
+    <extensions defaultExtensionNs="com.intellij">
+        <rd.solutionExtListener
+            endpoint="IDE Frontend"
+            listener="com.jetbrains.rider.plugins.indexmcp.IndexMcpProtocolListener" />
+    </extensions>
+</idea-plugin>

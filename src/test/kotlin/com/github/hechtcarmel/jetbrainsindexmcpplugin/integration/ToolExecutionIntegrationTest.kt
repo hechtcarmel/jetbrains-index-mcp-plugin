@@ -254,7 +254,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         assertNotNull("Library file should be returned when scope includes libraries", match)
         assertEquals(
             "External library paths should remain absolute",
-            libraryFile.toString().replace('\\', '/'),
+            libraryFile.normalizedAbsolutePath(),
             match!!.path
         )
     }
@@ -282,7 +282,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
 
         val tool = FindDefinitionTool()
         val result = tool.execute(project, buildJsonObject {
-            put("file", libraryFile.toString().replace('\\', '/'))
+            put("file", libraryFile.normalizedAbsolutePath())
             put("line", 3)
             put("column", 14)
         })
@@ -290,7 +290,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         assertFalse("Library source definition lookup should succeed", result.isError)
         val content = result.content.first() as ContentBlock.Text
         val definition = json.decodeFromString<DefinitionResult>(content.text)
-        assertEquals(libraryFile.toString().replace('\\', '/'), definition.file)
+        assertEquals(libraryFile.normalizedAbsolutePath(), definition.file)
         assertEquals(className, definition.symbolName)
     }
 
@@ -606,4 +606,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         val column = offset - before.lastIndexOf('\n').let { if (it == -1) -1 else it } 
         return line to column
     }
+
+    private fun Path.normalizedAbsolutePath(): String =
+        toRealPath().toString().replace('\\', '/')
 }

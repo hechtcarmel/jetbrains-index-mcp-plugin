@@ -10,12 +10,15 @@ kotlinxSerializationJson = "1.7.3"
 kotlinxCoroutines = "1.9.0"
 jtoon = "1.0.9"
 
+# Rider / rd protocol
+rdGen = "2025.1.1"
+
 # Testing
 mockk = "1.14.6"
 
 # plugins
 changelog = "2.4.0"
-intelliJPlatform = "2.10.5"
+intelliJPlatform = "2.11.0"
 kotlin = "2.1.20"
 kotlinSerialization = "2.1.20"
 kover = "0.9.3"
@@ -44,6 +47,10 @@ ktor-server-cors = { group = "io.ktor", name = "ktor-server-cors", version.ref =
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 
+# Rider / rd protocol
+rdGen = { group = "com.jetbrains.rd", name = "rd-gen", version.ref = "rdGen" }
+kotlinStdLib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlin" }
+
 [plugins]
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }
 intelliJPlatform = { id = "org.jetbrains.intellij.platform", version.ref = "intelliJPlatform" }
@@ -51,3 +58,4 @@ kotlin = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlinSerialization" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 qodana = { id = "org.jetbrains.qodana", version.ref = "qodana" }
+rdGen = { id = "com.jetbrains.rdgen", version.ref = "rdGen" }

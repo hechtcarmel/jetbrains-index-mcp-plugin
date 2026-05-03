@@ -1,5 +1,6 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.Constants
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -18,6 +19,13 @@ version = providers.gradleProperty("pluginVersion").get()
 // Set the JVM language level used to build the project.
 kotlin {
     jvmToolchain(21)
+
+    // Include Rider protocol-generated sources when available
+    sourceSets {
+        main {
+            kotlin.srcDir("src/rider/main/kotlin")
+        }
+    }
 }
 
 // Configure project's dependencies
@@ -74,7 +82,7 @@ dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         pluginVerifier()
-        
+
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
 
         // Plugin Dependencies. Uses `platformBundledPlugins` property from the gradle.properties file for bundled IntelliJ Platform plugins.
@@ -89,6 +97,98 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
 
     }
+}
+
+// Expose rider-model.jar for the protocol module's rdgen code generation.
+// This configuration is consumed by :protocol to get the rd model base classes.
+//
+// Rider protocol generation uses the Rider RD distribution directly instead of
+// switching this multi-IDE plugin's compile platform from IC to Rider. Supported
+// inputs, in priority order:
+//   -PriderModelJar=<path> or RIDER_MODEL_JAR=<path>
+//   -PriderSdkPath=<Rider install dir> or RIDER_HOME=<Rider install dir>
+//   -PriderProtocolVersion=<version>, otherwise platformVersion, to download riderRD
+// Modern Rider distributions keep the model at lib/rd/rider-model.jar.
+val riderModel: Configuration by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+
+val riderDistribution: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+fun configuredFile(propertyName: String, environmentName: String): File? =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { file(it) }
+
+val explicitRiderModelJar = configuredFile("riderModelJar", "RIDER_MODEL_JAR")
+val explicitRiderRdJar = configuredFile("riderRdJar", "RIDER_RD_JAR")
+val riderHome = configuredFile("riderSdkPath", "RIDER_HOME")
+val configuredRiderModelJar = listOfNotNull(
+    explicitRiderModelJar,
+    riderHome?.resolve("lib/rd/rider-model.jar"),
+    riderHome?.resolve("lib/rider-model.jar"),
+).firstOrNull { it.isFile }
+val configuredRiderRdJar = listOfNotNull(
+    explicitRiderRdJar,
+    riderHome?.resolve("lib/rd.jar"),
+).firstOrNull { it.isFile }
+val configuredRiderProductClientJar = riderHome?.resolve("lib/product-client.jar")?.takeIf { it.isFile }
+val riderModelCompileFile = configuredRiderModelJar
+    ?.let { layout.file(providers.provider { it }) }
+    ?: layout.buildDirectory.file("rider-model/rider-model.jar")
+val riderRdCompileFile = configuredRiderRdJar
+    ?.let { layout.file(providers.provider { it }) }
+    ?: layout.buildDirectory.file("rider-model/rd.jar")
+// product-client.jar is included on the compile classpath because some Rider RD frontend
+// types (com.jetbrains.rdclient.protocol.* — used reflectively by RdProtocolBridge in
+// future Rider builds) live there. No source code references it directly today, so it is
+// listed here defensively to keep the IDE-platform bump path forward-compatible.
+val riderProductClientCompileFile = configuredRiderProductClientJar
+    ?.let { layout.file(providers.provider { it }) }
+    ?: layout.buildDirectory.file("rider-model/product-client.jar")
+val riderProtocolCompileFiles = files(riderModelCompileFile, riderRdCompileFile, riderProductClientCompileFile)
+
+if (configuredRiderModelJar != null) {
+    artifacts.add(riderModel.name, configuredRiderModelJar)
+} else {
+    val riderProtocolVersion = providers.gradleProperty("riderProtocolVersion")
+        .orElse(providers.gradleProperty("platformVersion"))
+    dependencies.add(
+        riderDistribution.name,
+        riderProtocolVersion.map { "com.jetbrains.intellij.rider:riderRD:$it@zip" }
+    )
+
+    val extractRiderModelJar by tasks.registering(Copy::class) {
+        group = "build"
+        description = "Extract rider-model.jar from the Rider RD distribution"
+        from({ riderDistribution.files.map { zipTree(it) } }) {
+            include("lib/rd/rider-model.jar")
+            include("lib/rider-model.jar")
+            include("lib/rd.jar")
+            include("lib/product-client.jar")
+            eachFile {
+                relativePath = RelativePath(true, name)
+            }
+            includeEmptyDirs = false
+        }
+        into(riderModelCompileFile.map { it.asFile.parentFile })
+    }
+
+    riderProtocolCompileFiles.builtBy(extractRiderModelJar)
+
+    artifacts.add(riderModel.name, riderModelCompileFile) {
+        builtBy(extractRiderModelJar)
+    }
+}
+
+dependencies {
+    compileOnly(riderProtocolCompileFiles)
 }
 
 // Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
@@ -206,5 +306,59 @@ intellijPlatformTesting {
                 robotServerPlugin()
             }
         }
+    }
+}
+
+// ── Rider / .NET Backend Build Integration ──────────────────────────────────
+
+val dotNetSolutionDir = file("src/dotnet")
+val dotNetSolution = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp.sln")
+val dotNetConfiguration = "Release"
+val dotNetTargetFramework = "net8.0"
+val dotNetOutputDir = dotNetSolutionDir.resolve("ReSharperPlugin.IndexMcp/bin/$dotNetConfiguration/$dotNetTargetFramework")
+
+val compileDotNet by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Build the ReSharper backend .NET plugin"
+    onlyIf { dotNetSolution.exists() }
+    workingDir = dotNetSolutionDir
+    commandLine("dotnet", "build", dotNetSolution.name, "-c", dotNetConfiguration, "/p:HostFullIdentifier=")
+    notCompatibleWithConfigurationCache("Exec tasks are not configuration cache compatible")
+}
+
+val testDotNet by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Run ReSharper backend .NET tests"
+    dependsOn(compileDotNet)
+    onlyIf { dotNetSolution.exists() }
+    workingDir = dotNetSolutionDir
+    commandLine("dotnet", "test", dotNetSolution.name, "-c", dotNetConfiguration, "--no-build")
+    notCompatibleWithConfigurationCache("Exec tasks are not configuration cache compatible")
+}
+
+// Copy .NET backend DLLs into the plugin sandbox so Rider can load them
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Constants.Tasks.PREPARE_SANDBOX) {
+    dependsOn(compileDotNet)
+    notCompatibleWithConfigurationCache("Aggregates the compileDotNet Exec task output")
+    val pluginName = providers.gradleProperty("pluginName").get()
+    from(dotNetOutputDir) {
+        include("*.dll")
+        include("*.pdb")
+        into("$pluginName/dotnet")
+    }
+    doFirst {
+        require(dotNetOutputDir.resolve("ReSharperPlugin.IndexMcp.dll").isFile) {
+            "ReSharper backend DLL was not built at ${dotNetOutputDir.resolve("ReSharperPlugin.IndexMcp.dll")}"
+        }
+    }
+}
+
+tasks.named<Zip>(Constants.Tasks.BUILD_PLUGIN) {
+    dependsOn(compileDotNet)
+    notCompatibleWithConfigurationCache("Aggregates the compileDotNet Exec task output")
+    from(dotNetOutputDir) {
+        include("*.dll")
+        include("*.pdb")
+        into("dotnet")
     }
 }

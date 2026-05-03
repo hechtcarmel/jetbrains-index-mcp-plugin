@@ -55,7 +55,8 @@ src/
 │   │   │   ├── javascript/JavaScriptHandlers.kt # JS/TS handlers (reflection)
 │   │   │   ├── go/GoHandlers.kt        # Go handlers (reflection)
 │   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
-│   │   │   └── rust/RustHandlers.kt    # Rust handlers (reflection)
+│   │   │   ├── rust/RustHandlers.kt    # Rust handlers (reflection)
+│   │   │   └── dotnet/RiderDotNetHandlers.kt # Rider C#/F# handlers (rd-protocol bridge to ReSharper backend)
 │   │   ├── server/                     # MCP server infrastructure
 │   │   │   ├── McpServerService.kt     # App-level service managing server lifecycle
 │   │   │   ├── JsonRpcHandler.kt       # JSON-RPC 2.0 request routing
@@ -254,19 +255,31 @@ override val inputSchema = SchemaBuilder.tool()
 
 ## Building and Running
 
+**Prerequisites for the Rider backend**: building `buildPlugin` triggers `compileDotNet`, which shells out to `dotnet build` against `src/dotnet/ReSharperPlugin.IndexMcp.sln`. You need the **.NET 8 SDK** installed (`dotnet --version` ≥ 8.0). The CI workflow installs it via `actions/setup-dotnet@v4`. If you don't have `dotnet` on `PATH`, the build will fail at the `compileDotNet` task. The .NET solution file is detected via `onlyIf { dotNetSolution.exists() }`, so a sparse checkout that excludes `src/dotnet/` skips the .NET build entirely.
+
 ```bash
-# Build the plugin
-./gradlew build
+# Build the plugin (includes the ReSharper backend DLL packaged into the ZIP)
+./gradlew buildPlugin
 
 # Run IDE with plugin installed
 ./gradlew runIde
 
-# Run tests
+# Run tests (Kotlin unit + platform tests; .NET backend tests run via :testDotNet)
 ./gradlew test
 
 # Run plugin verification
-./gradlew runPluginVerifier
+./gradlew verifyPlugin
 ```
+
+**Configuration cache note**: `compileDotNet`, `prepareSandbox`, and `buildPlugin` are marked `notCompatibleWithConfigurationCache` because the Rider backend integration relies on Gradle script object references that the configuration cache cannot serialize. Other tasks remain config-cache enabled.
+
+**Regenerating the rd protocol model** (only when `protocol/src/main/kotlin/model/rider/IndexMcpModel.kt` changes):
+
+```bash
+INCLUDE_PROTOCOL_MODULE=1 ./gradlew :protocol:rdgen
+```
+
+The generated stubs (`src/rider/.../IndexMcpModel.Generated.kt`, `src/dotnet/.../IndexMcpModel.Generated.cs`) are committed; regen is only needed when the model definition changes.
 
 ### Run Configurations (in `.run/`)
 - **Run Plugin** - Launch IDE with plugin for manual testing
@@ -384,11 +397,11 @@ Tools are organized by IDE availability.
 **Extended Navigation Tools (Language-Aware):**
 
 These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Markdown):
-- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)
-- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, Markdown) (disabled by default)
+- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider)
+- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, C#/F# in Rider — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, C#/F# in Rider, Markdown) (disabled by default)
 
 **Java/Kotlin-Only Refactoring Tools:**
 - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
@@ -412,6 +425,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
+- `handlers/dotnet/RiderDotNetHandlers.kt` - Rider C#/F# handlers that issue rd-protocol RPCs to the in-process ReSharper backend (`src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpBackendHost.cs`). The backend executes against the ReSharper PSI/caches in the same process as Rider; the Kotlin side only orchestrates and adapts protocol DTOs to the universal `LanguageHandler` interfaces.
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup

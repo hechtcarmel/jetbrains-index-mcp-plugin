@@ -43,7 +43,7 @@ class FindSymbolTool : AbstractMcpTool() {
     override val description = """
         Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, and functions. Faster and more accurate than grep for code navigation.
 
-        Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, and Rust; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
+        Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, C#, and F#; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
 
         Matching and ranking follow IntelliJ's Go to Symbol popup, including qualified queries like "BasicSolver.run".
 

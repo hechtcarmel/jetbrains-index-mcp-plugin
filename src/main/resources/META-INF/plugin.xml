@@ -89,11 +89,11 @@
 for detailed documentation and examples.</p>
 ]]>    </description>
 
-    <!-- Rider exclusion - plugin uses IntelliJ PSI APIs not compatible with Rider's ReSharper backend -->
-    <incompatible-with>com.intellij.modules.rider</incompatible-with>
-
     <!-- Platform dependency (required) -->
     <depends>com.intellij.modules.platform</depends>
+
+    <!-- Optional Rider support (C#/F# via ReSharper backend protocol) -->
+    <depends optional="true" config-file="rider-features.xml">com.intellij.modules.rider</depends>
 
     <!-- Optional Java support -->
     <depends optional="true" config-file="java-features.xml">com.intellij.modules.java</depends>
