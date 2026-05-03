@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeElement
@@ -25,7 +26,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for retrieving type hierarchies across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,9 +37,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
 
         Rust note: className parameter not supported for Rust; use file + line + column instead.
+        Rider note: C#/F# hierarchy uses Rider's frontend navigation bridge to the ReSharper backend; subtype/supertype detail depends on the current Rider build.
 
         Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
@@ -49,7 +51,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .stringProperty("className", "Fully qualified class name (e.g., 'com.example.MyClass' for Java or 'App\\\\Models\\\\User' for PHP). RECOMMENDED - use this if you know the class name.")
+        .stringProperty("className", "Fully qualified class name (e.g., 'com.example.MyClass' for Java, 'App\\\\Models\\\\User' for PHP, or 'My.Namespace.CustomerService' for C#). RECOMMENDED - use this if you know the class name.")
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
@@ -69,6 +71,9 @@ class TypeHierarchyTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val riderClassNameHierarchy = className?.let { tryResolveRiderClassNameHierarchy(project, it, scope) }
+        if (riderClassNameHierarchy != null) return createJsonResult(riderClassNameHierarchy)
+
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
@@ -108,6 +113,40 @@ class TypeHierarchyTool : AbstractMcpTool() {
     }
 
 
+
+    private fun tryResolveRiderClassNameHierarchy(
+        project: Project,
+        className: String,
+        scope: BuiltInSearchScope
+    ): TypeHierarchyResult? {
+        for (language in listOf("C#", "F#")) {
+            val typeMatches = RiderBackendSemanticService.findTypes(
+                project = project,
+                query = className,
+                matchMode = "exact",
+                scope = scope,
+                language = language,
+                limit = 5
+            )
+            val match = typeMatches.value
+                ?.firstOrNull { it.qualifiedName.equals(className, ignoreCase = true) || it.name.equals(className, ignoreCase = true) }
+                ?: continue
+            val hierarchy = RiderBackendSemanticService.getTypeHierarchy(
+                project = project,
+                file = match.file,
+                line = match.line,
+                column = match.column,
+                scope = scope,
+                language = language
+            ).value ?: continue
+            return TypeHierarchyResult(
+                element = convertToTypeElement(hierarchy.element),
+                supertypes = hierarchy.supertypes.map { convertToTypeElement(it) },
+                subtypes = hierarchy.subtypes.map { convertToTypeElement(it) }
+            )
+        }
+        return null
+    }
 
     private fun resolveTargetElement(project: Project, arguments: JsonObject): PsiElement? {
         // Try className first (Java/Kotlin specific)

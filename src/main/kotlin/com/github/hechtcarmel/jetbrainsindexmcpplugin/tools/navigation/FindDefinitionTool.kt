@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
@@ -55,6 +56,21 @@ class FindDefinitionTool : AbstractMcpTool() {
             .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
 
         requireSmartMode(project)
+
+        val riderDefinition = RiderBackendSemanticService.findDefinition(
+            project = project,
+            file = arguments[ParamNames.FILE]?.jsonPrimitive?.content,
+            line = arguments[ParamNames.LINE]?.jsonPrimitive?.content?.toIntOrNull(),
+            column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.content?.toIntOrNull(),
+            language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content,
+            symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content,
+            fullElementPreview = fullElementPreview,
+            maxPreviewLines = maxPreviewLines
+        )
+        if (riderDefinition.handled) {
+            return riderDefinition.value?.let { createJsonResult(it) }
+                ?: createErrorResult("Rider ReSharper backend could not resolve the C#/F# definition target")
+        }
 
         return suspendingReadAction {
             val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {

@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
@@ -25,7 +26,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for analyzing method call relationships across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,9 +37,10 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val description = """
         Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
 
         Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
+        Rider note: C#/F# results use Rider's frontend navigation bridge to the ReSharper backend.
 
         Returns: recursive tree with method signatures, file locations (line/column), and nested call relationships.
 
@@ -88,7 +90,13 @@ class CallHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            // For C#/F# symbol-form requests, the universal SymbolReferenceHandler
+            // registry only knows about Java. Resolve the symbol to a position via
+            // the Rider backend first, then fall through to the position-based
+            // handler so depth/scope/seen-set semantics are identical.
+            val effectiveArguments = rewriteSymbolArgumentsForRider(project, arguments) ?: arguments
+
+            val element = resolveElementFromArguments(project, effectiveArguments, allowLibraryFilesForPosition = true).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
 
@@ -118,6 +126,42 @@ class CallHierarchyTool : AbstractMcpTool() {
                 calls = hierarchyData.calls.map { convertToCallElement(it) }
             ))
         }
+    }
+
+    /**
+     * If [arguments] carries a (`language`, `symbol`) pair for a Rider-supported
+     * language but no position, ask the Rider backend to resolve the symbol to a
+     * (file, line, column) and return a new JsonObject augmented with those keys.
+     * Returns null when no rewrite is needed (already has position, language not
+     * supported, or symbol not resolvable). The caller then falls through to
+     * `resolveElementFromArguments` and the standard call-hierarchy handler so
+     * depth/seen-set semantics stay identical to the position-form path.
+     */
+    private fun rewriteSymbolArgumentsForRider(project: Project, arguments: JsonObject): JsonObject? {
+        // Treat empty/blank file or non-positive line/column as "no position",
+        // since some clients send schema defaults (file:"", line:0, column:0)
+        // alongside language+symbol — those should NOT trip the position check.
+        val filePresent = (arguments[ParamNames.FILE] as? JsonPrimitive)?.content?.isNotBlank() == true
+        val linePresent = (arguments[ParamNames.LINE] as? JsonPrimitive)?.content?.toIntOrNull()?.let { it > 0 } == true
+        val columnPresent = (arguments[ParamNames.COLUMN] as? JsonPrimitive)?.content?.toIntOrNull()?.let { it > 0 } == true
+        val hasPosition = filePresent && linePresent && columnPresent
+        if (hasPosition) return null
+        val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content ?: return null
+        val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content ?: return null
+        val (file, line, column) = RiderBackendSemanticService.resolveSymbolToPosition(project, language, symbol) ?: return null
+        // Strip language/symbol AND any blank position keys, then write the
+        // resolved triple. resolveElementFromArguments treats this as a clean
+        // position-form request and won't trip the symbol/position-exclusive
+        // guard.
+        return JsonObject(
+            arguments.toMutableMap().apply {
+                remove(ParamNames.LANGUAGE)
+                remove(ParamNames.SYMBOL)
+                put(ParamNames.FILE, JsonPrimitive(file))
+                put(ParamNames.LINE, JsonPrimitive(line))
+                put(ParamNames.COLUMN, JsonPrimitive(column))
+            }
+        )
     }
 
     /**

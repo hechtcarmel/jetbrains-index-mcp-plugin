@@ -127,7 +127,7 @@ abstract class AbstractMcpTool : McpTool {
      * - Only check status (e.g., index status)
      * - Don't interact with PSI indices or search APIs
      *
-     * @see ensurePsiUpToDate
+     * @see refreshProjectRootsAndCommit
      * @see McpSettings.syncExternalChanges
      */
     protected open val requiresPsiSync: Boolean = true
@@ -181,7 +181,7 @@ abstract class AbstractMcpTool : McpTool {
      *
      * Uses non-blocking coroutine approach to avoid EDT freezes.
      */
-    private suspend fun ensurePsiUpToDate(project: Project) {
+    protected suspend fun refreshProjectRootsAndCommit(project: Project) {
         // 1. Force VFS to see external changes before PSI work proceeds.
         // Refresh all content roots (includes workspace sub-project directories)
         val dirsToRefresh = mutableListOf<VirtualFile>()
@@ -220,7 +220,7 @@ abstract class AbstractMcpTool : McpTool {
     final override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
         val settings = McpSettings.getInstance()
         if (requiresPsiSync && settings.syncExternalChanges) {
-            ensurePsiUpToDate(project)
+            refreshProjectRootsAndCommit(project)
         }
         return doExecute(project, arguments)
     }

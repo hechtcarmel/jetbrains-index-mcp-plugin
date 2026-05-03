@@ -53,7 +53,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ### Language-Specific Navigation Tools
  *
- * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, Markdown)
+     * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, C#, F#, Markdown)
  * and are registered when at least one language handler is available:
  *
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
@@ -273,7 +273,7 @@ class ToolRegistry {
      * Registers language-specific navigation tools.
      *
      * These tools delegate to language handlers and support multiple languages
-     * (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust).
+     * (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, C#, F#).
      *
      * Tools are registered when at least one language handler is available
      * for the tool's functionality.

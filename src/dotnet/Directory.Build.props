@@ -1,0 +1,17 @@
+<Project>
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <RootNamespace>ReSharperPlugin.IndexMcp</RootNamespace>
+    </PropertyGroup>
+
+    <Import Project="Plugin.props" />
+
+    <ItemGroup>
+        <PackageReference Include="JetBrains.ReSharper.SDK" Version="$(ReSharperSdkVersion)" />
+        <PackageReference Include="JetBrains.Rider.SDK" Version="$(RiderSdkVersion)" />
+        <PackageReference Include="System.Diagnostics.TraceSource" Version="4.3.0" />
+    </ItemGroup>
+</Project>

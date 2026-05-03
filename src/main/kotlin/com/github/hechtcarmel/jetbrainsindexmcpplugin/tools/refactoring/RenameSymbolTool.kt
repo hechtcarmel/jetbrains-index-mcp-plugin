@@ -1,6 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.MODEL_PKG
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdProtocolBridge
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -9,6 +13,8 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
@@ -17,6 +23,7 @@ import com.intellij.refactoring.rename.RenameProcessor
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.refactoring.rename.naming.AutomaticRenamerFactory
 import com.intellij.util.containers.MultiMap
+import java.io.File
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -138,6 +145,23 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
+        if (!isFileRename && RiderBackendSemanticService.isDotNetFile(file)) {
+            return when (val outcome = tryExecuteRiderRename(project, file, line!!, column!!, newName)) {
+                is RiderRenameOutcome.Success -> outcome.result
+                is RiderRenameOutcome.NotInRider -> createErrorResult(
+                    "C#/F# symbol rename requires JetBrains Rider with the Index MCP ReSharper backend. " +
+                        "This IDE does not expose the Rider rd protocol, so the plugin cannot resolve the " +
+                        "symbol semantically. File rename remains available by omitting line and column."
+                )
+                is RiderRenameOutcome.FileNotFound -> createErrorResult(
+                    "File not found in project: '$file'. Pass a path relative to the project root."
+                )
+                is RiderRenameOutcome.BackendCallFailed -> createErrorResult(
+                    "Rider ReSharper backend rename failed: ${outcome.reason}"
+                )
+            }
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and validate (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════
@@ -196,6 +220,99 @@ class RenameSymbolTool : AbstractMcpTool() {
                     message = "Successfully renamed '$oldName' to '$newName'$relatedNote"
                 )
             )
+        }
+    }
+
+    private sealed interface RiderRenameOutcome {
+        data class Success(val result: ToolCallResult) : RiderRenameOutcome
+        data object NotInRider : RiderRenameOutcome
+        data object FileNotFound : RiderRenameOutcome
+        data class BackendCallFailed(val reason: String) : RiderRenameOutcome
+    }
+
+    private suspend fun tryExecuteRiderRename(
+        project: Project,
+        file: String,
+        line: Int,
+        column: Int,
+        newName: String
+    ): RiderRenameOutcome {
+        commitDocuments(project)
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+
+        val absolutePath = suspendingReadAction {
+            val psiFile = getPsiFile(project, file) ?: return@suspendingReadAction null
+            psiFile.virtualFile.path
+        } ?: return RiderRenameOutcome.FileNotFound
+
+        val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
+        val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", absolutePath, line, column)
+            ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd source position struct (rdgen mismatch?)")
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameSymbolRequest", position, newName)
+            ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename request struct (rdgen mismatch?)")
+        val result = RdProtocolBridge.invokeCall(model, "renameSymbol", request)
+            ?: return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
+
+        val success = RdProtocolBridge.getProperty(result, "success") as? Boolean ?: false
+        val message = RdProtocolBridge.getProperty(result, "message") as? String ?: "Rider backend rename failed"
+        if (!success) return RiderRenameOutcome.BackendCallFailed(message)
+
+        @Suppress("UNCHECKED_CAST")
+        val rawAffectedFiles = (RdProtocolBridge.getProperty(result, "affectedFiles") as? List<String>) ?: emptyList()
+        val affectedFiles = rawAffectedFiles.map { absolute -> toRelativeProjectPath(project, absolute) }
+        val changesCount = RdProtocolBridge.getProperty(result, "changesCount") as? Int ?: affectedFiles.size
+        val oldName = RdProtocolBridge.getProperty(result, "oldName") as? String ?: ""
+        val returnedNewName = RdProtocolBridge.getProperty(result, "newName") as? String ?: newName
+
+        refreshAffectedFiles(rawAffectedFiles)
+        refreshProjectRootsAndCommit(project)
+        commitDocuments(project)
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+
+        return RiderRenameOutcome.Success(
+            createJsonResult(
+                RefactoringResult(
+                    success = true,
+                    affectedFiles = affectedFiles,
+                    changesCount = changesCount,
+                    message = if (oldName.isNotBlank()) {
+                        "Successfully renamed '$oldName' to '$returnedNewName' using Rider ReSharper backend"
+                    } else {
+                        message
+                    }
+                )
+            )
+        )
+    }
+
+    /**
+     * Converts an absolute path returned by the Rider backend into a project-relative
+     * tool-style path (forward slashes, relative to the matching content root).
+     *
+     * Falls back to the raw absolute path (with normalized separators) when the file is
+     * outside any project content root or VFS lookup fails — avoids producing the ugly
+     * `..\..\..` style that `Path.relativize` emits for files on different drives.
+     */
+    private fun toRelativeProjectPath(project: Project, absolutePath: String): String {
+        return try {
+            val virtualFile = LocalFileSystem.getInstance().findFileByPath(absolutePath)
+            if (virtualFile != null) {
+                ProjectUtils.getToolFilePath(project, virtualFile)
+            } else {
+                absolutePath.replace('\\', '/')
+            }
+        } catch (e: Exception) {
+            LOG.debug("Failed to relativize '$absolutePath': ${e.message}")
+            absolutePath.replace('\\', '/')
+        }
+    }
+
+    private fun refreshAffectedFiles(paths: List<String>) {
+        val virtualFiles = paths.mapNotNull { path ->
+            LocalFileSystem.getInstance().refreshAndFindFileByPath(path.replace('\\', File.separatorChar))
+        }
+        if (virtualFiles.isNotEmpty()) {
+            VfsUtil.markDirtyAndRefresh(false, false, false, *virtualFiles.toTypedArray())
         }
     }
 
@@ -727,7 +844,7 @@ class RenameSymbolTool : AbstractMcpTool() {
      * Falls back to walking up the tree for the nearest [PsiNamedElement].
      */
     private fun findNamedElement(element: PsiElement): PsiNamedElement? {
-        if (element is PsiNamedElement && element.name != null) {
+        if (element is PsiNamedElement && element !is PsiFile && element.name != null) {
             return element
         }
 
@@ -735,11 +852,11 @@ class RenameSymbolTool : AbstractMcpTool() {
         while (current != null) {
             for (reference in current.references) {
                 val resolved = reference.resolve()
-                if (resolved is PsiNamedElement && resolved.name != null) {
+                if (resolved is PsiNamedElement && resolved !is PsiFile && resolved.name != null) {
                     return resolved
                 }
             }
-            if (current is PsiNamedElement && current.name != null) {
+            if (current is PsiNamedElement && current !is PsiFile && current.name != null) {
                 return current
             }
             current = current.parent

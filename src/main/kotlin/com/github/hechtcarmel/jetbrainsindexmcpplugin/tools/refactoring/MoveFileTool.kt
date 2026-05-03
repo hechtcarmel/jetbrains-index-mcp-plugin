@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderEnvironment
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -7,6 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
@@ -50,6 +52,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * 3. **EDT**: Execute the appropriate move backend
  */
 open class MoveFileTool : AbstractRefactoringTool() {
+
+    private val log = logger<MoveFileTool>()
 
     override val name = "ide_move_file"
 
@@ -232,6 +236,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         var success = false
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()
+        var namespaceUpdated = false
         val fileName = preparation.psiFile.name
 
         edtAction {
@@ -252,9 +257,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 if (preparation.backend == MoveBackend.PHP_SEMANTIC_MOVE) {
                     cleanupMovedPhpFileImports(filePointer.element)
                 }
+                namespaceUpdated = updateMovedCSharpNamespace(project, preparation, fileName)
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
+                if (namespaceUpdated) {
+                    preparation.targetDirectory.findFile(fileName)?.virtualFile?.let { affectedFiles.add(getRelativePath(project, it)) }
+                }
                 FileDocumentManager.getInstance().saveAllDocuments()
 
                 success = true
@@ -270,9 +279,24 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 "${preparation.destinationRelativePath}/$fileName"
             }
             val backendNote = when (preparation.backend) {
-                MoveBackend.GENERIC_FILE_MOVE -> " using IDE file move semantics"
+                MoveBackend.GENERIC_FILE_MOVE -> if (fileName.endsWith(".cs", ignoreCase = true)) {
+                    val riderSuffix = if (RiderEnvironment.isAvailable) {
+                        ", and cross-file using/import updates depend on Rider frontend support"
+                    } else {
+                        ""
+                    }
+                    if (namespaceUpdated) {
+                        " using IDE file move semantics; C# namespace updated$riderSuffix"
+                    } else {
+                        " using IDE file move semantics; no C# namespace change was needed$riderSuffix"
+                    }
+                } else {
+                    " using IDE file move semantics"
+                }
                 MoveBackend.PHP_SEMANTIC_MOVE -> " using PhpStorm semantic PHP move"
             }
+            refreshProjectRootsAndCommit(project)
+            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
             createJsonResult(
                 RefactoringResult(
                     success = true,
@@ -328,6 +352,105 @@ open class MoveFileTool : AbstractRefactoringTool() {
         processor.setPreviewUsages(false)
         processor.run()
     }
+
+    private fun updateMovedCSharpNamespace(
+        project: Project,
+        preparation: MovePreparation,
+        fileName: String
+    ): Boolean {
+        val movedFile = preparation.targetDirectory.findFile(fileName)
+        if (movedFile == null || movedFile.virtualFile?.extension?.lowercase() != "cs") return false
+
+        val document = PsiDocumentManager.getInstance(project).getDocument(movedFile) ?: return false
+        val text = document.text
+        val namespaceRegex = Regex("""(?m)^(\s*namespace\s+)([A-Za-z_][A-Za-z0-9_.]*)(\s*[;{])""")
+        val matches = namespaceRegex.findAll(text).toList()
+        if (matches.isEmpty()) return false
+        // Refuse to silently rewrite only the first namespace when the file declares multiple
+        // (e.g. multiple top-level scoped namespaces). Rider's refactoring engine is the right
+        // place to handle that; the heuristic is only safe for the common single-namespace case.
+        if (matches.size > 1) {
+            log.info(
+                "Skipping C# namespace update for '${preparation.destinationRelativePath}/$fileName': " +
+                    "file declares ${matches.size} namespaces; manual or Rider-driven update required."
+            )
+            return false
+        }
+        val match = matches.single()
+        val oldNamespace = match.groupValues[2]
+        val newNamespace = inferMovedCSharpNamespace(oldNamespace, preparation) ?: return false
+        if (newNamespace == oldNamespace) return false
+
+        WriteCommandAction.writeCommandAction(project)
+            .withName("Update C# Namespace")
+            .withGroupId("MCP Refactoring")
+            .run<Throwable> {
+                document.replaceString(
+                    match.groups[2]!!.range.first,
+                    match.groups[2]!!.range.last + 1,
+                    newNamespace
+                )
+                PsiDocumentManager.getInstance(project).commitDocument(document)
+            }
+        return true
+    }
+
+    /**
+     * Infers a destination C# namespace from the file's source namespace and the move's
+     * old/new directory paths. Heuristic — does not consult `.csproj`/RootNamespace and assumes:
+     *   * `src`, `main`, `test`, `csharp`, and `cs` are infrastructure folders (filtered out).
+     *   * The original namespace's trailing segments mirror the source directory's trailing
+     *     segments (common .NET convention). When that holds, the matching tail is replaced
+     *     by the new directory tail; otherwise a single trailing segment is dropped.
+     * Returns null if no plausible new namespace can be derived (e.g. moving to a project root).
+     */
+    private fun inferMovedCSharpNamespace(
+        oldNamespace: String,
+        preparation: MovePreparation
+    ): String? {
+        val oldDirSegments = preparation.sourceRelativePath
+            .substringBeforeLast('/', "")
+            .split('/', '\\')
+            .filter { it.isNotBlank() && it != "src" && it != "main" && it != "test" }
+            .filterNot { it.equals("csharp", ignoreCase = true) || it.equals("cs", ignoreCase = true) }
+        val newDirSegments = preparation.destinationRelativePath
+            .split('/', '\\')
+            .filter { it.isNotBlank() && it != "src" && it != "main" && it != "test" }
+            .filterNot { it.equals("csharp", ignoreCase = true) || it.equals("cs", ignoreCase = true) }
+
+        if (newDirSegments.isEmpty()) return null
+        val oldNamespaceSegments = oldNamespace.split('.').filter { it.isNotBlank() }
+        val trailingMatchCount = commonTrailingSegmentCount(oldNamespaceSegments, oldDirSegments)
+        val namespacePrefixSegments = if (trailingMatchCount > 0) {
+            oldNamespaceSegments.dropLast(trailingMatchCount)
+        } else {
+            oldNamespaceSegments.dropLast(1)
+        }
+        val newNamespaceSegments = if (
+            namespacePrefixSegments.isNotEmpty() &&
+            newDirSegments.take(namespacePrefixSegments.size) == namespacePrefixSegments
+        ) {
+            newDirSegments
+        } else {
+            namespacePrefixSegments + newDirSegments
+        }
+        return newNamespaceSegments.distinctAdjacent().joinToString(".")
+    }
+
+    private fun commonTrailingSegmentCount(left: List<String>, right: List<String>): Int {
+        var count = 0
+        while (
+            count < left.size &&
+            count < right.size &&
+            left[left.lastIndex - count] == right[right.lastIndex - count]
+        ) {
+            count++
+        }
+        return count
+    }
+
+    private fun List<String>.distinctAdjacent(): List<String> =
+        filterIndexed { index, segment -> index == 0 || this[index - 1] != segment }
 
     internal open fun executePhpSemanticMove(project: Project, preparation: MovePreparation) {
         val declaration = preparation.phpDeclarationPointer?.element

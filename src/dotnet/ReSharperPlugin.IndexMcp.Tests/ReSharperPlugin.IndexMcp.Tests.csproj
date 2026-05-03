@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <AssemblyName>ReSharperPlugin.IndexMcp.Tests</AssemblyName>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="JetBrains.ReSharper.SDK.Tests" Version="$(ReSharperSdkVersion)" />
+        <PackageReference Include="NUnit" Version="3.14.0" />
+        <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\ReSharperPlugin.IndexMcp\ReSharperPlugin.IndexMcp.csproj" />
+    </ItemGroup>
+</Project>
