@@ -34,8 +34,9 @@ class OpenFileTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val filePath = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
+        val filePath = requiredStringArg(arguments, "file").getOrElse {
+            return createErrorResult(it.message ?: "Missing required parameter: file")
+        }
 
         val line = arguments["line"]?.jsonPrimitive?.int
         val column = arguments["column"]?.jsonPrimitive?.int

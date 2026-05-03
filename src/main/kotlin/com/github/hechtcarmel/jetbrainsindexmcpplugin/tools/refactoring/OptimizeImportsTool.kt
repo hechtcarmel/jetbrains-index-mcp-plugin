@@ -47,8 +47,9 @@ class OptimizeImportsTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
+        val file = requiredStringArg(arguments, ParamNames.FILE).getOrElse {
+            return createErrorResult(it.message ?: "Missing required parameter: file")
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve file (suspending read action)

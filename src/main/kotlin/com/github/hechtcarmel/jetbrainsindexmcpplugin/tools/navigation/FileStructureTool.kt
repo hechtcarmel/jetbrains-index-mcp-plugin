@@ -42,8 +42,9 @@ class FileStructureTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = arguments["file"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: file")
+        val file = requiredStringArg(arguments, "file").getOrElse {
+            return createErrorResult(it.message ?: "Missing required parameter: file")
+        }
 
         return suspendingReadAction {
             val psiFile = getPsiFile(project, file)
