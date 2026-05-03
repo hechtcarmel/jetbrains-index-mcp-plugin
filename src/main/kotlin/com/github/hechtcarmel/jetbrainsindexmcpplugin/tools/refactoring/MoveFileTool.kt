@@ -53,7 +53,7 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 open class MoveFileTool : AbstractRefactoringTool() {
 
-    private val LOG = logger<MoveFileTool>()
+    private val log = logger<MoveFileTool>()
 
     override val name = "ide_move_file"
 
@@ -370,7 +370,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         // (e.g. multiple top-level scoped namespaces). Rider's refactoring engine is the right
         // place to handle that; the heuristic is only safe for the common single-namespace case.
         if (matches.size > 1) {
-            LOG.info(
+            log.info(
                 "Skipping C# namespace update for '${preparation.destinationRelativePath}/$fileName': " +
                     "file declares ${matches.size} namespaces; manual or Rider-driven update required."
             )

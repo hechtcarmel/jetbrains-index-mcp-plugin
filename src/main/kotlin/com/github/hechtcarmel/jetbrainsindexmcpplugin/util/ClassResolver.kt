@@ -67,7 +67,7 @@ object ClassResolver {
      *
      * @return The first matching frontend named element, or null if no matching type-like element is found.
      */
-    fun findClassByNameWithRider(project: Project, qualifiedName: String): PsiElement? {
+    private fun findClassByNameWithRider(project: Project, qualifiedName: String): PsiElement? {
         val simpleName = qualifiedName.substringAfterLast('.').substringAfterLast('+')
         val scope = GlobalSearchScope.projectScope(project)
         val psiManager = PsiManager.getInstance(project)

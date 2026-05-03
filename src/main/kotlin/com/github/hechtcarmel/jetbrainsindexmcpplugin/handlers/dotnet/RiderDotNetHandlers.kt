@@ -9,14 +9,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiNamedElement
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -314,7 +312,7 @@ data class RiderBackendResponse<T>(
 object RiderBackendSemanticService {
     private val LOG = logger<RiderBackendSemanticService>()
 
-    fun canHandleLanguage(language: String?): Boolean =
+    private fun canHandleLanguage(language: String?): Boolean =
         language == null || CSHARP_LANGUAGE_IDS.any { it.equals(language, ignoreCase = true) } ||
             FSHARP_LANGUAGE_IDS.any { it.equals(language, ignoreCase = true) }
 
@@ -465,7 +463,7 @@ object RiderBackendSemanticService {
         val definition = RdProtocolBridge.getProperty(result, "definition") ?: return null
         val backendPath = RdProtocolBridge.getProperty(definition, "filePath") as? String ?: return null
         if (backendPath.isBlank()) return null
-        val displayedPath = displayPath(project, backendPath) ?: return null
+        val displayedPath = displayPath(project, backendPath)
         val line = RdProtocolBridge.getProperty(definition, "line") as? Int ?: return null
         val column = RdProtocolBridge.getProperty(definition, "column") as? Int ?: return null
         return Triple(displayedPath, line, column)

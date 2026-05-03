@@ -225,8 +225,8 @@ class RenameSymbolTool : AbstractMcpTool() {
 
     private sealed interface RiderRenameOutcome {
         data class Success(val result: ToolCallResult) : RiderRenameOutcome
-        object NotInRider : RiderRenameOutcome
-        object FileNotFound : RiderRenameOutcome
+        data object NotInRider : RiderRenameOutcome
+        data object FileNotFound : RiderRenameOutcome
         data class BackendCallFailed(val reason: String) : RiderRenameOutcome
     }
 
