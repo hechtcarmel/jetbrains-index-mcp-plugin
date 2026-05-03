@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderEnvironment
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.psi.PsiElement
@@ -129,7 +130,11 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         val resultJson = json.parseToJsonElement(textResult(result)).jsonObject
         val message = resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
         assertTrue(message.contains("C# namespace updated"))
-        assertTrue(message.contains("cross-file using/import updates depend on Rider frontend support"))
+        if (RiderEnvironment.isAvailable) {
+            assertTrue(message.contains("cross-file using/import updates depend on Rider frontend support"))
+        } else {
+            assertFalse(message.contains("cross-file using/import updates depend on Rider frontend support"))
+        }
         assertFalse("Source file should be moved away", Files.exists(sourceFile))
         val movedFile = Path.of(requireNotNull(project.basePath), "Clipthrough/Services/SampleThing.cs")
         assertTrue("Moved file should exist in target directory", Files.exists(movedFile))
