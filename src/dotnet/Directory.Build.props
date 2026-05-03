@@ -12,5 +12,6 @@
     <ItemGroup>
         <PackageReference Include="JetBrains.ReSharper.SDK" Version="$(ReSharperSdkVersion)" />
         <PackageReference Include="JetBrains.Rider.SDK" Version="$(RiderSdkVersion)" />
+        <PackageReference Include="System.Diagnostics.TraceSource" Version="4.3.0" />
     </ItemGroup>
 </Project>

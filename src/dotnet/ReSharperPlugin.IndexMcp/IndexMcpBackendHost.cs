@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using JetBrains.Application.DataContext;
 using JetBrains.Application.Parts;
 using JetBrains.Application.Progress;
 using JetBrains.Application.Threading;
@@ -12,11 +13,13 @@ using JetBrains.Core;
 using JetBrains.DocumentModel;
 using JetBrains.Lifetimes;
 using JetBrains.ProjectModel;
+using JetBrains.ProjectModel.DataContext;
 using JetBrains.ReSharper.Resources.Shell;
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.Caches;
 using JetBrains.ReSharper.Psi.CSharp;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
+using JetBrains.ReSharper.Psi.DataContext;
 using JetBrains.ReSharper.Psi.Files;
 using JetBrains.ReSharper.Psi.Modules;
 using JetBrains.ReSharper.Psi.Search;
@@ -26,11 +29,13 @@ using JetBrains.ReSharper.Psi.Util;
 using JetBrains.ReSharper.Feature.Services.Refactorings;
 using JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename;
 using JetBrains.ReSharper.Feature.Services.Protocol;
+using JetBrains.ReSharper.Refactorings.Rename;
 using JetBrains.Rider.Model;
 using JetBrains.Rider.Model.IndexMcp;
 using JetBrains.Rd.Tasks;
 using JetBrains.Util;
 using JetBrains.Util.dataStructures.TypedIntrinsics;
+using JetBrains.Util.EventBus;
 using JetBrains.Util.Threading.Tasks;
 
 namespace ReSharperPlugin.IndexMcp;
@@ -383,7 +388,10 @@ public class IndexMcpBackendHost
         // coordinates. If the local declaration's textual name disagrees with the resolved type
         // element's ShortName (e.g. desynced AXAML/code-behind partial classes), the resolver will
         // reject that candidate, returning null and surfacing a clearer error here.
-        var element = ResolveDeclaredElementAt(request.Position, requireConsistentLocalDeclaration: true);
+        var localDeclarationNode = ResolveDeclarationNodeAt(request.Position);
+        var element = localDeclarationNode != null && TryGetDeclaredElement(localDeclarationNode, out var localElement)
+            ? localElement
+            : ResolveDeclaredElementAt(request.Position, requireConsistentLocalDeclaration: true);
         if (element == null)
         {
             return new RdRenameSymbolResult(
@@ -399,6 +407,9 @@ public class IndexMcpBackendHost
         }
 
         var oldName = element.ShortName;
+        var localName = GetDeclarationNodeName(localDeclarationNode);
+        if (!string.IsNullOrEmpty(localName))
+            oldName = localName;
 
         // Bug guard: a no-op rename (oldName == newName) cannot be detected by the file-content
         // polling oracle (the new name is always present, since it equals the existing name), so it
@@ -428,6 +439,7 @@ public class IndexMcpBackendHost
         }
 
         var affectedFiles = GetPotentiallyAffectedFiles(element);
+        AddAffectedFile(affectedFiles, localDeclarationNode?.GetSourceFile()?.GetLocation().FullPath);
 
         // Capture per-file count of the OLD identifier (as a standalone identifier, not substring).
         // The success oracle below uses this snapshot: a real rename must reduce the old-name count
@@ -438,25 +450,17 @@ public class IndexMcpBackendHost
 
         try
         {
-            var dataProvider = new RenameDataProvider(element, request.NewName)
-            {
-                CanBeLocal = false
-            };
+            var workflowMessage = TryExecuteDrivenRename(element, request.NewName);
 
-            // Strategy 1 (primary): direct PSI rename — declaration.SetName + reference.BindTo inside a
-            // PSI transaction. This is the strategy that consistently succeeds in the MCP context.
-            var workflowMessage = TryExecuteBackendPsiRename(element, request.NewName);
-
-            // Strategy 2 (fallback): static refactoring service. ITextControl is null because we run
-            // headlessly; in practice this fallback only runs when the primary strategy mutates nothing,
-            // and it is mostly defensive.
-            if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
+            if (!string.IsNullOrWhiteSpace(workflowMessage))
             {
-                var conflicts = RenameRefactoringService.RenameAndGetConflicts(_solution, dataProvider, null!);
-                var conflictsMsg = FormatConflicts(conflicts);
-                workflowMessage = string.IsNullOrWhiteSpace(workflowMessage)
-                    ? conflictsMsg
-                    : $"{workflowMessage}; fallback result: {conflictsMsg}";
+                return new RdRenameSymbolResult(
+                        false,
+                        oldName,
+                        request.NewName,
+                        affectedFiles,
+                        0,
+                        $"ReSharper rename did not update affected files: {workflowMessage}");
             }
 
             if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
@@ -467,9 +471,7 @@ public class IndexMcpBackendHost
                         request.NewName,
                         affectedFiles,
                         0,
-                        string.IsNullOrWhiteSpace(workflowMessage)
-                            ? $"ReSharper rename completed without error, but no affected file's count of the identifier '{oldName}' decreased. The rename did not actually rewrite anything on disk."
-                            : $"ReSharper rename did not update affected files: {workflowMessage}");
+                        $"ReSharper rename completed without error, but no affected file's count of the identifier '{oldName}' decreased. The rename did not actually rewrite anything on disk.");
             }
 
             return new RdRenameSymbolResult(
@@ -492,40 +494,120 @@ public class IndexMcpBackendHost
         }
     }
 
-    private string? TryExecuteBackendPsiRename(IDeclaredElement element, string newName)
+    private string? TryExecuteDrivenRename(
+        IDeclaredElement element,
+        string newName)
     {
-        var stage = "collect references";
         try
         {
-            var references = FindReferences(element).ToList();
-            var declarations = element.GetDeclarations().ToList();
-            if (declarations.Count == 0)
-            {
-                return "Backend PSI rename found no declarations to rename";
-            }
+            var dataProvider = new RenameDataProvider(element, newName);
+            SetRuntimeProperty(dataProvider, "CanBeLocal", false);
 
-            stage = "execute PSI transaction";
-            _solution.GetPsiServices().Transactions.Execute("Index MCP Rider rename", () =>
-            {
-                stage = "rename declarations";
-                foreach (var declaration in declarations)
-                {
-                    declaration.SetName(newName);
-                }
+            var model = new CustomRenameModel();
+            SetRuntimeProperty(model, "HasUI", false);
+            SetRuntimeProperty(model, "QuickRename", false);
+            SetRuntimeProperty(model, "CreateRenameConfirmationPage", false);
+            SetRuntimeProperty(model, "ChangeTextOccurrences", false);
+            SetRuntimeProperty(model, "RenameDerived", true);
+            SetRuntimeProperty(model, "Bulk", false);
+            SetRuntimeProperty(dataProvider, "Model", model);
 
-                stage = "rebind references";
-                foreach (var reference in references)
-                {
-                    reference.BindTo(element);
-                }
-            });
+            var driver = ExecuteRenameWorkflow(element, dataProvider);
+
+            var conflicts = driver.Conflicts.ToList();
+            if (conflicts.Count > 0)
+                return string.Join("; ", conflicts.Select(conflict => conflict.Description).Where(description => !string.IsNullOrWhiteSpace(description)));
 
             return null;
         }
+        catch (TargetInvocationException ex) when (ex.InnerException != null)
+        {
+            var stack = ex.InnerException.StackTrace?.Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+                .Take(6);
+            var stackText = stack == null ? "" : $" Stack: {string.Join(" | ", stack)}";
+            return $"ReSharper driven rename failed: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}{stackText}";
+        }
         catch (Exception ex)
         {
-            return $"Backend PSI rename failed during {stage}: {ex.GetType().Name}: {ex.Message}";
+            var stack = ex.StackTrace?.Split(new[] { Environment.NewLine }, StringSplitOptions.None)
+                .Take(8);
+            var stackText = stack == null ? "" : $" Stack: {string.Join(" | ", stack)}";
+            return $"ReSharper driven rename failed: {ex.GetType().Name}: {ex.Message}{stackText}";
         }
+    }
+
+    private RefactoringDriverWithConflicts ExecuteRenameWorkflow(
+        IDeclaredElement element,
+        RenameDataProvider dataProvider)
+    {
+        using var lifetimeDefinition = Lifetime.Define(_solution.GetSolutionLifetimes().UntilSolutionCloseLifetime);
+        using var compilationContext = CompilationContextCookie.GetExplicitUniversalContextIfNotSet();
+        var dataContext = CreateRenameDataContext(element, dataProvider, lifetimeDefinition);
+        var workflow = new RenameWorkflow(_solution, "Index MCP Rider rename")
+        {
+            EventBus = Shell.Instance.GetComponent<IEventBus>(),
+            WorkflowExecuterLifetime = lifetimeDefinition.Lifetime
+        };
+
+        if (!workflow.Initialize(dataContext))
+            throw new InvalidOperationException("ReSharper rename workflow is not available for the selected symbol.");
+
+        ProcessWorkflowPages(workflow);
+
+        var driver = new RefactoringDriverWithConflicts(new RefactoringDriverStorage());
+        var executer = workflow.CreateRefactoring(driver)
+                       ?? throw new InvalidOperationException("ReSharper rename workflow did not create a refactoring executer.");
+
+        if (!workflow.PreExecute(NoOpProgressIndicator.Instance))
+            throw new InvalidOperationException("ReSharper rename workflow PreExecute returned false.");
+
+        var executed = PsiTransactionCookie.ExecuteConditionally(
+            _solution.GetPsiServices(),
+            () => executer.Execute(NoOpProgressIndicator.Instance),
+            "Index MCP Rider rename");
+        if (!executed)
+            throw new InvalidOperationException("ReSharper rename workflow Execute returned false.");
+
+        if (!workflow.PostExecute(NoOpProgressIndicator.Instance))
+            throw new InvalidOperationException("ReSharper rename workflow PostExecute returned false.");
+
+        workflow.SuccessfulFinish(NoOpProgressIndicator.Instance);
+        return driver;
+    }
+
+    private IDataContext CreateRenameDataContext(
+        IDeclaredElement element,
+        RenameDataProvider dataProvider,
+        LifetimeDefinition lifetimeDefinition)
+    {
+        ICollection<IDeclaredElement> declaredElements = new List<IDeclaredElement> { element };
+        var rules = DataRules.AddRule("IndexMcpRename", PsiDataConstants.DECLARED_ELEMENTS, declaredElements)
+            .AddRule("IndexMcpRename", PsiDataConstants.DECLARED_ELEMENTS_FROM_ALL_CONTEXTS, declaredElements)
+            .AddRule("IndexMcpRename", ProjectModelDataConstants.SOLUTION, _solution)
+            .AddRule("IndexMcpRename", RenameRefactoringService.RenameDataProvider, dataProvider);
+        return _solution.GetComponent<DataContexts>().CreateWithDataRules(lifetimeDefinition.Lifetime, rules);
+    }
+
+    private static void ProcessWorkflowPages(IRefactoringWorkflow workflow)
+    {
+        var page = workflow.FirstPendingRefactoringPage;
+        var guard = 0;
+        while (page != null)
+        {
+            if (++guard > 32)
+                throw new InvalidOperationException("ReSharper rename workflow produced too many non-UI pages.");
+            if (!page.Initialize(NoOpProgressIndicator.Instance))
+                throw new InvalidOperationException($"ReSharper rename page '{page.Title}' failed to initialize.");
+            page = page.Commit(NoOpProgressIndicator.Instance);
+        }
+    }
+
+    private static void SetRuntimeProperty(object target, string propertyName, object value)
+    {
+        var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        if (property == null || !property.CanWrite)
+            throw new MissingMethodException(target.GetType().FullName, $"set_{propertyName}");
+        property.SetValue(target, value);
     }
 
     // ── Type Hierarchy ──────────────────────────────────────────────────────
@@ -813,8 +895,8 @@ public class IndexMcpBackendHost
 
     private static void CollectDeclaredElements(ITreeNode node, List<IDeclaredElement> elements)
     {
-        if (node is IDeclaration declaration && declaration.DeclaredElement != null)
-            elements.Add(declaration.DeclaredElement);
+        if (TryGetDeclaredElement(node, out var declaredElement))
+            elements.Add(declaredElement);
 
         foreach (var child in node.Children())
             CollectDeclaredElements(child, elements);
@@ -1063,8 +1145,9 @@ public class IndexMcpBackendHost
 
             if (requireConsistentLocalDeclaration)
             {
-                var localDeclaration = node.GetContainingNode<IDeclaration>();
-                if (localDeclaration != null && !DeclarationNameMatches(localDeclaration, resolved.ShortName))
+                var localName = GetContainingDeclarationName(node);
+                if (!string.IsNullOrEmpty(localName) &&
+                    !string.Equals(localName, resolved.ShortName, StringComparison.Ordinal))
                 {
                     // The local declaration token at this position uses a different name than the
                     // resolved element. Skip this candidate; another offset (or a higher caller)
@@ -1078,14 +1161,6 @@ public class IndexMcpBackendHost
 
         return null;
     }
-
-    private static bool DeclarationNameMatches(IDeclaration declaration, string expectedName)
-    {
-        var localName = declaration.DeclaredName;
-        return string.IsNullOrEmpty(localName)
-               || string.Equals(localName, expectedName, StringComparison.Ordinal);
-    }
-
 
     private static IEnumerable<int> CandidateOffsets(int offset)
     {
@@ -1111,7 +1186,75 @@ public class IndexMcpBackendHost
             if (resolved != null) return resolved;
         }
 
-        return node.GetContainingNode<IDeclaration>()?.DeclaredElement;
+        var declarationNode = node.GetContainingNode<IDeclaration>() as ITreeNode
+                              ?? node.GetContainingNode<ITypeDeclaration>() as ITreeNode;
+        return declarationNode != null && TryGetDeclaredElement(declarationNode, out var declaredElement)
+            ? declaredElement
+            : null;
+    }
+
+    private static bool TryGetDeclaredElement(ITreeNode node, out IDeclaredElement declaredElement)
+    {
+        if (node is IDeclaration declaration && declaration.DeclaredElement != null)
+        {
+            declaredElement = declaration.DeclaredElement;
+            return true;
+        }
+
+        if (node is ITypeDeclaration typeDeclaration && typeDeclaration.DeclaredElement != null)
+        {
+            declaredElement = typeDeclaration.DeclaredElement;
+            return true;
+        }
+
+        declaredElement = null!;
+        return false;
+    }
+
+    private static string? GetContainingDeclarationName(ITreeNode node)
+    {
+        var declaration = node.GetContainingNode<IDeclaration>();
+        if (declaration != null) return declaration.DeclaredName;
+
+        var typeDeclaration = node.GetContainingNode<ITypeDeclaration>();
+        return typeDeclaration?.DeclaredName;
+    }
+
+    private ITreeNode? ResolveDeclarationNodeAt(RdSourcePosition position)
+    {
+        var psiFile = GetPsiFileForPath(position.FilePath);
+        if (psiFile == null) return null;
+
+        var sourceFile = psiFile.GetSourceFile();
+        var document = sourceFile?.Document;
+        if (document == null) return null;
+
+        var line = Math.Max(0, position.Line - 1);
+        var col = Math.Max(0, position.Column - 1);
+        var offset = document.GetLineStartOffset((Int32<DocLine>)line) + col;
+
+        foreach (var candidateOffset in CandidateOffsets(offset))
+        {
+            var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(candidateOffset), 1));
+            if (node == null) continue;
+
+            var typeDeclaration = node.GetContainingNode<ITypeDeclaration>();
+            if (typeDeclaration != null)
+                return typeDeclaration as ITreeNode;
+
+            var declaration = node.GetContainingNode<IDeclaration>();
+            if (declaration != null)
+                return declaration as ITreeNode;
+        }
+
+        return null;
+    }
+
+    private static string? GetDeclarationNodeName(ITreeNode? node)
+    {
+        if (node is ITypeDeclaration typeDeclaration) return typeDeclaration.DeclaredName;
+        if (node is IDeclaration declaration) return declaration.DeclaredName;
+        return null;
     }
 
     private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferences(IDeclaredElement element)
@@ -1156,6 +1299,13 @@ public class IndexMcpBackendHost
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Cast<string>()
             .ToList();
+    }
+
+    private static void AddAffectedFile(List<string> affectedFiles, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        if (affectedFiles.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
+        affectedFiles.Add(path);
     }
 
     /// <summary>
@@ -1235,58 +1385,6 @@ public class IndexMcpBackendHost
         return new Regex(@"\b" + Regex.Escape(identifier) + @"\b", RegexOptions.Compiled);
     }
 
-    /// <summary>
-    /// Renders a ConflictSearchResult collection (or single instance) into a
-    /// human-readable string. Uses reflection to read the conventional
-    /// `Description`/`Message`/`Conflict` properties so we don't depend on the
-    /// exact ReSharper SDK API surface (which has shifted across versions).
-    /// Falls back to the element's ToString and finally to "(no conflicts)".
-    /// </summary>
-    private static string FormatConflicts(object? conflicts)
-    {
-        if (conflicts == null) return "(no conflict info)";
-        if (conflicts is string s) return s;
-
-        if (conflicts is System.Collections.IEnumerable enumerable && conflicts is not string)
-        {
-            var rendered = new List<string>();
-            foreach (var item in enumerable)
-            {
-                if (item == null) continue;
-                var text = ExtractConflictText(item);
-                if (!string.IsNullOrWhiteSpace(text)) rendered.Add(text);
-            }
-            return rendered.Count == 0
-                ? "(no conflicts)"
-                : string.Join("; ", rendered);
-        }
-
-        return ExtractConflictText(conflicts);
-    }
-
-    private static string ExtractConflictText(object item)
-    {
-        var type = item.GetType();
-        foreach (var prop in new[] { "Description", "Message", "Conflict", "Text" })
-        {
-            try
-            {
-                var value = type.GetProperty(prop)?.GetValue(item);
-                if (value is string str && !string.IsNullOrWhiteSpace(str)) return str;
-                if (value != null && value is not System.Collections.IEnumerable)
-                {
-                    var rendered = value.ToString();
-                    if (!string.IsNullOrWhiteSpace(rendered)) return rendered!;
-                }
-            }
-            catch
-            {
-                // Reflection probe is best-effort; ignore and try the next property.
-            }
-        }
-        return item.ToString() ?? "(unrenderable conflict)";
-    }
-
     private IFile? GetPsiFileForPath(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
@@ -1301,10 +1399,30 @@ public class IndexMcpBackendHost
 
         if (projectFiles.Count == 0) return null;
 
-        var projectFile = projectFiles.First();
-        var sourceFiles = projectFile.ToSourceFiles();
-        var sourceFile = sourceFiles.FirstOrDefault();
-        return sourceFile?.GetPrimaryPsiFile();
+        var psiFiles = new List<IFile>();
+        foreach (var projectFile in projectFiles)
+        {
+            foreach (var sourceFile in projectFile.ToSourceFiles())
+            {
+                var psiFile = sourceFile.GetPrimaryPsiFile();
+                if (psiFile != null && !psiFiles.Contains(psiFile))
+                    psiFiles.Add(psiFile);
+            }
+        }
+
+        return psiFiles.FirstOrDefault(ContainsDeclaredElement) ?? psiFiles.FirstOrDefault();
+    }
+
+    private static bool ContainsDeclaredElement(ITreeNode node)
+    {
+        if (TryGetDeclaredElement(node, out _)) return true;
+
+        foreach (var child in node.Children())
+        {
+            if (ContainsDeclaredElement(child)) return true;
+        }
+
+        return false;
     }
 
     private static RdSymbolInfo ToSymbolInfo(IDeclaredElement element)
@@ -1407,18 +1525,17 @@ public class IndexMcpBackendHost
 
     private void CollectStructureNodes(ITreeNode node, List<RdFlatStructureNode> nodes, int depth)
     {
-        if (node is IDeclaration declaration && declaration.DeclaredElement != null)
+        if (TryGetDeclaredElement(node, out var element))
         {
-            var element = declaration.DeclaredElement;
             var kind = GetElementKind(element);
             if (kind != "UNKNOWN")
             {
-                var sourceFile = declaration.GetSourceFile();
+                var sourceFile = node.GetSourceFile();
                 var document = sourceFile?.Document;
                 var line = 1;
                 if (document != null)
                 {
-                    var offset = declaration.GetNavigationRange().StartOffset.Offset;
+                    var offset = node.GetNavigationRange().StartOffset.Offset;
                     line = (int)document.GetCoordsByOffset(offset).Line + 1;
                 }
 
@@ -1438,7 +1555,7 @@ public class IndexMcpBackendHost
 
         foreach (var child in node.Children())
         {
-            CollectStructureNodes(child, nodes, node is IDeclaration ? depth + 1 : depth);
+            CollectStructureNodes(child, nodes, TryGetDeclaredElement(node, out _) ? depth + 1 : depth);
         }
     }
 }
