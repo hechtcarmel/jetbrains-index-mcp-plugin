@@ -881,10 +881,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val exitCode = if (compiler != null) {
             compiler.run(null, null, null, *args.toTypedArray())
         } else {
-            val javaHome = System.getenv("JAVA_HOME")
-            assertNotNull("Tests require a JDK with javac available", javaHome)
-
-            val javac = Path.of(javaHome!!, "bin", "javac").toString()
+            val javac = resolveJavacCommand()
             val process = ProcessBuilder(listOf(javac) + args)
                 .redirectErrorStream(true)
                 .start()
@@ -897,6 +894,25 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         }
 
         assertEquals("Library sources should compile successfully", 0, exitCode)
+    }
+
+    private fun resolveJavacCommand(): String {
+        val javaHome = System.getenv("JAVA_HOME")
+        val runtimeHome = System.getProperty("java.home")
+
+        val candidates = buildList {
+            if (!javaHome.isNullOrBlank()) add(Path.of(javaHome, "bin", "javac"))
+            if (!runtimeHome.isNullOrBlank()) {
+                val runtimePath = Path.of(runtimeHome)
+                add(runtimePath.resolve("bin").resolve("javac"))
+                runtimePath.parent?.let { add(it.resolve("bin").resolve("javac")) }
+            }
+        }
+
+        return candidates
+            .firstOrNull { Files.isRegularFile(it) }
+            ?.toString()
+            ?: "javac"
     }
 
     private fun findPosition(text: String, needle: String): Pair<Int, Int> {

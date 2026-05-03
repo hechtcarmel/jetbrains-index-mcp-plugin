@@ -71,7 +71,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val cursor = arguments["cursor"]?.jsonPrimitive?.content
+        val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments)
             return buildPaginatedResult<ImplementationLocation, ImplementationResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
@@ -114,7 +114,7 @@ class FindImplementationsTool : AbstractMcpTool() {
 
             val implementations = handler.findImplementations(element, project, scope)
             if (implementations == null) {
-                val isSymbolMode = arguments[ParamNames.LANGUAGE] != null
+                val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
                 return@suspendingReadAction null to createErrorResult(
                     if (isSymbolMode) "No method or class found for the specified symbol"
                     else "No method or class found at position"
@@ -169,19 +169,5 @@ class FindImplementationsTool : AbstractMcpTool() {
         }
     }
 
-    private fun rawScopeValue(scopeElement: JsonElement?): String = when (scopeElement) {
-        null -> ""
-        is JsonPrimitive -> scopeElement.content
-        else -> scopeElement.toString()
-    }
 
-    private fun createInvalidScopeError(provided: String): ToolCallResult =
-        createStructuredErrorResult(buildJsonObject {
-            put("error", JsonPrimitive("invalid_scope"))
-            put("parameter", JsonPrimitive(ParamNames.SCOPE))
-            put("provided", JsonPrimitive(provided))
-            put("supportedValues", buildJsonArray {
-                BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
-            })
-        })
 }

@@ -48,6 +48,7 @@ object ParamNames {
     const val LIMIT = "limit"
     const val CONTEXT = "context"
     const val CASE_SENSITIVE = "caseSensitive"
+    const val CURSOR = "cursor"
 
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"

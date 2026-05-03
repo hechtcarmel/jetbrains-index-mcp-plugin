@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
@@ -42,10 +43,16 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * Abstract base class for MCP tools providing common functionality.
@@ -434,6 +441,77 @@ abstract class AbstractMcpTool : McpTool {
         return psiFile.findElementAt(offset)
     }
 
+    protected enum class LookupModeState {
+        MISSING,
+        POSITION,
+        SYMBOL,
+        CONFLICT
+    }
+
+    /**
+     * Returns a normalized optional string argument.
+     * Missing/null/blank/whitespace-only values are treated as absent (null).
+     */
+    protected fun optionalStringArg(arguments: JsonObject, name: String): String? {
+        val raw = arguments[name] ?: return null
+        if (raw == JsonNull) return null
+        return raw.jsonPrimitive.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Returns a required non-blank string argument.
+     * Missing/null/blank values fail with a missing-required-parameter error.
+     */
+    @JvmName("requiredStringArg")
+    protected fun requiredStringArg(arguments: JsonObject, name: String): Result<String> {
+        val value = optionalStringArg(arguments, name)
+            ?: return ErrorMessages.missingRequiredParam(name).toArgumentFailure()
+        return Result.success(value)
+    }
+
+    /**
+     * Resolves whether arguments represent position lookup, symbol lookup, conflict, or missing mode.
+     * Blank string fields do not count as present.
+     */
+    protected fun resolveLookupMode(arguments: JsonObject): LookupModeState {
+        val hasSymbol = optionalStringArg(arguments, ParamNames.LANGUAGE) != null ||
+            optionalStringArg(arguments, ParamNames.SYMBOL) != null
+        val hasPosition = optionalStringArg(arguments, ParamNames.FILE) != null ||
+            arguments[ParamNames.LINE]?.jsonPrimitive?.int != null ||
+            arguments[ParamNames.COLUMN]?.jsonPrimitive?.int != null
+
+        return when {
+            hasSymbol && hasPosition -> LookupModeState.CONFLICT
+            hasSymbol -> LookupModeState.SYMBOL
+            hasPosition -> LookupModeState.POSITION
+            else -> LookupModeState.MISSING
+        }
+    }
+
+    /**
+     * Extracts the raw scope value from arguments for error reporting.
+     * Returns empty string if scope is missing/null, the string content if primitive, or toString() for complex types.
+     */
+    protected fun rawScopeValue(scopeElement: JsonElement?): String = when (scopeElement) {
+        null -> ""
+        is JsonPrimitive -> scopeElement.content
+        else -> scopeElement.toString()
+    }
+
+    /**
+     * Creates a structured invalid-scope error response.
+     * Includes the provided value and list of supported scope values.
+     */
+    protected fun createInvalidScopeError(provided: String): ToolCallResult =
+        createStructuredErrorResult(buildJsonObject {
+            put("error", JsonPrimitive("invalid_scope"))
+            put("parameter", JsonPrimitive(ParamNames.SCOPE))
+            put("provided", JsonPrimitive(provided))
+            put("supportedValues", buildJsonArray {
+                BuiltInSearchScope.supportedWireValues().forEach { add(JsonPrimitive(it)) }
+            })
+        })
+
     /**
      * Resolves a PSI element from arguments using either `language`+`symbol` or `file`+`line`+`column`.
      *
@@ -452,47 +530,44 @@ abstract class AbstractMcpTool : McpTool {
         arguments: JsonObject,
         allowLibraryFilesForPosition: Boolean = false
     ): Result<PsiElement> {
-        val language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
-        val symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content
-        val file = arguments[ParamNames.FILE]?.jsonPrimitive?.content
+        val language = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val symbol = optionalStringArg(arguments, ParamNames.SYMBOL)
+        val file = optionalStringArg(arguments, ParamNames.FILE)
         val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
         val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
 
-        val hasSymbol = language != null || symbol != null
-        val hasPosition = file != null || line != null || column != null
+        return when (resolveLookupMode(arguments)) {
+            LookupModeState.CONFLICT -> ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE.toArgumentFailure()
 
-        if (hasSymbol && hasPosition) {
-            return ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE.toArgumentFailure()
-        }
+            LookupModeState.SYMBOL -> {
+                if (language == null) return ErrorMessages.missingParamForSymbol(ParamNames.LANGUAGE).toArgumentFailure()
+                if (symbol == null) return ErrorMessages.missingParamForSymbol(ParamNames.SYMBOL).toArgumentFailure()
 
-        if (hasSymbol) {
-            if (language == null) return ErrorMessages.missingParamForSymbol(ParamNames.LANGUAGE).toArgumentFailure()
-            if (symbol == null) return ErrorMessages.missingParamForSymbol(ParamNames.SYMBOL).toArgumentFailure()
+                val handler = LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName(language)
+                    ?: return ErrorMessages.noSymbolReferenceHandler(
+                        language, LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference()
+                    ).toArgumentFailure()
 
-            val handler = LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName(language)
-                ?: return ErrorMessages.noSymbolReferenceHandler(
-                    language, LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference()
-                ).toArgumentFailure()
-
-            return handler.resolveSymbol(project, symbol)
-        }
-
-        if (hasPosition) {
-            if (file == null) return ErrorMessages.missingParamForPosition(ParamNames.FILE, "line or column").toArgumentFailure()
-            if (line == null) return ErrorMessages.missingParamForPosition(ParamNames.LINE, "file or column").toArgumentFailure()
-            if (column == null) return ErrorMessages.missingParamForPosition(ParamNames.COLUMN, "file or line").toArgumentFailure()
-
-            val element = if (allowLibraryFilesForPosition) {
-                findNavigablePsiElement(project, file, line, column)
-            } else {
-                findPsiElement(project, file, line, column)
+                handler.resolveSymbol(project, symbol)
             }
-                ?: return ErrorMessages.noElementAtPosition(file, line, column).toArgumentFailure()
 
-            return Result.success(element)
+            LookupModeState.POSITION -> {
+                if (file == null) return ErrorMessages.missingParamForPosition(ParamNames.FILE, "line or column").toArgumentFailure()
+                if (line == null) return ErrorMessages.missingParamForPosition(ParamNames.LINE, "file or column").toArgumentFailure()
+                if (column == null) return ErrorMessages.missingParamForPosition(ParamNames.COLUMN, "file or line").toArgumentFailure()
+
+                val element = if (allowLibraryFilesForPosition) {
+                    findNavigablePsiElement(project, file, line, column)
+                } else {
+                    findPsiElement(project, file, line, column)
+                }
+                    ?: return ErrorMessages.noElementAtPosition(file, line, column).toArgumentFailure()
+
+                Result.success(element)
+            }
+
+            LookupModeState.MISSING -> ErrorMessages.SYMBOL_OR_POSITION_REQUIRED.toArgumentFailure()
         }
-
-        return ErrorMessages.SYMBOL_OR_POSITION_REQUIRED.toArgumentFailure()
     }
 
     /**
