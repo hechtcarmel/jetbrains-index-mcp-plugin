@@ -431,6 +431,108 @@ public class IndexedSymbolResolutionTests
         Assert.That(effectiveLimit, Is.EqualTo(Math.Min(requestedLimit <= 0 ? 200 : requestedLimit, 200)));
     }
 
+    [Test]
+    public void BuildFindTypesSearchPlan_FSharpProjectFiles_UsesOnlyFSharpFilesAndSkipsExpensiveFallback()
+    {
+        var plan = InvokePrivateStatic("BuildFindTypesSearchPlan", "F#", "project_files", "exact", "FSharpPlus.Lens.Lens");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectDeclaredTypeScan"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "UseExactQualifiedProjectLookup"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "UseIndexedTypeFallback"), Is.False);
+            Assert.That(GetProperty<IReadOnlyList<string>>(plan!, "AllowedProjectFileExtensions"),
+                Is.EqualTo(new[] { ".fs", ".fsi", ".fsx" }));
+        });
+    }
+
+    [Test]
+    public void BuildFindTypesSearchPlan_CSharpProjectFiles_UsesOnlyCsFilesAndSkipsExpensiveFallback()
+    {
+        var plan = InvokePrivateStatic("BuildFindTypesSearchPlan", "C#", "project_files", "exact", "Demo.Service");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectDeclaredTypeScan"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "UseExactQualifiedProjectLookup"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "UseIndexedTypeFallback"), Is.False);
+            Assert.That(GetProperty<IReadOnlyList<string>>(plan!, "AllowedProjectFileExtensions"),
+                Is.EqualTo(new[] { ".cs" }));
+        });
+    }
+
+    [Test]
+    public void BuildFindTypesSearchPlan_ProjectFilesWithoutLanguage_PreservesLegacyEnumeration()
+    {
+        var plan = InvokePrivateStatic("BuildFindTypesSearchPlan", null, "project_files", "exact", "Demo.Service");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectDeclaredTypeScan"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "UseExactQualifiedProjectLookup"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "UseIndexedTypeFallback"), Is.False);
+            Assert.That(GetProperty<IReadOnlyList<string>?>(plan!, "AllowedProjectFileExtensions"), Is.Null);
+        });
+    }
+
+    [Test]
+    public void BuildFindTypesSearchPlan_FSharpProjectAndLibraries_KeepsLibraryFallback()
+    {
+        var plan = InvokePrivateStatic("BuildFindTypesSearchPlan", "F#", "project_and_libraries", "exact", "FSharpPlus.Lens.Lens");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectDeclaredTypeScan"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "UseExactQualifiedProjectLookup"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "UseIndexedTypeFallback"), Is.True);
+            Assert.That(GetProperty<IReadOnlyList<string>?>(plan!, "AllowedProjectFileExtensions"), Is.Null);
+        });
+    }
+
+    [Test]
+    public void EnumerateQualifiedNameCandidates_FSharpTypeName_IncludesClrNestedVariant()
+    {
+        var candidates = ((IEnumerable)InvokePrivateStatic("EnumerateQualifiedNameCandidates", "FSharpPlus.Lens.Lens")!)
+            .Cast<string>()
+            .ToList();
+
+        Assert.That(candidates, Is.EqualTo(new[]
+        {
+            "FSharpPlus.Lens.Lens",
+            "FSharpPlus.Lens+Lens"
+        }));
+    }
+
+    [Test]
+    public void EnumerateQualifiedTypeCandidates_UsesAllQualifiedNameVariantsAndDeduplicates()
+    {
+        var clrNestedType = CreateTypeElementCandidate("Lens");
+        var sourceNamedType = CreateTypeElementCandidate("Lens");
+        var resolved = ((IEnumerable)InvokePrivateStatic(
+                "EnumerateQualifiedTypeCandidates",
+                "FSharpPlus.Lens.Lens",
+                (Func<string, IEnumerable<ITypeElement>>)(candidate => candidate switch
+                {
+                    "FSharpPlus.Lens.Lens" => new[] { sourceNamedType, clrNestedType },
+                    "FSharpPlus.Lens+Lens" => new[] { clrNestedType },
+                    _ => Array.Empty<ITypeElement>()
+                }))!)
+            .Cast<ITypeElement>()
+            .ToList();
+
+        Assert.That(resolved, Is.EqualTo(new[] { sourceNamedType, clrNestedType }));
+    }
+
+    [TestCase("FSharpPlus.Lens+Lens", "FSharpPlus.Lens.Lens", true)]
+    [TestCase("FSharpPlus.Lens.Lens", "FSharpPlus.Lens.Lens", true)]
+    [TestCase("FSharpPlus.Lens.Other", "FSharpPlus.Lens.Lens", false)]
+    public void MatchesQualifiedName_NormalizesSafeFSharpClrVariants(string declaredName, string query, bool expected)
+    {
+        var matches = (bool)InvokePrivateStatic("MatchesQualifiedName", declaredName, query, "exact")!;
+
+        Assert.That(matches, Is.EqualTo(expected));
+    }
+
     private static string GetResolutionStatus(object? resolution)
     {
         Assert.That(resolution, Is.Not.Null);

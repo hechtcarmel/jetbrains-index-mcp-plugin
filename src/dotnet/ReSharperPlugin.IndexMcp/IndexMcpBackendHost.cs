@@ -97,17 +97,25 @@ public class IndexMcpBackendHost
     {
         return Task.Run(() =>
         {
-            var declaredTypes = EnumerateDeclaredElements()
-                .OfType<ITypeElement>();
+            var plan = BuildFindTypesSearchPlan(request.Language, request.Scope, request.MatchMode, request.Query);
 
-            var indexedTypes = request.Scope == "project_and_libraries"
-                ? EnumerateIndexedTypeElements(request.Query, request.MatchMode)
+            var declaredTypes = plan.UseProjectDeclaredTypeScan
+                ? EnumerateDeclaredTypeElements(lt, plan.AllowedProjectFileExtensions)
                 : Enumerable.Empty<ITypeElement>();
 
-            var results = declaredTypes
+            var exactQualifiedProjectTypes = plan.UseExactQualifiedProjectLookup
+                ? EnumerateProjectQualifiedTypeElements(lt, request.Query, plan.AllowedProjectFileExtensions)
+                : Enumerable.Empty<ITypeElement>();
+
+            var indexedTypes = plan.UseIndexedTypeFallback
+                ? EnumerateIndexedTypeElements(lt, request.Query, request.MatchMode)
+                : Enumerable.Empty<ITypeElement>();
+
+            var results = exactQualifiedProjectTypes
+                .Concat(declaredTypes)
                 .Concat(indexedTypes)
                 .Where(type => MatchesName(type.ShortName, request.Query, request.MatchMode) ||
-                               MatchesName(type.GetClrName().FullName, request.Query, request.MatchMode))
+                               MatchesQualifiedName(GetQualifiedName(type), request.Query, request.MatchMode))
                 .Where(type => MatchesLanguage(type, request.Language))
                 .Where(type => MatchesScope(type, request.Scope))
                 .OrderBy(type => MatchRank(type.ShortName, request.Query, request.MatchMode))
@@ -122,6 +130,26 @@ public class IndexMcpBackendHost
 
             return new RdFindTypesResult(results.Take(Math.Min(request.Limit, MaxResults)).ToList(), results.Count);
         });
+    }
+
+    private static FindTypesSearchPlan BuildFindTypesSearchPlan(
+        string? language,
+        string scope,
+        string matchMode,
+        string query)
+    {
+        var normalizedLanguage = NormalizeLanguage(language);
+        var isProjectFilesScope = scope.Equals("project_files", StringComparison.OrdinalIgnoreCase);
+        var isExactQualifiedLookup = matchMode.Equals("exact", StringComparison.OrdinalIgnoreCase) &&
+                                     query.Contains('.', StringComparison.Ordinal) &&
+                                     normalizedLanguage != null &&
+                                     isProjectFilesScope;
+
+        return new FindTypesSearchPlan(
+            allowedProjectFileExtensions: isProjectFilesScope ? GetProjectFileExtensions(normalizedLanguage) : null,
+            useProjectDeclaredTypeScan: !isExactQualifiedLookup,
+            useExactQualifiedProjectLookup: isExactQualifiedLookup,
+            useIndexedTypeFallback: scope == "project_and_libraries");
     }
 
     private static IEnumerable<RdSymbolInfo> EnumerateStandardDotNetTypeSymbols(
@@ -189,13 +217,14 @@ public class IndexMcpBackendHost
             ("IReadOnlyDictionary", "System.Collections.Generic.IReadOnlyDictionary", "INTERFACE")
         };
 
-    private IEnumerable<ITypeElement> EnumerateIndexedTypeElements(string query, string matchMode)
+    private IEnumerable<ITypeElement> EnumerateIndexedTypeElements(Lifetime lt, string query, string matchMode)
     {
         foreach (var libraryScope in new[] { LibrarySymbolScope.REFERENCED, LibrarySymbolScope.TRANSITIVE, LibrarySymbolScope.FULL })
         {
+            EnsureLifetimeAlive(lt);
             foreach (var element in EnumerateSymbolScopeTypes(
-                         _solution.GetPsiServices().Symbols.GetSymbolScope(libraryScope, false),
-                         query,
+                          _solution.GetPsiServices().Symbols.GetSymbolScope(libraryScope, false),
+                          query,
                          matchMode))
             {
                 yield return element;
@@ -203,8 +232,9 @@ public class IndexMcpBackendHost
         }
 
         var seenModules = new HashSet<IPsiModule>();
-        foreach (var module in EnumerateProjectPsiModules().Where(module => seenModules.Add(module)))
+        foreach (var module in EnumerateProjectPsiModules(lt, null).Where(module => seenModules.Add(module)))
         {
+            EnsureLifetimeAlive(lt);
             foreach (var element in EnumeratePredefinedTypeElements(module))
                 yield return element;
 
@@ -994,7 +1024,7 @@ public class IndexMcpBackendHost
     private List<IDeclaredElement> ResolveContainerCandidates(string language, string containerQualifiedName)
     {
         var normalizedContainer = NormalizeQualifiedName(containerQualifiedName);
-        var projectMatches = EnumerateProjectPsiModules()
+        var projectMatches = EnumerateProjectPsiModules(Lifetime.Eternal, null)
             .Distinct()
             .SelectMany(module => ResolveContainerCandidatesFromScope(
                 _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false),
@@ -1421,7 +1451,7 @@ public class IndexMcpBackendHost
 
     private IEnumerable<IDeclaredElement> EnumerateDeclaredElements()
     {
-        foreach (var psiFile in EnumerateProjectPsiFiles())
+        foreach (var psiFile in EnumerateProjectPsiFiles(Lifetime.Eternal, null))
         {
             var elements = new List<IDeclaredElement>();
             CollectDeclaredElements(psiFile, elements);
@@ -1429,14 +1459,64 @@ public class IndexMcpBackendHost
         }
     }
 
-    private IEnumerable<IFile> EnumerateProjectPsiFiles()
+    private IEnumerable<ITypeElement> EnumerateDeclaredTypeElements(Lifetime lt, IReadOnlyList<string>? allowedProjectFileExtensions)
+    {
+        foreach (var psiFile in EnumerateProjectPsiFiles(lt, allowedProjectFileExtensions))
+        {
+            EnsureLifetimeAlive(lt);
+            var elements = new List<IDeclaredElement>();
+            CollectDeclaredElements(psiFile, elements);
+            foreach (var element in elements.OfType<ITypeElement>())
+                yield return element;
+        }
+    }
+
+    private IEnumerable<ITypeElement> EnumerateProjectQualifiedTypeElements(
+        Lifetime lt,
+        string qualifiedName,
+        IReadOnlyList<string>? allowedProjectFileExtensions)
+    {
+        var seenModules = new HashSet<IPsiModule>();
+        foreach (var module in EnumerateProjectPsiModules(lt, allowedProjectFileExtensions).Where(module => seenModules.Add(module)))
+        {
+            EnsureLifetimeAlive(lt);
+            var symbolScope = _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false);
+            foreach (var element in EnumerateQualifiedTypeCandidates(
+                         qualifiedName,
+                         candidate => symbolScope.GetElementsByQualifiedName(candidate).OfType<ITypeElement>()))
+                yield return element;
+        }
+    }
+
+    private static IEnumerable<ITypeElement> EnumerateQualifiedTypeCandidates(
+        string qualifiedName,
+        Func<string, IEnumerable<ITypeElement>> lookup)
+    {
+        var seen = new HashSet<ITypeElement>();
+        foreach (var candidate in EnumerateQualifiedNameCandidates(qualifiedName))
+        {
+            foreach (var element in lookup(candidate))
+            {
+                if (seen.Add(element))
+                    yield return element;
+            }
+        }
+    }
+
+    private IEnumerable<IFile> EnumerateProjectPsiFiles(Lifetime lt, IReadOnlyList<string>? allowedProjectFileExtensions)
     {
         foreach (var project in _solution.GetAllProjects())
         {
+            EnsureLifetimeAlive(lt);
             foreach (var projectFile in project.GetAllProjectFiles())
             {
+                EnsureLifetimeAlive(lt);
                 foreach (var sourceFile in projectFile.ToSourceFiles())
                 {
+                    EnsureLifetimeAlive(lt);
+                    if (!MatchesProjectFileExtension(sourceFile.GetLocation().FullPath, allowedProjectFileExtensions))
+                        continue;
+
                     var psiFile = sourceFile.GetPrimaryPsiFile();
                     if (psiFile != null) yield return psiFile;
                 }
@@ -1444,14 +1524,20 @@ public class IndexMcpBackendHost
         }
     }
 
-    private IEnumerable<IPsiModule> EnumerateProjectPsiModules()
+    private IEnumerable<IPsiModule> EnumerateProjectPsiModules(Lifetime lt, IReadOnlyList<string>? allowedProjectFileExtensions)
     {
         foreach (var project in _solution.GetAllProjects())
         {
+            EnsureLifetimeAlive(lt);
             foreach (var projectFile in project.GetAllProjectFiles())
             {
+                EnsureLifetimeAlive(lt);
                 foreach (var sourceFile in projectFile.ToSourceFiles())
                 {
+                    EnsureLifetimeAlive(lt);
+                    if (!MatchesProjectFileExtension(sourceFile.GetLocation().FullPath, allowedProjectFileExtensions))
+                        continue;
+
                     yield return sourceFile.PsiModule;
                 }
             }
@@ -1469,20 +1555,61 @@ public class IndexMcpBackendHost
 
     private static bool MatchesLanguage(IDeclaredElement element, string? language)
     {
-        if (string.IsNullOrWhiteSpace(language)) return true;
+        var normalizedLanguage = NormalizeLanguage(language);
+        if (normalizedLanguage == null) return true;
         var presentationLanguage = element.PresentationLanguage?.Name;
-        if (presentationLanguage != null && presentationLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
+        if (presentationLanguage != null && presentationLanguage.Equals(normalizedLanguage, StringComparison.OrdinalIgnoreCase))
             return true;
 
         var filePath = PickPreferredDeclaration(element)?.GetSourceFile()?.GetLocation().FullPath ?? "";
         if (string.IsNullOrWhiteSpace(filePath))
-            return language.Equals("C#", StringComparison.OrdinalIgnoreCase);
+            return normalizedLanguage.Equals("C#", StringComparison.OrdinalIgnoreCase);
 
-        return language.Equals("C#", StringComparison.OrdinalIgnoreCase) && filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
-               language.Equals("F#", StringComparison.OrdinalIgnoreCase) && (
+        return normalizedLanguage.Equals("C#", StringComparison.OrdinalIgnoreCase) && filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+               normalizedLanguage.Equals("F#", StringComparison.OrdinalIgnoreCase) && (
                    filePath.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
                    filePath.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase) ||
                    filePath.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? NormalizeLanguage(string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language))
+            return null;
+
+        if (language.Equals("C#", StringComparison.OrdinalIgnoreCase) ||
+            language.Equals("CSharp", StringComparison.OrdinalIgnoreCase))
+            return "C#";
+
+        if (language.Equals("F#", StringComparison.OrdinalIgnoreCase) ||
+            language.Equals("FSharp", StringComparison.OrdinalIgnoreCase))
+            return "F#";
+
+        return language;
+    }
+
+    private static IReadOnlyList<string>? GetProjectFileExtensions(string? normalizedLanguage)
+    {
+        return normalizedLanguage switch
+        {
+            "C#" => new[] { ".cs" },
+            "F#" => new[] { ".fs", ".fsi", ".fsx" },
+            _ => null
+        };
+    }
+
+    private static bool MatchesProjectFileExtension(string path, IReadOnlyList<string>? allowedProjectFileExtensions)
+    {
+        if (allowedProjectFileExtensions == null || allowedProjectFileExtensions.Count == 0)
+            return true;
+
+        return allowedProjectFileExtensions.Any(extension => path.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void EnsureLifetimeAlive(Lifetime lt)
+    {
+        if (!lt.IsAlive)
+            throw new OperationCanceledException("Index MCP Rider backend request was cancelled.");
     }
 
     private static bool MatchesName(string name, string query, string matchMode)
@@ -1501,6 +1628,14 @@ public class IndexMcpBackendHost
             _ => name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                  GetCamelCase(name).Contains(query, StringComparison.OrdinalIgnoreCase)
         };
+    }
+
+    private static bool MatchesQualifiedName(string declaredName, string query, string matchMode)
+    {
+        if (MatchesName(declaredName, query, matchMode))
+            return true;
+
+        return MatchesName(NormalizeQualifiedName(declaredName), NormalizeQualifiedName(query), matchMode);
     }
 
     private static int MatchRank(string name, string query, string matchMode)
@@ -2124,6 +2259,26 @@ public class IndexMcpBackendHost
             CollectStructureNodes(child, nodes, TryGetDeclaredElement(node, out _) ? depth + 1 : depth);
         }
     }
+}
+
+internal sealed class FindTypesSearchPlan
+{
+    public FindTypesSearchPlan(
+        IReadOnlyList<string>? allowedProjectFileExtensions,
+        bool useProjectDeclaredTypeScan,
+        bool useExactQualifiedProjectLookup,
+        bool useIndexedTypeFallback)
+    {
+        AllowedProjectFileExtensions = allowedProjectFileExtensions;
+        UseProjectDeclaredTypeScan = useProjectDeclaredTypeScan;
+        UseExactQualifiedProjectLookup = useExactQualifiedProjectLookup;
+        UseIndexedTypeFallback = useIndexedTypeFallback;
+    }
+
+    public IReadOnlyList<string>? AllowedProjectFileExtensions { get; }
+    public bool UseProjectDeclaredTypeScan { get; }
+    public bool UseExactQualifiedProjectLookup { get; }
+    public bool UseIndexedTypeFallback { get; }
 }
 
 internal sealed class CallableTarget

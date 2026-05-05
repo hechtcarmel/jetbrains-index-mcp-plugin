@@ -11,17 +11,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /**
  * Tool for retrieving type hierarchies across multiple languages.
@@ -31,6 +27,29 @@ import kotlinx.serialization.json.put
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
 class TypeHierarchyTool : AbstractMcpTool() {
+
+    companion object {
+        private val LOG = logger<TypeHierarchyTool>()
+        private val DEFAULT_RIDER_CLASSNAME_LANGUAGES = listOf("C#", "F#")
+
+        /**
+         * Keep the default C# -> F# fallback for backward compatibility.
+         * We intentionally do NOT infer F# from naming heuristics here: F# type names can look identical
+         * to C#/.NET qualified names, so guessing would risk skipping valid C# lookups.
+         */
+        internal fun riderClassNameCandidateLanguages(requestedLanguage: String?): List<String> = when {
+            requestedLanguage.equals("C#", ignoreCase = true) -> listOf("C#")
+            requestedLanguage.equals("F#", ignoreCase = true) -> listOf("F#")
+            requestedLanguage == null -> DEFAULT_RIDER_CLASSNAME_LANGUAGES
+            else -> emptyList()
+        }
+
+        internal fun riderQualifiedNameMatchesClassName(qualifiedName: String?, className: String): Boolean {
+            if (qualifiedName == null) return false
+            return qualifiedName.equals(className, ignoreCase = true) ||
+                qualifiedName.replace('+', '.').equals(className, ignoreCase = true)
+        }
+    }
 
     override val name = "ide_type_hierarchy"
 
@@ -55,6 +74,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
+        .stringProperty(ParamNames.LANGUAGE, "Optional Rider className hint. Use 'C#' or 'F#' to force a single Rider lookup; when omitted, Rider className lookup preserves the legacy C# then F# fallback order.")
         .scopeProperty("Search scope. Default: project_files.")
         .build()
 
@@ -63,6 +83,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
         val className = arguments["className"]?.jsonPrimitive?.content
         val file = arguments["file"]?.jsonPrimitive?.content
+        val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
         val rawScope = rawScopeValue(arguments[ParamNames.SCOPE])
         val scope = try {
             BuiltInSearchScopeResolver.parse(arguments, BuiltInSearchScope.PROJECT_FILES)
@@ -71,7 +92,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
-        val riderClassNameHierarchy = className?.let { tryResolveRiderClassNameHierarchy(project, it, scope) }
+        val riderClassNameHierarchy = className?.let { tryResolveRiderClassNameHierarchy(project, it, scope, requestedLanguage) }
         if (riderClassNameHierarchy != null) return createJsonResult(riderClassNameHierarchy)
 
         return suspendingReadAction {
@@ -117,9 +138,14 @@ class TypeHierarchyTool : AbstractMcpTool() {
     private fun tryResolveRiderClassNameHierarchy(
         project: Project,
         className: String,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        requestedLanguage: String?
     ): TypeHierarchyResult? {
-        for (language in listOf("C#", "F#")) {
+        val candidateLanguages = riderClassNameCandidateLanguages(requestedLanguage)
+        LOG.debug("tool=ide_type_hierarchy className=$className requestedLanguage=${requestedLanguage ?: "<none>"} riderCandidates=${candidateLanguages.joinToString(",", prefix = "[", postfix = "]")}")
+
+        for (language in candidateLanguages) {
+            val findTypesStartedAt = System.nanoTime()
             val typeMatches = RiderBackendSemanticService.findTypes(
                 project = project,
                 query = className,
@@ -128,9 +154,17 @@ class TypeHierarchyTool : AbstractMcpTool() {
                 language = language,
                 limit = 5
             )
+            val findTypesDurationMs = (System.nanoTime() - findTypesStartedAt) / 1_000_000
+            LOG.debug("tool=ide_type_hierarchy className=$className stage=findTypes language=$language durationMs=$findTypesDurationMs handled=${typeMatches.handled} matchCount=${typeMatches.value?.size ?: 0}")
+
             val match = typeMatches.value
-                ?.firstOrNull { it.qualifiedName.equals(className, ignoreCase = true) || it.name.equals(className, ignoreCase = true) }
-                ?: continue
+                ?.firstOrNull { riderQualifiedNameMatchesClassName(it.qualifiedName, className) || it.name.equals(className, ignoreCase = true) }
+            if (match == null) {
+                LOG.debug("tool=ide_type_hierarchy className=$className stage=match language=$language durationMs=0 found=false")
+                continue
+            }
+
+            val getHierarchyStartedAt = System.nanoTime()
             val hierarchy = RiderBackendSemanticService.getTypeHierarchy(
                 project = project,
                 file = match.file,
@@ -138,13 +172,19 @@ class TypeHierarchyTool : AbstractMcpTool() {
                 column = match.column,
                 scope = scope,
                 language = language
-            ).value ?: continue
+            )
+            val getHierarchyDurationMs = (System.nanoTime() - getHierarchyStartedAt) / 1_000_000
+            LOG.debug("tool=ide_type_hierarchy className=$className stage=getTypeHierarchy language=$language durationMs=$getHierarchyDurationMs handled=${hierarchy.handled} found=${hierarchy.value != null}")
+
+            val hierarchyValue = hierarchy.value ?: continue
             return TypeHierarchyResult(
-                element = convertToTypeElement(hierarchy.element),
-                supertypes = hierarchy.supertypes.map { convertToTypeElement(it) },
-                subtypes = hierarchy.subtypes.map { convertToTypeElement(it) }
+                element = convertToTypeElement(hierarchyValue.element),
+                supertypes = hierarchyValue.supertypes.map { convertToTypeElement(it) },
+                subtypes = hierarchyValue.subtypes.map { convertToTypeElement(it) }
             )
         }
+
+        LOG.debug("tool=ide_type_hierarchy className=$className stage=complete requestedLanguage=${requestedLanguage ?: "<none>"} result=not_found")
         return null
     }
 
