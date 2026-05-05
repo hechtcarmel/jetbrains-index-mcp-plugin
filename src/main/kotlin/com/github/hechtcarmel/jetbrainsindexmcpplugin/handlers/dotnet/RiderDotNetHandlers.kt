@@ -124,7 +124,7 @@ object RdProtocolBridge {
     // Reflection caches. Keys are class-name + member signature; values are immutable per JVM lifetime.
     // ConcurrentHashMap.computeIfAbsent is safe — Method/Constructor lookups are pure functions.
     private val methodCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Method>()
-    private val constructorCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Constructor<*>?>()
+    private val constructorCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Constructor<*>>()
 
     private fun cachedMethod(clazz: Class<*>, name: String, vararg paramTypes: Class<*>): java.lang.reflect.Method {
         val key = "${clazz.name}#$name(${paramTypes.joinToString(",") { it.name }})"
@@ -133,9 +133,8 @@ object RdProtocolBridge {
 
     private fun cachedConstructor(clazz: Class<*>, arity: Int): java.lang.reflect.Constructor<*>? {
         val key = "${clazz.name}#<init>($arity)"
-        return constructorCache.computeIfAbsent(key) {
-            clazz.constructors.firstOrNull { it.parameterCount == arity }
-        }
+        return constructorCache[key] ?: clazz.constructors.firstOrNull { it.parameterCount == arity }
+            ?.also { constructorCache[key] = it }
     }
 
     /**
@@ -201,6 +200,22 @@ object RdProtocolBridge {
      * @return The response object, or null
      */
     fun invokeCall(model: Any, callName: String, request: Any): Any? {
+        return when (val outcome = invokeCallResult(model, callName, request)) {
+            is RdCallOutcome.Success -> outcome.value
+            is RdCallOutcome.Timeout -> {
+                LOG.warn("Timed out waiting for Rider backend rd call '${outcome.callName}' after ${outcome.timeoutSeconds}s")
+                null
+            }
+            is RdCallOutcome.Failure -> {
+                LOG.warn(
+                    "Failed to invoke rd call '$callName': ${outcome.cause::class.java.simpleName}: ${outcome.cause.message}"
+                )
+                null
+            }
+        }
+    }
+
+    fun invokeCallResult(model: Any, callName: String, request: Any): RdCallOutcome<Any?> {
         return try {
             val callField = cachedMethod(model.javaClass, "get${callName.replaceFirstChar { it.uppercaseChar() }}")
             val rdCall = callField.invoke(model)
@@ -242,21 +257,21 @@ object RdProtocolBridge {
                 cachedMethod(scheduler.javaClass, "queue", kotlin.jvm.functions.Function0::class.java)
                     .invoke(scheduler, startRequest)
             }
-            val timeoutSeconds = rdCallTimeoutSeconds(callName)
+            val timeoutSeconds = timeoutSecondsForCall(callName)
             if (!resultLatch.await(timeoutSeconds, TimeUnit.SECONDS)) {
-                throw IllegalStateException("Timed out waiting for Rider backend rd call '$callName'")
+                return RdCallOutcome.Timeout(callName = callName, timeoutSeconds = timeoutSeconds)
             }
-            failure?.let { throw it }
-            unwrapRdTaskResult(taskResult)
+            failure?.let { return RdCallOutcome.Failure(callName = callName, cause = it) }
+            RdCallOutcome.Success(unwrapRdTaskResult(taskResult))
         } catch (e: Exception) {
             val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e.cause ?: e
-            LOG.warn("Failed to invoke rd call '$callName': ${cause::class.java.simpleName}: ${cause.message}")
-            null
+            RdCallOutcome.Failure(callName = callName, cause = cause)
         }
     }
 
-    private fun rdCallTimeoutSeconds(callName: String): Long = when (callName) {
-        "renameSymbol", "getCallHierarchy" -> 300L
+    internal fun timeoutSecondsForCall(callName: String): Long = when (callName) {
+        "renameSymbol" -> 300L
+        "getCallHierarchy" -> 30L
         else -> 60L
     }
 
@@ -314,8 +329,29 @@ const val MODEL_PKG = "com.jetbrains.rd.ide.model"
 
 data class RiderBackendResponse<T>(
     val handled: Boolean,
-    val value: T? = null
+    val value: T? = null,
+    val errorMessage: String? = null
 )
+
+sealed interface RdCallOutcome<out T> {
+    data class Success<T>(val value: T) : RdCallOutcome<T>
+    data class Timeout(val callName: String, val timeoutSeconds: Long) : RdCallOutcome<Nothing>
+    data class Failure(val callName: String, val cause: Throwable) : RdCallOutcome<Nothing>
+}
+
+internal fun RdCallOutcome.Timeout.toUserMessage(operation: String): String =
+    "Rider backend timed out while $operation after ${timeoutSeconds}s (rd call '$callName')."
+
+internal fun RdCallOutcome.Failure.toUserMessage(operation: String): String {
+    val detail = cause.message?.takeIf { it.isNotBlank() } ?: cause.toString()
+    return "Rider backend failed while $operation (rd call '$callName'): $detail"
+}
+
+internal class RiderBackendTimeoutException(
+    val callName: String,
+    val timeoutSeconds: Long,
+    operation: String
+) : IllegalStateException(RdCallOutcome.Timeout(callName, timeoutSeconds).toUserMessage(operation))
 
 internal data class RiderBackendSymbolResult(
     val status: String,
@@ -425,7 +461,21 @@ object RiderBackendSemanticService {
         val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
         val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdFindReferencesRequest", target, scope.wireValue, limit)
             ?: return RiderBackendResponse(handled = true)
-        val result = RdProtocolBridge.invokeCall(model, "findReferences", request) ?: return RiderBackendResponse(handled = true)
+        val result = when (val outcome = RdProtocolBridge.invokeCallResult(model, "findReferences", request)) {
+            is RdCallOutcome.Success -> outcome.value ?: return RiderBackendResponse(handled = true)
+            is RdCallOutcome.Timeout -> {
+                return RiderBackendResponse(
+                    handled = true,
+                    errorMessage = outcome.toUserMessage("finding references")
+                )
+            }
+            is RdCallOutcome.Failure -> {
+                return RiderBackendResponse(
+                    handled = true,
+                    errorMessage = outcome.toUserMessage("finding references")
+                )
+            }
+        }
         @Suppress("UNCHECKED_CAST")
         val references = (RdProtocolBridge.getProperty(result, "references") as? List<Any>) ?: emptyList()
         return RiderBackendResponse(handled = true, value = references.map { reference ->
@@ -860,7 +910,7 @@ abstract class RiderCallHierarchyHandler(
             scope.wireValue,
             CALL_HIERARCHY_RESULT_LIMIT
         ) ?: return null
-        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return null
+        val result = invokeCallHierarchy(model, request) ?: return null
 
         val root = RdProtocolBridge.getProperty(result, "root") ?: return null
         @Suppress("UNCHECKED_CAST")
@@ -903,7 +953,7 @@ abstract class RiderCallHierarchyHandler(
             CALL_HIERARCHY_RESULT_LIMIT
         ) ?: return call.copy(children = emptyList())
         val model = RdProtocolBridge.getModel(project) ?: return call.copy(children = emptyList())
-        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return call.copy(children = emptyList())
+        val result = invokeCallHierarchy(model, request) ?: return call.copy(children = emptyList())
         @Suppress("UNCHECKED_CAST")
         val children = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
         val convertedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
@@ -913,13 +963,23 @@ abstract class RiderCallHierarchyHandler(
         return call.copy(children = convertedChildren)
     }
 
+    private fun invokeCallHierarchy(model: Any, request: Any): Any? =
+        when (val outcome = RdProtocolBridge.invokeCallResult(model, "getCallHierarchy", request)) {
+            is RdCallOutcome.Success -> outcome.value
+            is RdCallOutcome.Timeout -> throw RiderBackendTimeoutException(
+                callName = outcome.callName,
+                timeoutSeconds = outcome.timeoutSeconds,
+                operation = "resolving call hierarchy"
+            )
+            is RdCallOutcome.Failure -> null
+        }
+
     private fun callKey(call: CallElementData): String =
         "${call.file}:${call.line}:${call.column}:${call.name}"
 
     private companion object {
         // Mirrors JavaCallHierarchyHandler.MAX_RESULTS_PER_LEVEL to keep behaviour consistent
         // across IDEs and to bound RD round-trips for fan-out methods.
-        const val MAX_CHILDREN_PER_LEVEL = CALL_HIERARCHY_RESULT_LIMIT
     }
 }
 

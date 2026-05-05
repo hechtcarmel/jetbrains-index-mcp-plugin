@@ -152,6 +152,50 @@ public class IndexMcpBackendHost
             useIndexedTypeFallback: scope == "project_and_libraries");
     }
 
+    private static FindReferencesResolutionPlan BuildFindReferencesResolutionPlan(
+        string scope,
+        ParsedRiderSymbol parsedSymbol)
+    {
+        var normalizedLanguage = NormalizeLanguage(parsedSymbol.Language);
+        var isProjectFilesScope = scope.Equals("project_files", StringComparison.OrdinalIgnoreCase);
+        var useProjectQualifiedTypeLookup = normalizedLanguage == "F#" &&
+                                            isProjectFilesScope &&
+                                            parsedSymbol.MemberName == null &&
+                                            parsedSymbol.ContainerQualifiedName.Contains('.', StringComparison.Ordinal);
+        var rejectUnboundedReferenceSearch = useProjectQualifiedTypeLookup;
+
+        return new FindReferencesResolutionPlan(
+            allowedProjectFileExtensions: useProjectQualifiedTypeLookup ? GetProjectFileExtensions(normalizedLanguage) : null,
+            useProjectQualifiedTypeLookup: useProjectQualifiedTypeLookup,
+            allowLibraryFallback: !useProjectQualifiedTypeLookup,
+            rejectUnboundedReferenceSearch: rejectUnboundedReferenceSearch);
+    }
+
+    private static void EnsureFindReferencesSearchIsSupported(
+        FindReferencesResolutionPlan plan,
+        ParsedRiderSymbol parsedSymbol,
+        string scope)
+    {
+        if (!plan.RejectUnboundedReferenceSearch)
+            return;
+
+        throw new InvalidOperationException(
+            $"F# symbol-based find_references for type-only qualified symbols in scope '{scope}' is temporarily blocked because Rider backend global reference search is unbounded and can exceed the RD timeout. Use a position-based target or a more specific member symbol instead.");
+    }
+
+    private static void EnsureFindReferencesIndexedTargetIsSupported(
+        string? language,
+        string symbol,
+        string scope)
+    {
+        var parseResult = ParseIndexedSymbol(language, symbol);
+        if (!parseResult.IsSuccess || parseResult.Symbol == null)
+            return;
+
+        var plan = BuildFindReferencesResolutionPlan(scope, parseResult.Symbol);
+        EnsureFindReferencesSearchIsSupported(plan, parseResult.Symbol, scope);
+    }
+
     private static IEnumerable<RdSymbolInfo> EnumerateStandardDotNetTypeSymbols(
         string query,
         string matchMode,
@@ -298,10 +342,19 @@ public class IndexMcpBackendHost
     {
         return Task.Run(() =>
         {
-            var element = ResolveTarget(request.Target);
+            if (!string.IsNullOrWhiteSpace(request.Target.Language) &&
+                !string.IsNullOrWhiteSpace(request.Target.Symbol))
+            {
+                EnsureFindReferencesIndexedTargetIsSupported(
+                    request.Target.Language,
+                    request.Target.Symbol,
+                    request.Scope);
+            }
+
+            var element = ResolveTargetForFindReferences(lt, request.Target, request.Scope);
             if (element == null) return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0);
 
-            var references = FindReferences(element)
+            var references = FindReferences(lt, element)
                 .Select(ToReferenceInfo)
                 .Where(reference => reference != null)
                 .Cast<RdReferenceInfo>()
@@ -746,8 +799,13 @@ public class IndexMcpBackendHost
     {
         return Task.Run(() =>
         {
-            var element = ResolveTarget(request.Target);
-            var callableTarget = ResolveCallableTarget(element);
+            var resolutionPlan = BuildCallHierarchyResolutionPlan(request.Target);
+            var callableTarget = resolutionPlan.UseDeclarationOnlyFastPath
+                ? ResolveCallableDeclarationTargetAt(new RdSourcePosition(
+                    request.Target.FilePath!,
+                    request.Target.Line!.Value,
+                    request.Target.Column!.Value))
+                : ResolveCallableTarget(ResolveTarget(request.Target));
             if (callableTarget == null) return null;
 
             var effectiveLimit = GetEffectiveResultLimit(request.Limit);
@@ -759,13 +817,28 @@ public class IndexMcpBackendHost
             {
                 var searchDomain = _solution.GetPsiServices().SearchDomainFactory
                     .CreateSearchDomain(_solution, false);
-                var referenceResults = new List<FindResult>();
+                var seenCallKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var consumer = new FindResultConsumer<List<FindResult>>(
                     result => new List<FindResult> { result },
                     results =>
                     {
+                        EnsureLifetimeAlive(lt);
                         foreach (var result in results)
-                            referenceResults.Add(result);
+                        {
+                            EnsureLifetimeAlive(lt);
+                            if (result is not FindResultReference referenceResult) continue;
+
+                            var containingCallable = ResolveContainingCallableElement(referenceResult.Reference.GetTreeNode());
+                            if (containingCallable == null) continue;
+
+                            var added = seenCallKeys.Add(GetDeclaredElementIdentityKey(containingCallable));
+                            if (!added) continue;
+
+                            callElements.Add(containingCallable);
+                            if (callElements.Count >= effectiveLimit)
+                                return FindExecution.Stop;
+                        }
+
                         return FindExecution.Continue;
                     });
                 _solution.GetPsiServices().Finder.FindReferences(
@@ -774,14 +847,6 @@ public class IndexMcpBackendHost
                     consumer,
                     NoOpProgressIndicator.Instance,
                     false);
-
-                foreach (var result in referenceResults)
-                {
-                    if (result is not FindResultReference referenceResult) continue;
-                    var containingCallable = ResolveContainingCallableElement(referenceResult.Reference.GetTreeNode());
-                    if (containingCallable != null)
-                        callElements.Add(containingCallable);
-                }
             }
             else if (request.Direction == "callees")
             {
@@ -877,6 +942,27 @@ public class IndexMcpBackendHost
         return null;
     }
 
+    private IDeclaredElement? ResolveTargetForFindReferences(Lifetime lt, RdSemanticTarget target, string scope)
+    {
+        if (!string.IsNullOrWhiteSpace(target.FilePath) &&
+            target.Line.HasValue &&
+            target.Column.HasValue)
+        {
+            return ResolveDeclaredElementAt(new RdSourcePosition(
+                target.FilePath,
+                target.Line.Value,
+                target.Column.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(target.Language) &&
+            !string.IsNullOrWhiteSpace(target.Symbol))
+        {
+            return ResolveSymbolForFindReferences(lt, target.Language, target.Symbol, scope);
+        }
+
+        return null;
+    }
+
     private static int GetEffectiveResultLimit(int requestedLimit)
     {
         if (requestedLimit <= 0)
@@ -885,16 +971,35 @@ public class IndexMcpBackendHost
         return Math.Min(requestedLimit, MaxResults);
     }
 
+    private static CallHierarchyResolutionPlan BuildCallHierarchyResolutionPlan(RdSemanticTarget target)
+    {
+        var isPositionTarget = !string.IsNullOrWhiteSpace(target.FilePath) &&
+                               target.Line.HasValue &&
+                               target.Column.HasValue;
+        var fileExtension = Path.GetExtension(target.FilePath ?? string.Empty);
+        var isFSharpPositionTarget = isPositionTarget &&
+                                     FSharpProjectFileExtensions.Contains(fileExtension, StringComparer.OrdinalIgnoreCase);
+
+        return new CallHierarchyResolutionPlan(
+            isFSharpPositionTarget,
+            UseDeclarationOnlyFastPath: isFSharpPositionTarget);
+    }
+
     private static IEnumerable<IDeclaredElement> OrderDeclaredElementsDeterministically(
         IEnumerable<IDeclaredElement> elements)
     {
         return elements
-            .GroupBy(element => $"{GetQualifiedName(element)}:{GetMemberSignatureSortKey(element)}:{GetDeclarationPath(element)}")
+            .GroupBy(GetDeclaredElementIdentityKey)
             .Select(group => group.First())
             .OrderBy(BestDeclarationRank)
             .ThenBy(GetQualifiedName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(GetMemberSignatureSortKey, StringComparer.OrdinalIgnoreCase)
             .ThenBy(GetDeclarationPath, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string GetDeclaredElementIdentityKey(IDeclaredElement element)
+    {
+        return $"{GetQualifiedName(element)}:{GetMemberSignatureSortKey(element)}:{GetDeclarationPath(element)}";
     }
 
     private static CallableTarget? ResolveCallableTarget(IDeclaredElement? element)
@@ -914,6 +1019,55 @@ public class IndexMcpBackendHost
             return null;
 
         return new CallableTarget(element, declaration);
+    }
+
+    private CallableTarget? ResolveCallableDeclarationTargetAt(RdSourcePosition position)
+    {
+        var declarationNode = ResolveCallableDeclarationNodeAt(position);
+        if (declarationNode == null || !TryGetDeclaredElement(declarationNode, out var declaredElement))
+            return null;
+
+        return ResolveCallableTarget(declaredElement);
+    }
+
+    private ITreeNode? ResolveCallableDeclarationNodeAt(RdSourcePosition position)
+    {
+        var psiFile = GetPsiFileForPath(position.FilePath);
+        if (psiFile == null) return null;
+
+        var sourceFile = psiFile.GetSourceFile();
+        var document = sourceFile?.Document;
+        if (document == null) return null;
+
+        var line = Math.Max(0, position.Line - 1);
+        var col = Math.Max(0, position.Column - 1);
+        var offset = document.GetLineStartOffset((Int32<DocLine>)line) + col;
+
+        foreach (var candidateOffset in CandidateOffsets(offset))
+        {
+            var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(candidateOffset), 1));
+            if (node == null) continue;
+
+            var callableDeclaration = ResolveNearestCallableDeclarationNode(node);
+            if (callableDeclaration != null)
+                return callableDeclaration;
+        }
+
+        return null;
+    }
+
+    private static ITreeNode? ResolveNearestCallableDeclarationNode(ITreeNode node)
+    {
+        for (var current = node; current != null; current = current.Parent)
+        {
+            if (current is not IDeclaration declaration || declaration.DeclaredElement == null)
+                continue;
+
+            if (IsSupportedCallableDeclaration(declaration, declaration.DeclaredElement))
+                return declaration;
+        }
+
+        return null;
     }
 
     private static bool IsSupportedCallableElement(IDeclaredElement element)
@@ -971,6 +1125,42 @@ public class IndexMcpBackendHost
 
     private IDeclaredElement? ResolveSymbol(string? language, string symbol)
     {
+        return ResolveSymbolIndexed(language, symbol).TryGetElement();
+    }
+
+    private IDeclaredElement? ResolveSymbolForFindReferences(Lifetime lt, string? language, string symbol, string scope)
+    {
+        EnsureFindReferencesIndexedTargetIsSupported(language, symbol, scope);
+
+        var parseResult = ParseIndexedSymbol(language, symbol);
+        if (!parseResult.IsSuccess)
+            return parseResult.ToResolution().TryGetElement();
+
+        var parsed = parseResult.Symbol!;
+        var plan = BuildFindReferencesResolutionPlan(scope, parsed);
+        if (!plan.UseProjectQualifiedTypeLookup)
+            return ResolveSymbolIndexed(language, symbol).TryGetElement();
+
+        var projectCandidates = EnumerateProjectQualifiedTypeElements(
+                lt,
+                parsed.ContainerQualifiedName,
+                plan.AllowedProjectFileExtensions)
+            .Where(type => MatchesLanguage(type, parsed.Language))
+            .Where(type => MatchesQualifiedName(GetQualifiedName(type), parsed.ContainerQualifiedName, "exact"))
+            .Cast<IDeclaredElement>()
+            .ToList();
+
+        var resolution = ResolveSingleMatch(
+            OrderDeclaredElementsDeterministically(projectCandidates).ToList(),
+            $"Multiple Rider declarations match container '{parsed.ContainerQualifiedName}'.",
+            $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'.");
+
+        if (resolution.TryGetElement() != null)
+            return resolution.TryGetElement();
+
+        if (!plan.AllowLibraryFallback)
+            return null;
+
         return ResolveSymbolIndexed(language, symbol).TryGetElement();
     }
 
@@ -1458,6 +1648,12 @@ public class IndexMcpBackendHost
             foreach (var element in elements) yield return element;
         }
     }
+
+    private static readonly string[] FSharpProjectFileExtensions = [".fs", ".fsi", ".fsx"];
+
+    private sealed record CallHierarchyResolutionPlan(
+        bool IsFSharpPositionTarget,
+        bool UseDeclarationOnlyFastPath);
 
     private IEnumerable<ITypeElement> EnumerateDeclaredTypeElements(Lifetime lt, IReadOnlyList<string>? allowedProjectFileExtensions)
     {
@@ -1957,7 +2153,7 @@ public class IndexMcpBackendHost
         return null;
     }
 
-    private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferences(IDeclaredElement element)
+    private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferences(Lifetime lt, IDeclaredElement element)
     {
         var searchDomain = _solution.GetPsiServices().SearchDomainFactory
             .CreateSearchDomain(_solution, false);
@@ -1966,8 +2162,10 @@ public class IndexMcpBackendHost
             result => new List<FindResult> { result },
             results =>
             {
+                EnsureLifetimeAlive(lt);
                 foreach (var result in results)
                 {
+                    EnsureLifetimeAlive(lt);
                     referenceResults.Add(result);
                     if (referenceResults.Count >= MaxResults)
                         return FindExecution.Stop;
@@ -1993,7 +2191,7 @@ public class IndexMcpBackendHost
     {
         return element.GetDeclarations()
             .Select(declaration => declaration.GetSourceFile()?.GetLocation().FullPath)
-            .Concat(FindReferences(element)
+            .Concat(FindReferences(Lifetime.Eternal, element)
                 .Select(reference => reference.GetTreeNode().GetSourceFile()?.GetLocation().FullPath))
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -2279,6 +2477,26 @@ internal sealed class FindTypesSearchPlan
     public bool UseProjectDeclaredTypeScan { get; }
     public bool UseExactQualifiedProjectLookup { get; }
     public bool UseIndexedTypeFallback { get; }
+}
+
+internal sealed class FindReferencesResolutionPlan
+{
+    public FindReferencesResolutionPlan(
+        IReadOnlyList<string>? allowedProjectFileExtensions,
+        bool useProjectQualifiedTypeLookup,
+        bool allowLibraryFallback,
+        bool rejectUnboundedReferenceSearch)
+    {
+        AllowedProjectFileExtensions = allowedProjectFileExtensions;
+        UseProjectQualifiedTypeLookup = useProjectQualifiedTypeLookup;
+        AllowLibraryFallback = allowLibraryFallback;
+        RejectUnboundedReferenceSearch = rejectUnboundedReferenceSearch;
+    }
+
+    public IReadOnlyList<string>? AllowedProjectFileExtensions { get; }
+    public bool UseProjectQualifiedTypeLookup { get; }
+    public bool AllowLibraryFallback { get; }
+    public bool RejectUnboundedReferenceSearch { get; }
 }
 
 internal sealed class CallableTarget

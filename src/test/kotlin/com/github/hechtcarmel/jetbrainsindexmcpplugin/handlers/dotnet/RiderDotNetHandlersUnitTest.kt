@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
+import com.intellij.openapi.project.Project
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import junit.framework.TestCase
@@ -128,6 +131,75 @@ class RiderDotNetHandlersUnitTest : TestCase() {
     fun testRiderRequestLimitsMatchBridgeConstants() {
         assertEquals(500, IMPLEMENTATIONS_RESULT_LIMIT)
         assertEquals(20, CALL_HIERARCHY_RESULT_LIMIT)
+    }
+
+    fun testRdCallTimeoutsUseInteractiveHierarchyBudgetButKeepRenameLongRunning() {
+        assertEquals(30L, RdProtocolBridge.timeoutSecondsForCall("getCallHierarchy"))
+        assertEquals(300L, RdProtocolBridge.timeoutSecondsForCall("renameSymbol"))
+        assertEquals(60L, RdProtocolBridge.timeoutSecondsForCall("findReferences"))
+    }
+
+    fun testRdTimeoutMessageIsExplicitAboutOperationAndCallName() {
+        val timeout = RdCallOutcome.Timeout(callName = "findReferences", timeoutSeconds = 60L)
+
+        assertEquals(
+            "Rider backend timed out while finding references after 60s (rd call 'findReferences').",
+            timeout.toUserMessage("finding references")
+        )
+    }
+
+    fun testFindReferencesFailureReturnsExplicitErrorMessage() {
+        mockkObject(RdProtocolBridge)
+        try {
+            val project = mockk<Project>()
+            val semanticTarget = Any()
+            val request = Any()
+            val failureMessage = "F# symbol-based find_references for type-only qualified symbols in scope 'project_files' is temporarily blocked..."
+
+            every { RdProtocolBridge.getModel(project) } returns Any()
+            every {
+                RdProtocolBridge.createStruct(
+                    "$MODEL_PKG.RdSemanticTarget",
+                    null,
+                    null,
+                    null,
+                    "F#",
+                    "FSharpPlus.Lens"
+                )
+            } returns semanticTarget
+            every {
+                RdProtocolBridge.createStruct(
+                    "$MODEL_PKG.RdFindReferencesRequest",
+                    semanticTarget,
+                    BuiltInSearchScope.PROJECT_FILES.wireValue,
+                    100
+                )
+            } returns request
+            every {
+                RdProtocolBridge.invokeCallResult(any(), "findReferences", request)
+            } returns RdCallOutcome.Failure(
+                callName = "findReferences",
+                cause = IllegalStateException(failureMessage)
+            )
+
+            val result = RiderBackendSemanticService.findReferences(
+                project = project,
+                file = null,
+                line = null,
+                column = null,
+                language = "F#",
+                symbol = "FSharpPlus.Lens",
+                scope = BuiltInSearchScope.PROJECT_FILES,
+                limit = 100
+            )
+
+            assertTrue(result.handled)
+            assertNotNull(result.errorMessage)
+            assertTrue(result.errorMessage!!.contains(failureMessage))
+            assertNull(result.value)
+        } finally {
+            unmockkObject(RdProtocolBridge)
+        }
     }
 
     // ── Regression Tests for Deterministic C#/F# Symbol Parsing ──────────────────

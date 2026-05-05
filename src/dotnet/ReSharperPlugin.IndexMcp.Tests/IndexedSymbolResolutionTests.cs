@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
+using JetBrains.Lifetimes;
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.CSharp;
 using JetBrains.ReSharper.Psi.Tree;
@@ -432,6 +434,74 @@ public class IndexedSymbolResolutionTests
     }
 
     [Test]
+    public void BuildCallHierarchyResolutionPlan_FSharpPositionTarget_UsesDeclarationOnlyFastPath()
+    {
+        var plan = InvokePrivateStatic(
+            "BuildCallHierarchyResolutionPlan",
+            new RdSemanticTarget("src/FSharpPlus/Lens.fs", 44, 1, null, null));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseDeclarationOnlyFastPath"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "IsFSharpPositionTarget"), Is.True);
+        });
+    }
+
+    [Test]
+    public void BuildCallHierarchyResolutionPlan_CSharpPositionTarget_PreservesGeneralResolutionPath()
+    {
+        var plan = InvokePrivateStatic(
+            "BuildCallHierarchyResolutionPlan",
+            new RdSemanticTarget("src/Demo/Service.cs", 10, 5, null, null));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseDeclarationOnlyFastPath"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "IsFSharpPositionTarget"), Is.False);
+        });
+    }
+
+    [Test]
+    public void BuildCallHierarchyResolutionPlan_FSharpSymbolTarget_DoesNotUseDeclarationOnlyFastPath()
+    {
+        var plan = InvokePrivateStatic(
+            "BuildCallHierarchyResolutionPlan",
+            new RdSemanticTarget(null, null, null, "F#", "Demo.Module#run"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseDeclarationOnlyFastPath"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "IsFSharpPositionTarget"), Is.False);
+        });
+    }
+
+    [Test]
+    public void ResolveNearestCallableDeclarationNode_FSharpMemberInsideType_PrefersCallableDeclarationOverContainingType()
+    {
+        var callableElement = CreateDeclaredElement("Run", declarations: new List<IDeclaration>());
+        var typeElement = CreateTypeElementCandidate("Container");
+        var typeDeclaration = CreateTypeDeclaration(typeElement);
+        var callableDeclaration = CreateDeclaration(callableElement, typeDeclaration);
+        var nestedNode = CreateTreeNode(callableDeclaration);
+
+        var resolvedNode = InvokePrivateStatic("ResolveNearestCallableDeclarationNode", nestedNode);
+
+        Assert.That(resolvedNode, Is.SameAs(callableDeclaration));
+    }
+
+    [Test]
+    public void ResolveNearestCallableDeclarationNode_FSharpNonCallablePosition_ReturnsNull()
+    {
+        var typeElement = CreateTypeElementCandidate("Container");
+        var typeDeclaration = CreateTypeDeclaration(typeElement);
+        var nestedNode = CreateTreeNode(typeDeclaration);
+
+        var resolvedNode = InvokePrivateStatic("ResolveNearestCallableDeclarationNode", nestedNode);
+
+        Assert.That(resolvedNode, Is.Null);
+    }
+
+    [Test]
     public void BuildFindTypesSearchPlan_FSharpProjectFiles_UsesOnlyFSharpFilesAndSkipsExpensiveFallback()
     {
         var plan = InvokePrivateStatic("BuildFindTypesSearchPlan", "F#", "project_files", "exact", "FSharpPlus.Lens.Lens");
@@ -487,6 +557,145 @@ public class IndexedSymbolResolutionTests
             Assert.That(GetProperty<bool>(plan!, "UseIndexedTypeFallback"), Is.True);
             Assert.That(GetProperty<IReadOnlyList<string>?>(plan!, "AllowedProjectFileExtensions"), Is.Null);
         });
+    }
+
+    [Test]
+    public void BuildFindReferencesResolutionPlan_FSharpProjectFilesTypeOnlyQualified_UsesProjectQualifiedLookupWithoutLibraryFallback()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "F#", "FSharpPlus.Lens");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_files", parsedSymbol);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectQualifiedTypeLookup"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "AllowLibraryFallback"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "RejectUnboundedReferenceSearch"), Is.True);
+            Assert.That(GetProperty<IReadOnlyList<string>>(plan!, "AllowedProjectFileExtensions"),
+                Is.EqualTo(new[] { ".fs", ".fsi", ".fsx" }));
+        });
+    }
+
+    [Test]
+    public void EnsureFindReferencesSearchIsSupported_FSharpProjectFilesTypeOnlyQualified_ThrowsFastFailure()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "F#", "FSharpPlus.Lens");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_files", parsedSymbol);
+
+        var exception = Assert.Throws<TargetInvocationException>(() =>
+            InvokePrivateStatic("EnsureFindReferencesSearchIsSupported", plan!, parsedSymbol, "project_files"));
+
+        Assert.That(exception!.InnerException, Is.TypeOf<InvalidOperationException>());
+        Assert.That(exception.InnerException!.Message, Does.Contain("F#"));
+        Assert.That(exception.InnerException!.Message, Does.Contain("project_files"));
+    }
+
+    [Test]
+    public void BuildFindReferencesResolutionPlan_FSharpProjectAndLibraries_KeepsLegacyFallback()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "F#", "FSharpPlus.Lens");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_and_libraries", parsedSymbol);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectQualifiedTypeLookup"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "AllowLibraryFallback"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "RejectUnboundedReferenceSearch"), Is.False);
+            Assert.That(GetProperty<IReadOnlyList<string>?>(plan!, "AllowedProjectFileExtensions"), Is.Null);
+        });
+    }
+
+    [Test]
+    public void BuildFindReferencesResolutionPlan_CSharpProjectFiles_PreservesLegacyBehavior()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "C#", "Demo.Service");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_files", parsedSymbol);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(GetProperty<bool>(plan!, "UseProjectQualifiedTypeLookup"), Is.False);
+            Assert.That(GetProperty<bool>(plan!, "AllowLibraryFallback"), Is.True);
+            Assert.That(GetProperty<bool>(plan!, "RejectUnboundedReferenceSearch"), Is.False);
+            Assert.That(GetProperty<IReadOnlyList<string>?>(plan!, "AllowedProjectFileExtensions"), Is.Null);
+        });
+    }
+
+    [Test]
+    public void BuildFindReferencesResolutionPlan_FSharpProjectFilesMemberSymbol_DoesNotFastFail()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "F#", "FSharpPlus.Lens#map");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_files", parsedSymbol);
+
+        Assert.That(GetProperty<bool>(plan!, "RejectUnboundedReferenceSearch"), Is.False);
+    }
+
+    [Test]
+    public void ResolveTargetForFindReferences_FSharpProjectFilesTypeOnlyQualified_ThrowsFastFailureBeforeResolution()
+    {
+        var backendHost = CreateUninitializedBackendHost();
+        var target = new RdSemanticTarget(null, null, null, "F#", "FSharpPlus.Lens");
+
+        var exception = Assert.Throws<TargetInvocationException>(() =>
+            InvokePrivateInstance(backendHost, "ResolveTargetForFindReferences", Lifetime.Eternal, target, "project_files"));
+
+        Assert.That(exception!.InnerException, Is.TypeOf<InvalidOperationException>());
+        Assert.That(exception.InnerException!.Message, Does.Contain("F#"));
+        Assert.That(exception.InnerException!.Message, Does.Contain("project_files"));
+    }
+
+    [Test]
+    public void EnsureFindReferencesSearchIsSupported_CSharpProjectFilesTypeOnly_DoesNotFastFail()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "C#", "Demo.Service");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_files", parsedSymbol);
+
+        Assert.DoesNotThrow(() =>
+            InvokePrivateStatic("EnsureFindReferencesSearchIsSupported", plan!, parsedSymbol, "project_files"));
+    }
+
+    [Test]
+    public void EnsureFindReferencesSearchIsSupported_FSharpProjectFilesMemberSymbol_DoesNotFastFail()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "F#", "FSharpPlus.Lens#map");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_files", parsedSymbol);
+
+        Assert.DoesNotThrow(() =>
+            InvokePrivateStatic("EnsureFindReferencesSearchIsSupported", plan!, parsedSymbol, "project_files"));
+    }
+
+    [Test]
+    public void EnsureFindReferencesSearchIsSupported_FSharpProjectAndLibrariesTypeOnly_DoesNotFastFail()
+    {
+        var parseResult = InvokePrivateStatic("ParseIndexedSymbol", "F#", "FSharpPlus.Lens");
+        var parsedSymbol = GetProperty<object>(parseResult!, "Symbol");
+        var plan = InvokePrivateStatic("BuildFindReferencesResolutionPlan", "project_and_libraries", parsedSymbol);
+
+        Assert.DoesNotThrow(() =>
+            InvokePrivateStatic("EnsureFindReferencesSearchIsSupported", plan!, parsedSymbol, "project_and_libraries"));
+    }
+
+    [Test]
+    public void EnumerateQualifiedNameCandidates_FSharpTypeOnlySymbol_IncludesClrNestedVariant()
+    {
+        var candidates = ((IEnumerable)InvokePrivateStatic("EnumerateQualifiedNameCandidates", "FSharpPlus.Lens")!)
+            .Cast<string>()
+            .ToList();
+
+        Assert.That(candidates, Is.EqualTo(new[]
+        {
+            "FSharpPlus.Lens",
+            "FSharpPlus+Lens"
+        }));
     }
 
     [Test]
@@ -557,6 +766,22 @@ public class IndexedSymbolResolutionTests
         return methodInfo.Invoke(null, args);
     }
 
+    private static object? InvokePrivateInstance(object target, string methodName, params object?[] args)
+    {
+        var methods = BackendHostType.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+            .Where(method => method.Name == methodName)
+            .ToList();
+        Assert.That(methods, Is.Not.Empty, $"Missing method '{methodName}'.");
+
+        var methodInfo = methods.Single(method => method.GetParameters().Length == args.Length);
+        return methodInfo.Invoke(target, args);
+    }
+
+    private static object CreateUninitializedBackendHost()
+    {
+        return FormatterServices.GetUninitializedObject(BackendHostType);
+    }
+
     private static IDeclaredElement CreateDeclaredElement(
         string shortName,
         IList<IDeclaration>? declarations = null,
@@ -576,9 +801,30 @@ public class IndexedSymbolResolutionTests
         };
     }
 
-    private static IDeclaration CreateDeclaration()
+    private static IDeclaration CreateDeclaration(IDeclaredElement? declaredElement = null, ITreeNode? parent = null)
     {
-        return ProxyFactory.Create<IDeclaration>(new Dictionary<string, object?>());
+        return ProxyFactory.Create<IDeclaration>(new Dictionary<string, object?>
+        {
+            ["get_DeclaredElement"] = declaredElement,
+            ["get_Parent"] = parent
+        });
+    }
+
+    private static ITypeDeclaration CreateTypeDeclaration(IDeclaredElement? declaredElement = null, ITreeNode? parent = null)
+    {
+        return ProxyFactory.Create<ITypeDeclaration>(new Dictionary<string, object?>
+        {
+            ["get_DeclaredElement"] = declaredElement,
+            ["get_Parent"] = parent
+        });
+    }
+
+    private static ITreeNode CreateTreeNode(ITreeNode? parent = null)
+    {
+        return ProxyFactory.Create<ITreeNode>(new Dictionary<string, object?>
+        {
+            ["get_Parent"] = parent
+        });
     }
 
     private static ITypeElement CreateTypeElement(params ITypeMember[] members)

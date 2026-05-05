@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendTimeoutException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
@@ -16,9 +17,6 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -67,6 +65,13 @@ class CallHierarchyTool : AbstractMcpTool() {
         private const val DEFAULT_DEPTH = 3
         private const val MAX_DEPTH = 5
         private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode call hierarchy requires backend-native symbol resolution and is unsupported for symbol requests the backend cannot map to source positions."
+
+        internal fun riderTimeoutMessage(timeout: RiderBackendTimeoutException): String =
+            timeout.message ?: "Rider backend timed out while resolving call hierarchy"
+
+        internal fun noCallableMessage(isSymbolMode: Boolean): String =
+            if (isSymbolMode) "No method/function found for the specified symbol"
+            else "No method/function found at position"
     }
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -115,13 +120,14 @@ class CallHierarchyTool : AbstractMcpTool() {
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            val hierarchyData = handler.getCallHierarchy(element, project, direction, depth, scope)
+            val hierarchyData = try {
+                handler.getCallHierarchy(element, project, direction, depth, scope)
+            } catch (timeout: RiderBackendTimeoutException) {
+                return@suspendingReadAction createErrorResult(riderTimeoutMessage(timeout))
+            }
             if (hierarchyData == null) {
                 val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
-                return@suspendingReadAction createErrorResult(
-                    if (isSymbolMode) "No method/function found for the specified symbol"
-                    else "No method/function found at position"
-                )
+                return@suspendingReadAction createErrorResult(noCallableMessage(isSymbolMode))
             }
 
             // Convert handler result to tool result

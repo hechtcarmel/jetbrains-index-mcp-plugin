@@ -30,13 +30,8 @@ import com.intellij.util.Processor
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 class FindUsagesTool : AbstractMcpTool() {
 
@@ -132,6 +127,7 @@ class FindUsagesTool : AbstractMcpTool() {
             limit = collectLimit
         )
         if (riderReferences.handled) {
+            riderReferences.errorMessage?.let { return createErrorResult(it) }
             val usages = riderReferences.value.orEmpty()
             val serializedResults = usages.map { usage ->
                 PaginationService.SerializedResult(
