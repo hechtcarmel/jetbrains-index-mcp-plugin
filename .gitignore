@@ -9,3 +9,4 @@ tmp
 .claude
 .opencode
 local.properties
+/out/
