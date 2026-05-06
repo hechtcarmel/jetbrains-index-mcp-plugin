@@ -13,6 +13,7 @@
 <p>Advanced code intelligence tools work across multiple languages when their plugins are available:</p>
 <ul>
     <li><b>Java & Kotlin</b> - IntelliJ IDEA, Android Studio</li>
+    <li><b>Scala</b> - IntelliJ IDEA with Scala plugin</li>
     <li><b>Python</b> - PyCharm (all editions), IntelliJ IDEA with Python plugin</li>
     <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
@@ -45,6 +46,7 @@
     <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
     <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
     <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods (Java, Kotlin, Python, JS/TS, PHP, Rust)</li>
+    <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with fuzzy/camelCase matching</li>
     <li><b>Find Super Methods</b> - Navigate through method override hierarchies (Java, Kotlin, Python, JS/TS, PHP)</li>
     <li><b>File Structure</b> - View hierarchical file structure like IDE's Structure view (Java, Kotlin, Python, JS/TS, Markdown) (disabled by default)</li>
 </ul>
@@ -118,6 +120,9 @@ for detailed documentation and examples.</p>
 
     <!-- Optional Markdown support (bundled Markdown plugin) -->
     <depends optional="true" config-file="markdown-features.xml">org.intellij.plugins.markdown</depends>
+
+    <!-- Optional Scala support (IntelliJ IDEA with Scala plugin) -->
+    <depends optional="true" config-file="scala-features.xml">org.intellij.scala</depends>
 
     <resource-bundle>messages.McpBundle</resource-bundle>
 
