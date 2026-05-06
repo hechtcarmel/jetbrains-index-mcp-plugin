@@ -10,6 +10,6 @@ tmp
 .opencode
 local.properties
 docs/superpowers
-.idea/
 scripts/build-install.sh
 HANDOFF.md
+/out/
