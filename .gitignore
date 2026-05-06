@@ -7,6 +7,7 @@
 build
 tmp
 .claude
+.opencode
 local.properties
 docs/superpowers
 .idea/
