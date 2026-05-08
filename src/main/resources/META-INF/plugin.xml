@@ -13,6 +13,7 @@
 <p>Advanced code intelligence tools work across multiple languages when their plugins are available:</p>
 <ul>
     <li><b>Java & Kotlin</b> - IntelliJ IDEA, Android Studio</li>
+    <li><b>Scala</b> - IntelliJ IDEA with Scala plugin</li>
     <li><b>Python</b> - PyCharm (all editions), IntelliJ IDEA with Python plugin</li>
     <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
@@ -118,6 +119,9 @@ for detailed documentation and examples.</p>
 
     <!-- Optional Markdown support (bundled Markdown plugin) -->
     <depends optional="true" config-file="markdown-features.xml">org.intellij.plugins.markdown</depends>
+
+    <!-- Optional Scala support (IntelliJ IDEA with Scala plugin) -->
+    <depends optional="true" config-file="scala-features.xml">org.intellij.scala</depends>
 
     <resource-bundle>messages.McpBundle</resource-bundle>
 
