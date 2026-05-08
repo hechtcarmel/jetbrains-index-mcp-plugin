@@ -10,6 +10,9 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.searches.ClassInheritorsSearch
+import com.intellij.psi.search.searches.OverridingMethodsSearch
+import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.Processor
 
@@ -378,9 +381,9 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         scope: BuiltInSearchScope
     ): TypeHierarchyData? {
         val scTypeDef = findContainingScTypeDefinition(element) ?: return null
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope)
 
-        val supertypes = getSupertypes(project, scTypeDef)
+        val supertypes = getSupertypes(project, scTypeDef, searchScope = searchScope)
         val subtypes = getSubtypes(project, scTypeDef, searchScope)
 
         return TypeHierarchyData(
@@ -401,7 +404,8 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         project: Project,
         scTypeDef: PsiElement,
         visited: MutableSet<String> = mutableSetOf(),
-        depth: Int = 0
+        depth: Int = 0,
+        searchScope: GlobalSearchScope
     ): List<TypeElementData> {
         if (depth > MAX_HIERARCHY_DEPTH) return emptyList()
 
@@ -418,7 +422,8 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
             for (superType in supers) {
                 val superName = getQualifiedName(superType) ?: getName(superType)
                 if (superName != null && superName != "scala.AnyRef" && superName != "scala.Any") {
-                    val superSupertypes = getSupertypes(project, superType, visited, depth + 1)
+                    if (!shouldIncludeNavigationElement(searchScope, superType)) continue
+                    val superSupertypes = getSupertypes(project, superType, visited, depth + 1, searchScope)
                     supertypes.add(TypeElementData(
                         name = superName,
                         qualifiedName = getQualifiedName(superType),
@@ -445,33 +450,21 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         val results = mutableListOf<TypeElementData>()
         
         try {
-            // Use IntelliJ's ClassInheritorsSearch which works for Scala
-            val searchClass = Class.forName("com.intellij.psi.search.searches.ClassInheritorsSearch")
-            val searchMethod = searchClass.getMethod(
-                "search",
-                com.intellij.psi.PsiClass::class.java,
-                Boolean::class.javaPrimitiveType
-            )
-            
-            // ScTypeDefinition extends PsiClass
+            // ScTypeDefinition extends PsiClass — use platform API directly
             if (scTypeDef is com.intellij.psi.PsiClass) {
-                val query = searchMethod.invoke(null, scTypeDef, true)
-                
-                val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
-                forEachMethod.invoke(query, Processor { inheritor: Any ->
-                    if (inheritor is PsiElement && isScTypeDefinition(inheritor)) {
-                        val file = inheritor.containingFile?.virtualFile
-                        if (file == null || !searchScope.contains(file)) {
-                            return@Processor true
+                ClassInheritorsSearch.search(scTypeDef, searchScope, true).forEach(Processor { inheritor ->
+                    if (isScTypeDefinition(inheritor)) {
+                        if (shouldIncludeNavigationElement(searchScope, inheritor)) {
+                            val file = inheritor.containingFile?.virtualFile
+                            results.add(TypeElementData(
+                                name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
+                                qualifiedName = getQualifiedName(inheritor),
+                                file = file?.let { getRelativePath(project, it) },
+                                line = getLineNumber(project, inheritor),
+                                kind = getTypeKind(inheritor),
+                                language = "Scala"
+                            ))
                         }
-                        results.add(TypeElementData(
-                            name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
-                            qualifiedName = getQualifiedName(inheritor),
-                            file = getRelativePath(project, file),
-                            line = getLineNumber(project, inheritor),
-                            kind = getTypeKind(inheritor),
-                            language = "Scala"
-                        ))
                     }
                     results.size < 100
                 })
@@ -504,7 +497,7 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
         project: Project,
         scope: BuiltInSearchScope
     ): List<ImplementationData>? {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope)
         val function = findContainingScFunction(element)
         if (function != null) {
             return findMethodImplementations(project, function, searchScope)
@@ -526,32 +519,25 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
         val results = mutableListOf<ImplementationData>()
         
         try {
-            val searchClass = Class.forName("com.intellij.psi.search.searches.OverridingMethodsSearch")
-            val searchMethod = searchClass.getMethod("search", com.intellij.psi.PsiMethod::class.java)
-            
-            // ScFunction extends PsiMethod
+            // ScFunction extends PsiMethod — use platform API directly
             if (function is com.intellij.psi.PsiMethod) {
-                val query = searchMethod.invoke(null, function)
-                
-                val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
-                forEachMethod.invoke(query, Processor { overriding: Any ->
-                    if (overriding is PsiElement && isScFunction(overriding)) {
-                        val file = overriding.containingFile?.virtualFile
-                        if (file != null) {
-                            if (!searchScope.contains(file)) {
-                                return@Processor true
+                OverridingMethodsSearch.search(function, searchScope, true).forEach(Processor { overriding ->
+                    if (isScFunction(overriding)) {
+                        if (shouldIncludeNavigationElement(searchScope, overriding)) {
+                            val file = overriding.containingFile?.virtualFile
+                            if (file != null) {
+                                val containingType = findContainingScTypeDefinition(overriding)
+                                val typeName = containingType?.let { getName(it) } ?: ""
+                                val functionName = getName(overriding) ?: "unknown"
+                                results.add(ImplementationData(
+                                    name = if (typeName.isNotEmpty()) "$typeName.$functionName" else functionName,
+                                    file = getRelativePath(project, file),
+                                    line = getLineNumber(project, overriding) ?: 0,
+                                    column = getColumnNumber(project, overriding) ?: 0,
+                                    kind = "METHOD",
+                                    language = "Scala"
+                                ))
                             }
-                            val containingType = findContainingScTypeDefinition(overriding)
-                            val typeName = containingType?.let { getName(it) } ?: ""
-                            val functionName = getName(overriding) ?: "unknown"
-                            results.add(ImplementationData(
-                                name = if (typeName.isNotEmpty()) "$typeName.$functionName" else functionName,
-                                file = getRelativePath(project, file),
-                                line = getLineNumber(project, overriding) ?: 0,
-                                column = getColumnNumber(project, overriding) ?: 0,
-                                kind = "METHOD",
-                                language = "Scala"
-                            ))
                         }
                     }
                     results.size < 100
@@ -572,32 +558,22 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
         val results = mutableListOf<ImplementationData>()
         
         try {
-            val searchClass = Class.forName("com.intellij.psi.search.searches.ClassInheritorsSearch")
-            val searchMethod = searchClass.getMethod(
-                "search",
-                com.intellij.psi.PsiClass::class.java,
-                Boolean::class.javaPrimitiveType
-            )
-            
+            // ScTypeDefinition extends PsiClass — use platform API directly
             if (typeDef is com.intellij.psi.PsiClass) {
-                val query = searchMethod.invoke(null, typeDef, true)
-                
-                val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
-                forEachMethod.invoke(query, Processor { inheritor: Any ->
-                    if (inheritor is PsiElement && isScTypeDefinition(inheritor)) {
-                        val file = inheritor.containingFile?.virtualFile
-                        if (file != null) {
-                            if (!searchScope.contains(file)) {
-                                return@Processor true
+                ClassInheritorsSearch.search(typeDef, searchScope, true).forEach(Processor { inheritor ->
+                    if (isScTypeDefinition(inheritor)) {
+                        if (shouldIncludeNavigationElement(searchScope, inheritor)) {
+                            val file = inheritor.containingFile?.virtualFile
+                            if (file != null) {
+                                results.add(ImplementationData(
+                                    name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
+                                    file = getRelativePath(project, file),
+                                    line = getLineNumber(project, inheritor) ?: 0,
+                                    column = getColumnNumber(project, inheritor) ?: 0,
+                                    kind = getTypeKind(inheritor),
+                                    language = "Scala"
+                                ))
                             }
-                            results.add(ImplementationData(
-                                name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
-                                file = getRelativePath(project, file),
-                                line = getLineNumber(project, inheritor) ?: 0,
-                                column = getColumnNumber(project, inheritor) ?: 0,
-                                kind = getTypeKind(inheritor),
-                                language = "Scala"
-                            ))
                         }
                     }
                     results.size < 100
@@ -643,12 +619,12 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
     ): CallHierarchyData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val visited = mutableSetOf<String>()
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope)
 
         val calls = if (direction == "callers") {
             findCallersRecursive(project, scFunction, depth, visited, searchScope = searchScope)
         } else {
-            findCalleesRecursive(project, scFunction, depth, visited)
+            findCalleesRecursive(project, scFunction, depth, visited, searchScope = searchScope)
         }
 
         return CallHierarchyData(
@@ -695,16 +671,14 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
             val methodsToSearch = mutableSetOf(scFunction)
             methodsToSearch.addAll(findAllSuperMethods(project, scFunction))
 
-            // Search for references to all methods in the hierarchy
-            val referencesSearchClass = Class.forName("com.intellij.psi.search.searches.ReferencesSearch")
-            val searchMethod = referencesSearchClass.getMethod("search", PsiElement::class.java, GlobalSearchScope::class.java)
-
+            // Search for references to all methods in the hierarchy using platform API directly
             val allReferences = mutableListOf<com.intellij.psi.PsiReference>()
             for (methodToSearch in methodsToSearch) {
-                val query = searchMethod.invoke(null, methodToSearch, searchScope)
-                val findAllMethod = query.javaClass.getMethod("findAll")
-                val references = findAllMethod.invoke(query) as? Collection<*> ?: continue
-                references.filterIsInstance<com.intellij.psi.PsiReference>().forEach { allReferences.add(it) }
+                if (allReferences.size >= MAX_RESULTS_PER_LEVEL) break
+                ReferencesSearch.search(methodToSearch, searchScope).forEach(Processor { reference ->
+                    allReferences.add(reference)
+                    allReferences.size < MAX_RESULTS_PER_LEVEL
+                })
             }
 
             allReferences.take(MAX_RESULTS_PER_LEVEL)
@@ -741,7 +715,8 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         scFunction: PsiElement,
         depth: Int,
         visited: MutableSet<String>,
-        stackDepth: Int = 0
+        stackDepth: Int = 0,
+        searchScope: GlobalSearchScope
     ): List<CallElementData> {
         if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
 
@@ -758,8 +733,9 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
             callExpressions.take(MAX_RESULTS_PER_LEVEL).forEach { callExpr ->
                 val calledFunction = resolveCallExpression(callExpr)
                 if (calledFunction != null && isScFunction(calledFunction)) {
+                    if (!shouldIncludeNavigationElement(searchScope, calledFunction)) return@forEach
                     val children = if (depth > 1) {
-                        findCalleesRecursive(project, calledFunction, depth - 1, visited, stackDepth + 1)
+                        findCalleesRecursive(project, calledFunction, depth - 1, visited, stackDepth + 1, searchScope)
                     } else null
                     val element = createCallElement(project, calledFunction, children)
                     if (callees.none { it.name == element.name && it.file == element.file }) {
