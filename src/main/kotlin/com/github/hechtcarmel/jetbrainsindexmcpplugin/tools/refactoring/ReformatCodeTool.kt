@@ -62,7 +62,37 @@ class ReformatCodeTool : AbstractMcpTool() {
         private const val RIDER_REARRANGE_ACTION_ID_FALLBACK = "RearrangeCode"
         private const val RIDER_SHORTCUT_SETTLE_ATTEMPTS = 8
         private const val RIDER_SHORTCUT_SETTLE_DELAY_MS = 150L
+
+        internal fun normalizeOptionalLineRange(startLine: Int?, endLine: Int?): NormalizedOptionalLineRange {
+            if (startLine != null && startLine < 0) {
+                return NormalizedOptionalLineRange(error = "startLine must be >= 1")
+            }
+            if (endLine != null && endLine < 0) {
+                return NormalizedOptionalLineRange(error = "endLine must be >= 1")
+            }
+
+            val normalizedStartLine = startLine?.takeUnless { it == 0 }
+            val normalizedEndLine = endLine?.takeUnless { it == 0 }
+
+            if ((normalizedStartLine != null) != (normalizedEndLine != null)) {
+                return NormalizedOptionalLineRange(error = "Both startLine and endLine must be provided together, or neither.")
+            }
+            if (normalizedStartLine != null && normalizedEndLine != null && normalizedEndLine < normalizedStartLine) {
+                return NormalizedOptionalLineRange(error = "endLine must be >= startLine")
+            }
+
+            return NormalizedOptionalLineRange(
+                startLine = normalizedStartLine,
+                endLine = normalizedEndLine
+            )
+        }
     }
+
+    internal data class NormalizedOptionalLineRange(
+        val startLine: Int? = null,
+        val endLine: Int? = null,
+        val error: String? = null
+    )
 
     private data class RiderReformatEditorLookup(
         val editor: Editor?,
@@ -116,20 +146,17 @@ class ReformatCodeTool : AbstractMcpTool() {
         val file = requiredStringArg(arguments, ParamNames.FILE).getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }
-        val startLine = arguments[ParamNames.START_LINE]?.jsonPrimitive?.int
-        val endLine = arguments[ParamNames.END_LINE]?.jsonPrimitive?.int
+        val normalizedLineRange = normalizeOptionalLineRange(
+            startLine = arguments[ParamNames.START_LINE]?.jsonPrimitive?.int,
+            endLine = arguments[ParamNames.END_LINE]?.jsonPrimitive?.int
+        )
+        if (normalizedLineRange.error != null) {
+            return createErrorResult(normalizedLineRange.error)
+        }
+        val startLine = normalizedLineRange.startLine
+        val endLine = normalizedLineRange.endLine
         val optimizeImports = arguments[ParamNames.OPTIMIZE_IMPORTS]?.jsonPrimitive?.boolean ?: true
         val rearrangeCode = arguments[ParamNames.REARRANGE_CODE]?.jsonPrimitive?.boolean ?: false
-
-        // Validate startLine/endLine pairing
-        if ((startLine != null) != (endLine != null)) {
-            return createErrorResult("Both startLine and endLine must be provided together, or neither.")
-        }
-        if (startLine != null && endLine != null) {
-            if (startLine < 1) return createErrorResult("startLine must be >= 1")
-            if (endLine < 1) return createErrorResult("endLine must be >= 1")
-            if (endLine < startLine) return createErrorResult("endLine must be >= startLine")
-        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve file and validate (suspending read action)

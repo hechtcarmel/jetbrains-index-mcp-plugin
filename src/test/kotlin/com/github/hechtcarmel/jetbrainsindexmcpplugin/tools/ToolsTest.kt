@@ -676,12 +676,34 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error when endLine < startLine", result.isError)
     }
 
+    fun testReformatCodeToolZeroRangeIsTreatedAsFullFile() = runBlocking {
+        val filePath = sourceRootPath().resolve("reformat/ZeroRangeMeansFullFile.java")
+        createLocalProjectFile(
+            "reformat/ZeroRangeMeansFullFile.java",
+            "class ZeroRangeMeansFullFile{void test(){System.out.println(\"ok\");}}"
+        )
+
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/reformat/ZeroRangeMeansFullFile.java")
+            put("startLine", 0)
+            put("endLine", 0)
+        })
+
+        assertFalse(
+            "Zero-valued optional range should behave like full-file reformat: ${if (result.isError) errorText(result) else "ok"}",
+            result.isError
+        )
+        assertTrue("Full-file reformat should update formatting", Files.readString(filePath).contains("class ZeroRangeMeansFullFile {"))
+    }
+
     fun testReformatCodeToolStartLineLessThanOne() = runBlocking {
         val tool = ReformatCodeTool()
 
         val result = tool.execute(project, buildJsonObject {
             put("file", "test.kt")
-            put("startLine", 0)
+            put("startLine", -1)
             put("endLine", 5)
         })
 
@@ -694,10 +716,26 @@ class ToolsTest : BasePlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("file", "test.kt")
             put("startLine", 1)
-            put("endLine", 0)
+            put("endLine", -1)
         })
 
         assertTrue("Should error when endLine < 1", result.isError)
+    }
+
+    fun testReformatCodeToolIncompleteRangeWhenZeroActsAsOmitted() = runBlocking {
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.kt")
+            put("startLine", 1)
+            put("endLine", 0)
+        })
+
+        assertTrue("Should error when one line is omitted via zero and the other is positive", result.isError)
+        assertTrue(
+            "Should explain incomplete range pairing",
+            errorText(result).contains("Both startLine and endLine must be provided together")
+        )
     }
 
     fun testReformatCodeToolEndLineExceedsFileLineCount() = runBlocking {

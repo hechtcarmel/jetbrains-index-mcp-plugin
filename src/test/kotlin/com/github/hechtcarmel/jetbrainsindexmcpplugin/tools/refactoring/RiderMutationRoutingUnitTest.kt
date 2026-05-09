@@ -430,6 +430,11 @@ class RiderMutationRoutingUnitTest : TestCase() {
 
         assertContains(
             source,
+            "normalizeOptionalLineRange(",
+            "Reformat should normalize optional 0-valued line arguments before Rider partial-range fail-closed routing runs"
+        )
+        assertContains(
+            source,
             "shouldUseRiderFrontendReformat(file) && textRange != null",
             "Rider .cs/.fs reformat should branch explicitly on partial-range requests before invoking frontend actions"
         )

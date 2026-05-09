@@ -609,6 +609,38 @@ class ToolsUnitTest : TestCase() {
         assertTrue("Required should include 'file'", required.toString().contains("file"))
     }
 
+    fun testReformatCodeToolNormalizesZeroRangeToFullFile() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 0, endLine = 0)
+
+        assertNull(normalized.error)
+        assertNull(normalized.startLine)
+        assertNull(normalized.endLine)
+    }
+
+    fun testReformatCodeToolRejectsNegativeStartLine() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = -1, endLine = 5)
+
+        assertEquals("startLine must be >= 1", normalized.error)
+    }
+
+    fun testReformatCodeToolRejectsNegativeEndLine() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 1, endLine = -1)
+
+        assertEquals("endLine must be >= 1", normalized.error)
+    }
+
+    fun testReformatCodeToolRejectsIncompleteRangeWhenZeroActsAsOmitted() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 1, endLine = 0)
+
+        assertEquals("Both startLine and endLine must be provided together, or neither.", normalized.error)
+    }
+
+    fun testReformatCodeToolRejectsIncompleteRangeWhenZeroActsAsOmittedSymmetrically() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 0, endLine = 1)
+
+        assertEquals("Both startLine and endLine must be provided together, or neither.", normalized.error)
+    }
+
     fun testOptimizeImportsToolSchema() {
         val tool = OptimizeImportsTool()
 
