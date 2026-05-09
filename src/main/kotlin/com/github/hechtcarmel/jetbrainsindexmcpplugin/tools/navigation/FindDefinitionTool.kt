@@ -64,13 +64,11 @@ class FindDefinitionTool : AbstractMcpTool() {
 
         val riderDefinition = RiderBackendSemanticService.findDefinition(
             project = project,
-            file = arguments[ParamNames.FILE]?.jsonPrimitive?.content,
-            line = arguments[ParamNames.LINE]?.jsonPrimitive?.content?.toIntOrNull(),
-            column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.content?.toIntOrNull(),
-            // language = arguments[ParamNames.LANGUAGE]
-            language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content,
-            // symbol = arguments[ParamNames.SYMBOL]
-            symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content,
+            file = optionalStringArg(arguments, ParamNames.FILE),
+            line = optionalIntArg(arguments, ParamNames.LINE),
+            column = optionalIntArg(arguments, ParamNames.COLUMN),
+            language = optionalStringArg(arguments, ParamNames.LANGUAGE),
+            symbol = optionalStringArg(arguments, ParamNames.SYMBOL),
             fullElementPreview = fullElementPreview,
             maxPreviewLines = maxPreviewLines
         )

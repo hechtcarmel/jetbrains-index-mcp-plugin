@@ -70,8 +70,6 @@ public class IndexMcpBackendHost
         "JetBrains.ReSharper.Plugins.FSharp.IFSharpPluginZone, JetBrains.ReSharper.Plugins.FSharp.Common";
     private const string FSharpPresentationLanguageTypeName =
         "JetBrains.ReSharper.Plugins.FSharp.Psi.FSharpLanguage";
-    private static long ourFindReferencesRequestSequence;
-    private static long ourRenameRequestSequence;
     private static readonly Lazy<FSharpCapabilityAvailability> ourFSharpCapability =
         new(() => DetectFSharpCapability());
     private static readonly Lazy<object?> ourFSharpPresentationLanguage =
@@ -539,13 +537,10 @@ public class IndexMcpBackendHost
         return Task.Run(() =>
         {
             var effectiveLimit = GetEffectiveResultLimit(request.Limit);
-            var trace = StartFindReferencesTrace(request, effectiveLimit);
             FindReferencesResolutionPlan? plan = null;
-            var stage = "start";
 
             try
             {
-                stage = "plan";
                 ParsedRiderSymbol? parsedSymbol = null;
                 if (!string.IsNullOrWhiteSpace(request.Target.Language) &&
                     !string.IsNullOrWhiteSpace(request.Target.Symbol))
@@ -561,31 +556,8 @@ public class IndexMcpBackendHost
                 }
 
                 plan = BuildFindReferencesResolutionPlan(request.Target, request.Scope, parsedSymbol);
-
-                LogFindReferencesInfo(trace,
-                    "plan",
-                    $"TargetKind={plan?.TargetKind ?? "unsupported"}, " +
-                    $"IsFSharpPositionTarget={plan?.IsFSharpPositionTarget ?? false}, " +
-                    $"IsFSharpSymbolTarget={plan?.IsFSharpSymbolTarget ?? false}, " +
-                    $"UseProjectQualifiedTypeLookup={plan?.UseProjectQualifiedTypeLookup ?? false}, " +
-                    $"UseBoundedProjectFileSearch={plan?.UseBoundedProjectFileSearch ?? false}, " +
-                    $"AllowLibraryFallback={plan?.AllowLibraryFallback ?? false}, " +
-                    $"AllowedProjectFileExtensions={FormatExtensions(plan?.AllowedProjectFileExtensions)}, " +
-                    $"RejectUnboundedReferenceSearch={plan?.RejectUnboundedReferenceSearch ?? false}");
-
-                stage = "resolve-target";
-                var resolveStopwatch = Stopwatch.StartNew();
-                LogFindReferencesInfo(trace, "resolve-target.start", $"elapsedMs={trace.ElapsedMilliseconds}");
-                var targetResolution = ResolveTargetForFindReferences(lt, request.Target, request.Scope, trace);
+                var targetResolution = ResolveTargetForFindReferences(lt, request.Target, request.Scope);
                 var element = targetResolution.TryGetElement();
-                resolveStopwatch.Stop();
-                LogFindReferencesInfo(
-                    trace,
-                    "resolve-target.end",
-                    $"elapsedMs={trace.ElapsedMilliseconds}, stageElapsedMs={resolveStopwatch.ElapsedMilliseconds}, " +
-                    $"status={targetResolution.Status}, origin={targetResolution.Origin}, element={(element == null ? "null" : "found")}, " +
-                    $"summary={(element == null ? "<null>" : DescribeFindReferencesResolvedTarget(element, targetResolution.Origin))}, " +
-                    $"message={targetResolution.Message ?? "<none>"}");
                 if (element == null)
                 {
                     if (ShouldRaiseFindReferencesTargetResolutionFailure(request.Target, targetResolution.Status))
@@ -596,22 +568,15 @@ public class IndexMcpBackendHost
                             targetResolution.Status,
                             targetResolution.Message,
                             targetResolution.Origin);
-                        LogFindReferencesWarning(trace, $"stage=resolve-target, {unresolvedMessage}");
                         throw new InvalidOperationException(unresolvedMessage);
                     }
 
                     return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0);
                 }
 
-                var searchRoute = plan?.UseBoundedProjectFileSearch == true ? "bounded" : "legacy";
-                stage = searchRoute == "bounded" ? "find-bounded" : "find-legacy";
-                LogFindReferencesInfo(
-                    trace,
-                    "search-route",
-                    $"route={searchRoute}, target={DescribeFindReferencesResolvedTarget(element, targetResolution.Origin)}");
                 var references = (plan?.UseBoundedProjectFileSearch == true
-                        ? FindReferencesBounded(lt, element, plan.AllowedProjectFileExtensions, effectiveLimit, trace)
-                        : FindReferences(lt, element, effectiveLimit, trace, "legacy"))
+                        ? FindReferencesBounded(lt, element, plan.AllowedProjectFileExtensions, effectiveLimit)
+                        : FindReferences(lt, element, effectiveLimit))
                     .Select(ToReferenceInfo)
                     .Where(reference => reference != null)
                     .Cast<RdReferenceInfo>()
@@ -620,23 +585,11 @@ public class IndexMcpBackendHost
                     .Select(group => group.First())
                     .ToList();
 
-                stage = "complete";
-                LogFindReferencesInfo(
-                    trace,
-                    "complete",
-                    $"elapsedMs={trace.ElapsedMilliseconds}, dedupedCount={references.Count}, returnedCount={Math.Min(references.Count, effectiveLimit)}, partial={trace.IsPartial}");
                 return new RdFindReferencesResult(references.Take(effectiveLimit).ToList(), references.Count);
             }
-            catch (Exception ex)
+            catch
             {
-                LogFindReferencesWarning(
-                    trace,
-                    $"stage={stage}, elapsedMs={trace.ElapsedMilliseconds}, exception={ex.GetType().FullName}: {ex.Message}");
                 throw;
-            }
-            finally
-            {
-                LogFindReferencesInfo(trace, "finally", $"elapsedMs={trace.ElapsedMilliseconds}, stage={stage}");
             }
         });
     }
@@ -660,27 +613,16 @@ public class IndexMcpBackendHost
     private Task<RdRenameSymbolResult?> HandleRenameSymbol(
         Lifetime lt, RdRenameSymbolRequest request)
     {
-        var trace = StartRenameTrace(
-            "renameSymbol",
-            $"filePath={request.Position.FilePath}, line={request.Position.Line}, column={request.Position.Column}, newName={request.NewName}");
-        LogRenameInfo(trace, "handle.received", $"elapsedMs={trace.ElapsedMilliseconds}");
-        var preAcquiredTextControl = TraceRenameStage(trace, "service-rename.text-control.prewrite-acquire",
-            () => TryAcquireTextControlBeforeWriteLock(request, trace),
-            textControl => $"found={textControl != null}, description={DescribeReflectedTextControl(textControl)}");
+        var preAcquiredTextControl = TryAcquireTextControlBeforeWriteLock(request);
         OuterLifetime outerLifetime = lt;
         RdRenameSymbolResult? result = null;
-        return ExecuteWriteLockedRename(outerLifetime, () => { result = ExecuteRenameSymbol(request, preAcquiredTextControl, trace); }, trace)
+        return ExecuteWriteLockedRename(outerLifetime, () => { result = ExecuteRenameSymbol(request, preAcquiredTextControl); })
             .ContinueWith<RdRenameSymbolResult?>(task =>
             {
                 if (!task.IsFaulted)
-                {
-                    LogRenameInfo(trace, "handle.completed", $"elapsedMs={trace.ElapsedMilliseconds}, status={result?.Status ?? "<null>"}");
                     return result;
-                }
 
                 var exception = task.Exception?.GetBaseException();
-                LogRenameWarning(trace,
-                    $"stage=handle.completed, elapsedMs={trace.ElapsedMilliseconds}, exception={exception?.GetType().FullName ?? "<null>"}: {exception?.Message ?? "<null>"}");
                 return MutationVerificationService
                     .Blocked(
                         exception == null
@@ -690,24 +632,8 @@ public class IndexMcpBackendHost
             });
     }
 
-    private Task ExecuteWriteLockedRename(OuterLifetime outerLifetime, Action action, RenameTraceContext? trace = null)
+    private Task ExecuteWriteLockedRename(OuterLifetime outerLifetime, Action action)
     {
-        Action tracedAction = () =>
-        {
-            LogRenameInfo(trace, "write-lock.action.start", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
-            try
-            {
-                action();
-                LogRenameInfo(trace, "write-lock.action.end", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
-            }
-            catch (Exception ex)
-            {
-                LogRenameWarning(trace,
-                    $"stage=write-lock.action, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, exception={ex.GetType().FullName}: {ex.Message}");
-                throw;
-            }
-        };
-
         var shellLocksEx = typeof(IShellLocks).Assembly.GetType("JetBrains.Application.Threading.IShellLocksEx")
             ?? throw new InvalidOperationException("Unable to locate IShellLocksEx in the Rider runtime.");
 
@@ -733,10 +659,9 @@ public class IndexMcpBackendHost
 
         if (writeLockAsync != null)
         {
-            LogRenameInfo(trace, "write-lock.request", "api=ExecuteOrQueueWriteLockAsyncEx timeoutSeconds=30");
             return (Task)writeLockAsync.Invoke(
                 null,
-                new object[] { _shellLocks, outerLifetime, tracedAction, TimeSpan.FromSeconds(30), TaskPriority.Normal, false, "", "" })!;
+                new object[] { _shellLocks, outerLifetime, action, TimeSpan.FromSeconds(30), TaskPriority.Normal, false, "", "" })!;
         }
 
         var writeLockWhenAvailable = shellLocksEx.GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -760,52 +685,39 @@ public class IndexMcpBackendHost
 
         if (writeLockWhenAvailable != null)
         {
-            LogRenameInfo(trace, "write-lock.request", "api=ExecuteOrQueueWithWriteLockWhenAvailableEx timeoutSeconds=30");
             return (Task)writeLockWhenAvailable.Invoke(
                 null,
-                new object[] { _shellLocks, outerLifetime, "Index MCP Rider rename", tracedAction, TimeSpan.FromSeconds(30), "", "" })!;
+                new object[] { _shellLocks, outerLifetime, "Index MCP Rider rename", action, TimeSpan.FromSeconds(30), "", "" })!;
         }
 
-        LogRenameWarning(trace, "stage=write-lock.request, exception=MissingMethodException: No compatible Rider/ReSharper write-lock API was found for headless symbol rename.");
         throw new MissingMethodException(
             "No compatible Rider/ReSharper write-lock API was found for headless symbol rename.");
     }
 
     private RdRenameSymbolResult ExecuteRenameSymbol(
         RdRenameSymbolRequest request,
-        object? preAcquiredTextControl,
-        RenameTraceContext? trace = null)
+        object? preAcquiredTextControl)
     {
-        LogRenameInfo(trace, "execute-rename.start", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
         var planStopwatch = Stopwatch.StartNew();
         var renamePlan = RenameMutationPlanner.PlanExactSymbolRename(
             request.Position.FilePath,
             request.Position.Line,
             request.Position.Column);
         planStopwatch.Stop();
-        LogRenameInfo(trace,
-            "plan.end",
-            $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, stageElapsedMs={planStopwatch.ElapsedMilliseconds}, canProceed={renamePlan.CanProceed}, resolutionStatus={renamePlan.Resolution.Status}, resolvedName={renamePlan.Resolution.ResolvedName ?? "<null>"}, targetKind={renamePlan.Resolution.TargetKind ?? "<null>"}, sourceTokenText={renamePlan.Resolution.SourceTokenText ?? "<null>"}");
 
         if (!renamePlan.CanProceed)
         {
-            LogRenameWarning(trace, $"stage=plan, blocked=true, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={renamePlan.Resolution.Message}");
             return ToRenameBlockedResult(renamePlan.Resolution, request.NewName);
         }
 
         var resolveStopwatch = Stopwatch.StartNew();
-        LogRenameInfo(trace, "target-resolution.start", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
         var localDeclarationNode = ResolveExactDeclarationNodeAt(
             request.Position,
             renamePlan.Resolution.ResolvedName!,
             renamePlan.Resolution.TargetKind);
         resolveStopwatch.Stop();
-        LogRenameInfo(trace,
-            "target-resolution.end",
-            $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, stageElapsedMs={resolveStopwatch.ElapsedMilliseconds}, nodeFound={localDeclarationNode != null}");
         if (localDeclarationNode == null || !TryGetDeclaredElement(localDeclarationNode, out var element))
         {
-            LogRenameWarning(trace, $"stage=target-resolution, blocked=true, elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
             return MutationVerificationService
                 .Blocked(
                     AppendSymbolRenameDiagnostics(
@@ -820,11 +732,9 @@ public class IndexMcpBackendHost
         }
 
         var oldName = renamePlan.Resolution.ResolvedName!;
-        LogRenameInfo(trace, "target-resolution.bound", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, oldName={oldName}, element={DescribeElement(element)}");
 
         if (string.Equals(oldName, request.NewName, StringComparison.Ordinal))
         {
-            LogRenameInfo(trace, "no-op", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, reason=same-name");
             return MutationVerificationService
                 .NoOp(
                     AppendSymbolRenameDiagnostics(
@@ -838,12 +748,9 @@ public class IndexMcpBackendHost
                 .ToRenameSymbolResult(oldName, request.NewName);
         }
 
-        LogRenameInfo(trace, "availability.start", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
         var availability = _renameRefactoringService.CheckRenameAvailability(element);
-        LogRenameInfo(trace, "availability.end", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, availability={availability}");
         if (availability != RenameAvailabilityCheckResult.CanBeRenamed)
         {
-            LogRenameWarning(trace, $"stage=availability, unsupported=true, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, availability={availability}");
             return MutationVerificationService
                 .Unsupported(AppendSymbolRenameDiagnostics(
                     $"ReSharper reports that '{oldName}' cannot be renamed ({availability}). No files were modified.",
@@ -868,13 +775,10 @@ public class IndexMcpBackendHost
 
         try
         {
-            var renameExecution = TryExecuteDrivenRename(element, request.NewName, preAcquiredTextControl, trace);
+            var renameExecution = TryExecuteDrivenRename(element, request.NewName, preAcquiredTextControl);
 
             if (!renameExecution.Succeeded)
             {
-                LogRenameWarning(trace,
-                    $"stage=workflow, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={renameExecution.Message}");
-
                 if (renameExecution.IsUnsupported)
                 {
                     return MutationVerificationService
@@ -904,7 +808,6 @@ public class IndexMcpBackendHost
 
             if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
             {
-                LogRenameWarning(trace, $"stage=verification, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, changedAffectedFiles=false");
                 return MutationVerificationService
                     .NoOp(
                         AppendSymbolRenameDiagnostics(
@@ -919,9 +822,6 @@ public class IndexMcpBackendHost
                     .ToRenameSymbolResult(oldName, request.NewName);
             }
 
-            LogRenameInfo(trace,
-                "success",
-                $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, affectedFiles={affectedFiles.Count}, oldName={oldName}, newName={request.NewName}");
             return MutationVerificationService
                 .Success(
                     affectedFiles,
@@ -939,8 +839,6 @@ public class IndexMcpBackendHost
         }
         catch (Exception ex)
         {
-            LogRenameWarning(trace,
-                $"stage=execute-rename, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, exception={ex.GetType().FullName}: {ex.Message}");
             return MutationVerificationService
                 .Blocked(AppendSymbolRenameDiagnostics(
                     $"ReSharper backend rename failed: {ex.GetType().Name}: {ex.Message}",
@@ -1324,72 +1222,32 @@ public class IndexMcpBackendHost
     private RenameExecutionAttempt TryExecuteDrivenRename(
         IDeclaredElement element,
         string newName,
-        object? preAcquiredTextControl,
-        RenameTraceContext? trace = null)
+        object? preAcquiredTextControl)
     {
-        LogRenameInfo(trace, "service-rename.start", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, element={DescribeElement(element)}, newName={newName}");
-
         try
         {
             var targetTextControl = preAcquiredTextControl;
-            LogRenameInfo(trace,
-                "service-rename.text-control.reuse",
-                $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, found={targetTextControl != null}, description={DescribeReflectedTextControl(targetTextControl)}");
 
             if (targetTextControl != null)
             {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.found",
-                    $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, description={DescribeReflectedTextControl(targetTextControl)}");
-
-                var textControlRename = TraceRenameStage(trace, "service-rename.text-control.rename",
-                    () => TryExecuteTextControlRename(element, newName, targetTextControl),
-                    result => $"succeeded={result.Succeeded}, unsupported={result.IsUnsupported}, message={result.Message}");
+                var textControlRename = TryExecuteTextControlRename(element, newName, targetTextControl);
 
                 if (textControlRename.Succeeded)
-                {
-                    LogRenameInfo(trace,
-                        "service-rename.text-control.success",
-                        $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={textControlRename.Message}");
                     return textControlRename;
-                }
-
-                LogRenameWarning(trace,
-                    $"stage=service-rename.text-control.rename, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={textControlRename.Message}");
-            }
-            else
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.missing",
-                    $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, fallingBack=true");
             }
 
-            var plan = TraceRenameStage(trace, "service-rename.inspect", InspectSymbolRenameServiceExecutionPlan,
-                inspectedPlan =>
-                    $"supported={inspectedPlan.IsSupported}, selectedMethod={inspectedPlan.SelectedMethodSignature ?? "<none>"}, requiresTextControl={inspectedPlan.RequiresTextControl}, availableMethods={string.Join(" || ", inspectedPlan.AvailableMethodSignatures)}");
+            var plan = InspectSymbolRenameServiceExecutionPlan();
 
             if (!plan.IsSupported)
-            {
-                LogRenameWarning(trace,
-                    $"stage=service-rename.failure, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={plan.Message}");
                 return RenameExecutionAttempt.Unsupported(plan.Message);
-            }
 
             if (plan.RequiresTextControl)
-            {
-                LogRenameWarning(trace,
-                    $"stage=service-rename.failure, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={plan.Message}");
                 return RenameExecutionAttempt.Unsupported(plan.Message);
-            }
 
-            LogRenameWarning(trace,
-                $"stage=service-rename.failure, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, message={plan.Message}");
             return RenameExecutionAttempt.Unsupported(plan.Message);
         }
         catch (Exception ex)
         {
-            LogRenameWarning(trace,
-                $"stage=service-rename.failure, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, exception={ex}");
             return RenameExecutionAttempt.Unsupported(
                 $"Symbol rename is fail-closed because RenameRefactoringService inspection failed: {ex.GetType().Name}: {ex.Message}");
         }
@@ -1412,7 +1270,7 @@ public class IndexMcpBackendHost
             if (textControlManager == null)
                 return null;
 
-            return TryFindTextControlForDocument(textControlManagerType, textControlManager, document, null);
+            return TryFindTextControlForDocument(textControlManagerType, textControlManager, document);
         }
         catch
         {
@@ -1420,7 +1278,7 @@ public class IndexMcpBackendHost
         }
     }
 
-    private object? TryAcquireTextControlBeforeWriteLock(RdRenameSymbolRequest request, RenameTraceContext? trace)
+    private object? TryAcquireTextControlBeforeWriteLock(RdRenameSymbolRequest request)
     {
         try
         {
@@ -1429,106 +1287,35 @@ public class IndexMcpBackendHost
                 request.Position.Line,
                 request.Position.Column);
             if (!renamePlan.CanProceed)
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.prewrite-skip",
-                    $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, reason=plan-blocked, resolutionStatus={renamePlan.Resolution.Status}");
                 return null;
-            }
 
             var localDeclarationNode = ResolveExactDeclarationNodeAt(
                 request.Position,
                 renamePlan.Resolution.ResolvedName!,
                 renamePlan.Resolution.TargetKind);
             if (localDeclarationNode == null || !TryGetDeclaredElement(localDeclarationNode, out var element))
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.prewrite-skip",
-                    $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, reason=element-unresolved");
                 return null;
-            }
 
-            return TryFindTextControlForElement(element, trace);
+            return TryFindTextControlForElement(element);
         }
-        catch (Exception ex)
+        catch
         {
-            LogRenameWarning(trace,
-                $"stage=service-rename.text-control.prewrite-acquire, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, exception={ex.GetType().FullName}: {ex.Message}");
             return null;
         }
     }
 
-    private object? TryFindTextControlForElement(IDeclaredElement element, RenameTraceContext? trace)
-    {
-        try
-        {
-            var declaration = element.GetDeclarations().FirstOrDefault();
-            var document = declaration?.GetSourceFile()?.Document;
-            if (document == null)
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.poll.summary",
-                    $"attempts=0, found=false, elapsedMs=0, reason=document-missing");
-                return null;
-            }
-
-            var textControlManagerType = TryResolveRuntimeType("JetBrains.TextControl.ITextControlManager");
-            if (textControlManagerType == null)
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.poll.summary",
-                    $"attempts=0, found=false, elapsedMs=0, reason=text-control-manager-type-missing");
-                return null;
-            }
-
-            var textControlManager = TryGetRuntimeComponent(textControlManagerType);
-            if (textControlManager == null)
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.poll.summary",
-                    $"attempts=0, found=false, elapsedMs=0, reason=text-control-manager-missing");
-                return null;
-            }
-
-            return TryFindTextControlForDocument(textControlManagerType, textControlManager, document, trace);
-        }
-        catch (Exception ex)
-        {
-            LogRenameWarning(trace,
-                $"stage=service-rename.text-control.poll, exception={ex.GetType().FullName}: {ex.Message}");
-            return null;
-        }
-    }
-
-    private object? TryFindTextControlForDocument(Type textControlManagerType, object textControlManager, object document, RenameTraceContext? trace)
+    private object? TryFindTextControlForDocument(Type textControlManagerType, object textControlManager, object document)
     {
         var stopwatch = Stopwatch.StartNew();
-        var attempts = 0;
 
         while (true)
         {
-            attempts++;
             var textControl = TryEnumerateMatchingTextControl(textControlManagerType, textControlManager, document);
-            var found = textControl != null;
-            LogRenameInfo(trace,
-                "service-rename.text-control.poll.attempt",
-                $"attempt={attempts}, found={found}, elapsedMs={stopwatch.ElapsedMilliseconds}");
-
-            if (found)
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.poll.summary",
-                    $"attempts={attempts}, found=true, elapsedMs={stopwatch.ElapsedMilliseconds}");
+            if (textControl != null)
                 return textControl;
-            }
 
             if (stopwatch.ElapsedMilliseconds >= TextControlPollTimeoutMs)
-            {
-                LogRenameInfo(trace,
-                    "service-rename.text-control.poll.summary",
-                    $"attempts={attempts}, found=false, elapsedMs={stopwatch.ElapsedMilliseconds}");
                 return null;
-            }
 
             Thread.Sleep(TextControlPollIntervalMs);
         }
@@ -1741,57 +1528,48 @@ public class IndexMcpBackendHost
 
     private RefactoringDriverWithConflicts ExecuteRenameWorkflow(
         IDeclaredElement element,
-        RenameDataProvider dataProvider,
-        RenameTraceContext? trace = null)
-        => ExecuteRenameWorkflow(dataProvider, lifetimeDefinition => CreateRenameDataContext(element, dataProvider, lifetimeDefinition), trace);
+        RenameDataProvider dataProvider)
+        => ExecuteRenameWorkflow(dataProvider, lifetimeDefinition => CreateRenameDataContext(element, dataProvider, lifetimeDefinition));
 
     private RefactoringDriverWithConflicts ExecuteRenameWorkflow(
         RenameDataProvider dataProvider,
-        Func<LifetimeDefinition, IDataContext> dataContextFactory,
-        RenameTraceContext? trace = null)
+        Func<LifetimeDefinition, IDataContext> dataContextFactory)
     {
         using var lifetimeDefinition = Lifetime.Define(_solution.GetSolutionLifetimes().UntilSolutionCloseLifetime);
         using var compilationContext = CompilationContextCookie.GetExplicitUniversalContextIfNotSet();
-        var dataContext = TraceRenameStage(trace, "workflow.data-context", () => dataContextFactory(lifetimeDefinition));
-        var workflow = TraceRenameStage(trace, "workflow.construct", () =>
+        var dataContext = dataContextFactory(lifetimeDefinition);
+        var workflow = new RenameWorkflow(_solution, "Index MCP Rider rename")
         {
-            return new RenameWorkflow(_solution, "Index MCP Rider rename")
-            {
-                EventBus = Shell.Instance.GetComponent<IEventBus>(),
-                WorkflowExecuterLifetime = lifetimeDefinition.Lifetime
-            };
-        }, createdWorkflow => $"workflowType={createdWorkflow.GetType().FullName}");
+            EventBus = Shell.Instance.GetComponent<IEventBus>(),
+            WorkflowExecuterLifetime = lifetimeDefinition.Lifetime
+        };
 
-        var initialized = TraceRenameStage(trace, "workflow.initialize", () => workflow.Initialize(dataContext), initialized => $"initialized={initialized}");
+        var initialized = workflow.Initialize(dataContext);
         if (!initialized)
             throw new InvalidOperationException("ReSharper rename workflow is not available for the selected symbol.");
 
-        TraceRenameStage(trace, "workflow.pages", () => ProcessWorkflowPages(workflow));
+        ProcessWorkflowPages(workflow);
 
         var driver = new RefactoringDriverWithConflicts(new RefactoringDriverStorage());
-        var executer = TraceRenameStage(trace, "workflow.create-refactoring", () =>
-                workflow.CreateRefactoring(driver)
-                ?? throw new InvalidOperationException("ReSharper rename workflow did not create a refactoring executer."),
-            createdExecuter => $"executerType={createdExecuter.GetType().FullName}");
+        var executer = workflow.CreateRefactoring(driver)
+                       ?? throw new InvalidOperationException("ReSharper rename workflow did not create a refactoring executer.");
 
-        var preExecuted = TraceRenameStage(trace, "workflow.pre-execute", () => workflow.PreExecute(NoOpProgressIndicator.Instance), executed => $"preExecute={executed}");
+        var preExecuted = workflow.PreExecute(NoOpProgressIndicator.Instance);
         if (!preExecuted)
             throw new InvalidOperationException("ReSharper rename workflow PreExecute returned false.");
 
-        var executed = TraceRenameStage(trace, "workflow.execute", () =>
-                PsiTransactionCookie.ExecuteConditionally(
-                    _solution.GetPsiServices(),
-                    () => executer.Execute(NoOpProgressIndicator.Instance),
-                    "Index MCP Rider rename"),
-            executeResult => $"executed={executeResult}");
+        var executed = PsiTransactionCookie.ExecuteConditionally(
+            _solution.GetPsiServices(),
+            () => executer.Execute(NoOpProgressIndicator.Instance),
+            "Index MCP Rider rename");
         if (!executed)
             throw new InvalidOperationException("ReSharper rename workflow Execute returned false.");
 
-        var postExecuted = TraceRenameStage(trace, "workflow.post-execute", () => workflow.PostExecute(NoOpProgressIndicator.Instance), executed => $"postExecute={executed}");
+        var postExecuted = workflow.PostExecute(NoOpProgressIndicator.Instance);
         if (!postExecuted)
             throw new InvalidOperationException("ReSharper rename workflow PostExecute returned false.");
 
-        TraceRenameStage(trace, "workflow.successful-finish", () => workflow.SuccessfulFinish(NoOpProgressIndicator.Instance));
+        workflow.SuccessfulFinish(NoOpProgressIndicator.Instance);
         return driver;
     }
 
@@ -2228,8 +2006,7 @@ public class IndexMcpBackendHost
     private FindReferencesTargetResolution ResolveTargetForFindReferences(
         Lifetime lt,
         RdSemanticTarget target,
-        string scope,
-        FindReferencesTraceContext? trace = null)
+        string scope)
     {
         var capabilityFailure = ResolveFindReferencesCapabilityFailure(target);
         if (capabilityFailure != null)
@@ -2257,7 +2034,7 @@ public class IndexMcpBackendHost
         if (!string.IsNullOrWhiteSpace(target.Language) &&
             !string.IsNullOrWhiteSpace(target.Symbol))
         {
-            return ResolveSymbolForFindReferences(lt, target.Language, target.Symbol, scope, trace);
+            return ResolveSymbolForFindReferences(lt, target.Language, target.Symbol, scope);
         }
 
         return FindReferencesTargetResolution.Failure(
@@ -2475,8 +2252,7 @@ public class IndexMcpBackendHost
         Lifetime lt,
         string? language,
         string symbol,
-        string scope,
-        FindReferencesTraceContext? trace = null)
+        string scope)
     {
         EnsureFindReferencesIndexedTargetIsSupported(language, symbol, scope);
 
@@ -2501,10 +2277,6 @@ public class IndexMcpBackendHost
                 plan.AllowedProjectFileExtensions),
             () => ResolveClrPredefinedContainerCandidates(parsed.Language, NormalizeQualifiedName(parsed.ContainerQualifiedName)));
         projectLookupStopwatch.Stop();
-        LogFindReferencesInfo(
-            trace,
-            "resolve-symbol.project-qualified-lookup",
-            $"elapsedMs={trace?.ElapsedMilliseconds ?? projectLookupStopwatch.ElapsedMilliseconds}, stageElapsedMs={projectLookupStopwatch.ElapsedMilliseconds}, candidateCount={projectCandidates.Matches.Count}, container={parsed.ContainerQualifiedName}, origin={projectCandidates.Origin}");
 
         var resolution = ResolveSingleMatch(
             OrderDeclaredElementsDeterministically(projectCandidates.Matches).ToList(),
@@ -3998,14 +3770,27 @@ public class IndexMcpBackendHost
 
     private static IDeclaredElement? TryResolveDirectReferenceElement(ITreeNode node)
     {
-        foreach (var reference in node.GetReferences())
+        for (ITreeNode? current = node; current != null; current = current.Parent)
         {
-            var resolved = reference.Resolve().DeclaredElement;
-            if (resolved != null)
-                return resolved;
+            foreach (var reference in current.GetReferences())
+            {
+                var resolved = reference.Resolve().DeclaredElement;
+                if (resolved != null)
+                    return resolved;
+            }
+
+            if (current is IReferenceExpression referenceExpression)
+            {
+                var resolved = referenceExpression.Reference?.Resolve().DeclaredElement;
+                if (resolved != null)
+                    return resolved;
+            }
+
+            if (current is IDeclaration or ITypeDeclaration)
+                break;
         }
 
-        return node.GetContainingNode<IReferenceExpression>()?.Reference?.Resolve().DeclaredElement;
+        return null;
     }
 
     private static IDeclaredElement? TryResolveDeclarationNameElement(ITreeNode node)
@@ -4095,23 +3880,11 @@ public class IndexMcpBackendHost
 
     private static IDeclaredElement? ResolveFromNode(ITreeNode node)
     {
-        foreach (var reference in node.GetReferences())
-        {
-            var resolved = reference.Resolve().DeclaredElement;
-            if (resolved != null) return resolved;
-        }
+        var resolvedReference = TryResolveDirectReferenceElement(node);
+        if (resolvedReference != null)
+            return resolvedReference;
 
-        if (node.GetContainingNode<IReferenceExpression>()?.Reference is { } referenceExpression)
-        {
-            var resolved = referenceExpression.Resolve().DeclaredElement;
-            if (resolved != null) return resolved;
-        }
-
-        var declarationNode = node.GetContainingNode<IDeclaration>() as ITreeNode
-                              ?? node.GetContainingNode<ITypeDeclaration>() as ITreeNode;
-        return declarationNode != null && TryGetDeclaredElement(declarationNode, out var declaredElement)
-            ? declaredElement
-            : null;
+        return TryResolveDeclarationNameElement(node);
     }
 
     private static bool TryGetDeclaredElement(ITreeNode node, out IDeclaredElement declaredElement)
@@ -4185,20 +3958,18 @@ public class IndexMcpBackendHost
         Lifetime lt,
         IDeclaredElement element,
         int limit,
-        FindReferencesTraceContext? trace = null,
         string searchMode = "legacy")
     {
         var searchDomain = _solution.GetPsiServices().SearchDomainFactory
             .CreateSearchDomain(_solution, false);
-        return FindReferences(lt, element, searchDomain, limit, trace, searchMode);
+        return FindReferences(lt, element, searchDomain, limit, searchMode: searchMode);
     }
 
     private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferencesBounded(
         Lifetime lt,
         IDeclaredElement element,
         IReadOnlyList<string>? allowedProjectFileExtensions,
-        int limit,
-        FindReferencesTraceContext? trace = null)
+        int limit)
     {
         if (allowedProjectFileExtensions == null || allowedProjectFileExtensions.Count == 0)
         {
@@ -4212,12 +3983,6 @@ public class IndexMcpBackendHost
         enumerateStopwatch.Stop();
 
         var sourceFileBatches = BatchSourceFilesForBoundedFindReferences(sourceFiles, BoundedFindReferencesBatchSize);
-
-        LogFindReferencesInfo(
-            trace,
-            "find-bounded.domain",
-            $"elapsedMs={trace?.ElapsedMilliseconds ?? enumerateStopwatch.ElapsedMilliseconds}, " +
-            $"sourceFiles={sourceFileBatches.Sum(batch => batch.Count)}, batches={sourceFileBatches.Count}, batchSize={BoundedFindReferencesBatchSize}, enumerateMs={enumerateStopwatch.ElapsedMilliseconds}, extensions={FormatExtensions(allowedProjectFileExtensions)}");
 
         var deadlineIndicator = CreateBoundedFindReferencesDeadlineProgressIndicator();
         var references = new List<JetBrains.ReSharper.Psi.Resolve.IReference>();
@@ -4236,10 +4001,6 @@ public class IndexMcpBackendHost
             var searchMode = batch.Count == 1 ? "bounded-file" : "bounded-batch";
             var batchDescriptor = DescribeSourceFileBatch(batch);
             var batchStopwatch = Stopwatch.StartNew();
-            LogFindReferencesInfo(
-                trace,
-                $"find-bounded.{batchLabel}.start",
-                $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, index={batchIndex + 1}, total={sourceFileBatches.Count}, batchSize={batch.Count}, limitRemaining={limitRemaining}, files={batchDescriptor}");
 
             var createDomainStopwatch = Stopwatch.StartNew();
             ISearchDomain? searchDomain = null;
@@ -4255,7 +4016,7 @@ public class IndexMcpBackendHost
             {
                 RunBoundedFindReferencesStage(deadlineIndicator, () =>
                 {
-                    batchReferences = FindReferences(lt, element, searchDomain!, limitRemaining, trace, searchMode, deadlineIndicator);
+                    batchReferences = FindReferences(lt, element, searchDomain!, limitRemaining, searchMode, deadlineIndicator);
                 });
             }
             catch (Exception ex)
@@ -4270,53 +4031,19 @@ public class IndexMcpBackendHost
                     classifiedException.Category,
                     classifiedException.Exception.GetType().FullName ?? classifiedException.Exception.GetType().Name,
                     classifiedException.Exception.Message,
-                    trace?.ElapsedMilliseconds ?? batchStopwatch.ElapsedMilliseconds,
+                    batchStopwatch.ElapsedMilliseconds,
                     batchStopwatch.ElapsedMilliseconds,
                     references.Count);
 
                 skippedDiagnostics.Add(skippedDiagnostic);
-                trace?.MarkPartial();
-
-                LogFindReferencesWarning(
-                    trace,
-                    FormatBoundedFindReferencesSkipMessage(
-                        searchMode,
-                        element,
-                        skippedDiagnostic.Category,
-                        skippedDiagnostic.Index,
-                        skippedDiagnostic.Total,
-                        skippedDiagnostic.Descriptor,
-                        skippedDiagnostic.ExceptionType,
-                        skippedDiagnostic.ExceptionMessage,
-                        skippedDiagnostic.ElapsedMilliseconds,
-                        skippedDiagnostic.StageElapsedMilliseconds,
-                        skippedDiagnostic.CollectedCount));
                 continue;
             }
 
             references.AddRange(batchReferences!);
             batchStopwatch.Stop();
 
-            LogFindReferencesInfo(
-                trace,
-                $"find-bounded.{batchLabel}.end",
-                $"elapsedMs={trace?.ElapsedMilliseconds ?? batchStopwatch.ElapsedMilliseconds}, stageElapsedMs={batchStopwatch.ElapsedMilliseconds}, createDomainMs={createDomainStopwatch.ElapsedMilliseconds}, index={batchIndex + 1}, total={sourceFileBatches.Count}, batchSize={batch.Count}, batchCollectedCount={batchReferences.Count}, collectedCount={references.Count}, files={batchDescriptor}");
-
             if (references.Count >= limit)
-            {
-                LogFindReferencesInfo(
-                    trace,
-                    "find-bounded.early-stop",
-                    $"elapsedMs={trace?.ElapsedMilliseconds ?? batchStopwatch.ElapsedMilliseconds}, collectedCount={references.Count}, limit={limit}, index={batchIndex + 1}, total={sourceFileBatches.Count}");
                 break;
-            }
-        }
-
-        if (skippedDiagnostics.Count > 0)
-        {
-            LogFindReferencesWarning(
-                trace,
-                $"stage=find-bounded.summary, partial=true, skippedCount={skippedDiagnostics.Count}, skippedFiles={FormatSkippedFindReferencesDescriptors(skippedDiagnostics.Select(diagnostic => diagnostic.Descriptor).ToList(), 5)}, collectedCount={references.Count}");
         }
 
         return references;
@@ -4481,7 +4208,6 @@ public class IndexMcpBackendHost
         IDeclaredElement element,
         ISearchDomain searchDomain,
         int limit,
-        FindReferencesTraceContext? trace = null,
         string searchMode = "legacy",
         IProgressIndicator? progressIndicator = null)
     {
@@ -4503,10 +4229,6 @@ public class IndexMcpBackendHost
             });
 
         var findStopwatch = Stopwatch.StartNew();
-        LogFindReferencesInfo(
-            trace,
-            $"finder.{searchMode}.start",
-            $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}, limit={limit}, element={DescribeElement(element)}");
         try
         {
             _solution.GetPsiServices().Finder.FindReferences(
@@ -4519,17 +4241,9 @@ public class IndexMcpBackendHost
         catch (Exception ex)
         {
             findStopwatch.Stop();
-            LogFindReferencesWarning(
-                trace,
-                $"stage=finder.{searchMode}, elapsedMs={trace?.ElapsedMilliseconds ?? findStopwatch.ElapsedMilliseconds}, stageElapsedMs={findStopwatch.ElapsedMilliseconds}, exception={ex.GetType().FullName}: {ex.Message}");
             throw;
         }
         findStopwatch.Stop();
-
-        LogFindReferencesInfo(
-            trace,
-            $"finder.{searchMode}.end",
-            $"elapsedMs={trace?.ElapsedMilliseconds ?? findStopwatch.ElapsedMilliseconds}, stageElapsedMs={findStopwatch.ElapsedMilliseconds}, collectedCount={referenceResults.Count}, limit={limit}");
 
         return referenceResults
             .OfType<FindResultReference>()
@@ -4541,26 +4255,6 @@ public class IndexMcpBackendHost
     private static IProgressIndicator ResolveFindReferencesProgressIndicator(IProgressIndicator? progressIndicator)
     {
         return progressIndicator ?? NoOpProgressIndicator.Instance;
-    }
-
-    private static FindReferencesTraceContext StartFindReferencesTrace(RdFindReferencesRequest request, int effectiveLimit)
-    {
-        var trace = new FindReferencesTraceContext(Interlocked.Increment(ref ourFindReferencesRequestSequence));
-        LogFindReferencesInfo(
-            trace,
-            "start",
-            $"language={request.Target.Language ?? "<null>"}, symbol={request.Target.Symbol ?? "<null>"}, scope={request.Scope}, limit={effectiveLimit}, targetKind={GetTargetKind(request.Target)}, traceFile={FindReferencesTraceSink.BuildTraceFilePath()}"
-        );
-        return trace;
-    }
-
-    private static string GetTargetKind(RdSemanticTarget target)
-    {
-        if (!string.IsNullOrWhiteSpace(target.FilePath) && target.Line.HasValue && target.Column.HasValue)
-            return "position";
-        if (!string.IsNullOrWhiteSpace(target.Language) && !string.IsNullOrWhiteSpace(target.Symbol))
-            return "symbol";
-        return "unknown";
     }
 
     private static string FormatExtensions(IReadOnlyList<string>? extensions)
@@ -4695,93 +4389,6 @@ public class IndexMcpBackendHost
         return FSharpProjectFileExtensions.Contains(fileExtension, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static void LogFindReferencesInfo(FindReferencesTraceContext? trace, string stage, string message)
-    {
-        if (trace == null)
-            return;
-
-        FindReferencesTraceSink.WriteInfo(trace.RequestId, stage, message);
-    }
-
-    private static void LogFindReferencesWarning(FindReferencesTraceContext? trace, string message)
-    {
-        if (trace == null)
-            return;
-
-        FindReferencesTraceSink.WriteWarning(trace.RequestId, message);
-    }
-
-    private static RenameTraceContext StartRenameTrace(string operation, string details)
-    {
-        var trace = new RenameTraceContext(Interlocked.Increment(ref ourRenameRequestSequence));
-        RenameTraceSink.WriteInfo(trace.RequestId, "start", $"operation={operation} {details}");
-        return trace;
-    }
-
-    private static void LogRenameInfo(RenameTraceContext? trace, string stage, string message)
-    {
-        if (trace == null)
-            return;
-
-        RenameTraceSink.WriteInfo(trace.RequestId, stage, message);
-    }
-
-    private static void LogRenameWarning(RenameTraceContext? trace, string message)
-    {
-        if (trace == null)
-            return;
-
-        RenameTraceSink.WriteWarning(trace.RequestId, message);
-    }
-
-    private static void TraceRenameStage(RenameTraceContext? trace, string stage, Action action)
-    {
-        TraceRenameStage<object?>(trace, stage, () =>
-        {
-            action();
-            return null;
-        });
-    }
-
-    private static T TraceRenameStage<T>(
-        RenameTraceContext? trace,
-        string stage,
-        Func<T> action,
-        Func<T, string>? successDetails = null)
-    {
-        LogRenameInfo(trace, $"{stage}.start", $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}");
-        try
-        {
-            var result = action();
-            var message = $"elapsedMs={trace?.ElapsedMilliseconds ?? 0}";
-            var details = successDetails?.Invoke(result);
-            if (!string.IsNullOrWhiteSpace(details))
-                message += $", {details}";
-
-            LogRenameInfo(trace, $"{stage}.end", message);
-            return result;
-        }
-        catch (Exception ex)
-        {
-            LogRenameWarning(trace, FormatRenameStageException(stage, trace, ex));
-            throw;
-        }
-    }
-
-    private static string FormatRenameStageException(string stage, RenameTraceContext? trace, Exception ex)
-    {
-        return $"stage={stage}, elapsedMs={trace?.ElapsedMilliseconds ?? 0}, exception={ex.GetType().FullName}: {ex.Message}";
-    }
-
-    private sealed class RenameTraceContext(long requestId)
-    {
-        private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
-
-        public long RequestId { get; } = requestId;
-
-        public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
-    }
-
     private sealed class RenameExecutionAttempt
     {
         private RenameExecutionAttempt(bool succeeded, bool isUnsupported, string message)
@@ -4829,23 +4436,6 @@ public class IndexMcpBackendHost
         public static RenameServiceExecutionPlan Unsupported(string? selectedMethodSignature, bool requiresTextControl,
             IReadOnlyList<string> availableMethodSignatures, string message)
             => new(false, selectedMethodSignature, requiresTextControl, availableMethodSignatures, message);
-    }
-
-    private sealed class FindReferencesTraceContext(long requestId)
-    {
-        private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
-        private int _isPartial;
-
-        public long RequestId { get; } = requestId;
-
-        public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
-
-        public bool IsPartial => Volatile.Read(ref _isPartial) == 1;
-
-        public void MarkPartial()
-        {
-            Interlocked.Exchange(ref _isPartial, 1);
-        }
     }
 
     private sealed record ClassifiedBoundedFindReferencesException(string Category, Exception Exception);
@@ -4896,94 +4486,6 @@ public class IndexMcpBackendHost
         }
 
         public IDeclaredElement? TryGetElement() => Status == "success" ? Element : null;
-    }
-
-    private static class FindReferencesTraceSink
-    {
-        private const string TraceFileName = "indexmcp-findreferences-trace.log";
-        private static readonly object ourWriteLock = new();
-
-        public static void WriteInfo(long requestId, string stage, string message)
-        {
-            AppendLine(
-                BuildTraceFilePath(),
-                $"{DateTime.UtcNow:O} INFO [IndexMcp.FindReferences #{requestId}] {stage} {message}");
-        }
-
-        public static void WriteWarning(long requestId, string message)
-        {
-            AppendLine(
-                BuildTraceFilePath(),
-                $"{DateTime.UtcNow:O} WARN [IndexMcp.FindReferences #{requestId}] {message}");
-        }
-
-        internal static string BuildTraceFilePath()
-        {
-            return Path.Combine(Path.GetTempPath(), TraceFileName);
-        }
-
-        internal static void AppendLine(string path, string line)
-        {
-            try
-            {
-                var directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrWhiteSpace(directory))
-                    Directory.CreateDirectory(directory);
-
-                lock (ourWriteLock)
-                {
-                    File.AppendAllText(path, line + Environment.NewLine);
-                }
-            }
-            catch
-            {
-                // Logging must never affect request execution.
-            }
-        }
-    }
-
-    private static class RenameTraceSink
-    {
-        private const string TraceFileName = "indexmcp-rename-trace.log";
-        private static readonly object ourWriteLock = new();
-
-        public static void WriteInfo(long requestId, string stage, string message)
-        {
-            AppendLine(
-                BuildTraceFilePath(),
-                $"{DateTime.UtcNow:O} INFO [IndexMcp.Rename #{requestId}] {stage} {message}");
-        }
-
-        public static void WriteWarning(long requestId, string message)
-        {
-            AppendLine(
-                BuildTraceFilePath(),
-                $"{DateTime.UtcNow:O} WARN [IndexMcp.Rename #{requestId}] {message}");
-        }
-
-        internal static string BuildTraceFilePath()
-        {
-            return Path.Combine(Path.GetTempPath(), TraceFileName);
-        }
-
-        internal static void AppendLine(string path, string line)
-        {
-            try
-            {
-                var directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrWhiteSpace(directory))
-                    Directory.CreateDirectory(directory);
-
-                lock (ourWriteLock)
-                {
-                    File.AppendAllText(path, line + Environment.NewLine);
-                }
-            }
-            catch
-            {
-                // Logging must never affect request execution.
-            }
-        }
     }
 
     private List<string> GetPotentiallyAffectedFiles(IDeclaredElement element)

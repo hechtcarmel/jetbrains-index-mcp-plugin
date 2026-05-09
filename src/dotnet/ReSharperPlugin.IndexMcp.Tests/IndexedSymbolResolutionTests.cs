@@ -641,101 +641,6 @@ public class IndexedSymbolResolutionTests
     }
 
     [Test]
-    public void FindReferencesTraceSink_UsesStableTempFilePath()
-    {
-        var traceFilePath = (string)InvokePrivateNestedStatic("FindReferencesTraceSink", "BuildTraceFilePath")!;
-
-        Assert.That(traceFilePath, Is.EqualTo(Path.Combine(Path.GetTempPath(), "indexmcp-findreferences-trace.log")));
-    }
-
-    [Test]
-    public void FindReferencesTraceSink_AppendsTimestampedLines()
-    {
-        var traceFilePath = Path.Combine(Path.GetTempPath(), $"indexmcp-test-{Guid.NewGuid():N}.log");
-
-        try
-        {
-            InvokePrivateNestedStatic("FindReferencesTraceSink", "AppendLine", traceFilePath, "2026-05-05T12:00:00.0000000Z INFO [IndexMcp.FindReferences #42] start hello");
-            InvokePrivateNestedStatic("FindReferencesTraceSink", "AppendLine", traceFilePath, "2026-05-05T12:00:01.0000000Z WARN [IndexMcp.FindReferences #42] done");
-
-            var lines = File.ReadAllLines(traceFilePath);
-
-            Assert.That(lines, Is.EqualTo(new[]
-            {
-                "2026-05-05T12:00:00.0000000Z INFO [IndexMcp.FindReferences #42] start hello",
-                "2026-05-05T12:00:01.0000000Z WARN [IndexMcp.FindReferences #42] done"
-            }));
-        }
-        finally
-        {
-            if (File.Exists(traceFilePath))
-                File.Delete(traceFilePath);
-        }
-    }
-
-    [Test]
-    public void FindReferencesTraceSink_AppendLineSwallowsPathErrors()
-    {
-        Assert.That(
-            () => InvokePrivateNestedStatic("FindReferencesTraceSink", "AppendLine", "\0bad-path", "ignored"),
-            Throws.Nothing);
-    }
-
-    [Test]
-    public void RenameTraceSink_UsesStableTempFilePath()
-    {
-        var traceFilePath = (string)InvokePrivateNestedStatic("RenameTraceSink", "BuildTraceFilePath")!;
-
-        Assert.That(traceFilePath, Is.EqualTo(Path.Combine(Path.GetTempPath(), "indexmcp-rename-trace.log")));
-    }
-
-    [Test]
-    public void RenameTraceSink_AppendsTimestampedLines()
-    {
-        var traceFilePath = Path.Combine(Path.GetTempPath(), $"indexmcp-rename-test-{Guid.NewGuid():N}.log");
-
-        try
-        {
-            InvokePrivateNestedStatic("RenameTraceSink", "AppendLine", traceFilePath, "2026-05-07T12:00:00.0000000Z INFO [IndexMcp.Rename #7] frontend entry");
-            InvokePrivateNestedStatic("RenameTraceSink", "AppendLine", traceFilePath, "2026-05-07T12:00:01.0000000Z WARN [IndexMcp.Rename #7] timeout");
-
-            var lines = File.ReadAllLines(traceFilePath);
-
-            Assert.That(lines, Is.EqualTo(new[]
-            {
-                "2026-05-07T12:00:00.0000000Z INFO [IndexMcp.Rename #7] frontend entry",
-                "2026-05-07T12:00:01.0000000Z WARN [IndexMcp.Rename #7] timeout"
-            }));
-        }
-        finally
-        {
-            if (File.Exists(traceFilePath))
-                File.Delete(traceFilePath);
-        }
-    }
-
-    [Test]
-    public void RenameTraceSink_AppendLineSwallowsPathErrors()
-    {
-        Assert.That(
-            () => InvokePrivateNestedStatic("RenameTraceSink", "AppendLine", "\0bad-path", "ignored"),
-            Throws.Nothing);
-    }
-
-    [Test]
-    public void FormatRenameStageException_EmitsStageElapsedAndExceptionType()
-    {
-        var message = (string)InvokePrivateStatic(
-            "FormatRenameStageException",
-            "workflow.initialize",
-            null,
-            new InvalidOperationException("rename failed"))!;
-
-        Assert.That(message, Is.EqualTo(
-            "stage=workflow.initialize, elapsedMs=0, exception=System.InvalidOperationException: rename failed"));
-    }
-
-    [Test]
     public void InspectSymbolRenameServiceExecutionPlan_FailsClosedWhenOnlyTextControlBoundOrUndocumentedEntrypointsExist()
     {
         var plan = InvokePrivateStatic("InspectSymbolRenameServiceExecutionPlan");
@@ -1249,6 +1154,22 @@ public class IndexedSymbolResolutionTests
         var resolvedNode = InvokePrivateStatic("ResolveNearestCallableDeclarationNode", nestedNode);
 
         Assert.That(resolvedNode, Is.Null);
+    }
+
+    [Test]
+    public void TryResolveDeclarationNameElement_DoesNotWidenNonDeclarationTokenToContainingDeclaration()
+    {
+        var enclosingMethod = CreateDeclaredElement("getFromsharepointAhorroType");
+        var declarationNode = CreateDeclaration(enclosingMethod);
+        var unrelatedTokenNode = CreateTreeNode(declarationNode, new Dictionary<string, object?>
+        {
+            ["GetText"] = ","
+        });
+
+        var resolved = InvokePrivateStatic("TryResolveDeclarationNameElement", unrelatedTokenNode);
+
+        Assert.That(resolved, Is.Null,
+            "Declaration fallback must fail closed for non-name tokens instead of widening to the enclosing declaration.");
     }
 
     [Test]
@@ -2140,12 +2061,13 @@ public class IndexedSymbolResolutionTests
         };
     }
 
-    private static IDeclaration CreateDeclaration(IDeclaredElement? declaredElement = null, ITreeNode? parent = null)
+    private static IDeclaration CreateDeclaration(IDeclaredElement? declaredElement = null, ITreeNode? parent = null, string? declaredName = null)
     {
         return ProxyFactory.Create<IDeclaration>(new Dictionary<string, object?>
         {
             ["get_DeclaredElement"] = declaredElement,
-            ["get_Parent"] = parent
+            ["get_Parent"] = parent,
+            ["get_DeclaredName"] = declaredName
         });
     }
 
@@ -2165,12 +2087,13 @@ public class IndexedSymbolResolutionTests
         });
     }
 
-    private static ITypeDeclaration CreateTypeDeclaration(IDeclaredElement? declaredElement = null, ITreeNode? parent = null)
+    private static ITypeDeclaration CreateTypeDeclaration(IDeclaredElement? declaredElement = null, ITreeNode? parent = null, string? declaredName = null)
     {
         return ProxyFactory.Create<ITypeDeclaration>(new Dictionary<string, object?>
         {
             ["get_DeclaredElement"] = declaredElement,
-            ["get_Parent"] = parent
+            ["get_Parent"] = parent,
+            ["get_DeclaredName"] = declaredName
         });
     }
 
@@ -2180,6 +2103,16 @@ public class IndexedSymbolResolutionTests
         {
             ["get_Parent"] = parent
         });
+    }
+
+    private static ITreeNode CreateTreeNode(ITreeNode? parent, IDictionary<string, object?> handlers)
+    {
+        var configuredHandlers = new Dictionary<string, object?>(handlers, StringComparer.Ordinal)
+        {
+            ["get_Parent"] = parent
+        };
+
+        return ProxyFactory.Create<ITreeNode>(configuredHandlers);
     }
 
     private static ITypeElement CreateTypeElement(params ITypeMember[] members)

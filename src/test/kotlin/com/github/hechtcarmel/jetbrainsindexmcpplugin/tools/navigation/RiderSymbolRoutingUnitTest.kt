@@ -16,13 +16,18 @@ class RiderSymbolRoutingUnitTest : TestCase() {
         )
         assertContains(
             source,
-            "language = arguments[ParamNames.LANGUAGE]",
-            "FindDefinitionTool should forward the requested language to the Rider backend-native definition path"
+            "language = optionalStringArg(arguments, ParamNames.LANGUAGE)",
+            "FindDefinitionTool should normalize blank requested language before calling the Rider backend-native definition path"
         )
         assertContains(
             source,
-            "symbol = arguments[ParamNames.SYMBOL]",
-            "FindDefinitionTool should forward the requested symbol to the Rider backend-native definition path"
+            "symbol = optionalStringArg(arguments, ParamNames.SYMBOL)",
+            "FindDefinitionTool should normalize blank requested symbol before calling the Rider backend-native definition path"
+        )
+        assertContains(
+            source,
+            "line = optionalIntArg(arguments, ParamNames.LINE)",
+            "FindDefinitionTool should normalize blank numeric position arguments before calling the Rider backend-native definition path"
         )
         assertFalse(
             "FindDefinitionTool should not reserve Rider backend definition lookup for position-mode only; that silently falls back for Rider C#/F# symbol-mode",
@@ -41,13 +46,18 @@ class RiderSymbolRoutingUnitTest : TestCase() {
         )
         assertContains(
             source,
-            "language = arguments[ParamNames.LANGUAGE]",
-            "FindUsagesTool should forward the requested language to the Rider backend-native references path"
+            "language = optionalStringArg(arguments, ParamNames.LANGUAGE)",
+            "FindUsagesTool should normalize blank requested language before calling the Rider backend-native references path"
         )
         assertContains(
             source,
-            "symbol = arguments[ParamNames.SYMBOL]",
-            "FindUsagesTool should forward the requested symbol to the Rider backend-native references path"
+            "symbol = optionalStringArg(arguments, ParamNames.SYMBOL)",
+            "FindUsagesTool should normalize blank requested symbol before calling the Rider backend-native references path"
+        )
+        assertContains(
+            source,
+            "line = optionalIntArg(arguments, ParamNames.LINE)",
+            "FindUsagesTool should normalize blank numeric position arguments before calling the Rider backend-native references path"
         )
         assertFalse(
             "FindUsagesTool should not reserve Rider backend reference lookup for position-mode only; that silently falls back for Rider C#/F# symbol-mode",
@@ -94,6 +104,16 @@ class RiderSymbolRoutingUnitTest : TestCase() {
             source = source,
             toolName = "CallHierarchyTool",
             fallbackMarker = "val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true)"
+        )
+    }
+
+    fun testCallHierarchyRiderSymbolRoutingIsGatedBySharedLookupMode() {
+        val source = navigationSource("CallHierarchyTool.kt")
+
+        assertContains(
+            source,
+            "val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL",
+            "CallHierarchyTool should derive Rider symbol routing from shared lookup-mode resolution so complete position targets win over dual-mode requests"
         )
     }
 

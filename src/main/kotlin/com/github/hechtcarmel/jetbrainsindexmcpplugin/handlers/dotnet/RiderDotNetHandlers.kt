@@ -22,11 +22,8 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
 import java.io.File
-import java.nio.file.Path
-import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Rider protocol-based handlers for C# and F# code intelligence.
@@ -324,42 +321,6 @@ object RdProtocolBridge {
         } catch (e: Exception) {
             LOG.debug("Failed to get property '$name' from ${obj.javaClass.simpleName}: ${e.message}")
             null
-        }
-    }
-}
-
-internal object RiderRenameTraceSink {
-    private const val TRACE_FILE_NAME = "indexmcp-rename-trace.log"
-    private val writeLock = Any()
-    private val requestSequence = AtomicLong()
-
-    internal fun nextRequestId(): Long = requestSequence.incrementAndGet()
-
-    internal fun writeInfo(requestId: Long, stage: String, message: String) {
-        appendLine(
-            buildTraceFilePath(),
-            "${Instant.now()} INFO [IndexMcp.Rename #$requestId] $stage $message"
-        )
-    }
-
-    internal fun writeWarning(requestId: Long, stage: String, message: String) {
-        appendLine(
-            buildTraceFilePath(),
-            "${Instant.now()} WARN [IndexMcp.Rename #$requestId] $stage $message"
-        )
-    }
-
-    internal fun buildTraceFilePath(): String =
-        Path.of(System.getProperty("java.io.tmpdir"), TRACE_FILE_NAME).toString()
-
-    internal fun appendLine(path: String, line: String) {
-        try {
-            File(path).parentFile?.mkdirs()
-            synchronized(writeLock) {
-                File(path).appendText(line + System.lineSeparator())
-            }
-        } catch (_: Exception) {
-            // Trace logging must never affect rename execution.
         }
     }
 }
@@ -738,14 +699,40 @@ object RiderBackendSemanticService {
         language: String?,
         symbol: String?
     ): Any? {
-        val backendFile = file?.let { resolveBackendFilePath(project, it) }
+        val normalizedFile = file?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedLanguage = language?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedSymbol = symbol?.trim()?.takeIf { it.isNotEmpty() }
+        val backendFile = normalizedFile?.let { resolveBackendFilePath(project, it) }
+
+        if (backendFile != null && line != null && column != null) {
+            return RdProtocolBridge.createStruct(
+                "$MODEL_PKG.RdSemanticTarget",
+                backendFile,
+                line,
+                column,
+                null,
+                null
+            )
+        }
+
+        if (normalizedLanguage != null && normalizedSymbol != null) {
+            return RdProtocolBridge.createStruct(
+                "$MODEL_PKG.RdSemanticTarget",
+                null,
+                null,
+                null,
+                normalizedLanguage,
+                normalizedSymbol
+            )
+        }
+
         return RdProtocolBridge.createStruct(
             "$MODEL_PKG.RdSemanticTarget",
             backendFile,
             line,
             column,
-            language,
-            symbol
+            normalizedLanguage,
+            normalizedSymbol
         )
     }
 

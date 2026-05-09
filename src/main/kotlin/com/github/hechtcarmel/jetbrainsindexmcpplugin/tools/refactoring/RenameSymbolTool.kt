@@ -3,7 +3,6 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendMutationResultMapper
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendRenameDiagnostics
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderRenameTraceSink
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.MODEL_PKG
@@ -60,7 +59,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.AbstractButton
 import javax.swing.JDialog
-import javax.swing.JLabel
 import javax.swing.Timer
 import javax.swing.JTextField
 import javax.swing.text.JTextComponent
@@ -917,20 +915,12 @@ class RenameSymbolTool : AbstractMcpTool() {
                     line!!,
                     column!!,
                     newName,
-                    riderFrontendFallback?.trace,
                     riderFrontendFallback != null
                 )
             }
         }
 
         if (validation.error != null) {
-            riderFrontendFallback?.trace?.let {
-                logRiderRenameWarning(
-                    it,
-                    "frontend.result",
-                    "success=false status=$STATUS_UNSUPPORTED_CONTEXT changesCount=0 affectedFiles=0 message=${validation.error} elapsedMs=${it.elapsedMs()}"
-                )
-            }
             return if (riderFrontendFallback != null) {
                 createJsonResult(
                     RefactoringResult(
@@ -952,41 +942,20 @@ class RenameSymbolTool : AbstractMcpTool() {
         var riderExecutionPlan: RiderRenameExecutionPlan? = null
 
         if (riderFrontendFallback != null) {
-            riderFrontendFallback.trace.let { trace ->
-                try {
-                    logRiderRenameInfo(
-                        trace,
-                        "frontend.action.start",
-                        "targetClass=${element.javaClass.name} targetName=$oldName newName=$newName elapsedMs=${trace.elapsedMs()}"
+            try {
+                val actionPlan = planProductionRiderRename(project, element, newName)
+                riderExecutionPlan = actionPlan
+                if (!actionPlan.policy.shouldInvoke) {
+                    val refusalReason = actionPlan.blockReason ?: actionPlan.policy.reason
+                    val blocked = buildBlockedRiderFrontendFallbackResult(
+                        oldName = oldName,
+                        backendStatus = riderFrontendFallback.status,
+                        actionReason = refusalReason
                     )
-                    val actionPlan = planProductionRiderRename(project, element, newName, trace)
-                    logRiderRenameInfo(
-                        trace,
-                        "frontend.action.end",
-                        "handlerCount=${actionPlan.availableHandlerTitles.size} handlers=${actionPlan.availableHandlerTitles} selectedHandler=${actionPlan.selectedHandlerClassName ?: "<none>"} selectedTitle=${actionPlan.selectedHandlerTitle ?: "<none>"} editor=${actionPlan.editorLookup.reason} dataContextKeys=${actionPlan.dataContext.availableKeys} shouldInvoke=${actionPlan.policy.shouldInvoke} reason=${actionPlan.policy.reason} lane=${actionPlan.lane} elapsedMs=${trace.elapsedMs()}"
-                    )
-                    riderExecutionPlan = actionPlan
-                    if (!actionPlan.policy.shouldInvoke) {
-                        val refusalReason = actionPlan.blockReason ?: actionPlan.policy.reason
-                        val blocked = buildBlockedRiderFrontendFallbackResult(
-                            oldName = oldName,
-                            backendStatus = riderFrontendFallback.status,
-                            actionReason = refusalReason
-                        )
-                        logRiderRenameWarning(
-                            trace,
-                            "frontend.result",
-                            "success=false status=${blocked.status ?: STATUS_UNSUPPORTED_CONTEXT} changesCount=0 affectedFiles=0 reason=$refusalReason elapsedMs=${trace.elapsedMs()}"
-                        )
-                        return createJsonResult(blocked)
-                    }
-                } catch (e: Exception) {
-                    logRiderRenameWarning(
-                        trace,
-                        "frontend.action.failure",
-                        "targetClass=${element.javaClass.name} targetName=$oldName exception=${e::class.java.name}: ${e.message ?: "Unknown action inspection error"} elapsedMs=${trace.elapsedMs()}"
-                    )
+                    return createJsonResult(blocked)
                 }
+            } catch (e: Exception) {
+                LOG.debug("Failed to inspect Rider frontend rename fallback lane", e)
             }
         }
 
@@ -1026,50 +995,19 @@ class RenameSymbolTool : AbstractMcpTool() {
                 val dataContext = requireNotNull(riderPlan.dataContext.dataContext) {
                     "Preferred Rider rename lane requires a deterministic data context"
                 }
-                riderFrontendFallback.trace.let {
-                    logRiderRenameInfo(
-                        it,
-                        "frontend.handler.invoke.start",
-                        "handler=${selectedHandler.javaClass.name} targetClass=${element.javaClass.name} targetName=${oldName} elapsedMs=${it.elapsedMs()}"
-                    )
-                }
                 executeRiderHandlerWithDialogAutomation(
                     project = project,
-                    element = element,
-                    oldName = oldName,
                     newName = newName,
                     selectedHandler = selectedHandler,
                     editor = editor,
                     psiFile = psiFile,
                     dataContext = dataContext,
-                    trace = riderFrontendFallback.trace
                 )
-                riderFrontendFallback.trace.let {
-                    logRiderRenameInfo(
-                        it,
-                        "frontend.handler.invoke.end",
-                        "handler=${selectedHandler.javaClass.name} targetClass=${element.javaClass.name} targetName=${oldName} elapsedMs=${it.elapsedMs()}"
-                    )
-                }
             } else {
                 edtAction {
-                    riderFrontendFallback?.trace?.let {
-                        logRiderRenameInfo(
-                            it,
-                            "frontend.processor.start",
-                            "targetClass=${element.javaClass.name} targetName=${oldName} elapsedMs=${it.elapsedMs()}"
-                        )
-                    }
                     val result = executeRename(project, element, newName, overrideStrategy, relatedRenamingStrategy, affectedFiles)
                     changesCount = result.first
                     relatedRenamesCount = result.second
-                    riderFrontendFallback?.trace?.let {
-                        logRiderRenameInfo(
-                            it,
-                            "frontend.processor.end",
-                            "targetClass=${element.javaClass.name} targetName=${oldName} changesCount=$changesCount affectedFiles=${affectedFiles.size} elapsedMs=${it.elapsedMs()}"
-                        )
-                    }
                 }
             }
 
@@ -1091,28 +1029,9 @@ class RenameSymbolTool : AbstractMcpTool() {
                 changesCount = 1
                 riderMutationProbe?.targetFilePath?.let { affectedFiles += toRelativeProjectPath(project, it) }
             }
-            riderFrontendFallback?.trace?.let {
-                logRiderRenameInfo(
-                    it,
-                    "frontend.execution.result",
-                    "targetClass=${element.javaClass.name} targetName=${oldName} changesCount=$changesCount affectedFiles=${affectedFiles.size} mutationVerified=${riderMutationCheck?.verified ?: "n/a"} mutationReason=${riderMutationCheck?.reason ?: "n/a"} elapsedMs=${it.elapsedMs()}"
-                )
-            }
         } catch (e: Exception) {
             errorMessage = e.message ?: "Unknown error during rename"
             errorClassName = e::class.java.name
-            riderFrontendFallback?.trace?.let {
-                val classification = classifyFrontendRenameFailure(errorMessage, errorClassName, riderFrontendFallback?.status)
-                logRiderRenameWarning(
-                    it,
-                    if (riderExecutionPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER) {
-                        "frontend.handler.invoke.failure"
-                    } else {
-                        "frontend.processor.failure"
-                    },
-                    "targetClass=${element.javaClass.name} targetName=${oldName} exception=${e::class.java.name}: ${errorMessage} classifiedStatus=${classification.status ?: "error"} elapsedMs=${it.elapsedMs()}"
-                )
-            }
         } finally {
             autoOpenedEditorFile?.let { virtualFile ->
                 edtAction {
@@ -1130,13 +1049,6 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         return if (errorMessage != null) {
             val classification = classifyFrontendRenameFailure(errorMessage, errorClassName, riderFrontendFallback?.status)
-            riderFrontendFallback?.trace?.let {
-                logRiderRenameWarning(
-                    it,
-                    "frontend.result",
-                    "success=false status=${classification.status ?: "error"} changesCount=0 affectedFiles=0 message=${classification.userMessage} elapsedMs=${it.elapsedMs()}"
-                )
-            }
             if (classification.status == STATUS_UNSUPPORTED_CONTEXT) {
                 createJsonResult(
                     RefactoringResult(
@@ -1163,19 +1075,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                 verification = riderFrontendFallback?.verification
             )
 
-            riderFrontendFallback?.trace?.let {
-                logRiderRenameInfo(
-                    it,
-                    "frontend.verification.result",
-                    "success=${summary.success} status=${summary.status ?: if (summary.success) STATUS_SUCCESS else "unknown"} verificationStatus=${summary.verification?.status ?: "n/a"} verificationWarnings=${summary.verification?.warnings?.joinToString(" | ") ?: "n/a"} elapsedMs=${it.elapsedMs()}"
-                )
-                logRiderRenameInfo(
-                    it,
-                    "frontend.result",
-                    "success=${summary.success} status=${summary.status ?: if (summary.success) STATUS_SUCCESS else "unknown"} changesCount=${summary.changesCount} affectedFiles=${summary.affectedFiles.size} reason=${riderMutationCheck?.takeIf { !it.verified }?.reason ?: summary.verification?.warnings?.joinToString(" | ") ?: "n/a"} elapsedMs=${it.elapsedMs()}"
-                )
-            }
-
             createJsonResult(summary)
         }
     }
@@ -1185,21 +1084,12 @@ class RenameSymbolTool : AbstractMcpTool() {
         data class FallbackToFrontend(
             val status: String,
             val reason: String,
-            val trace: RiderRenameTraceContext,
             val backendDiagnostics: RiderBackendRenameDiagnostics?,
             val verification: MutationVerification?
         ) : RiderRenameOutcome
         data object NotInRider : RiderRenameOutcome
         data object FileNotFound : RiderRenameOutcome
         data class BackendCallFailed(val reason: String) : RiderRenameOutcome
-    }
-
-    private data class RiderRenameTraceContext(
-        val requestId: Long,
-        val operation: String,
-        val startedAtMs: Long = System.currentTimeMillis()
-    ) {
-        fun elapsedMs(): Long = System.currentTimeMillis() - startedAtMs
     }
 
     private data class RiderFrontendMutationProbe(
@@ -1217,7 +1107,6 @@ class RenameSymbolTool : AbstractMcpTool() {
 
     private class RiderRenameDialogAutomationController(
         private val newName: String,
-        private val trace: RiderRenameTraceContext,
     ) {
         private val renameDialogSeen = AtomicBoolean(false)
         private val waitingForSecondDialog = AtomicBoolean(false)
@@ -1241,11 +1130,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         fun install() {
             Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.WINDOW_EVENT_MASK)
             listenerRegistered.set(true)
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.listener.installed",
-                "newName=$newName elapsedMs=${trace.elapsedMs()}"
-            )
         }
 
         fun dispose() {
@@ -1253,11 +1137,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             cancelSecondDialogTimeout()
             if (listenerRegistered.compareAndSet(true, false)) {
                 Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.listener.removed",
-                    "renameDialogSeen=${renameDialogSeen.get()} waitingForSecondDialog=${waitingForSecondDialog.get()} handledDialogs=${handledDialogs.size} failure=${failureReason.get() ?: "<none>"} elapsedMs=${trace.elapsedMs()}"
-                )
             }
         }
 
@@ -1278,18 +1157,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         fun awaitRenameDialogAutomation(timeoutMs: Long): Boolean {
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.wait.start",
-                "timeoutMs=$timeoutMs elapsedMs=${trace.elapsedMs()}"
-            )
-            val completed = renameDialogAutomated.await(timeoutMs, TimeUnit.MILLISECONDS)
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.wait.result",
-                "completed=$completed renameDialogSeen=${renameDialogSeen.get()} waitingForSecondDialog=${waitingForSecondDialog.get()} handledDialogs=${handledDialogs.size} failure=${failureReason.get() ?: "<none>"} elapsedMs=${trace.elapsedMs()}"
-            )
-            return completed
+            return renameDialogAutomated.await(timeoutMs, TimeUnit.MILLISECONDS)
         }
 
         fun cancelOutstandingDialogs() {
@@ -1315,16 +1183,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             }
 
             val title = dialog.title?.trim().orEmpty().ifBlank { "<untitled>" }
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.dialog.opened",
-                "title=$title elapsedMs=${trace.elapsedMs()}"
-            )
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.dialog.components",
-                "title=$title tree=${logComponentTree(dialog).replace("\n", " | ")} elapsedMs=${trace.elapsedMs()}"
-            )
 
             when {
                 waitingForSecondDialog.get() -> automateFollowUpDialog(dialog, title)
@@ -1341,42 +1199,20 @@ class RenameSymbolTool : AbstractMcpTool() {
             if (!title.equals(primaryDialogTitle.get(), ignoreCase = true)) {
                 return
             }
-
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.second-dialog.primary.closed",
-                "title=$title awaitingSecondDialog=true elapsedMs=${trace.elapsedMs()}"
-            )
         }
 
         private fun automateRenameDialog(dialog: JDialog, title: String) {
             if (!renameDialogSeen.compareAndSet(false, true)) {
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.rename.detected",
-                    "title=$title alreadySeen=true elapsedMs=${trace.elapsedMs()}"
-                )
                 return
             }
 
             try {
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.rename.detected",
-                    "title=$title elapsedMs=${trace.elapsedMs()}"
-                )
-
                 if (attemptRenameDialogAutomationWhenReady(dialog, title)) {
                     return
                 }
 
                 startRenameDialogReadinessPolling(dialog, title)
             } catch (t: Throwable) {
-                RiderRenameTraceSink.writeWarning(
-                    trace.requestId,
-                    "frontend.dialog-automation.exception",
-                    "title=$title exception=${t.javaClass.name} message=${t.message ?: "<none>"} elapsedMs=${trace.elapsedMs()}"
-                )
                 fail("Rename dialog automation failed: ${t.message ?: t.javaClass.name}", dialog)
             }
         }
@@ -1385,19 +1221,9 @@ class RenameSymbolTool : AbstractMcpTool() {
             val textField = findRenameTextComponent(dialog)
             val button = findButton(dialog, listOf("Next", "Refactor", "Rename", "OK"))
             if (textField == null || !textField.isShowing || button == null || !button.isEnabled) {
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.readiness.waiting",
-                    "title=$title textFieldShowing=${textField?.isShowing ?: false} buttonText=${quoteForTrace(button?.text)} buttonEnabled=${button?.isEnabled ?: false} elapsedMs=${trace.elapsedMs()}"
-                )
                 return false
             }
 
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.readiness.ready",
-                "title=$title textFieldClass=${textField.javaClass.name} buttonClass=${button.javaClass.name} buttonText=${quoteForTrace(button.text)} elapsedMs=${trace.elapsedMs()}"
-            )
             performRenameDialogAutomation(dialog, title, textField, button)
             return true
         }
@@ -1419,11 +1245,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                 if (System.currentTimeMillis() >= deadline) {
                     (timerEvent.source as? Timer)?.stop()
                     renameDialogReadinessTimer = null
-                    RiderRenameTraceSink.writeWarning(
-                        trace.requestId,
-                        "frontend.dialog-automation.readiness.timeout",
-                        "title=$title timeoutMs=$RIDER_DIALOG_READINESS_TIMEOUT_MS elapsedMs=${trace.elapsedMs()}"
-                    )
                     fail(
                         "Rename dialog content did not become ready within ${RIDER_DIALOG_READINESS_TIMEOUT_MS}ms",
                         dialog
@@ -1443,23 +1264,7 @@ class RenameSymbolTool : AbstractMcpTool() {
             button: AbstractButton
         ) {
             cancelRenameDialogReadinessTimer()
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.textfield.found",
-                "title=$title class=${textField.javaClass.name} text=${quoteForTrace(textField.text)} elapsedMs=${trace.elapsedMs()}"
-            )
             textField.text = newName
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.textfield.set",
-                "title=$title class=${textField.javaClass.name} newName=$newName elapsedMs=${trace.elapsedMs()}"
-            )
-
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.button.found",
-                "title=$title class=${button.javaClass.name} text=${quoteForTrace(button.text)} elapsedMs=${trace.elapsedMs()}"
-            )
             primaryDialogTitle.set(title)
             handledDialogs += title
             val shouldAwaitSecondDialog = shouldAwaitSecondDialogAfterPrimarySubmit(button.text)
@@ -1468,20 +1273,9 @@ class RenameSymbolTool : AbstractMcpTool() {
                 scheduleSecondDialogTimeout(title)
             }
             button.doClick()
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.button.clicked",
-                "title=$title class=${button.javaClass.name} text=${quoteForTrace(button.text)} elapsedMs=${trace.elapsedMs()}"
-            )
-            if (shouldAwaitSecondDialog) {
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.second-dialog.wait.start",
-                    "title=$title timeoutMs=$RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS elapsedMs=${trace.elapsedMs()}"
-                )
-            } else {
+            if (!shouldAwaitSecondDialog) {
                 completeAutomation(
-                    details = "title=$title success=true newName=$newName elapsedMs=${trace.elapsedMs()}"
+                    details = "title=$title success=true newName=$newName"
                 )
             }
         }
@@ -1490,17 +1284,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             if (!isSecondDialogCandidateTitle(title)) {
                 return
             }
-
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.second-dialog.opened",
-                "title=$title elapsedMs=${trace.elapsedMs()}"
-            )
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.second-dialog.components",
-                "title=$title tree=${logComponentTree(dialog).replace("\n", " | ")} elapsedMs=${trace.elapsedMs()}"
-            )
             val button = when {
                 title.contains("Refactor", ignoreCase = true) ||
                     title.contains("Preview", ignoreCase = true) ||
@@ -1512,21 +1295,11 @@ class RenameSymbolTool : AbstractMcpTool() {
             } ?: return
 
             handledDialogs += title
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.second-dialog.button.found",
-                "title=$title class=${button.javaClass.name} text=${quoteForTrace(button.text)} elapsedMs=${trace.elapsedMs()}"
-            )
             cancelSecondDialogTimeout()
             waitingForSecondDialog.set(false)
             button.doClick()
-            RiderRenameTraceSink.writeInfo(
-                trace.requestId,
-                "frontend.dialog-automation.second-dialog.button.clicked",
-                "title=$title class=${button.javaClass.name} text=${quoteForTrace(button.text)} elapsedMs=${trace.elapsedMs()}"
-            )
             completeAutomation(
-                details = "title=$title success=true newName=$newName secondDialog=true elapsedMs=${trace.elapsedMs()}"
+                details = "title=$title success=true newName=$newName secondDialog=true"
             )
         }
 
@@ -1542,11 +1315,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             waitingForSecondDialog.set(false)
             cancelSecondDialogTimeout()
             completeLatch()
-            RiderRenameTraceSink.writeWarning(
-                trace.requestId,
-                "frontend.dialog-automation.failure",
-                "reason=$reason dialog=${dialog?.title ?: "<none>"} elapsedMs=${trace.elapsedMs()}"
-            )
             dialog?.let(::cancelDialog)
         }
 
@@ -1556,13 +1324,8 @@ class RenameSymbolTool : AbstractMcpTool() {
                 if (!waitingForSecondDialog.compareAndSet(true, false) || failureReason.get() != null) {
                     return@Timer
                 }
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.second-dialog.timeout",
-                    "title=$title timeoutMs=$RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS elapsedMs=${trace.elapsedMs()}"
-                )
                 completeAutomation(
-                    details = "title=$title success=true newName=$newName secondDialog=false fallback=timeout elapsedMs=${trace.elapsedMs()}"
+                    details = "title=$title success=true newName=$newName secondDialog=false fallback=timeout"
                 )
             }.apply {
                 isRepeats = false
@@ -1585,7 +1348,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             waitingForSecondDialog.set(false)
             cancelSecondDialogTimeout()
             if (automationCompleted.compareAndSet(false, true)) {
-                RiderRenameTraceSink.writeInfo(trace.requestId, "frontend.dialog-automation.completed", details)
                 completeLatch()
             }
         }
@@ -1596,11 +1358,6 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         private fun cancelDialog(dialog: JDialog) {
             findButton(dialog, listOf("Cancel", "Close"))?.let { cancelButton ->
-                RiderRenameTraceSink.writeInfo(
-                    trace.requestId,
-                    "frontend.dialog-automation.cancel",
-                    "title=${dialog.title ?: "<untitled>"} button=${cancelButton.text} elapsedMs=${trace.elapsedMs()}"
-                )
                 cancelButton.doClick()
                 return
             }
@@ -1618,17 +1375,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             return findComponent(container, JTextComponent::class.java) { component ->
                 component.isShowing && component.isEnabled && component.isEditable
             }
-        }
-
-        private fun collectTexts(container: Container): List<String> {
-            val texts = mutableListOf<String>()
-            walkComponents(container) { component ->
-                when (component) {
-                    is JLabel -> component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
-                    is AbstractButton -> component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
-                }
-            }
-            return texts
         }
 
         private fun <T : Component> findComponent(
@@ -1657,43 +1403,17 @@ class RenameSymbolTool : AbstractMcpTool() {
             }
         }
 
-        private fun logComponentTree(container: Container, depth: Int = 0): String {
-            val sb = StringBuilder()
-            for (component in container.components) {
-                sb.append("  ".repeat(depth))
-                sb.append(component.javaClass.simpleName)
-                when (component) {
-                    is JTextComponent -> sb.append(" text=").append(quoteForTrace(component.text))
-                    is AbstractButton -> sb.append(" text=").append(quoteForTrace(component.text))
-                    is JLabel -> sb.append(" text=").append(quoteForTrace(component.text))
-                }
-                sb.append(" showing=").append(component.isShowing)
-                sb.append(" enabled=").append(component.isEnabled)
-                sb.append('\n')
-                if (component is Container) {
-                    sb.append(logComponentTree(component, depth + 1))
-                }
-            }
-            return sb.toString().trimEnd()
-        }
-
-        private fun quoteForTrace(value: String?): String {
-            return "'${value?.replace("'", "\\'") ?: ""}'"
-        }
     }
 
     private suspend fun executeRiderHandlerWithDialogAutomation(
         project: Project,
-        element: PsiElement,
-        oldName: String,
         newName: String,
         selectedHandler: RenameHandler,
         editor: Editor,
         psiFile: PsiFile,
         dataContext: DataContext,
-        trace: RiderRenameTraceContext
     ): RiderDialogAutomationSnapshot {
-        val dialogAutomation = RiderRenameDialogAutomationController(newName, trace)
+        val dialogAutomation = RiderRenameDialogAutomationController(newName)
         try {
             edtAction {
                 dialogAutomation.install()
@@ -1701,11 +1421,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                     {
                         try {
                             selectedHandler.invoke(project, editor, psiFile, dataContext)
-                            logRiderRenameInfo(
-                                trace,
-                                "frontend.handler.invoke.dispatched",
-                                "handler=${selectedHandler.javaClass.name} targetClass=${element.javaClass.name} targetName=$oldName elapsedMs=${trace.elapsedMs()}"
-                            )
                         } catch (t: Throwable) {
                             dialogAutomation.failInvocation(
                                 "Rider rename handler threw before dialog automation could complete: ${t.message ?: t.javaClass.name}",
@@ -1738,11 +1453,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                     "BackendRenameHandler completed without showing the expected Rider rename dialog"
                 )
             }
-            logRiderRenameInfo(
-                trace,
-                "frontend.dialog-automation.completed",
-                "handler=${selectedHandler.javaClass.name} targetClass=${element.javaClass.name} targetName=$oldName handledDialogs=${automationSnapshot.handledDialogs} elapsedMs=${trace.elapsedMs()}"
-            )
             return automationSnapshot
         } finally {
             edtAction {
@@ -1805,47 +1515,30 @@ class RenameSymbolTool : AbstractMcpTool() {
             kotlinx.coroutines.delay(RIDER_BACKEND_EDITOR_SYNC_DELAY_MS)
         }
 
-        val trace = RiderRenameTraceContext(RiderRenameTraceSink.nextRequestId(), "renameSymbol")
         try {
-            logRiderRenameInfo(
-                trace,
-                "frontend.entry",
-                "relativeFile=$file absoluteFile=$absolutePath line=$line column=$column newName=$newName"
-            )
-
             val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
             val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", absolutePath, line, column)
                 ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd source position struct (rdgen mismatch?)")
             val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameSymbolRequest", position, newName)
                 ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename request struct (rdgen mismatch?)")
 
-            logRiderRenameInfo(trace, "rd-call.start", "call=renameSymbol elapsedMs=${trace.elapsedMs()}")
-            val outcomeStart = System.currentTimeMillis()
             val outcome = RdProtocolBridge.invokeCallResult(model, "renameSymbol", request)
-            val outcomeElapsed = System.currentTimeMillis() - outcomeStart
 
             val result = when (outcome) {
                 is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Success -> {
-                    logRiderRenameInfo(trace, "rd-call.success", "call=renameSymbol callElapsedMs=$outcomeElapsed elapsedMs=${trace.elapsedMs()}")
                     outcome.value ?: return RiderRenameOutcome.BackendCallFailed(
                         "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
                     )
                 }
                 is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Timeout -> {
-                    logRiderRenameWarning(trace, "rd-call.timeout", "call=renameSymbol timeoutSeconds=${outcome.timeoutSeconds} elapsedMs=${trace.elapsedMs()}")
                     return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
                 }
                 is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Failure -> {
-                    logRiderRenameWarning(
-                        trace,
-                        "rd-call.failure",
-                        "call=renameSymbol exception=${outcome.cause::class.java.name}: ${outcome.cause.message} elapsedMs=${trace.elapsedMs()}"
-                    )
                     return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
                 }
             }
 
-            return mapRiderRenameResult(project, result, trace, allowFrontendFallback = true)
+            return mapRiderRenameResult(project, result, allowFrontendFallback = true)
         } finally {
             if (openedByTool) {
                 edtAction {
@@ -1868,50 +1561,32 @@ class RenameSymbolTool : AbstractMcpTool() {
             psiFile.virtualFile.path
         } ?: return RiderRenameOutcome.FileNotFound
 
-        val trace = RiderRenameTraceContext(RiderRenameTraceSink.nextRequestId(), "renameFile")
-        logRiderRenameInfo(
-            trace,
-            "frontend.entry",
-            "relativeFile=$file absoluteFile=$absolutePath newName=$newName"
-        )
-
         val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
         val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameFileRequest", absolutePath, newName)
             ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename file request struct (rdgen mismatch?)")
 
-        logRiderRenameInfo(trace, "rd-call.start", "call=renameFile elapsedMs=${trace.elapsedMs()}")
-        val outcomeStart = System.currentTimeMillis()
         val outcome = RdProtocolBridge.invokeCallResult(model, "renameFile", request)
-        val outcomeElapsed = System.currentTimeMillis() - outcomeStart
 
         val result = when (outcome) {
             is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Success -> {
-                logRiderRenameInfo(trace, "rd-call.success", "call=renameFile callElapsedMs=$outcomeElapsed elapsedMs=${trace.elapsedMs()}")
                 outcome.value ?: return RiderRenameOutcome.BackendCallFailed(
                     "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
                 )
             }
             is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Timeout -> {
-                logRiderRenameWarning(trace, "rd-call.timeout", "call=renameFile timeoutSeconds=${outcome.timeoutSeconds} elapsedMs=${trace.elapsedMs()}")
                 return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
             }
             is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Failure -> {
-                logRiderRenameWarning(
-                    trace,
-                    "rd-call.failure",
-                    "call=renameFile exception=${outcome.cause::class.java.name}: ${outcome.cause.message} elapsedMs=${trace.elapsedMs()}"
-                )
                 return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
             }
         }
 
-        return mapRiderRenameResult(project, result, trace, allowFrontendFallback = false)
+        return mapRiderRenameResult(project, result, allowFrontendFallback = false)
     }
 
     private suspend fun mapRiderRenameResult(
         project: Project,
         result: Any,
-        trace: RiderRenameTraceContext? = null,
         allowFrontendFallback: Boolean = false
     ): RiderRenameOutcome {
         val backendResult = RiderBackendMutationResultMapper.fromRdResult(result)
@@ -1931,27 +1606,10 @@ class RenameSymbolTool : AbstractMcpTool() {
             )
         }
 
-        trace?.let {
-            logRiderRenameInfo(
-                it,
-                "rd-call.result",
-                "operation=${it.operation} success=$success status=$status changesCount=$changesCount affectedFiles=${rawAffectedFiles.size} resolutionStatus=${backendResult.renameDiagnostics?.resolutionStatus ?: "<none>"} targetKind=${backendResult.renameDiagnostics?.targetKind ?: "<none>"} resolvedName=${backendResult.renameDiagnostics?.resolvedName ?: "<none>"} elapsedMs=${it.elapsedMs()}"
-            )
-        }
-
         if (allowFrontendFallback && shouldFallbackToFrontendForCompletedRiderSymbolRename(status)) {
-            val fallbackTrace = trace ?: return RiderRenameOutcome.BackendCallFailed(
-                "Frontend fallback was requested without Rider trace context"
-            )
-            logRiderRenameInfo(
-                fallbackTrace,
-                "frontend.fallback",
-                "operation=${fallbackTrace.operation} reason=backend_status status=$status message=$message elapsedMs=${fallbackTrace.elapsedMs()}"
-            )
             return RiderRenameOutcome.FallbackToFrontend(
                 status = status,
                 reason = message,
-                trace = fallbackTrace,
                 backendDiagnostics = backendResult.renameDiagnostics,
                 verification = verification
             )
@@ -1980,14 +1638,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         return RiderRenameOutcome.Success(createJsonResult(summary.toRefactoringResult()))
     }
 
-    private fun logRiderRenameInfo(trace: RiderRenameTraceContext, stage: String, message: String) {
-        RiderRenameTraceSink.writeInfo(trace.requestId, stage, message)
-    }
-
-    private fun logRiderRenameWarning(trace: RiderRenameTraceContext, stage: String, message: String) {
-        RiderRenameTraceSink.writeWarning(trace.requestId, stage, message)
-    }
-
     private fun assessPreferredRiderRenameHandler(selectedHandler: RenameHandler?): PreferredRiderActionLanePlan {
         return assessPreferredRiderRenameHandlerClassName(selectedHandler?.javaClass?.name)
     }
@@ -1996,40 +1646,15 @@ class RenameSymbolTool : AbstractMcpTool() {
         project: Project,
         element: PsiElement,
         newName: String,
-        trace: RiderRenameTraceContext
     ): RiderRenameExecutionPlan {
-        val targetMetadata = suspendingReadAction {
-            element.javaClass.name to ((element as? PsiNamedElement)?.name ?: "<unnamed>")
-        }
-        logRiderRenameInfo(
-            trace,
-            "frontend.policy.start",
-            "targetClass=${targetMetadata.first} targetName=${targetMetadata.second} elapsedMs=${trace.elapsedMs()}"
-        )
-
-        val editorLookup = lookupRiderFrontendEditor(project, element, trace)
-        val dataContext = composeDeterministicRiderDataContext(project, element, newName, editorLookup, trace)
+        val editorLookup = lookupRiderFrontendEditor(project, element)
+        val dataContext = composeDeterministicRiderDataContext(project, element, newName, editorLookup)
         val feasibility = evaluateRiderFrontendFeasibility(
             hasDeclarationEditor = editorLookup.editor != null,
             canComposeDataContext = dataContext.dataContext != null
         )
-        logRiderRenameInfo(
-            trace,
-            "frontend.feasibility.end",
-            "canProceed=${feasibility.canProceed} reason=${feasibility.reason} editor=${editorLookup.reason} dataContextKeys=${dataContext.availableKeys} elapsedMs=${trace.elapsedMs()}"
-        )
 
         if (!feasibility.canProceed) {
-            logRiderRenameInfo(
-                trace,
-                "frontend.policy.end",
-                "handlerCount=0 selectedHandler=<none> policyShouldInvoke=false reason=${feasibility.reason} elapsedMs=${trace.elapsedMs()}"
-            )
-            logRiderRenameInfo(
-                trace,
-                "frontend.lane.select",
-                "lane=${RiderRenameExecutionLane.BLOCKED} blockReason=${feasibility.reason} elapsedMs=${trace.elapsedMs()}"
-            )
             return RiderRenameExecutionPlan(
                 availableHandlerTitles = emptyList(),
                 selectedHandler = null,
@@ -2066,37 +1691,16 @@ class RenameSymbolTool : AbstractMcpTool() {
             canComposeDataContext = dataContext.dataContext != null,
             preferredLaneWasDeterministic = policy.shouldInvoke
         )
-        logRiderRenameInfo(
-            trace,
-            "frontend.factory.policy",
-            "shouldInvoke=${factoryPlan.shouldInvoke} reason=${factoryPlan.reason} elapsedMs=${trace.elapsedMs()}"
-        )
         val lane = if (policy.shouldInvoke) {
             RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
         } else {
             RiderRenameExecutionLane.BLOCKED
         }
         val blockReason = if (lane == RiderRenameExecutionLane.BLOCKED) {
-            logRiderRenameInfo(
-                trace,
-                "frontend.factory.refused",
-                "reason=${factoryPlan.reason} elapsedMs=${trace.elapsedMs()}"
-            )
             "${policy.reason}; second choice refused: ${factoryPlan.reason}"
         } else {
             null
         }
-
-        logRiderRenameInfo(
-            trace,
-            "frontend.policy.end",
-            "handlerCount=${availableHandlerTitles.size} selectedHandler=${selectedHandler?.javaClass?.name ?: "<none>"} policyShouldInvoke=${policy.shouldInvoke} reason=${policy.reason} elapsedMs=${trace.elapsedMs()}"
-        )
-        logRiderRenameInfo(
-            trace,
-            "frontend.lane.select",
-            "lane=$lane blockReason=${blockReason ?: "<none>"} elapsedMs=${trace.elapsedMs()}"
-        )
 
         return RiderRenameExecutionPlan(
             availableHandlerTitles = availableHandlerTitles,
@@ -2114,7 +1718,6 @@ class RenameSymbolTool : AbstractMcpTool() {
     private suspend fun lookupRiderFrontendEditor(
         project: Project,
         element: PsiElement,
-        trace: RiderRenameTraceContext
     ): RiderFrontendEditorLookup {
         val lookupSeed = suspendingReadAction {
             val containingFile = element.containingFile
@@ -2129,11 +1732,6 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         if (virtualFile == null) {
             val reason = "declaration file is unavailable for Rider rename lane"
-            logRiderRenameInfo(
-                trace,
-                "frontend.editor.lookup",
-                "reason=$reason elapsedMs=${trace.elapsedMs()}"
-            )
             return RiderFrontendEditorLookup(
                 editor = null,
                 reason = reason,
@@ -2190,11 +1788,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                 )
             }
         }
-        logRiderRenameInfo(
-            trace,
-            "frontend.editor.lookup",
-            "reason=${lookup.reason} elapsedMs=${trace.elapsedMs()}"
-        )
         return lookup
     }
 
@@ -2203,14 +1796,8 @@ class RenameSymbolTool : AbstractMcpTool() {
         element: PsiElement,
         newName: String,
         editorLookup: RiderFrontendEditorLookup,
-        trace: RiderRenameTraceContext
     ): RiderDeterministicDataContext {
         if (editorLookup.editor == null) {
-            logRiderRenameInfo(
-                trace,
-                "frontend.datacontext.compose",
-                "keys=[] reason=declaration editor unavailable elapsedMs=${trace.elapsedMs()}"
-            )
             return RiderDeterministicDataContext(
                 availableKeys = emptyList(),
                 dataContext = null
@@ -2228,11 +1815,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             CommonDataKeys.EDITOR.name to editorLookup.editor
         )
         val availableKeys = entries.filterValues { it != null }.keys.toList()
-        logRiderRenameInfo(
-            trace,
-            "frontend.datacontext.compose",
-            "keys=$availableKeys elapsedMs=${trace.elapsedMs()}"
-        )
         return RiderDeterministicDataContext(
             availableKeys = availableKeys,
             dataContext = DataContext { dataId -> entries[dataId] }
@@ -2284,7 +1866,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         line: Int,
         column: Int,
         newName: String,
-        riderTrace: RiderRenameTraceContext? = null,
         strictRiderFallbackTargeting: Boolean = false
     ): RenameValidation {
         val psiFile = getPsiFile(project, file)
@@ -2293,14 +1874,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                 oldName = "",
                 error = "File not found: $file"
             )
-
-        riderTrace?.let {
-            logRiderRenameInfo(
-                it,
-                "frontend.file.resolve",
-                "requestedFile=$file virtualFile=${psiFile.virtualFile.path} psiFileClass=${psiFile.javaClass.name} language=${psiFile.language.displayName} elapsedMs=${it.elapsedMs()}"
-            )
-        }
 
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
             ?: return RenameValidation(
@@ -2316,14 +1889,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                 error = "No element found at the specified position"
             )
 
-        riderTrace?.let {
-            logRiderRenameInfo(
-                it,
-                "frontend.offset.resolve",
-                "line=$line column=$column offset=$offset lineStart=${document.getLineStartOffset(line - 1)} lineEnd=${document.getLineEndOffset(line - 1)} elapsedMs=${it.elapsedMs()}"
-            )
-        }
-
         val psiElement = psiFile.findElementAt(offset)
             ?: return RenameValidation(
                 element = DummyNamedElement,
@@ -2331,32 +1896,9 @@ class RenameSymbolTool : AbstractMcpTool() {
                 error = "No element found at the specified position"
             )
 
-        riderTrace?.let {
-            logRiderRenameInfo(
-                it,
-                "frontend.resolve.start",
-                "line=$line column=$column leaf=${describeElementForTrace(psiElement)} elapsedMs=${it.elapsedMs()}"
-            )
-        }
-
         val targetResolution = inspectNamedElementCandidateForRename(psiElement, offset)
-        riderTrace?.let {
-            logRiderRenameInfo(
-                it,
-                "frontend.resolve.candidates",
-                "line=$line column=$column leaf=${targetResolution.leafDescription} parents=${targetResolution.parentChainDescription} references=${targetResolution.referenceDescription} selectedReason=${targetResolution.selectedReason} elapsedMs=${it.elapsedMs()}"
-            )
-        }
-
         val namedElement = targetResolution.candidate
         val candidateName = targetResolution.candidateName
-        riderTrace?.let {
-            logRiderRenameInfo(
-                it,
-                "frontend.resolve.end",
-                "line=$line column=$column resolved=${describeElementForTrace(namedElement)} resolvedName=${candidateName ?: "<unnamed>"} selectedReason=${targetResolution.selectedReason} elapsedMs=${it.elapsedMs()}"
-            )
-        }
 
         if (namedElement == null) {
             return RenameValidation(

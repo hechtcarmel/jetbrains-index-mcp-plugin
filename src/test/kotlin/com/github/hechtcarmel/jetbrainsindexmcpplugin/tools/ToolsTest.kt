@@ -151,7 +151,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
-    fun testFindUsagesToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindUsagesToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
         val tool = FindUsagesTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -162,8 +162,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
-        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should still error because test position is invalid", result.isError)
+        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindUsagesToolUnsupportedLanguage() = runBlocking {
@@ -208,7 +208,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
-    fun testFindDefinitionToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindDefinitionToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
         val tool = FindDefinitionTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -219,8 +219,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
-        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should still error because test position is invalid", result.isError)
+        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
     }
 
     // Navigation Tools Tests
@@ -305,7 +305,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error with invalid file", result.isError)
     }
 
-    fun testFindImplementationsToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindImplementationsToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
         val tool = FindImplementationsTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -316,8 +316,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
-        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should still error because test position is invalid", result.isError)
+        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindImplementationsToolUnsupportedLanguage() = runBlocking {
@@ -901,7 +901,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
-    fun testFindSuperMethodsToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindSuperMethodsToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
         val tool = FindSuperMethodsTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -912,8 +912,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
-        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should still error because test position is invalid", result.isError)
+        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindSuperMethodsToolUnsupportedLanguage() = runBlocking {

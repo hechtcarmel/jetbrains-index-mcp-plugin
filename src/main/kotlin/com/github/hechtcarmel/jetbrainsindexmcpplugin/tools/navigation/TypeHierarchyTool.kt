@@ -81,8 +81,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 
-        val className = arguments["className"]?.jsonPrimitive?.content
-        val file = arguments["file"]?.jsonPrimitive?.content
+        val className = optionalStringArg(arguments, "className")
+        val file = optionalStringArg(arguments, ParamNames.FILE)
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
         val rawScope = rawScopeValue(arguments[ParamNames.SCOPE])
         val scope = try {
@@ -190,15 +190,15 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     private fun resolveTargetElement(project: Project, arguments: JsonObject): PsiElement? {
         // Try className first (Java/Kotlin specific)
-        val className = arguments["className"]?.jsonPrimitive?.content
+        val className = optionalStringArg(arguments, "className")
         if (className != null) {
             return findClassByName(project, className)
         }
 
         // Otherwise use file/line/column (works for all languages)
-        val file = arguments["file"]?.jsonPrimitive?.content ?: return null
-        val line = arguments["line"]?.jsonPrimitive?.int ?: return null
-        val column = arguments["column"]?.jsonPrimitive?.int ?: return null
+        val file = optionalStringArg(arguments, ParamNames.FILE) ?: return null
+        val line = optionalIntArg(arguments, ParamNames.LINE) ?: return null
+        val column = optionalIntArg(arguments, ParamNames.COLUMN) ?: return null
 
         return findPsiElement(project, file, line, column)
     }

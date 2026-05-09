@@ -9,8 +9,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import junit.framework.TestCase
-import java.nio.file.Files
-import java.nio.file.Path
+import java.io.File
 
 /**
  * Unit tests for the Rider protocol-based .NET handlers.
@@ -140,26 +139,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals(30L, RdProtocolBridge.timeoutSecondsForCall("getCallHierarchy"))
         assertEquals(300L, RdProtocolBridge.timeoutSecondsForCall("renameSymbol"))
         assertEquals(60L, RdProtocolBridge.timeoutSecondsForCall("findReferences"))
-    }
-
-    fun testRiderRenameTraceSinkUsesStableTempFilePath() {
-        assertEquals(
-            Path.of(System.getProperty("java.io.tmpdir"), "indexmcp-rename-trace.log").toString(),
-            RiderRenameTraceSink.buildTraceFilePath()
-        )
-    }
-
-    fun testRiderRenameTraceSinkAppendsLinesAndSwallowsPathErrors() {
-        val traceFilePath = Files.createTempFile("indexmcp-rename-trace-", ".log")
-        try {
-            RiderRenameTraceSink.appendLine(traceFilePath.toString(), "line-one")
-            RiderRenameTraceSink.appendLine(traceFilePath.toString(), "line-two")
-
-            assertEquals(listOf("line-one", "line-two"), Files.readAllLines(traceFilePath))
-            RiderRenameTraceSink.appendLine("\u0000bad-path", "ignored")
-        } finally {
-            Files.deleteIfExists(traceFilePath)
-        }
     }
 
     fun testRegeneratedMutationAndSearchRequestsRemainConstructibleThroughBridgeReflection() {
@@ -576,6 +555,79 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         }
     }
 
+    fun testSemanticTargetPrefersPositionWhenDualModeInputIsComplete() {
+        val projectRoot = createTempDir(prefix = "rider-semantic-target-")
+        val sourceFile = File(projectRoot, "src/Service.cs").apply {
+            parentFile.mkdirs()
+            writeText("class Service {}")
+        }
+        val project = mockk<Project>()
+        every { project.basePath } returns projectRoot.absolutePath
+
+        val target = invokeCreateSemanticTarget(
+            project = project,
+            file = "src/Service.cs",
+            line = 12,
+            column = 9,
+            language = "C#",
+            symbol = "Demo.Service#Run()"
+        )
+
+        assertNotNull(target)
+        assertEquals(sourceFile.canonicalPath, rdProperty(target!!, "filePath"))
+        assertEquals(12, rdProperty(target, "line"))
+        assertEquals(9, rdProperty(target, "column"))
+        assertNull(rdProperty(target, "language"))
+        assertNull(rdProperty(target, "symbol"))
+    }
+
+    fun testSemanticTargetTreatsBlankSymbolFieldsAsOmittedWhenPositionIsComplete() {
+        val projectRoot = createTempDir(prefix = "rider-semantic-target-")
+        val sourceFile = File(projectRoot, "src/Service.cs").apply {
+            parentFile.mkdirs()
+            writeText("class Service {}")
+        }
+        val project = mockk<Project>()
+        every { project.basePath } returns projectRoot.absolutePath
+
+        val target = invokeCreateSemanticTarget(
+            project = project,
+            file = "src/Service.cs",
+            line = 7,
+            column = 3,
+            language = "   ",
+            symbol = "\t"
+        )
+
+        assertNotNull(target)
+        assertEquals(sourceFile.canonicalPath, rdProperty(target!!, "filePath"))
+        assertEquals(7, rdProperty(target, "line"))
+        assertEquals(3, rdProperty(target, "column"))
+        assertNull(rdProperty(target, "language"))
+        assertNull(rdProperty(target, "symbol"))
+    }
+
+    fun testSemanticTargetUsesSymbolModeWhenPositionIsIncomplete() {
+        val project = mockk<Project>()
+        every { project.basePath } returns null
+
+        val target = invokeCreateSemanticTarget(
+            project = project,
+            file = "   ",
+            line = null,
+            column = 9,
+            language = " C# ",
+            symbol = " Demo.Service#Run() "
+        )
+
+        assertNotNull(target)
+        assertNull(rdProperty(target!!, "file"))
+        assertNull(rdProperty(target, "line"))
+        assertNull(rdProperty(target, "column"))
+        assertEquals("C#", rdProperty(target, "language"))
+        assertEquals("Demo.Service#Run()", rdProperty(target, "symbol"))
+    }
+
     // ── Regression Tests for Deterministic C#/F# Symbol Parsing ──────────────────
 
     fun testCSharpTypeOnlySymbol_RagasaWebServices_WhiteList() {
@@ -750,6 +802,28 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         val value = RdProtocolBridge.createStruct("$MODEL_PKG.$simpleName", *args)
         assertNotNull("Expected $simpleName to remain constructible after RD regeneration", value)
         return value!!
+    }
+
+    private fun invokeCreateSemanticTarget(
+        project: Project,
+        file: String?,
+        line: Int?,
+        column: Int?,
+        language: String?,
+        symbol: String?
+    ): Any? {
+        val method = RiderBackendSemanticService::class.java.getDeclaredMethod(
+            "createSemanticTarget",
+            Project::class.java,
+            String::class.java,
+            Int::class.javaObjectType,
+            Int::class.javaObjectType,
+            String::class.java,
+            String::class.java
+        ).apply {
+            isAccessible = true
+        }
+        return method.invoke(RiderBackendSemanticService, project, file, line, column, language, symbol)
     }
 
     private fun rdProperty(instance: Any, name: String): Any? = RdProtocolBridge.getProperty(instance, name)
