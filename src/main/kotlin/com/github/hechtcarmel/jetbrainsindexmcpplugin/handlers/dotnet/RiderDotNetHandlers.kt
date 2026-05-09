@@ -469,6 +469,8 @@ internal object RiderBackendMutationResultMapper {
 object RiderBackendSemanticService {
     private val LOG = logger<RiderBackendSemanticService>()
 
+    fun isRiderEnvironment(): Boolean = RiderEnvironment.isAvailable
+
     private fun canHandleLanguage(language: String?): Boolean =
         language == null || isAcceptedLanguageAlias(language, CSHARP_LANGUAGE_IDS) ||
             isAcceptedLanguageAlias(language, FSHARP_LANGUAGE_IDS)

@@ -21,18 +21,20 @@ class RiderMutationRoutingUnitTest : TestCase() {
         )
     }
 
-    fun testRenameSymbolToolContractsSeparateRiderDotNetFileRenameEndpoint() {
+    fun testRenameSymbolToolRoutesRiderDotNetFileRenameThroughGenericFrontendLane() {
         val source = refactoringSource("RenameSymbolTool.kt")
 
         assertContains(
             source,
-            "renameFile",
-            "Rider .cs/.csx file rename should use a distinct Rider backend endpoint instead of reusing symbol rename or generic file rename"
+            "shouldUseRiderBackendRename(file, isFileRename)",
+            "Rider .cs/.csx routing should explicitly exclude file rename requests from the backend rename lane"
         )
-        assertFalse(
-            "Rider .cs/.csx routing should not stay gated to symbol rename only once file rename is supported",
-            source.contains("if (!isFileRename && RiderBackendSemanticService.isDotNetFile(file))")
+        assertContains(
+            source,
+            "validateAndPrepareFileRename(project, file, newName)",
+            "Rider .cs/.csx file rename should reuse the generic frontend PsiFile rename lane"
         )
+        assertFalse(source.contains("tryExecuteRiderFileRename(project, file, newName)"))
     }
 
     fun testRenameSymbolToolPreservesBackendStatusAndVerificationFields() {
@@ -128,17 +130,87 @@ class RiderMutationRoutingUnitTest : TestCase() {
         assertEquals(0, summary.changesCount)
     }
 
-    fun testMoveFileToolContractsRiderDotNetBackendMoveEndpoint() {
+    fun testMoveFileToolRoutesRiderDotNetMoveThroughRiderBackendFirst() {
         val source = refactoringSource("MoveFileTool.kt")
 
         assertContains(
             source,
-            "moveFile",
-            "Rider .cs/.csx move should route through a Rider backend move endpoint"
+            "shouldUseRiderBackendMove(file)",
+            "Rider .cs/.csx move should detect Rider-backed .NET files before the generic move lane"
+        )
+        assertContains(
+            source,
+            "RiderBackendSemanticService.isRiderEnvironment()",
+            "Rider .cs/.csx move should only route through dialog automation inside Rider"
+        )
+        assertContains(
+            source,
+            "executeRiderMoveWithDialogAutomation(",
+            "Rider .cs/.csx move should use the dedicated Rider dialog automation lane before the generic fallback"
+        )
+        assertContains(
+            source,
+            "RiderMoveDialogAutomationController",
+            "Rider .cs/.csx move should automate the Rider Move to Folder dialog instead of relying on headless backend APIs"
+        )
+        assertContains(
+            source,
+            "ActionManager.getInstance().getAction(RIDER_MOVE_ACTION_ID)",
+            "Rider .cs/.csx move should resolve the standard IDE move action for dialog automation"
+        )
+        assertContains(
+            source,
+            "ActionUtil.invokeAction(action, dataContext, ActionPlaces.UNKNOWN, null, null)",
+            "Rider .cs/.csx move should invoke the standard move action with a deterministic data context"
+        )
+        assertContains(
+            source,
+            "MoveBackendSelection.GenericFileMove",
+            "Rider .cs/.csx move should still preserve the generic IDE fallback lane"
         )
         assertFalse(
-            "Rider .cs/.csx move should not keep the Rider frontend limitation warning once backend routing exists",
-            source.contains("cross-file using/import updates depend on Rider frontend support")
+            "Rider .cs/.csx move should no longer call the backend move rd endpoint from the frontend tool",
+            source.contains("invokeCallResult(model, \"moveFile\", request)")
+        )
+    }
+
+    fun testMoveFileToolPreparesAndRefreshesDestinationBeforeRiderBackendMove() {
+        val source = refactoringSource("MoveFileTool.kt")
+
+        assertContains(
+            source,
+            "prepareDestinationDirectoryForRiderMove(project, targetDir)",
+            "Rider .cs/.csx move should prepare the destination directory before invoking the backend"
+        )
+        assertContains(
+            source,
+            "Files.createDirectories(Path.of(targetDir.path))",
+            "Rider .cs/.csx move should ensure the destination exists on disk before backend execution"
+        )
+        assertContains(
+            source,
+            "refreshProjectRootsAndCommit(project)",
+            "Rider .cs/.csx move should refresh VFS/project roots before backend execution"
+        )
+    }
+
+    fun testMoveFileToolKeepsUnsupportedRiderBackendStatusesVisible() {
+        val source = refactoringSource("MoveFileTool.kt")
+        val backendSource = backendSource()
+
+        assertContains(
+            source,
+            "Move failed: Rider move action '",
+            "Rider .cs/.csx move should fail closed when the Rider move action cannot be resolved for dialog automation"
+        )
+        assertContains(
+            backendSource,
+            "frontend dialog automation owns Rider move execution",
+            "The Rider backend move endpoint should explicitly advertise that frontend dialog automation owns move execution"
+        )
+        assertFalse(
+            "The Rider backend move endpoint should no longer execute the failed MoveToFolder workflow lane",
+            backendSource.contains("ExecuteMoveFile(movePlan)")
         )
     }
 
@@ -185,12 +257,16 @@ class RiderMutationRoutingUnitTest : TestCase() {
         val deleteSource = refactoringSource("SafeDeleteTool.kt")
 
         assertContains(renameSource, "RiderMutationResultMapper.summary", "Rename mapping should use the shared Rider mutation summary mapper")
-        assertContains(moveSource, "RiderMutationResultMapper.summary", "Move mapping should use the shared Rider mutation summary mapper")
+        assertContains(moveSource, "using Rider Move to Folder dialog automation", "Move mapping should return the frontend dialog-automation success summary directly")
         assertContains(deleteSource, "RiderMutationResultMapper.summary", "Safe delete mapping should use the shared Rider mutation summary mapper")
     }
 
     private fun refactoringSource(fileName: String): String {
         return File("src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/tools/refactoring/$fileName").readText()
+    }
+
+    private fun backendSource(): String {
+        return File("src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpBackendHost.cs").readText()
     }
 
     private fun assertContains(source: String, needle: String, message: String) {

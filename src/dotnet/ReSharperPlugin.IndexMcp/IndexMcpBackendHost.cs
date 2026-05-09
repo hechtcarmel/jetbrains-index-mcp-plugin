@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using JetBrains.Application.DataContext;
 using JetBrains.Application.Parts;
 using JetBrains.Application.Progress;
-using JetBrains.Application.UI.Actions.ActionManager;
 using JetBrains.Application.Threading;
 using JetBrains.Core;
 using JetBrains.DocumentModel;
@@ -34,8 +33,6 @@ using JetBrains.ReSharper.Psi.Util;
 using JetBrains.ReSharper.Feature.Services.Refactorings;
 using JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename;
 using JetBrains.ReSharper.Feature.Services.Protocol;
-using JetBrains.ReSharper.Refactorings.Move.MoveToFolder;
-using JetBrains.ReSharper.Refactorings.Move.MoveToFolder.Impl;
 using JetBrains.ReSharper.Refactorings.Rename;
 using JetBrains.Rider.Model;
 using JetBrains.Rider.Model.IndexMcp;
@@ -899,11 +896,9 @@ public class IndexMcpBackendHost
 
     private Task<RdMoveFileResult?> HandleMoveFile(Lifetime lt, RdMoveFileRequest request)
     {
-        OuterLifetime outerLifetime = lt;
         var oldPath = request.FilePath;
         var currentDirectory = Path.GetDirectoryName(oldPath);
         var newPath = CombinePath(request.DestinationDirectory, Path.GetFileName(oldPath));
-        var movePlan = MoveMutationPlanner.PlanSemanticMove(request.FilePath, request.DestinationDirectory);
 
         if (PathsEqual(currentDirectory, request.DestinationDirectory))
         {
@@ -913,24 +908,16 @@ public class IndexMcpBackendHost
                     .ToMoveFileResult(oldPath, oldPath));
         }
 
+        var movePlan = MoveMutationPlanner.PlanSemanticMove(request.FilePath, request.DestinationDirectory);
         if (!movePlan.CanProceed)
             return Task.FromResult<RdMoveFileResult?>(ToMoveBlockedResult(movePlan.Resolution, oldPath, newPath));
 
-        RdMoveFileResult? result = null;
-        return ExecuteWriteLockedRename(outerLifetime, () => { result = ExecuteMoveFile(movePlan); })
-            .ContinueWith<RdMoveFileResult?>(task =>
-            {
-                if (!task.IsFaulted)
-                    return result;
-
-                var exception = task.Exception?.GetBaseException();
-                return MutationVerificationService
-                    .Blocked(
-                        exception == null
-                            ? "ReSharper backend semantic move failed while acquiring/executing the write lock."
-                            : $"ReSharper backend semantic move failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}")
-                    .ToMoveFileResult(oldPath, newPath);
-            });
+        return Task.FromResult<RdMoveFileResult?>(
+            MutationVerificationService
+                .Unsupported(
+                    "Rider frontend dialog automation owns Rider move execution. " +
+                    "The backend MoveToFolder workflow lane remains disabled because its headless execution could not be made reliable enough to verify safely.")
+                .ToMoveFileResult(oldPath, newPath));
     }
 
     private static string CombinePath(string? directory, string fileName)
@@ -942,6 +929,7 @@ public class IndexMcpBackendHost
     {
         var oldPath = renamePlan.OldPath!;
         var newPath = renamePlan.NewPath!;
+        var declaredTypeNamesBefore = RenameMutationPlanner.ReadDeclaredTypeNames(oldPath);
 
         if (!TryValidateHeadlessFileRenameAvailability(oldPath, out var availabilityFailure))
         {
@@ -982,8 +970,15 @@ public class IndexMcpBackendHost
                     .ToRenameFileResult(oldPath, newPath);
             }
 
-            var declaredTypeNames = RenameMutationPlanner.ReadDeclaredTypeNames(newPath);
-            var semanticEvidence = CollectFileMutationSemanticEvidence(newPath, declaredTypeNames);
+            var declaredTypeNamesAfter = RenameMutationPlanner.ReadDeclaredTypeNames(newPath);
+            var declaredTypeIdentityFailure = VerifyFileRenameDeclaredTypeIdentity(
+                declaredTypeNamesBefore,
+                declaredTypeNamesAfter,
+                newPath);
+            if (declaredTypeIdentityFailure != null)
+                return declaredTypeIdentityFailure.ToRenameFileResult(oldPath, newPath);
+
+            var semanticEvidence = CollectFileMutationSemanticEvidence(newPath, declaredTypeNamesBefore);
 
             return MutationVerificationService
                 .ConfirmSemanticFileMutationProofWithEvidence(
@@ -992,7 +987,7 @@ public class IndexMcpBackendHost
                     expectedNamespace,
                     semanticEvidence.ConfirmedAffectedFiles,
                     semanticEvidence.ConfirmedReferenceFiles,
-                    declaredTypeNames,
+                    declaredTypeNamesBefore,
                     semanticEvidence,
                     "Renamed the file through the Rider RenameDataProvider/RenameWorkflow lane and confirmed the file-scoped mutation path.")
                 .ToRenameFileResult(oldPath, newPath);
@@ -1005,82 +1000,40 @@ public class IndexMcpBackendHost
         }
     }
 
-    private RdMoveFileResult ExecuteMoveFile(MoveMutationPlan movePlan)
+    private static VerifiedMutationOutcome? VerifyFileRenameDeclaredTypeIdentity(
+        IReadOnlyList<string> declaredTypeNamesBefore,
+        IReadOnlyList<string> declaredTypeNamesAfter,
+        string newPath)
     {
-        var oldPath = movePlan.OldPath!;
-        var newPath = movePlan.NewPath!;
+        var normalizedBefore = NormalizeDeclaredTypeNames(declaredTypeNamesBefore);
+        var normalizedAfter = NormalizeDeclaredTypeNames(declaredTypeNamesAfter);
+        if (normalizedBefore.SequenceEqual(normalizedAfter, StringComparer.Ordinal))
+            return null;
 
-        if (!TryValidateHeadlessMoveAvailability(oldPath, out var availabilityFailure))
-        {
-            return MutationVerificationService
-                .Unsupported(availabilityFailure)
-                .ToMoveFileResult(oldPath, newPath);
-        }
+        return MutationVerificationService.VerificationFailed(
+            new[] { newPath },
+            File.Exists(newPath) ? 1 : 0,
+            "Rider file rename changed declared type identity, so the backend cannot prove file-only semantics.",
+            new[] { "rename_execution", "file_path_transition", "declared_type_identity" },
+            $"declared type names changed during file rename: before [{FormatDeclaredTypeNames(normalizedBefore)}], after [{FormatDeclaredTypeNames(normalizedAfter)}]");
+    }
 
-        var projectFile = GetProjectFileForPath(oldPath);
-        if (projectFile == null)
-        {
-            return MutationVerificationService
-                .Blocked($"Rider file move resolved '{oldPath}', but the backend could not bind it to a project file for MoveToFolderWorkflow execution. No files were modified.")
-                .ToMoveFileResult(oldPath, newPath);
-        }
+    private static IReadOnlyList<string> NormalizeDeclaredTypeNames(IEnumerable<string>? typeNames)
+    {
+        return (typeNames ?? Array.Empty<string>())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim().TrimStart('@'))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+    }
 
-        var projectFilePath = GetContainingProjectFilePath(projectFile);
-        var expectedNamespace = string.IsNullOrWhiteSpace(projectFilePath)
-            ? null
-            : FileMutationSemantics.TryComputeMovedNamespaceFromProjectFile(
-                oldPath,
-                Path.GetDirectoryName(newPath) ?? string.Empty,
-                FileMutationSemantics.TryReadNamespaceOrDefault(oldPath, projectFilePath) ?? string.Empty,
-                projectFilePath);
-
-        try
-        {
-            var workflowMessage = TryExecuteDrivenFileMove(projectFile, newPath);
-            if (!string.IsNullOrWhiteSpace(workflowMessage))
-            {
-                return MutationVerificationService
-                    .Unsupported(workflowMessage)
-                    .ToMoveFileResult(oldPath, newPath);
-            }
-
-            if (File.Exists(oldPath) || !File.Exists(newPath))
-            {
-                return MutationVerificationService
-                    .VerificationFailed(
-                        new[] { oldPath, newPath },
-                        File.Exists(newPath) ? 1 : 0,
-                        "Rider MoveToFolder workflow reported completion, but the on-disk file path transition could not be confirmed.",
-                        new[] { "move_execution", "file_path_transition" },
-                        "expected the old path to disappear and the new path to exist after the workflow finished")
-                    .ToMoveFileResult(oldPath, newPath);
-            }
-
-            var declaredTypeNames = RenameMutationPlanner.ReadDeclaredTypeNames(newPath);
-            var semanticEvidence = CollectFileMutationSemanticEvidence(newPath, declaredTypeNames);
-            var referenceTokens = new List<string>();
-            if (!string.IsNullOrWhiteSpace(expectedNamespace))
-                referenceTokens.Add($"using {expectedNamespace};");
-            referenceTokens.AddRange(declaredTypeNames);
-
-            return MutationVerificationService
-                .ConfirmSemanticFileMutationProofWithEvidence(
-                    newPath,
-                    projectFilePath ?? string.Empty,
-                    expectedNamespace,
-                    semanticEvidence.ConfirmedAffectedFiles,
-                    semanticEvidence.ConfirmedReferenceFiles,
-                    referenceTokens,
-                    semanticEvidence,
-                    "Moved the file through the Rider MoveToFolderWorkflow lane and confirmed the file-path transition.")
-                .ToMoveFileResult(oldPath, newPath);
-        }
-        catch (Exception ex)
-        {
-            return MutationVerificationService
-                .Blocked($"Rider MoveToFolder workflow failed: {ex.GetType().Name}: {ex.Message}")
-                .ToMoveFileResult(oldPath, newPath);
-        }
+    private static string FormatDeclaredTypeNames(IEnumerable<string> typeNames)
+    {
+        var normalized = NormalizeDeclaredTypeNames(typeNames);
+        return normalized.Count == 0
+            ? "<none>"
+            : string.Join(", ", normalized);
     }
 
     private Task<RdSafeDeleteResult?> HandleSafeDelete(Lifetime lt, RdSafeDeleteRequest request)
@@ -1505,11 +1458,11 @@ public class IndexMcpBackendHost
             if (string.IsNullOrWhiteSpace(newName))
                 return "Rider file rename rejected the requested destination because the new file name was empty.";
 
-            var dataProvider = CreateRuntimeFileRenameDataProvider(projectFile, newName, out var providerFailure);
-            if (dataProvider == null)
+            var fileRenameBinding = CreateRuntimeFileRenameDataProvider(projectFile, newName, out var providerFailure);
+            if (fileRenameBinding == null)
                 return providerFailure;
 
-            var driver = ExecuteRenameWorkflow(dataProvider, lifetime => CreateFileRenameDataContext(projectFile, dataProvider, lifetime));
+            var driver = ExecuteRenameWorkflow(fileRenameBinding.DataProvider, lifetime => CreateFileRenameDataContext(projectFile, fileRenameBinding.DataProvider, lifetime));
             var conflicts = driver.Conflicts.ToList();
             if (conflicts.Count > 0)
                 return string.Join("; ", conflicts.Select(conflict => conflict.Description).Where(description => !string.IsNullOrWhiteSpace(description)));
@@ -1592,36 +1545,25 @@ public class IndexMcpBackendHost
         LifetimeDefinition lifetimeDefinition)
     {
         var rules = DataRules
+            .AddRule("IndexMcpRenameFile", ProjectModelDataConstants.PROJECT_MODEL_ELEMENTS, new IProjectModelElement[] { projectFile })
             .AddRule("IndexMcpRenameFile", ProjectModelDataConstants.SOLUTION, _solution)
             .AddRule("IndexMcpRenameFile", RenameRefactoringService.RenameDataProvider, dataProvider);
         return _solution.GetComponent<DataContexts>().CreateWithDataRules(lifetimeDefinition.Lifetime, rules);
     }
 
-    private RenameDataProvider? CreateRuntimeFileRenameDataProvider(IProjectFile projectFile, string newName, out string failureMessage)
+    private RuntimeFileRenameProviderBinding? CreateRuntimeFileRenameDataProvider(IProjectFile projectFile, string newName, out string failureMessage)
     {
         failureMessage = string.Empty;
 
-        RenameDataProvider dataProvider;
-        try
+        var targetBinding = RuntimeRenameTargetBinding.Bind(typeof(RenameDataProvider), projectFile, newName);
+        if (!targetBinding.IsSupported || targetBinding.Provider is not RenameDataProvider dataProvider)
         {
-            dataProvider = new RenameDataProvider(newName);
-        }
-        catch (Exception ex)
-        {
-            failureMessage = $"File rename is fail-closed because RenameDataProvider(newName) is unavailable in this Rider runtime: {ex.GetType().Name}: {ex.Message}";
+            failureMessage = targetBinding.FailureMessage ??
+                             "File rename is fail-closed because the Rider runtime could not bind the project file target to RenameDataProvider.";
             return null;
         }
 
-        try
-        {
-            SetRuntimeProperty(dataProvider, "RenameTarget", projectFile);
-            SetRuntimeProperty(dataProvider, "CanBeLocal", false);
-        }
-        catch (Exception ex)
-        {
-            failureMessage = $"File rename is fail-closed because the Rider runtime could not bind the project file target to RenameDataProvider: {ex.GetType().Name}: {ex.Message}";
-            return null;
-        }
+        TrySetRuntimeProperty(dataProvider, "CanBeLocal", false);
 
         object model;
         try
@@ -1656,74 +1598,12 @@ public class IndexMcpBackendHost
             return null;
         }
 
-        return dataProvider;
+        return new RuntimeFileRenameProviderBinding(dataProvider, targetBinding.Kind);
     }
 
-    private bool TryValidateHeadlessMoveAvailability(string filePath, out string failureMessage)
-    {
-        failureMessage = string.Empty;
-
-        if (_solution == null)
-        {
-            failureMessage = "Move file is fail-closed because the Rider solution is unavailable for MoveToFolderWorkflow execution.";
-            return false;
-        }
-
-        if (_solution.GetComponent<DataContexts>() == null)
-        {
-            failureMessage = "Move file is fail-closed because Rider DataContexts are unavailable for MoveToFolderWorkflow execution.";
-            return false;
-        }
-
-        if (Shell.Instance.GetComponent<IActionManager>() == null)
-        {
-            failureMessage = "Move file is fail-closed because the Rider action manager is unavailable for MoveToFolderWorkflow execution.";
-            return false;
-        }
-
-        if (GetProjectFileForPath(filePath) == null)
-        {
-            failureMessage = $"Move file is fail-closed because '{filePath}' is not bound to a Rider project file for MoveToFolderWorkflow execution.";
-            return false;
-        }
-
-        return true;
-    }
-
-    private string? TryExecuteDrivenFileMove(IProjectFile projectFile, string newPath)
-    {
-        var destinationDirectory = Path.GetDirectoryName(newPath);
-        if (string.IsNullOrWhiteSpace(destinationDirectory))
-            return "Move file is fail-closed because the destination directory could not be resolved for MoveToFolderWorkflow execution.";
-
-        var containingProject = projectFile.GetProject();
-        if (containingProject == null)
-            return "Move file is fail-closed because the Rider backend could not bind the source file to a containing project for MoveToFolderWorkflow execution.";
-
-        var targetLocation = VirtualFileSystemPath.Parse(destinationDirectory, InteractionContext.SolutionContext);
-        var targetFolder = containingProject.FindProjectItemByLocation(targetLocation) as IProjectFolder;
-        if (targetFolder == null)
-        {
-            return $"Move file is fail-closed because destination folder '{destinationDirectory}' is not yet available in the Rider project model for MoveToFolderWorkflow execution.";
-        }
-
-        var workflow = new MoveToFolderWorkflow(_solution, "Index MCP Rider move");
-        var dataProvider = new MoveToFolderDataProvider(true, false, targetFolder, new List<string>(), new List<string>());
-        workflow.SetDataProvider(dataProvider);
-
-        Lifetime.Using(lifetime =>
-            WorkflowExecuter.ExecuteWithCustomHost(
-                Shell.Instance.GetComponent<IActionManager>()
-                    .DataContexts
-                    .CreateWithoutDataRules(
-                        lifetime,
-                        DataRules
-                            .AddRule("IndexMcpMoveFile", ProjectModelDataConstants.PROJECT_MODEL_ELEMENTS, new IProjectModelElement[] { projectFile })
-                            .AddRule("IndexMcpMoveFile", ProjectModelDataConstants.SOLUTION, _solution)),
-                workflow,
-                new SimpleWorkflowHost()));
-        return null;
-    }
+    private sealed record RuntimeFileRenameProviderBinding(
+        RenameDataProvider DataProvider,
+        RuntimeRenameTargetBindingKind BindingKind);
 
     private static void ProcessWorkflowPages(IRefactoringWorkflow workflow)
     {

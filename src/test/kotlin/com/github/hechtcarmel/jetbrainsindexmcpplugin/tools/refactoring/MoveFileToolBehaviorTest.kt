@@ -54,6 +54,28 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         assertTrue(textResult(result).contains("semantic PHP move blocked for test"))
     }
 
+    fun testMoveFileToolFailsClosedWhenSourceFileCannotBeResolved() = runBlocking {
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "missing/DoesNotExist.cs")
+            put("destination", "missing/Elsewhere")
+        })
+
+        assertTrue("Missing source file should fail closed", result.isError)
+        assertTrue(textResult(result).contains("Source file not found: missing/DoesNotExist.cs"))
+    }
+
+    fun testMoveFileToolFailsClosedWhenDestinationCannotBeCreated() = runBlocking {
+        writeProjectFile("src/Example.cs", "namespace Demo; public sealed class Example {}")
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "src/Example.cs")
+            put("destination", "bad<dest")
+        })
+
+        assertTrue("Invalid destination should fail closed", result.isError)
+        assertTrue(textResult(result).contains("Invalid destination 'bad<dest'"))
+    }
+
     fun testMoveFileToolReportsPhpSemanticBackendWhenSelected() = runBlocking {
         val sourceFile = writeProjectFile("src/Foo.php", "<?php class Foo {}")
 
