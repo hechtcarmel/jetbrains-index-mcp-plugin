@@ -205,7 +205,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static  CtxWriteDelegate<RdMoveFileResult> WriteRdMoveFileResultNullable = RdMoveFileResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdSafeDeleteResult> WriteRdSafeDeleteResultNullable = RdSafeDeleteResult.Write.NullableClass();
 
-    protected override long SerializationHash => -2912379166006876847L;
+    protected override long SerializationHash => -1827364550291654001L;
 
     protected override Action<ISerializers> Register => RegisterDeclaredTypesSerializers;
     public static void RegisterDeclaredTypesSerializers(ISerializers serializers)
@@ -3522,10 +3522,8 @@ namespace JetBrains.Rider.Model.IndexMcp
       return printer.ToString();
     }
   }
-
-
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:32</p>
+   /// <p>Generated from: IndexMcpModel.kt:32</p>
   /// </summary>
   public sealed class RdSemanticTarget : IPrintable, IEquatable<RdSemanticTarget>
   {

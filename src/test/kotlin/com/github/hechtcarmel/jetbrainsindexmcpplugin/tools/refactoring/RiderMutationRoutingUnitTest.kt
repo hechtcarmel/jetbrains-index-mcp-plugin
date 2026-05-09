@@ -251,6 +251,97 @@ class RiderMutationRoutingUnitTest : TestCase() {
         )
     }
 
+    fun testOptimizeImportsToolRoutesRiderDotNetFilesThroughFrontendManualEquivalentBeforeGenericProcessor() {
+        val source = refactoringSource("OptimizeImportsTool.kt")
+
+        assertContains(
+            source,
+            "shouldUseRiderFrontendOptimizeImports(file)",
+            "Rider .cs/.fs optimize imports should detect Rider-backed .NET files before the generic IntelliJ lane"
+        )
+        assertContains(
+            source,
+            "resolveIdeActionsOptimizeImportsActionId()",
+            "Rider .cs/.fs optimize imports should actively resolve the platform Optimize Imports id instead of mentioning IdeActions only in comments"
+        )
+        assertContains(
+            source,
+            "ACTION_OPTIMIZE_IMPORTS",
+            "Rider .cs/.fs optimize imports should probe the ACTION_OPTIMIZE_IMPORTS platform field when available"
+        )
+        assertContains(
+            source,
+            "\"OptimizeImports\"",
+            "Rider .cs/.fs optimize imports should keep the stable OptimizeImports fallback action id"
+        )
+        assertContains(
+            source,
+            "dispatchRiderOptimizeImportsShortcut",
+            "Rider .cs/.fs optimize imports should keep a manual-equivalent keyboard fallback when no action id resolves"
+        )
+        assertContains(
+            source,
+            "KeyEvent.VK_O",
+            "Rider .cs/.fs optimize imports shortcut fallback should dispatch Alt+Shift+O"
+        )
+        assertContains(
+            source,
+            "OptimizeImportsProcessor(project, psiFile).runWithoutProgress()",
+            "Non-.NET optimize imports should keep the generic IntelliJ OptimizeImportsProcessor lane"
+        )
+        assertContains(
+            source,
+            "Optimize imports made no changes to",
+            "Optimize imports should report honest no-op results when the file text does not change"
+        )
+        assertContains(
+            source,
+            "AnActionEvent.createEvent(",
+            "Rider .cs/.fs optimize imports should use the stable action-event factory instead of the deprecated constructor"
+        )
+        assertContains(
+            source,
+            "ActionUtil.invokeAction(action, event, null)",
+            "Rider .cs/.fs optimize imports should execute through an official action-system runner instead of calling OverrideOnly AnAction methods directly"
+        )
+        assertContains(
+            source,
+            "awaitObservableOptimizeImportsMutation(",
+            "Rider .cs/.fs optimize imports should use the shared post-invocation wait path for both action and shortcut lanes"
+        )
+        assertFalse(source.contains("AnActionEvent("))
+        assertFalse(source.contains("action.update(event)"))
+        assertFalse(source.contains("action.actionPerformed(event)"))
+        assertFalse(source.contains("invokeCallResult(model, \"optimizeImports\", request)"))
+    }
+
+    fun testOptimizeImportsProtocolSourceAndBackendNoLongerExposeRdEndpoint() {
+        val protocol = protocolSource()
+        val backend = backendSource()
+        val generatedKt = generatedKotlinSource()
+        val generatedCs = generatedCsSource()
+
+        assertFalse(protocol.contains("RdOptimizeImportsRequest"))
+        assertFalse(protocol.contains("RdOptimizeImportsResult"))
+        assertFalse(protocol.contains("call(\"optimizeImports\""))
+        assertFalse(backend.contains("model.OptimizeImports.SetAsync(HandleOptimizeImports);"))
+        assertFalse(generatedKt.contains("optimizeImports"))
+        assertFalse(generatedKt.contains("RdOptimizeImportsRequest"))
+        assertFalse(generatedKt.contains("RdOptimizeImportsResult"))
+        assertFalse(generatedCs.contains("optimizeImports"))
+        assertFalse(generatedCs.contains("RdOptimizeImportsRequest"))
+        assertFalse(generatedCs.contains("RdOptimizeImportsResult"))
+    }
+
+    fun testOptimizeImportsBackendPartialImplementationIsRemoved() {
+        val backend = backendSource()
+
+        assertFalse(backend.contains("HandleOptimizeImports"))
+        assertFalse(backend.contains("ExecuteOptimizeImports"))
+        assertFalse(backend.contains("TryResolveCSharpRemoveUnusedImportsMethod"))
+        assertFalse(backend.contains("ValidateFSharpOptimizeImportsProcessMethod"))
+    }
+
     fun testRiderMutationToolsUseSharedVerificationSummaryMapper() {
         val renameSource = refactoringSource("RenameSymbolTool.kt")
         val moveSource = refactoringSource("MoveFileTool.kt")
@@ -267,6 +358,18 @@ class RiderMutationRoutingUnitTest : TestCase() {
 
     private fun backendSource(): String {
         return File("src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpBackendHost.cs").readText()
+    }
+
+    private fun protocolSource(): String {
+        return File("protocol/src/main/kotlin/model/rider/IndexMcpModel.kt").readText()
+    }
+
+    private fun generatedKotlinSource(): String {
+        return File("src/rider/main/kotlin/com/jetbrains/rider/plugins/indexmcp/IndexMcpModel.Generated.kt").readText()
+    }
+
+    private fun generatedCsSource(): String {
+        return File("src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpModel.Generated.cs").readText()
     }
 
     private fun assertContains(source: String, needle: String, message: String) {

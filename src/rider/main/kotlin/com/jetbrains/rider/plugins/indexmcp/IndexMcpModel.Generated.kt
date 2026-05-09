@@ -97,7 +97,7 @@ class IndexMcpModel private constructor(
         private val __RdMoveFileResultNullableSerializer = RdMoveFileResult.nullable()
         private val __RdSafeDeleteResultNullableSerializer = RdSafeDeleteResult.nullable()
 
-        const val serializationHash = -2912379166006876847L
+        const val serializationHash = -1827364550291654001L
 
     }
     override val serializersOwner: ISerializersOwner get() = IndexMcpModel
