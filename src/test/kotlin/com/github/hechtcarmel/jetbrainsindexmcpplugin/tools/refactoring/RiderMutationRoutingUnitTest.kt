@@ -26,7 +26,7 @@ class RiderMutationRoutingUnitTest : TestCase() {
 
         assertContains(
             source,
-            "shouldUseRiderBackendRename(file, isFileRename)",
+            "shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy)",
             "Rider .cs/.csx routing should explicitly exclude file rename requests from the backend rename lane"
         )
         assertContains(
@@ -35,6 +35,21 @@ class RiderMutationRoutingUnitTest : TestCase() {
             "Rider .cs/.csx file rename should reuse the generic frontend PsiFile rename lane"
         )
         assertFalse(source.contains("tryExecuteRiderFileRename(project, file, newName)"))
+    }
+
+    fun testRenameSymbolToolPassesRelatedRenameStrategyIntoRiderDialogAutomation() {
+        val source = refactoringSource("RenameSymbolTool.kt")
+
+        assertContains(
+            source,
+            "RiderRenameDialogAutomationController(newName, relatedRenamingStrategy, trace)",
+            "Rider frontend rename automation should receive the related rename strategy so it can honor 'none'"
+        )
+        assertContains(
+            source,
+            "disableRelatedSymbolsCheckboxes(dialog)",
+            "Rider frontend rename automation should clear the related-symbols checkbox before submitting the dialog"
+        )
     }
 
     fun testRenameSymbolToolPreservesBackendStatusAndVerificationFields() {

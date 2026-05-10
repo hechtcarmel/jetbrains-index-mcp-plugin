@@ -1,6 +1,11 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import junit.framework.TestCase
+import java.awt.Container
+import javax.swing.JButton
+import javax.swing.JCheckBox
+import javax.swing.JLabel
+import javax.swing.JPanel
 
 class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
 
@@ -225,6 +230,228 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         assertFalse(RenameSymbolTool.isSecondDialogCandidateTitle(""))
     }
 
+    fun testFollowUpDialogPlanRecognizesRelatedSymbolsSecondRenameDialog() {
+        val plan = RenameSymbolTool.planRiderRenameFollowUpDialog(
+            title = "Rename",
+            visibleTexts = listOf(
+                "There are declarations that seem to have names related to the name of the type to be renamed"
+            ),
+            visibleButtonLabels = listOf("Back", "Next", "Cancel"),
+            relatedRenamingStrategy = "none"
+        )
+
+        assertEquals("continue", plan.action)
+        assertEquals("Next", plan.submitButtonLabel)
+        assertFalse(plan.shouldCompleteAutomationAfterSubmit)
+        assertTrue(plan.shouldDisableRelatedSymbols)
+        assertFalse(plan.requiresRenameTextInput)
+        assertNull(plan.failureReason)
+    }
+
+    fun testFollowUpDialogPlanKeepsWaitingAfterRelatedSymbolsNext() {
+        val plan = RenameSymbolTool.planRiderRenameFollowUpDialog(
+            title = "Rename",
+            visibleTexts = listOf(
+                "There are declarations that seem to have names related to the name of the type to be renamed"
+            ),
+            visibleButtonLabels = listOf("Back", "Next", "Cancel"),
+            relatedRenamingStrategy = "none"
+        )
+
+        assertEquals("continue", plan.action)
+        assertEquals("Next", plan.submitButtonLabel)
+        assertFalse(plan.shouldCompleteAutomationAfterSubmit)
+    }
+
+    fun testFollowUpDialogPlanTreatsRenameNextStepAsRelatedSymbolsWhenStrategyIsNone() {
+        val plan = RenameSymbolTool.planRiderRenameFollowUpDialog(
+            title = "Rename",
+            visibleTexts = emptyList(),
+            visibleButtonLabels = listOf("Back", "Next", "Cancel"),
+            relatedRenamingStrategy = "none"
+        )
+
+        assertEquals("continue", plan.action)
+        assertEquals("Next", plan.submitButtonLabel)
+        assertTrue(plan.shouldDisableRelatedSymbols)
+        assertFalse(plan.shouldCompleteAutomationAfterSubmit)
+    }
+
+    fun testFollowUpDialogPlanCompletesAfterTerminalRefactorButton() {
+        val plan = RenameSymbolTool.planRiderRenameFollowUpDialog(
+            title = "Rename",
+            visibleTexts = listOf("Ready to finish rename"),
+            visibleButtonLabels = listOf("Refactor", "Cancel"),
+            relatedRenamingStrategy = "none"
+        )
+
+        assertEquals("continue", plan.action)
+        assertEquals("Refactor", plan.submitButtonLabel)
+        assertTrue(plan.shouldCompleteAutomationAfterSubmit)
+    }
+
+    fun testTerminalFollowUpButtonsExcludeNextAndIncludeRefactorFinishRenameAndSafeOk() {
+        assertFalse(RenameSymbolTool.isTerminalRiderFollowUpSubmitButton("Next"))
+        assertTrue(RenameSymbolTool.isTerminalRiderFollowUpSubmitButton("Refactor"))
+        assertTrue(RenameSymbolTool.isTerminalRiderFollowUpSubmitButton("Finish"))
+        assertTrue(RenameSymbolTool.isTerminalRiderFollowUpSubmitButton("Rename"))
+        assertTrue(RenameSymbolTool.isTerminalRiderFollowUpSubmitButton("OK"))
+    }
+
+    fun testRiderFrontendMutationCheckDelayAppliesAfterAsyncFollowUp() {
+        assertEquals(200L, RenameSymbolTool.riderFrontendMutationCheckDelayMs(usedAsyncFollowUpClick = true))
+        assertEquals(0L, RenameSymbolTool.riderFrontendMutationCheckDelayMs(usedAsyncFollowUpClick = false))
+    }
+
+    fun testFollowUpDialogPlanRecognizesUnsupportedOperationDialog() {
+        val plan = RenameSymbolTool.planRiderRenameFollowUpDialog(
+            title = "Rename",
+            visibleTexts = listOf("Operation is not supported"),
+            visibleButtonLabels = listOf("OK"),
+            relatedRenamingStrategy = "none"
+        )
+
+        assertEquals("fail_unsupported", plan.action)
+        assertNull(plan.submitButtonLabel)
+        assertFalse(plan.shouldDisableRelatedSymbols)
+        assertFalse(plan.requiresRenameTextInput)
+        assertNotNull(plan.failureReason)
+        assertTrue(plan.failureReason!!.contains("Operation is not supported"))
+    }
+
+    fun testSecondStageTimeoutFailsClosedWhileRenameDialogRemainsVisible() {
+        val decision = RenameSymbolTool.evaluateRiderSecondStageTimeout(
+            visibleDialogTitles = listOf("Rename")
+        )
+
+        assertFalse(decision.shouldCompleteSuccess)
+        assertNotNull(decision.failureReason)
+        assertTrue(decision.failureReason!!.contains("remained visible"))
+    }
+
+    fun testSecondStageTimeoutCompletesOnlyAfterRenameDialogsDisappear() {
+        val decision = RenameSymbolTool.evaluateRiderSecondStageTimeout(
+            visibleDialogTitles = emptyList()
+        )
+
+        assertTrue(decision.shouldCompleteSuccess)
+        assertNull(decision.failureReason)
+    }
+
+    fun testAutomationTimeoutDefersToMutationVerificationOnlyAfterAsyncFollowUpAndNoVisibleDialogs() {
+        val decision = RenameSymbolTool.evaluateRiderAutomationTimeout(
+            waitingForSecondDialog = true,
+            usedAsyncFollowUpClick = true,
+            visibleDialogTitles = emptyList()
+        )
+
+        assertTrue(decision.shouldDeferToMutationVerification)
+        assertFalse(decision.shouldFail)
+        assertEquals("defer-to-mutation-check", decision.traceStatus)
+        assertNull(decision.failureReason)
+    }
+
+    fun testAutomationTimeoutFailsClosedWhenVisibleFollowUpDialogRemains() {
+        val decision = RenameSymbolTool.evaluateRiderAutomationTimeout(
+            waitingForSecondDialog = true,
+            usedAsyncFollowUpClick = true,
+            visibleDialogTitles = listOf("Rename")
+        )
+
+        assertFalse(decision.shouldDeferToMutationVerification)
+        assertTrue(decision.shouldFail)
+        assertEquals("timeout-visible-dialog", decision.traceStatus)
+        assertNotNull(decision.failureReason)
+        assertTrue(decision.failureReason!!.contains("remained visible"))
+    }
+
+    fun testAutomationTimeoutFailsClosedWhenNoAsyncFollowUpWasTriggered() {
+        val decision = RenameSymbolTool.evaluateRiderAutomationTimeout(
+            waitingForSecondDialog = false,
+            usedAsyncFollowUpClick = false,
+            visibleDialogTitles = emptyList()
+        )
+
+        assertFalse(decision.shouldDeferToMutationVerification)
+        assertTrue(decision.shouldFail)
+        assertEquals("timeout", decision.traceStatus)
+        assertNotNull(decision.failureReason)
+        assertTrue(decision.failureReason!!.contains("Rider rename dialog automation timed out"))
+    }
+
+    fun testAutomationTimeoutAlsoDefersAfterAsyncFollowUpWhenSecondStageFlagAlreadyCleared() {
+        val decision = RenameSymbolTool.evaluateRiderAutomationTimeout(
+            waitingForSecondDialog = false,
+            usedAsyncFollowUpClick = true,
+            visibleDialogTitles = emptyList()
+        )
+
+        assertTrue(decision.shouldDeferToMutationVerification)
+        assertFalse(decision.shouldFail)
+        assertEquals("defer-to-mutation-check", decision.traceStatus)
+        assertNull(decision.failureReason)
+    }
+
+    fun testRelatedSymbolsDisableAttemptUsesAccessibleNameFallback() {
+        val panel = AlwaysShowingPanel()
+        val checkbox = AlwaysShowingCheckBox().apply {
+            isSelected = true
+            accessibleContext.accessibleName = "Rename related symbols"
+        }
+        panel.add(checkbox)
+
+        val outcome = RenameSymbolTool.attemptRequiredRelatedSymbolsDisable(panel)
+
+        assertTrue(outcome.attempted)
+        assertTrue(outcome.succeeded)
+        assertEquals("accessible-button", outcome.method)
+        assertFalse(checkbox.isSelected)
+    }
+
+    fun testRelatedSymbolsDisableAttemptFailsClosedWhenNoSafeControlIsFound() {
+        val panel = AlwaysShowingPanel().apply {
+            add(AlwaysShowingLabel("There are declarations that seem to have names related to the name of the type to be renamed"))
+            add(AlwaysShowingButton("Back"))
+            add(AlwaysShowingButton("Next"))
+            add(AlwaysShowingButton("Cancel"))
+        }
+
+        val outcome = RenameSymbolTool.attemptRequiredRelatedSymbolsDisable(panel)
+
+        assertTrue(outcome.attempted)
+        assertFalse(outcome.succeeded)
+        assertEquals("no-safe-toggle", outcome.method)
+        assertNotNull(outcome.failureReason)
+        assertTrue(outcome.failureReason!!.contains("could not disable related-symbol renames"))
+    }
+
+    fun testPrimaryDialogSubmitPlanFailsClosedBeforeNextWhenNoneStrategyCannotDisableRelatedSymbolsSafely() {
+        val plan = RenameSymbolTool.planRiderPrimaryDialogSubmit(
+            buttonText = "Next",
+            relatedRenamingStrategy = "none",
+            relatedDisableSucceeded = false,
+            relatedDisableFailureReason = "could not disable related-symbol renames"
+        )
+
+        assertFalse(plan.shouldClick)
+        assertTrue(plan.shouldAwaitSecondDialog)
+        assertNotNull(plan.failureReason)
+        assertTrue(plan.failureReason!!.contains("could not disable related-symbol renames"))
+    }
+
+    fun testPrimaryDialogSubmitPlanAllowsNextWhenNoneStrategyVerifiedDisableSucceeded() {
+        val plan = RenameSymbolTool.planRiderPrimaryDialogSubmit(
+            buttonText = "Next",
+            relatedRenamingStrategy = "none",
+            relatedDisableSucceeded = true,
+            relatedDisableFailureReason = null
+        )
+
+        assertTrue(plan.shouldClick)
+        assertTrue(plan.shouldAwaitSecondDialog)
+        assertNull(plan.failureReason)
+    }
+
     fun testSourceKeepsListeningForSecondDialogAfterNext() {
         val source = renameToolSource()
 
@@ -234,6 +461,8 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         assertTrue(source.contains("frontend.dialog-automation.second-dialog.button.clicked"))
         assertTrue(source.contains("frontend.dialog-automation.second-dialog.timeout"))
         assertTrue(source.contains("frontend.dialog-automation.second-dialog.primary.closed"))
+        assertTrue(source.contains("startFollowUpDialogReadinessPolling(dialog, title)"))
+        assertTrue(source.contains("evaluateRiderSecondStageTimeout("))
     }
 
     fun testSourcePollsForDialogReadinessBeforePrimaryAutomation() {
@@ -245,9 +474,66 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         assertTrue(source.contains("Timer(200)"))
     }
 
+    fun testSourcePollsForFollowUpDialogReadinessBeforeAutomation() {
+        val source = renameToolSource()
+
+        assertTrue(source.contains("attemptFollowUpDialogAutomationWhenReady"))
+        assertTrue(source.contains("startFollowUpDialogReadinessPolling"))
+        assertTrue(source.contains("Follow-up dialog content did not become ready"))
+    }
+
+    fun testSourceDoesNotCompleteFollowUpImmediatelyAfterNext() {
+        val source = renameToolSource()
+
+        assertTrue(source.contains("else \"awaiting-next-state\""))
+        assertTrue(source.contains("shouldCompleteAutomationAfterSubmit"))
+        assertTrue(source.contains("\"clickedButtonLabel\" to button.text"))
+    }
+
+    fun testSourceDefersAutomationTimeoutToMutationCheckOnlyForAsyncFollowUpWithoutVisibleDialogs() {
+        val source = renameToolSource()
+
+        assertTrue(source.contains("evaluateRiderAutomationTimeout("))
+        assertTrue(source.contains("timeout-deferred-no-visible-dialog"))
+        assertTrue(source.contains("followup.progress.mutation-verified"))
+        assertTrue(source.contains("automation.completed-after-mutation"))
+    }
+
+    fun testSourceTracesRelatedDisableAttemptAndFailsClosedBeforeUnsafeNext() {
+        val source = renameToolSource()
+
+        assertTrue(source.contains("related.disable.attempt"))
+        assertTrue(source.contains("related.disable.success"))
+        assertTrue(source.contains("related.disable.failure"))
+        assertTrue(source.contains("could not disable related-symbol renames"))
+    }
+
+    fun testSourceDelaysRiderMutationCheckAfterAsyncFollowUpClicks() {
+        val source = renameToolSource()
+
+        assertTrue(source.contains("Thread.sleep(mutationCheckDelayMs)"))
+        assertTrue(source.contains("mutationCheckDelayMs"))
+    }
+
     private fun renameToolSource(): String {
         return java.io.File(
             "src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/tools/refactoring/RenameSymbolTool.kt"
         ).readText()
+    }
+
+    private open class AlwaysShowingPanel : JPanel() {
+        override fun isShowing(): Boolean = true
+    }
+
+    private class AlwaysShowingButton(text: String) : JButton(text) {
+        override fun isShowing(): Boolean = true
+    }
+
+    private class AlwaysShowingCheckBox : JCheckBox() {
+        override fun isShowing(): Boolean = true
+    }
+
+    private class AlwaysShowingLabel(text: String) : JLabel(text) {
+        override fun isShowing(): Boolean = true
     }
 }

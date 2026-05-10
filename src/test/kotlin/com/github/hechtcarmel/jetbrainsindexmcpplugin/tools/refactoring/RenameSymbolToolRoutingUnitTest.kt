@@ -334,7 +334,7 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
     fun testFileRenameLaneDoesNotUseFrontendFallbackStatusPolicy() {
         val source = renameToolSource()
 
-        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = true))
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = true, relatedRenamingStrategy = "all"))
         assertTrue(source.contains("if (targetElement !is PsiFile && relatedRenamingStrategy != \"none\")"))
         assertTrue(source.contains("if (targetElement !is PsiFile) {"))
         assertTrue(source.contains("addParameterFieldRelations(project, targetElement, effectiveNewName, renameProcessor)"))
@@ -344,7 +344,7 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
         val source = renameToolSource()
 
         assertTrue(source.contains("if (isFileRename) {"))
-        assertTrue(source.contains("shouldUseRiderBackendRename(file, isFileRename)"))
+        assertTrue(source.contains("shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy)"))
         assertTrue(source.contains("validateAndPrepareFileRename(project, file, newName)"))
         assertTrue(source.contains("val result = executeRename(project, element, newName, overrideStrategy, relatedRenamingStrategy, affectedFiles)"))
         assertFalse(source.contains("tryExecuteRiderFileRename(project, file, newName)"))
@@ -352,9 +352,28 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
     }
 
     fun testRiderBackendRenameRoutingKeepsDotNetSymbolsButNotDotNetFileRenames() {
-        assertTrue(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false))
-        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = true))
-        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.kt", isFileRename = false))
+        assertTrue(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "none"))
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "ask"))
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = true, relatedRenamingStrategy = "all"))
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.kt", isFileRename = false, relatedRenamingStrategy = "all"))
+    }
+
+    fun testRiderFrontendAutomationRoutingOnlyUsesValidatedNoneStrategyForDotNetSymbols() {
+        assertTrue(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "none"))
+        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "ask"))
+        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "accessors_and_tests"))
+        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
+        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = true, relatedRenamingStrategy = "none"))
+        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.kt", isFileRename = false, relatedRenamingStrategy = "none"))
+    }
+
+    fun testRiderDialogAutomationDisablesRelatedSymbolsCheckboxOnlyForNoneStrategy() {
+        assertTrue(RenameSymbolTool.shouldDisableRelatedSymbolsCheckbox("Rename related symbols"))
+        assertTrue(RenameSymbolTool.shouldDisableRelatedSymbolsCheckbox("Rename Related Symbols in comments"))
+        assertTrue(RenameSymbolTool.shouldDisableRelatedSymbolsCheckbox("Also update related symbols"))
+        assertFalse(RenameSymbolTool.shouldDisableRelatedSymbolsCheckbox("Search in comments and strings"))
+        assertFalse(RenameSymbolTool.shouldDisableRelatedSymbolsCheckbox(null))
     }
 
     fun testFileRenameRoutingNormalizesCoordinatesBeforeBranching() {
@@ -376,6 +395,15 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
         assertTrue(source.contains("val result = executeRename(project, element, newName, overrideStrategy, relatedRenamingStrategy, affectedFiles)"))
         assertTrue(source.contains("RenameProcessor(project, targetElement, effectiveNewName, false, false)"))
         assertTrue(source.contains("HeadlessRenameProcessor(project, targetElement, effectiveNewName, false, false)"))
+    }
+
+    fun testDotNetNoneStrategyRoutesToRiderFrontendAutomationBeforeGenericProcessorLane() {
+        val source = renameToolSource()
+
+        assertTrue(source.contains("val shouldUseRiderFrontendAutomation = shouldUseRiderFrontendRenameAutomation(file, isFileRename, relatedRenamingStrategy)"))
+        assertTrue(source.contains("val riderFrontendExecutionRequested = riderFrontendFallback != null || shouldUseRiderFrontendAutomation"))
+        assertTrue(source.contains("if (riderFrontendExecutionRequested) {"))
+        assertTrue(source.contains("riderFallbackStatus = riderFrontendStatus"))
     }
 
     fun testDotNetFileRenameDeclaredTypeContractAcceptsFileOnlyRename() {
