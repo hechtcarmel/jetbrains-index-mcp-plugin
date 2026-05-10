@@ -36,6 +36,8 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.refactoring.RefactoringFactory
 import com.intellij.refactoring.rename.RenameProcessor
 import com.intellij.refactoring.rename.RenameHandler
@@ -106,6 +108,9 @@ class RenameSymbolTool : AbstractMcpTool() {
         private const val RIDER_DIALOG_READINESS_TIMEOUT_MS = 10_000L
         private const val RIDER_DIALOG_READINESS_POLL_MS = 200
         private const val RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS = 5_000L
+        private const val RIDER_MUTATION_VERIFICATION_TIMEOUT_MS = 2_000L
+        private const val RIDER_MUTATION_VERIFICATION_INITIAL_POLL_MS = 50L
+        private const val RIDER_MUTATION_VERIFICATION_MAX_POLL_MS = 400L
 
         internal data class RenameTargetResolution(
             val candidate: PsiElement?,
@@ -198,17 +203,51 @@ class RenameSymbolTool : AbstractMcpTool() {
             val failureReason: String?
         )
 
+        internal enum class RelatedSymbolsDisableFailureKind {
+            NONE,
+            NO_SAFE_TOGGLE,
+            ACTIONABLE_CONTROL_REMAINED_SELECTED,
+            UNKNOWN
+        }
+
         internal data class RelatedSymbolsDisableOutcome(
             val attempted: Boolean,
             val succeeded: Boolean,
             val method: String,
             val changedCount: Int,
+            val failureKind: RelatedSymbolsDisableFailureKind,
             val failureReason: String?
         )
 
         internal data class FrontendRenameMutationCheck(
             val verified: Boolean,
-            val reason: String
+            val reason: String,
+            val observedFilePath: String? = null
+        )
+
+        internal data class FrontendRenamePathEvidence(
+            val originalFilePath: String?,
+            val originalPathExists: Boolean,
+            val observedFilePath: String?,
+            val candidatePaths: List<String> = emptyList()
+        )
+
+        internal fun frontendRenamePathEvidence(
+            originalFilePath: String?,
+            originalPathExists: Boolean,
+            observedFilePath: String?,
+            candidatePaths: List<String> = emptyList()
+        ): FrontendRenamePathEvidence = FrontendRenamePathEvidence(
+            originalFilePath = originalFilePath,
+            originalPathExists = originalPathExists,
+            observedFilePath = observedFilePath,
+            candidatePaths = candidatePaths
+        )
+
+        internal data class FrontendRenameMutationPollResult(
+            val check: FrontendRenameMutationCheck,
+            val attemptCount: Int,
+            val totalWaitMs: Long
         )
 
         internal data class FrontendExactTargetCheck(
@@ -258,10 +297,12 @@ class RenameSymbolTool : AbstractMcpTool() {
             buttonText: String?,
             relatedRenamingStrategy: String,
             relatedDisableSucceeded: Boolean,
+            relatedDisableFailureKind: RelatedSymbolsDisableFailureKind,
             relatedDisableFailureReason: String?
         ): RiderPrimaryDialogSubmitPlan {
             val shouldAwaitSecondDialog = shouldAwaitSecondDialogAfterPrimarySubmit(buttonText)
-            if (shouldAwaitSecondDialog && relatedRenamingStrategy == "none" && !relatedDisableSucceeded) {
+            if (shouldAwaitSecondDialog && relatedRenamingStrategy == "none" && !relatedDisableSucceeded &&
+                !shouldDeferPrimaryRelatedDisableFailureToFollowUp(relatedDisableFailureKind)) {
                 return RiderPrimaryDialogSubmitPlan(
                     shouldClick = false,
                     shouldAwaitSecondDialog = true,
@@ -274,6 +315,12 @@ class RenameSymbolTool : AbstractMcpTool() {
                 shouldAwaitSecondDialog = shouldAwaitSecondDialog,
                 failureReason = null
             )
+        }
+
+        internal fun shouldDeferPrimaryRelatedDisableFailureToFollowUp(
+            relatedDisableFailureKind: RelatedSymbolsDisableFailureKind
+        ): Boolean {
+            return relatedDisableFailureKind == RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE
         }
 
         internal fun shouldDisableRelatedSymbolsCheckbox(text: String?): Boolean {
@@ -490,13 +537,14 @@ class RenameSymbolTool : AbstractMcpTool() {
                 }
                 button.doClick()
                 return if (!button.isSelected) {
-                    RelatedSymbolsDisableOutcome(true, true, method, 1, null)
+                    RelatedSymbolsDisableOutcome(true, true, method, 1, RelatedSymbolsDisableFailureKind.NONE, null)
                 } else {
                     RelatedSymbolsDisableOutcome(
                         attempted = true,
                         succeeded = false,
                         method = method,
                         changedCount = 0,
+                        failureKind = RelatedSymbolsDisableFailureKind.ACTIONABLE_CONTROL_REMAINED_SELECTED,
                         failureReason = "Rider rename dialog kept the related-symbol toggle selected after attempting to disable it."
                     )
                 }
@@ -536,6 +584,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 succeeded = false,
                 method = "no-safe-toggle",
                 changedCount = 0,
+                failureKind = RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE,
                 failureReason = "Rider rename dialog could not disable related-symbol renames with a verified safe control, so the request failed closed before submitting the follow-up step."
             )
         }
@@ -821,7 +870,8 @@ class RenameSymbolTool : AbstractMcpTool() {
             beforeName: String?,
             afterName: String?,
             beforeFileText: String?,
-            afterFileText: String?
+            afterFileText: String?,
+            pathEvidence: FrontendRenamePathEvidence? = null
         ): FrontendRenameMutationCheck {
             val nameChanged = !beforeName.isNullOrBlank() && !afterName.isNullOrBlank() && beforeName != afterName
             if (nameChanged) {
@@ -833,7 +883,160 @@ class RenameSymbolTool : AbstractMcpTool() {
                 return FrontendRenameMutationCheck(true, "target file text changed")
             }
 
-            return FrontendRenameMutationCheck(false, "target name and containing file text remained unchanged")
+            if (pathEvidence != null && !pathEvidence.originalPathExists && !pathEvidence.observedFilePath.isNullOrBlank()) {
+                return FrontendRenameMutationCheck(
+                    verified = true,
+                    reason = "original file path disappeared and renamed container file was observed at '${pathEvidence.observedFilePath}'",
+                    observedFilePath = pathEvidence.observedFilePath
+                )
+            }
+
+            val missingPathReason = pathEvidence
+                ?.takeIf { !it.originalPathExists && it.originalFilePath != null }
+                ?.let { evidence ->
+                    "original file path '${evidence.originalFilePath}' disappeared but no renamed container file evidence was found"
+                }
+
+            return FrontendRenameMutationCheck(
+                false,
+                missingPathReason ?: "target name and containing file text remained unchanged"
+            )
+        }
+
+        internal fun collectRiderFrontendMutationPathEvidence(
+            project: Project,
+            targetFilePath: String?,
+            newName: String,
+            afterElement: PsiElement?
+        ): FrontendRenamePathEvidence? {
+            if (targetFilePath.isNullOrBlank()) {
+                return null
+            }
+
+            val localFileSystem = LocalFileSystem.getInstance()
+            val originalVirtualFile = localFileSystem.findFileByPath(targetFilePath)
+            val originalPathExists = originalVirtualFile != null
+            val candidatePaths = linkedSetOf<String>()
+
+            afterElement?.containingFile?.virtualFile?.path
+                ?.takeIf { it != targetFilePath }
+                ?.let(candidatePaths::add)
+
+            val inferredSiblingPath = inferRenamedSiblingPath(targetFilePath, newName)
+            if (!inferredSiblingPath.isNullOrBlank()) {
+                localFileSystem.findFileByPath(inferredSiblingPath)?.path?.let(candidatePaths::add)
+            }
+
+            if (!originalPathExists) {
+                findSiblingRenameCandidates(localFileSystem, targetFilePath, newName)
+                    .mapTo(candidatePaths) { it.path }
+
+                val inferredFileName = inferredSiblingPath?.let(::fileNameFromPath)
+                if (!inferredFileName.isNullOrBlank()) {
+                    FilenameIndex.getVirtualFilesByName(project, inferredFileName, GlobalSearchScope.projectScope(project))
+                        .asSequence()
+                        .map { it.path }
+                        .filter { it != targetFilePath }
+                        .forEach(candidatePaths::add)
+                }
+            }
+
+            return FrontendRenamePathEvidence(
+                originalFilePath = targetFilePath,
+                originalPathExists = originalPathExists,
+                observedFilePath = candidatePaths.firstOrNull(),
+                candidatePaths = candidatePaths.toList()
+            )
+        }
+
+        private fun inferRenamedSiblingPath(targetFilePath: String, newName: String): String? {
+            val originalFileName = fileNameFromPath(targetFilePath) ?: return null
+            val originalExtension = originalFileName.substringAfterLast('.', "")
+            val normalizedNewName = newName.trim().substringAfterLast('/').substringAfterLast('\\')
+            if (normalizedNewName.isBlank()) {
+                return null
+            }
+            val expectedFileName = if (originalExtension.isNotBlank() && !normalizedNewName.endsWith(".$originalExtension")) {
+                "$normalizedNewName.$originalExtension"
+            } else {
+                normalizedNewName
+            }
+            val parentPath = targetFilePath.replace('\\', '/').substringBeforeLast('/', "")
+            return if (parentPath.isBlank()) expectedFileName else "$parentPath/$expectedFileName"
+        }
+
+        private fun fileNameFromPath(path: String): String? {
+            val normalized = path.replace('\\', '/')
+            return normalized.substringAfterLast('/', "").takeIf { it.isNotBlank() }
+        }
+
+        private fun findSiblingRenameCandidates(
+            localFileSystem: LocalFileSystem,
+            targetFilePath: String,
+            newName: String
+        ): List<VirtualFile> {
+            val normalizedTargetPath = targetFilePath.replace('\\', '/')
+            val parentPath = normalizedTargetPath.substringBeforeLast('/', "")
+            if (parentPath.isBlank()) {
+                return emptyList()
+            }
+
+            val parent = localFileSystem.findFileByPath(parentPath) ?: return emptyList()
+            val targetFileName = fileNameFromPath(normalizedTargetPath) ?: return emptyList()
+            val extension = targetFileName.substringAfterLast('.', "")
+            val expectedBaseName = newName.trim().substringAfterLast('/').substringAfterLast('\\')
+            if (expectedBaseName.isBlank()) {
+                return emptyList()
+            }
+
+            return parent.children
+                .asSequence()
+                .filter { !it.isDirectory }
+                .filter { it.path != normalizedTargetPath }
+                .filter { child ->
+                    child.nameWithoutExtension == expectedBaseName &&
+                        (extension.isBlank() || child.extension == extension)
+                }
+                .toList()
+        }
+
+        internal suspend fun pollRiderFrontendMutationVerification(
+            initialDelayMs: Long,
+            timeoutMs: Long = RIDER_MUTATION_VERIFICATION_TIMEOUT_MS,
+            initialPollIntervalMs: Long = RIDER_MUTATION_VERIFICATION_INITIAL_POLL_MS,
+            maxPollIntervalMs: Long = RIDER_MUTATION_VERIFICATION_MAX_POLL_MS,
+            sleep: (Long) -> Unit = Thread::sleep,
+            verify: suspend () -> FrontendRenameMutationCheck
+        ): FrontendRenameMutationPollResult {
+            var totalWaitMs = 0L
+            var attemptCount = 0
+            var nextPollIntervalMs = initialPollIntervalMs.coerceAtLeast(1L)
+
+            if (initialDelayMs > 0) {
+                sleep(initialDelayMs)
+                totalWaitMs += initialDelayMs
+            }
+
+            var check = verify()
+            attemptCount += 1
+            while (!check.verified && totalWaitMs < timeoutMs) {
+                val remainingMs = timeoutMs - totalWaitMs
+                val waitMs = nextPollIntervalMs.coerceAtMost(maxPollIntervalMs).coerceAtMost(remainingMs)
+                if (waitMs <= 0L) {
+                    break
+                }
+                sleep(waitMs)
+                totalWaitMs += waitMs
+                check = verify()
+                attemptCount += 1
+                nextPollIntervalMs = (nextPollIntervalMs * 2).coerceAtMost(maxPollIntervalMs)
+            }
+
+            return FrontendRenameMutationPollResult(
+                check = check,
+                attemptCount = attemptCount,
+                totalWaitMs = totalWaitMs
+            )
         }
 
         internal fun verifyDotNetFileRenameDeclaredTypeIdentity(
@@ -1611,47 +1814,65 @@ class RenameSymbolTool : AbstractMcpTool() {
                 val mutationCheckDelayMs = riderFrontendMutationCheckDelayMs(
                     usedAsyncFollowUpClick = riderDialogAutomationSnapshot?.usedAsyncFollowUpClick == true
                 )
-                if (mutationCheckDelayMs > 0) {
-                    trace.event("mutation.check.delay", "delayMs" to mutationCheckDelayMs, "reason" to "awaiting-rider-followup-close")
-                    Thread.sleep(mutationCheckDelayMs)
-                }
                 val mutationCheckStartedAt = System.nanoTime()
                 // frontend.verification.result
                 trace.event("mutation.check.start", "beforeName" to probe.beforeName, "targetFilePath" to probe.targetFilePath)
-                suspendingReadAction {
-                    val afterElement = probe.pointer.element
-                    verifyRiderFrontendMutation(
-                        beforeName = probe.beforeName,
-                        afterName = (afterElement as? PsiNamedElement)?.name,
-                        beforeFileText = probe.beforeFileText,
-                        afterFileText = probe.targetFilePath
-                            ?.let(LocalFileSystem.getInstance()::findFileByPath)
-                            ?.let(PsiManager.getInstance(project)::findFile)
-                            ?.text
-                    )
-                }.also { mutationCheck ->
-                    if (riderDialogAutomationSnapshot?.timeoutDeferredToMutationCheck == true) {
-                        trace.event(
-                            if (mutationCheck.verified) "followup.progress.mutation-verified" else "followup.progress.mutation-missing",
-                            "reason" to mutationCheck.reason
-                        )
-                        if (mutationCheck.verified) {
-                            trace.event("automation.completed-after-mutation", "reason" to mutationCheck.reason)
+                val mutationPoll = pollRiderFrontendMutationVerification(
+                    initialDelayMs = mutationCheckDelayMs,
+                    sleep = { delayMs ->
+                        if (delayMs > 0) {
+                            trace.event("mutation.check.delay", "delayMs" to delayMs, "reason" to "awaiting-rider-followup-close")
+                            Thread.sleep(delayMs)
                         }
                     }
-                    trace.event(
-                        "mutation.check.result",
-                        "beforeName" to probe.beforeName,
-                        "afterName" to probe.pointer.element.let { (it as? PsiNamedElement)?.name },
-                        "verified" to mutationCheck.verified,
-                        "reason" to mutationCheck.reason,
-                        "timingMs" to ((System.nanoTime() - mutationCheckStartedAt) / 1_000_000)
-                    )
+                ) {
+                    suspendingReadAction {
+                        val afterElement = probe.pointer.element
+                        val pathEvidence = collectRiderFrontendMutationPathEvidence(
+                            project = project,
+                            targetFilePath = probe.targetFilePath,
+                            newName = newName,
+                            afterElement = afterElement
+                        )
+                        verifyRiderFrontendMutation(
+                            beforeName = probe.beforeName,
+                            afterName = (afterElement as? PsiNamedElement)?.name,
+                            beforeFileText = probe.beforeFileText,
+                            afterFileText = probe.targetFilePath
+                                ?.let(LocalFileSystem.getInstance()::findFileByPath)
+                                ?.let(PsiManager.getInstance(project)::findFile)
+                                ?.text,
+                            pathEvidence = pathEvidence
+                        )
+                    }
                 }
+                val mutationCheck = mutationPoll.check
+                if (riderDialogAutomationSnapshot?.timeoutDeferredToMutationCheck == true) {
+                    trace.event(
+                        if (mutationCheck.verified) "followup.progress.mutation-verified" else "followup.progress.mutation-missing",
+                        "reason" to mutationCheck.reason
+                    )
+                    if (mutationCheck.verified) {
+                        trace.event("automation.completed-after-mutation", "reason" to mutationCheck.reason)
+                    }
+                }
+                trace.event(
+                    "mutation.check.result",
+                    "beforeName" to probe.beforeName,
+                    "afterName" to probe.pointer.element.let { (it as? PsiNamedElement)?.name },
+                    "observedFilePath" to mutationCheck.observedFilePath,
+                    "verified" to mutationCheck.verified,
+                    "reason" to mutationCheck.reason,
+                    "attemptCount" to mutationPoll.attemptCount,
+                    "waitedMs" to mutationPoll.totalWaitMs,
+                    "timingMs" to ((System.nanoTime() - mutationCheckStartedAt) / 1_000_000)
+                )
+                mutationCheck
             }
             if (riderFrontendExecutionRequested && riderExecutionPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER && riderMutationCheck?.verified == true) {
                 changesCount = 1
-                riderMutationProbe?.targetFilePath?.let { affectedFiles += toRelativeProjectPath(project, it) }
+                val affectedPath = riderMutationCheck?.observedFilePath ?: riderMutationProbe?.targetFilePath
+                affectedPath?.let { affectedFiles += toRelativeProjectPath(project, it) }
             }
         } catch (e: Exception) {
             errorMessage = e.message ?: "Unknown error during rename"
@@ -2028,6 +2249,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 buttonText = button.text,
                 relatedRenamingStrategy = relatedRenamingStrategy,
                 relatedDisableSucceeded = relatedDisableOutcome.succeeded,
+                relatedDisableFailureKind = relatedDisableOutcome.failureKind,
                 relatedDisableFailureReason = relatedDisableOutcome.failureReason
             )
             primaryDialogTitle.set(title)
@@ -2213,6 +2435,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     succeeded = true,
                     method = "not-required",
                     changedCount = 0,
+                    failureKind = RelatedSymbolsDisableFailureKind.NONE,
                     failureReason = null
                 )
             }
@@ -2248,6 +2471,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     succeeded = true,
                     method = method,
                     changedCount = 1,
+                    failureKind = RelatedSymbolsDisableFailureKind.NONE,
                     failureReason = null
                 )
             } else {
@@ -2256,6 +2480,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     succeeded = false,
                     method = method,
                     changedCount = 0,
+                    failureKind = RelatedSymbolsDisableFailureKind.ACTIONABLE_CONTROL_REMAINED_SELECTED,
                     failureReason = "Rider rename dialog kept the related-symbol toggle selected after attempting to disable it."
                 )
             }
@@ -2296,6 +2521,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 succeeded = false,
                 method = "no-safe-toggle",
                 changedCount = 0,
+                failureKind = RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE,
                 failureReason = "Rider rename dialog could not disable related-symbol renames with a verified safe control, so the request failed closed before submitting the follow-up step."
             )
         }
@@ -2353,6 +2579,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                                 succeeded = true,
                                 method = "not-required",
                                 changedCount = 0,
+                                failureKind = RelatedSymbolsDisableFailureKind.NONE,
                                 failureReason = null
                             )
                         }

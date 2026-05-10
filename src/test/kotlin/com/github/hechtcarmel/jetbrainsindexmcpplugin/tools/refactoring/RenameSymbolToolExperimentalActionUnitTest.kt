@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import junit.framework.TestCase
 import java.awt.Container
+import kotlinx.coroutines.runBlocking
 import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JLabel
@@ -213,6 +214,54 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         assertTrue(check.reason.contains("target name changed"))
     }
 
+    fun testMutationPollingAcceptsRenamedContainerFileWhenOriginalPathDisappears() {
+        var attempts = 0
+
+        val result = runBlocking {
+            RenameSymbolTool.pollRiderFrontendMutationVerification(
+                initialDelayMs = 200L,
+                timeoutMs = 1_000L,
+                initialPollIntervalMs = 50L,
+                maxPollIntervalMs = 200L,
+                sleep = {}
+            ) {
+                attempts += 1
+                if (attempts < 3) {
+                    RenameSymbolTool.verifyRiderFrontendMutation(
+                        beforeName = null,
+                        afterName = null,
+                        beforeFileText = "interface IModelDocumentationProvider {}",
+                        afterFileText = null,
+                        pathEvidence = RenameSymbolTool.frontendRenamePathEvidence(
+                            originalFilePath = "src/IModelDocumentationProvider.cs",
+                            originalPathExists = true,
+                            observedFilePath = null
+                        )
+                    )
+                } else {
+                    RenameSymbolTool.verifyRiderFrontendMutation(
+                        beforeName = null,
+                        afterName = null,
+                        beforeFileText = "interface IModelDocumentationProvider {}",
+                        afterFileText = null,
+                        pathEvidence = RenameSymbolTool.frontendRenamePathEvidence(
+                            originalFilePath = "src/IModelDocumentationProvider.cs",
+                            originalPathExists = false,
+                            observedFilePath = "src/ISmokeModelDocumentationProvider.cs",
+                            candidatePaths = listOf("src/ISmokeModelDocumentationProvider.cs")
+                        )
+                    )
+                }
+            }
+        }
+
+        assertTrue(result.check.verified)
+        assertEquals("src/ISmokeModelDocumentationProvider.cs", result.check.observedFilePath)
+        assertEquals(3, attempts)
+        assertEquals(3, result.attemptCount)
+        assertEquals(350L, result.totalWaitMs)
+    }
+
     fun testDialogAutomationWaitsForSecondDialogOnlyAfterNext() {
         assertTrue(RenameSymbolTool.shouldAwaitSecondDialogAfterPrimarySubmit("Next"))
         assertTrue(RenameSymbolTool.shouldAwaitSecondDialogAfterPrimarySubmit(" next "))
@@ -421,6 +470,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         assertTrue(outcome.attempted)
         assertFalse(outcome.succeeded)
         assertEquals("no-safe-toggle", outcome.method)
+        assertEquals(RenameSymbolTool.Companion.RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE, outcome.failureKind)
         assertNotNull(outcome.failureReason)
         assertTrue(outcome.failureReason!!.contains("could not disable related-symbol renames"))
     }
@@ -430,6 +480,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
             buttonText = "Next",
             relatedRenamingStrategy = "none",
             relatedDisableSucceeded = false,
+            relatedDisableFailureKind = RenameSymbolTool.Companion.RelatedSymbolsDisableFailureKind.ACTIONABLE_CONTROL_REMAINED_SELECTED,
             relatedDisableFailureReason = "could not disable related-symbol renames"
         )
 
@@ -439,11 +490,55 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         assertTrue(plan.failureReason!!.contains("could not disable related-symbol renames"))
     }
 
+    fun testPrimaryDialogSubmitPlanAllowsNextWhenPrimaryDialogHasNoVerifiedRelatedToggleYet() {
+        val plan = RenameSymbolTool.planRiderPrimaryDialogSubmit(
+            buttonText = "Next",
+            relatedRenamingStrategy = "none",
+            relatedDisableSucceeded = false,
+            relatedDisableFailureKind = RenameSymbolTool.Companion.RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE,
+            relatedDisableFailureReason = "Rider rename dialog could not disable related-symbol renames with a verified safe control, so the request failed closed before submitting the follow-up step."
+        )
+
+        assertTrue(plan.shouldClick)
+        assertTrue(plan.shouldAwaitSecondDialog)
+        assertNull(plan.failureReason)
+    }
+
+    fun testPrimaryDialogSubmitPlanAllowsNextWhenFailureKindIsNoSafeToggle() {
+        val plan = RenameSymbolTool.planRiderPrimaryDialogSubmit(
+            buttonText = "Next",
+            relatedRenamingStrategy = "none",
+            relatedDisableSucceeded = false,
+            relatedDisableFailureKind = RenameSymbolTool.Companion.RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE,
+            relatedDisableFailureReason = "no-safe-toggle"
+        )
+
+        assertTrue(plan.shouldClick)
+        assertTrue(plan.shouldAwaitSecondDialog)
+        assertNull(plan.failureReason)
+    }
+
+    fun testPrimaryDialogSubmitPlanFailsClosedWhenActionableControlCannotBeDisabled() {
+        val plan = RenameSymbolTool.planRiderPrimaryDialogSubmit(
+            buttonText = "Next",
+            relatedRenamingStrategy = "none",
+            relatedDisableSucceeded = false,
+            relatedDisableFailureKind = RenameSymbolTool.Companion.RelatedSymbolsDisableFailureKind.ACTIONABLE_CONTROL_REMAINED_SELECTED,
+            relatedDisableFailureReason = "Rider rename dialog kept the related-symbol toggle selected after attempting to disable it."
+        )
+
+        assertFalse(plan.shouldClick)
+        assertTrue(plan.shouldAwaitSecondDialog)
+        assertNotNull(plan.failureReason)
+        assertTrue(plan.failureReason!!.contains("kept the related-symbol toggle selected"))
+    }
+
     fun testPrimaryDialogSubmitPlanAllowsNextWhenNoneStrategyVerifiedDisableSucceeded() {
         val plan = RenameSymbolTool.planRiderPrimaryDialogSubmit(
             buttonText = "Next",
             relatedRenamingStrategy = "none",
             relatedDisableSucceeded = true,
+            relatedDisableFailureKind = RenameSymbolTool.Companion.RelatedSymbolsDisableFailureKind.NONE,
             relatedDisableFailureReason = null
         )
 
@@ -511,8 +606,72 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
     fun testSourceDelaysRiderMutationCheckAfterAsyncFollowUpClicks() {
         val source = renameToolSource()
 
-        assertTrue(source.contains("Thread.sleep(mutationCheckDelayMs)"))
+        assertTrue(source.contains("pollRiderFrontendMutationVerification("))
+        assertTrue(source.contains("Thread.sleep(delayMs)"))
         assertTrue(source.contains("mutationCheckDelayMs"))
+    }
+
+    fun testMutationPollingRetriesUntilAsyncRenameBecomesObservable() {
+        var attempts = 0
+
+        val result = runBlocking {
+            RenameSymbolTool.pollRiderFrontendMutationVerification(
+            initialDelayMs = 200L,
+            timeoutMs = 1_000L,
+            initialPollIntervalMs = 50L,
+            maxPollIntervalMs = 200L,
+            sleep = {}
+        ) {
+            attempts += 1
+            if (attempts < 3) {
+                RenameSymbolTool.verifyRiderFrontendMutation(
+                    beforeName = "IModelDocumentationProvider",
+                    afterName = "IModelDocumentationProvider",
+                    beforeFileText = "interface IModelDocumentationProvider {}",
+                    afterFileText = "interface IModelDocumentationProvider {}"
+                )
+            } else {
+                RenameSymbolTool.verifyRiderFrontendMutation(
+                    beforeName = "IModelDocumentationProvider",
+                    afterName = "ISmokeModelDocumentationProvider",
+                    beforeFileText = "interface IModelDocumentationProvider {}",
+                    afterFileText = "interface ISmokeModelDocumentationProvider {}"
+                )
+            }
+            }
+        }
+
+        assertTrue(result.check.verified)
+        assertEquals(3, attempts)
+        assertEquals(3, result.attemptCount)
+        assertEquals(350L, result.totalWaitMs)
+    }
+
+    fun testMutationPollingFailsClosedWhenRenameNeverBecomesObservable() {
+        var attempts = 0
+
+        val result = runBlocking {
+            RenameSymbolTool.pollRiderFrontendMutationVerification(
+            initialDelayMs = 200L,
+            timeoutMs = 300L,
+            initialPollIntervalMs = 50L,
+            maxPollIntervalMs = 200L,
+            sleep = {}
+        ) {
+            attempts += 1
+            RenameSymbolTool.verifyRiderFrontendMutation(
+                beforeName = "IModelDocumentationProvider",
+                afterName = "IModelDocumentationProvider",
+                beforeFileText = "interface IModelDocumentationProvider {}",
+                afterFileText = "interface IModelDocumentationProvider {}"
+            )
+            }
+        }
+
+        assertFalse(result.check.verified)
+        assertEquals(3, attempts)
+        assertEquals(3, result.attemptCount)
+        assertEquals(300L, result.totalWaitMs)
     }
 
     private fun renameToolSource(): String {
