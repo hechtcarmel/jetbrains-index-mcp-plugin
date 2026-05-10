@@ -235,23 +235,22 @@ class RenameSymbolTool : AbstractMcpTool() {
             }
         }
 
+        @Suppress("UNUSED_PARAMETER")
         internal fun shouldUseRiderBackendRename(
             file: String,
             isFileRename: Boolean,
             relatedRenamingStrategy: String
         ): Boolean {
-            return !isFileRename &&
-                relatedRenamingStrategy == "all" &&
-                RiderBackendSemanticService.isDotNetFile(file)
+            return false
         }
 
+        @Suppress("UNUSED_PARAMETER")
         internal fun shouldUseRiderFrontendRenameAutomation(
             file: String,
             isFileRename: Boolean,
             relatedRenamingStrategy: String
         ): Boolean {
             return !isFileRename &&
-                relatedRenamingStrategy == "none" &&
                 RiderBackendSemanticService.isDotNetFile(file)
         }
 
@@ -1417,8 +1416,8 @@ class RenameSymbolTool : AbstractMcpTool() {
                 else -> "generic"
             },
             "reason" to when {
-                shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy) -> "dotnet symbol rename with all related renamers"
-                shouldUseRiderFrontendAutomation -> "dotnet symbol rename requiring frontend automation"
+                shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy) -> "dotnet symbol rename via backend-rd"
+                shouldUseRiderFrontendAutomation -> "dotnet symbol rename must use rider frontend automation"
                 else -> "standard rename processor lane"
             }
         )
@@ -1427,7 +1426,14 @@ class RenameSymbolTool : AbstractMcpTool() {
             val riderOutcome = tryExecuteRiderSymbolRename(project, file, line!!, column!!, newName)
 
             val riderResult = when (riderOutcome) {
-                is RiderRenameOutcome.Success -> finish(riderOutcome.result, true, STATUS_SUCCESS, null, null, "Rider backend rename completed")
+                is RiderRenameOutcome.Success -> finish(
+                    riderOutcome.result,
+                    riderOutcome.summary.success,
+                    riderOutcome.summary.status,
+                    riderOutcome.summary.changesCount,
+                    riderOutcome.summary.affectedFiles.size,
+                    riderOutcome.summary.message
+                )
                 is RiderRenameOutcome.FallbackToFrontend -> {
                     riderFrontendFallback = riderOutcome
                     trace.event(
@@ -1727,7 +1733,10 @@ class RenameSymbolTool : AbstractMcpTool() {
     }
 
     private sealed interface RiderRenameOutcome {
-        data class Success(val result: ToolCallResult) : RiderRenameOutcome
+        data class Success(
+            val result: ToolCallResult,
+            val summary: RiderMutationResultMapper.Summary
+        ) : RiderRenameOutcome
         data class FallbackToFrontend(
             val status: String,
             val reason: String,
@@ -2815,7 +2824,10 @@ class RenameSymbolTool : AbstractMcpTool() {
             verification = verification
         )
 
-        return RiderRenameOutcome.Success(createJsonResult(summary.toRefactoringResult()))
+        return RiderRenameOutcome.Success(
+            result = createJsonResult(summary.toRefactoringResult()),
+            summary = summary
+        )
     }
 
     private fun assessPreferredRiderRenameHandler(selectedHandler: RenameHandler?): PreferredRiderActionLanePlan {

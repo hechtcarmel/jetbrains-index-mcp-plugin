@@ -38,14 +38,12 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         encodeDefaults = true
     }
 
-    fun testReturnsFreshFileProblemsWithoutOpeningEditor() = runBlocking {
+    fun testAutoOpensClosedFileBeforeCollectingFileDiagnostics() = runBlocking {
         val brokenFile = createProjectFile(
             "Broken.java",
             """
             class Broken {
-                void test() {
-                    UnknownType value = null;
-                }
+                void test() {}
             }
             """.trimIndent()
         )
@@ -53,36 +51,50 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         val fileEditorManager = FileEditorManager.getInstance(project)
         assertFalse("Broken.java should start closed", fileEditorManager.isFileOpen(brokenFile.virtualFile))
 
-        val result = GetDiagnosticsTool().execute(project, buildJsonObject {
-            put("file", "src/Broken.java")
-        })
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        val originalRunner = service.openFileAnalysisOverride
+        var openPathUsed = false
 
-        assertFalse("Diagnostics should succeed: ${renderResult(result)}", result.isError)
+        try {
+            service.openFileAnalysisOverride = {
+                openPathUsed = true
+                listOf(
+                    HighlightInfo.newHighlightInfo(HighlightInfoType.WARNING)
+                        .range(0, 1)
+                        .descriptionAndTooltip("Synthetic editor-backed warning")
+                        .createUnconditionally()
+                )
+            }
 
-        val diagnostics = decodeDiagnostics(result)
-        assertTrue(
-            "Expected fresh file analysis, but closed-file diagnostics remain supplementary evidence only",
-            diagnostics.analysisFresh == true
-        )
-        assertFalse("Analysis should not time out", diagnostics.analysisTimedOut == true)
-        assertTrue("Expected at least one problem", (diagnostics.problemCount ?: 0) > 0)
-        assertTrue(
-            "Expected unresolved symbol diagnostics",
-            diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") || it.message.contains("Cannot resolve") }
-        )
-        assertTrue(
-            "Closed-file analysis should explain the public batch fallback",
-            diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true
-        )
-        assertTrue(
-            "Closed-file analysis should explain missing intentions",
-            diagnostics.analysisMessage?.contains("Intentions are unavailable because the file is not open in an editor.") == true
-        )
-        assertFalse("Diagnostics should not auto-open the file", fileEditorManager.isFileOpen(brokenFile.virtualFile))
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/Broken.java")
+            })
+
+            assertFalse("Diagnostics should succeed: ${renderResult(result)}", result.isError)
+
+            val diagnostics = decodeDiagnostics(result)
+            assertTrue("Expected editor-backed analysis path for a closed file", openPathUsed)
+            assertTrue("Expected fresh file analysis", diagnostics.analysisFresh == true)
+            assertFalse("Analysis should not time out", diagnostics.analysisTimedOut == true)
+            assertEquals("Expected one synthetic problem", 1, diagnostics.problemCount)
+            assertEquals("Synthetic editor-backed warning", diagnostics.problems?.singleOrNull()?.message)
+            assertEquals("WARNING", diagnostics.problems?.singleOrNull()?.severity)
+            assertFalse(
+                "Auto-opened diagnostics should not advertise closed-file batch limitations",
+                diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true
+            )
+            assertFalse(
+                "Auto-opened diagnostics should not claim editor-only intentions were unavailable",
+                diagnostics.analysisMessage?.contains("Intentions are unavailable because the file is not open in an editor.") == true
+            )
+            assertFalse("Diagnostics should restore the original closed editor state", fileEditorManager.isFileOpen(brokenFile.virtualFile))
+        } finally {
+            service.openFileAnalysisOverride = originalRunner
+        }
     }
 
     fun testMarksAnalysisTimedOutWhenClosedFileAnalysisExceedsBudget() = runBlocking {
-        val file = createProjectFile(
+        createProjectFile(
             "TimeoutExample.java",
             """
             class TimeoutExample {
@@ -174,10 +186,13 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
     }
 
     fun testCSharpClosedFileDiagnosticsStayEligibilityBounded() = runBlocking {
-        createProjectFile(
+        val file = createProjectFile(
             "ReadOnlyBaselineDiagnostics.cs",
             "namespace Demo.Services { public class ReadOnlyBaselineDiagnostics { } }"
         )
+
+        val fileEditorManager = FileEditorManager.getInstance(project)
+        assertFalse("ReadOnlyBaselineDiagnostics.cs should start closed", fileEditorManager.isFileOpen(file.virtualFile))
 
         val result = GetDiagnosticsTool().execute(project, buildJsonObject {
             put("file", "src/ReadOnlyBaselineDiagnostics.cs")
@@ -196,10 +211,11 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             "C# diagnostics should report the current bounded batch-analysis caveat explicitly",
             diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true
         )
-        assertTrue(
-            "Closed-file C# diagnostics should still report missing live-editor intentions explicitly",
+        assertFalse(
+            "The tool should open the file before analysis, even when the current environment still falls back to bounded batch diagnostics",
             diagnostics.analysisMessage?.contains("Intentions are unavailable because the file is not open in an editor.") == true
         )
+        assertFalse("Diagnostics should restore the original closed editor state", fileEditorManager.isFileOpen(file.virtualFile))
     }
 
     fun testHighlightWaitFinishesAfterGracePeriodWhenDaemonStaysCompleted() {

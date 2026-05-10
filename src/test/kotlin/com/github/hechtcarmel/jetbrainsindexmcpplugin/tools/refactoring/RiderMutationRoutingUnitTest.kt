@@ -6,7 +6,7 @@ import java.io.File
 
 class RiderMutationRoutingUnitTest : TestCase() {
 
-    fun testRenameSymbolToolKeepsRiderDotNetSymbolRenameOnBackendPath() {
+    fun testRenameSymbolToolKeepsBackendImplementationButRemovesDotNetRoutingToIt() {
         val source = refactoringSource("RenameSymbolTool.kt")
 
         assertContains(
@@ -17,8 +17,14 @@ class RiderMutationRoutingUnitTest : TestCase() {
         assertContains(
             source,
             "invokeCallResult(model, \"renameSymbol\", request)",
-            "Rider .cs/.csx symbol rename should keep using the dedicated Rider backend rename endpoint"
+            "The dedicated Rider backend rename endpoint should remain implemented even after routing stops using it for C# symbol rename"
         )
+        assertContains(
+            source,
+            "shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy)",
+            "The routing decision should remain explicit so C# symbol rename can be kept off the backend lane"
+        )
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
     }
 
     fun testRenameSymbolToolRoutesRiderDotNetFileRenameThroughGenericFrontendLane() {
@@ -64,6 +70,16 @@ class RiderMutationRoutingUnitTest : TestCase() {
             source,
             "backendResult.verification",
             "Rider rename mapping should preserve backend verification evidence instead of dropping it"
+        )
+    }
+
+    fun testRenameSymbolToolTracesBackendSummaryInsteadOfHardcodedSuccess() {
+        val source = refactoringSource("RenameSymbolTool.kt")
+
+        assertContains(
+            source,
+            "finish(riderOutcome.result, riderOutcome.summary.success, riderOutcome.summary.status",
+            "Trace final.result should use the mapped backend summary instead of hardcoded success=true/status=success"
         )
     }
 

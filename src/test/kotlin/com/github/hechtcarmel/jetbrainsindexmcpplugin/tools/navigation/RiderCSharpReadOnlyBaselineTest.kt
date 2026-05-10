@@ -305,7 +305,7 @@ class RiderCSharpReadOnlyBaselineTest : BasePlatformTestCase() {
 
         assertFalse(result.isError)
         assertContains(renderText(result), "Closed-file diagnostics use public batch analysis")
-        assertContains(renderText(result), "Intentions are unavailable because the file is not open in an editor.")
+        assertFalse(renderText(result).contains("Intentions are unavailable because the file is not open in an editor."))
     }
 
     private fun createCSharpFile(relativePath: String, content: String, isTestSource: Boolean) {

@@ -351,19 +351,20 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
         assertFalse(source.contains("tryExecuteRiderSymbolRename(project, file, line, column, newName"))
     }
 
-    fun testRiderBackendRenameRoutingKeepsDotNetSymbolsButNotDotNetFileRenames() {
-        assertTrue(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
+    fun testRiderBackendRenameRoutingNeverSelectsDotNetSymbolRename() {
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
         assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "none"))
         assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "ask"))
+        assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "accessors_and_tests"))
         assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.cs", isFileRename = true, relatedRenamingStrategy = "all"))
         assertFalse(RenameSymbolTool.shouldUseRiderBackendRename("src/Service.kt", isFileRename = false, relatedRenamingStrategy = "all"))
     }
 
-    fun testRiderFrontendAutomationRoutingOnlyUsesValidatedNoneStrategyForDotNetSymbols() {
+    fun testRiderFrontendAutomationRoutingAcceptsAllDotNetSymbolStrategies() {
         assertTrue(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "none"))
-        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "ask"))
-        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "accessors_and_tests"))
-        assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
+        assertTrue(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "ask"))
+        assertTrue(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "accessors_and_tests"))
+        assertTrue(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = false, relatedRenamingStrategy = "all"))
         assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.cs", isFileRename = true, relatedRenamingStrategy = "none"))
         assertFalse(RenameSymbolTool.shouldUseRiderFrontendRenameAutomation("src/Service.kt", isFileRename = false, relatedRenamingStrategy = "none"))
     }
