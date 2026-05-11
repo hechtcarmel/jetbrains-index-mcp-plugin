@@ -1101,6 +1101,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         var affectedFiles = linkedSetOf<String>()
         var namespaceUpdated = false
         val fileName = preparation.psiFile.name
+        val originalSourcePath = preparation.psiFile.virtualFile.path
 
         edtAction {
             try {
@@ -1123,7 +1124,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 namespaceUpdated = updateMovedCSharpNamespace(project, preparation, fileName)
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                verifyMovedFileState(preparation, fileName)
+                verifyMovedFileState(preparation, fileName, originalSourcePath)
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
                 if (namespaceUpdated) {
                     preparation.targetDirectory.findFile(fileName)?.virtualFile?.let { affectedFiles.add(getRelativePath(project, it)) }
@@ -1169,10 +1170,12 @@ open class MoveFileTool : AbstractRefactoringTool() {
         }
     }
 
-    private fun verifyMovedFileState(preparation: MovePreparation, fileName: String) {
-        val sourceStillExists = preparation.psiFile.virtualFile.isValid
+    private fun verifyMovedFileState(preparation: MovePreparation, fileName: String, originalSourcePath: String) {
         val movedFile = preparation.targetDirectory.findFile(fileName)
-        if (sourceStillExists || movedFile == null || !movedFile.isValid) {
+        val movedVirtualFile = movedFile?.virtualFile
+        val moveChangedPath = movedVirtualFile != null && movedVirtualFile.path != originalSourcePath
+        val sourcePathStillExists = Files.exists(Path.of(originalSourcePath))
+        if (movedVirtualFile == null || !movedVirtualFile.isValid || !moveChangedPath || sourcePathStillExists) {
             error(
                 "IDE move processor did not produce the expected file relocation for '${preparation.sourceRelativePath}'"
             )

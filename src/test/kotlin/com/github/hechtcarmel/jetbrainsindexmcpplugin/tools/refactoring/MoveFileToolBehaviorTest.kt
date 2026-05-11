@@ -2,9 +2,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
 import com.intellij.psi.SmartPointerManager
+import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,6 +33,11 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         val path = Path.of(projectBasePath, relativePath)
         Files.createDirectories(path.parent)
         Files.writeString(path, content)
+        val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)
+            ?: error("Failed to refresh $relativePath into LocalFileSystem")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+        PsiManager.getInstance(project).findFile(virtualFile)
+            ?: error("Failed to create PSI for $relativePath")
         return path
     }
 

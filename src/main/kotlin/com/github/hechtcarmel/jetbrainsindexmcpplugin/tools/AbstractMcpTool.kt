@@ -23,6 +23,7 @@ import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.application.readAction as platformReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
@@ -30,6 +31,7 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.io.File
 import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
@@ -189,8 +191,32 @@ abstract class AbstractMcpTool : McpTool {
             VfsUtil.markDirtyAndRefresh(false, true, true, *dirsToRefresh.toTypedArray())
         }
 
+        // 1b. Reload any cached documents backed by externally changed files.
+        // Commiting alone preserves stale in-memory text; when auto-sync is enabled we must
+        // also pull disk contents into cached documents, while preserving unsaved editor work.
+        reloadCachedDocumentsFromDisk(dirsToRefresh)
+
         // 2. Commit Documents in a write-safe context
         commitDocuments(project)
+    }
+
+    private suspend fun reloadCachedDocumentsFromDisk(roots: List<VirtualFile>) {
+        if (roots.isEmpty()) return
+
+        edtAction {
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            roots.forEach { root ->
+                VfsUtilCore.iterateChildrenRecursively(root, null) { virtualFile ->
+                    if (!virtualFile.isDirectory) {
+                        val cachedDocument = fileDocumentManager.getCachedDocument(virtualFile)
+                        if (cachedDocument != null && !fileDocumentManager.isDocumentUnsaved(cachedDocument)) {
+                            fileDocumentManager.reloadFromDisk(cachedDocument)
+                        }
+                    }
+                    true
+                }
+            }
+        }
     }
 
     /**

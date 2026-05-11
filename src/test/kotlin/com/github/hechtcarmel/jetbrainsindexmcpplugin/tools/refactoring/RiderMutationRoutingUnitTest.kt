@@ -78,8 +78,18 @@ class RiderMutationRoutingUnitTest : TestCase() {
 
         assertContains(
             source,
-            "finish(riderOutcome.result, riderOutcome.summary.success, riderOutcome.summary.status",
-            "Trace final.result should use the mapped backend summary instead of hardcoded success=true/status=success"
+            "is RiderRenameOutcome.Success -> finish(",
+            "Trace final.result should still route Rider rename success through finish(...)"
+        )
+        assertContains(
+            source,
+            "riderOutcome.summary.success",
+            "Trace final.result should use the mapped backend success instead of hardcoded success=true"
+        )
+        assertContains(
+            source,
+            "riderOutcome.summary.status",
+            "Trace final.result should use the mapped backend status instead of hardcoded status=success"
         )
     }
 
@@ -186,13 +196,13 @@ class RiderMutationRoutingUnitTest : TestCase() {
         )
         assertContains(
             source,
-            "ActionManager.getInstance().getAction(RIDER_MOVE_ACTION_ID)",
-            "Rider .cs/.csx move should resolve the standard IDE move action for dialog automation"
+            "dispatchRiderRefactorThisShortcut(invocationComponent)",
+            "Rider .cs/.csx move should dispatch the Refactor This shortcut for dialog automation"
         )
         assertContains(
             source,
-            "ActionUtil.invokeAction(action, dataContext, ActionPlaces.UNKNOWN, null, null)",
-            "Rider .cs/.csx move should invoke the standard move action with a deterministic data context"
+            "projectView.select(psiFile, sourceVirtualFile, true)",
+            "Rider .cs/.csx move should focus Project/Solution Explorer before shortcut dispatch"
         )
         assertContains(
             source,
@@ -231,8 +241,8 @@ class RiderMutationRoutingUnitTest : TestCase() {
 
         assertContains(
             source,
-            "Move failed: Rider move action '",
-            "Rider .cs/.csx move should fail closed when the Rider move action cannot be resolved for dialog automation"
+            "Move failed: simulated Ctrl+Shift+R did not expose a selectable Move to Folder popup entry",
+            "Rider .cs/.csx move should fail closed when shortcut-driven dialog automation cannot surface Move to Folder"
         )
         assertContains(
             backendSource,
@@ -512,7 +522,7 @@ class RiderMutationRoutingUnitTest : TestCase() {
         val deleteSource = refactoringSource("SafeDeleteTool.kt")
 
         assertContains(renameSource, "RiderMutationResultMapper.summary", "Rename mapping should use the shared Rider mutation summary mapper")
-        assertContains(moveSource, "using Rider Move to Folder dialog automation", "Move mapping should return the frontend dialog-automation success summary directly")
+        assertContains(moveSource, "using Rider semantic refactoring; namespace and .csproj updated", "Move mapping should return the frontend dialog-automation success summary directly")
         assertContains(deleteSource, "RiderMutationResultMapper.summary", "Safe delete mapping should use the shared Rider mutation summary mapper")
     }
 

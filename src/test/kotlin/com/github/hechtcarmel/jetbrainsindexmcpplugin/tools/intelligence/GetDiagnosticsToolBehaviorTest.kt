@@ -6,13 +6,10 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
-import com.intellij.codeInsight.CodeSmellInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType
-import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiManager
 import com.intellij.testFramework.IndexingTestUtil
@@ -202,19 +199,23 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
 
         val diagnostics = decodeDiagnostics(result)
         assertEquals(0, diagnostics.problemCount)
-        assertTrue(
-            "Current C# closed-file baseline may report fresh batch analysis, but that evidence remains supplementary only",
-            diagnostics.analysisFresh == true
-        )
+        assertTrue("Expected fresh diagnostics after auto-opening the file", diagnostics.analysisFresh == true)
         assertFalse("Unsupported C# closed-file analysis should not claim timeout", diagnostics.analysisTimedOut == true)
-        assertTrue(
-            "C# diagnostics should report the current bounded batch-analysis caveat explicitly",
-            diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true
-        )
-        assertFalse(
-            "The tool should open the file before analysis, even when the current environment still falls back to bounded batch diagnostics",
-            diagnostics.analysisMessage?.contains("Intentions are unavailable because the file is not open in an editor.") == true
-        )
+        val batchCaveat = "Closed-file diagnostics use public batch analysis"
+        val editorUnavailable = "Intentions are unavailable because the file is not open in an editor."
+        val analysisMessage = diagnostics.analysisMessage
+        if (analysisMessage == null) {
+            assertNull("Live open-editor analysis should not report closed-file batch caveats", analysisMessage)
+        } else {
+            assertTrue(
+                "When C# falls back to bounded batch analysis, the caveat must stay explicit",
+                analysisMessage.contains(batchCaveat)
+            )
+            assertFalse(
+                "The tool should open the file before analysis, even when the current environment still falls back to bounded batch diagnostics",
+                analysisMessage.contains(editorUnavailable)
+            )
+        }
         assertFalse("Diagnostics should restore the original closed editor state", fileEditorManager.isFileOpen(file.virtualFile))
     }
 
@@ -303,6 +304,9 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         val settings = McpSettings.getInstance()
         val originalSyncSetting = settings.syncExternalChanges
         val filePath = sourceRootPath().resolve("FreshnessExample.java")
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        val originalRunner = service.openFileAnalysisOverride
+        var analyzedDocumentText: String? = null
 
         try {
             Files.writeString(
@@ -315,6 +319,15 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
                 }
                 """.trimIndent()
             )
+            service.openFileAnalysisOverride = { request ->
+                analyzedDocumentText = request.document.text
+                listOf(
+                    HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+                        .range(0, 1)
+                        .descriptionAndTooltip("Cannot resolve symbol UnknownType")
+                        .createUnconditionally()
+                )
+            }
             settings.syncExternalChanges = true
 
             val result = GetDiagnosticsTool().execute(project, buildJsonObject {
@@ -326,11 +339,16 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             val diagnostics = decodeDiagnostics(result)
             assertTrue("Expected fresh file analysis after external edit", diagnostics.analysisFresh == true)
             assertTrue(
+                "Expected auto-sync to reload the externally edited document before analysis",
+                analyzedDocumentText?.contains("UnknownType value = null;") == true
+            )
+            assertTrue(
                 "Expected unresolved symbol diagnostics after external edit",
-                diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") || it.message.contains("Cannot resolve") }
+                diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") && it.message.contains("Cannot resolve") }
             )
         } finally {
             settings.syncExternalChanges = originalSyncSetting
+            service.openFileAnalysisOverride = originalRunner
         }
     }
 
@@ -345,23 +363,19 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         )
 
         val service = DiagnosticsAnalysisService.getInstance(project)
-        val originalRunner = service.closedFileAnalysisOverride
+        val originalRunner = service.openFileAnalysisOverride
 
         try {
-            service.closedFileAnalysisOverride = { request ->
+            service.openFileAnalysisOverride = {
                 listOf(
-                    CodeSmellInfo(
-                        request.document,
-                        "Synthetic warning",
-                        TextRange(0, 1),
-                        HighlightSeverity.WARNING
-                    ),
-                    CodeSmellInfo(
-                        request.document,
-                        "Synthetic error",
-                        TextRange(0, 1),
-                        HighlightSeverity.ERROR
-                    )
+                    HighlightInfo.newHighlightInfo(HighlightInfoType.WARNING)
+                        .range(0, 1)
+                        .descriptionAndTooltip("Synthetic warning")
+                        .createUnconditionally(),
+                    HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR)
+                        .range(0, 1)
+                        .descriptionAndTooltip("Synthetic error")
+                        .createUnconditionally()
                 )
             }
 
@@ -377,7 +391,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             assertEquals("Synthetic error", diagnostics.problems?.singleOrNull()?.message)
             assertEquals("ERROR", diagnostics.problems?.singleOrNull()?.severity)
         } finally {
-            service.closedFileAnalysisOverride = originalRunner
+            service.openFileAnalysisOverride = originalRunner
         }
     }
 

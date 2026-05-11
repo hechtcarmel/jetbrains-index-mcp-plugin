@@ -3,12 +3,14 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeHierarchyData
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendResponse
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
@@ -121,6 +123,19 @@ class RiderCSharpReadOnlyBaselineTest : BasePlatformTestCase() {
             every {
                 RiderBackendSemanticService.resolveSymbolToPosition(project, "C#", "Demo.ReadOnlyBaselineService#Run(System.String)")
             } returns null
+            every {
+                RiderBackendSemanticService.getCallHierarchy(
+                    project = project,
+                    file = null,
+                    line = null,
+                    column = null,
+                    language = "C#",
+                    symbol = "Demo.ReadOnlyBaselineService#Run(System.String)",
+                    direction = "callers",
+                    depth = 3,
+                    scope = BuiltInSearchScope.PROJECT_FILES
+                )
+            } returns RiderBackendResponse(handled = true, errorMessage = RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED)
 
             val implementations = FindImplementationsTool().execute(project, buildJsonObject {
                 put("language", "C#")
@@ -138,10 +153,7 @@ class RiderCSharpReadOnlyBaselineTest : BasePlatformTestCase() {
                 put("direction", "callers")
             })
             assertTrue(callHierarchy.isError)
-            assertContains(
-                renderText(callHierarchy),
-                "Rider C#/F# symbol-mode call hierarchy requires backend-native symbol resolution"
-            )
+            assertContains(renderText(callHierarchy), RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED)
 
             val superMethods = FindSuperMethodsTool().execute(project, buildJsonObject {
                 put("language", "C#")
@@ -304,8 +316,18 @@ class RiderCSharpReadOnlyBaselineTest : BasePlatformTestCase() {
         })
 
         assertFalse(result.isError)
-        assertContains(renderText(result), "Closed-file diagnostics use public batch analysis")
-        assertFalse(renderText(result).contains("Intentions are unavailable because the file is not open in an editor."))
+        val diagnostics = decode<DiagnosticsResult>(result)
+        assertTrue(diagnostics.analysisFresh == true)
+        assertFalse(diagnostics.analysisTimedOut == true)
+        val batchCaveat = "Closed-file diagnostics use public batch analysis"
+        val editorUnavailable = "Intentions are unavailable because the file is not open in an editor."
+        val analysisMessage = diagnostics.analysisMessage
+        if (analysisMessage == null) {
+            assertNull("Live open-editor analysis should not report closed-file batch caveats", analysisMessage)
+        } else {
+            assertContains(analysisMessage, batchCaveat)
+            assertFalse(analysisMessage.contains(editorUnavailable))
+        }
     }
 
     private fun createCSharpFile(relativePath: String, content: String, isTestSource: Boolean) {
