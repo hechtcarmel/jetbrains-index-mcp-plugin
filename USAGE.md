@@ -109,11 +109,23 @@ Some tools support identifying the target element by fully qualified symbol refe
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. Unsupported languages are rejected at runtime; use `file` + `line` + `column` for languages without symbol-reference support. |
-| `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
+| `symbol` | string | Fully qualified symbol reference. **Java format:** `com.example.ClassName`, `com.example.ClassName#memberName`. **JS/TS format:** `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. |
 
 **Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
 
-**Supported languages:** Java only today. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+**Supported languages:** Java, JS, and TS. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+
+**JS/TS symbol grammar:** Symbols must be module-qualified:
+- `modulePath#exportName` — named export (e.g., `src/utils#formatDate`)
+- `modulePath#default` — default export (e.g., `src/index#default`)
+- `modulePath#ClassName.memberName` — class member (e.g., `src/models#User.validate`)
+
+**Deterministic outcomes for JS/TS symbol resolution:**
+- `unsupported_grammar` — symbol does not match accepted forms
+- `not_found` — module path resolved but symbol not found in exports/members
+- `ambiguous_match` — multiple matching exports/members across candidate files
+
+**Note:** Bare global symbol lookup and deep barrel/re-export graph traversal are outside primary v1 behavior. Module-qualified lookup is deterministic and bounded.
 
 **Tools that support symbol references:** `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`.
 
@@ -954,7 +966,7 @@ For Markdown heading outlines, use `ide_file_structure`.
 
 > **Note**: All refactoring tools modify source files. Changes can be undone with Ctrl/Cmd+Z.
 
-### ide_refactor_rename (Universal - All Languages)
+### ide_refactor_rename
 
 Renames a symbol and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
 

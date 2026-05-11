@@ -13,7 +13,19 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
 | `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
 
-**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. The two groups are **mutually exclusive**. Currently supported for Java only. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. The two groups are **mutually exclusive**. Currently supported for Java + JS/TS. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+
+**JavaScript/TypeScript symbol grammar (v1):** Symbols must be module-qualified in one of these forms:
+- `modulePath#exportName` — named export (e.g., `src/utils#formatDate`)
+- `modulePath#default` — default export (e.g., `src/index#default`)
+- `modulePath#ClassName.memberName` — class member (e.g., `src/models#User.validate`)
+
+**Deterministic outcomes for JS/TS symbol resolution:**
+- `unsupported_grammar` — symbol does not match accepted forms
+- `not_found` — module path resolved but symbol not found in exports/members
+- `ambiguous_match` — multiple matching exports/members across candidate files
+
+**Note:** Bare global symbol lookup and deep barrel/re-export graph traversal are outside primary v1 behavior. Module-qualified lookup is deterministic and bounded.
 
 ## Response Format
 
@@ -123,7 +135,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `line` | integer | conditional | 1-based line. Required for position-based lookup. |
 | `column` | integer | conditional | 1-based column. Required for position-based lookup. |
 | `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
-| `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `symbol` | string | conditional | Fully qualified symbol reference. For JS/TS, use module-qualified forms: `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. Required for symbol-based lookup. |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -160,7 +172,7 @@ Find parent methods that a given method overrides or implements.
 | `line` | integer | conditional | 1-based line. Required for position-based lookup. |
 | `column` | integer | conditional | 1-based column (anywhere in method body works). Required for position-based lookup. |
 | `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
-| `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `symbol` | string | conditional | Fully qualified symbol reference. For JS/TS, use module-qualified forms: `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. Required for symbol-based lookup. |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ method: {name, class, file, line}, hierarchy: [{name, class, file, line, isInterface}], totalCount }`
@@ -193,7 +205,7 @@ Build call tree showing who calls a method or what a method calls.
 | `line` | integer | conditional | 1-based line. Required for position-based lookup. |
 | `column` | integer | conditional | 1-based column. Required for position-based lookup. |
 | `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
-| `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `symbol` | string | conditional | Fully qualified symbol reference. For JS/TS, use module-qualified forms: `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. Required for symbol-based lookup. |
 | `direction` | enum | yes | `callers` or `callees` |
 | `depth` | integer | no | Recursion depth (default 3, max 5) |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
@@ -261,7 +273,7 @@ Rename a symbol and update ALL references (semantic rename, not find-replace). W
 | `line` | integer | conditional | 1-based line. Required for position-based lookup. |
 | `column` | integer | conditional | 1-based column. Required for position-based lookup. |
 | `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
-| `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `symbol` | string | conditional | Fully qualified symbol reference. For JS/TS, use module-qualified forms: `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. Required for symbol-based lookup. |
 | `newName` | string | yes | New name for the symbol |
 | `overrideStrategy` | enum | no | `rename_base` (default), `rename_only_current`, `ask` |
 | `project_path` | string | no | Project root path |

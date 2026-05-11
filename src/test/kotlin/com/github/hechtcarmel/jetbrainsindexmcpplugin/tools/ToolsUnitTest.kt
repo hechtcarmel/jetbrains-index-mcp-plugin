@@ -28,7 +28,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSy
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
@@ -52,7 +51,7 @@ class ToolsUnitTest : TestCase() {
     override fun setUp() {
         super.setUp()
         mockkObject(LanguageHandlerRegistry)
-        every { LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference() } returns listOf("Java", "Kotlin")
+        every { LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference() } returns listOf("Java", "Kotlin", "JavaScript", "TypeScript")
     }
 
     override fun tearDown() {

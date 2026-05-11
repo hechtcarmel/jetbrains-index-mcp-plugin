@@ -1,16 +1,20 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiManager
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
 import com.intellij.psi.search.searches.ReferencesSearch
@@ -62,6 +66,7 @@ object JavaScriptHandlers {
             registry.registerCallHierarchyHandler(JavaScriptCallHierarchyHandler())
             registry.registerSuperMethodsHandler(JavaScriptSuperMethodsHandler())
             registry.registerStructureHandler(JavaScriptStructureHandler())
+            registry.registerSymbolReferenceHandler(JavaScriptSymbolReferenceHandler())
 
             // Also register for TypeScript (uses same handlers)
             registry.registerTypeHierarchyHandler(TypeScriptTypeHierarchyHandler())
@@ -69,6 +74,7 @@ object JavaScriptHandlers {
             registry.registerCallHierarchyHandler(TypeScriptCallHierarchyHandler())
             registry.registerSuperMethodsHandler(TypeScriptSuperMethodsHandler())
             registry.registerStructureHandler(TypeScriptStructureHandler())
+            registry.registerSymbolReferenceHandler(TypeScriptSymbolReferenceHandler())
 
             LOG.info("Registered JavaScript and TypeScript handlers")
         } catch (e: ClassNotFoundException) {
@@ -77,6 +83,275 @@ object JavaScriptHandlers {
             LOG.warn("Failed to register JavaScript handlers: ${e.message}")
         }
     }
+}
+
+internal sealed interface JsTsSymbolTarget {
+    val modulePath: String
+
+    data class NamedExport(
+        override val modulePath: String,
+        val exportName: String
+    ) : JsTsSymbolTarget
+
+    data class DefaultExport(
+        override val modulePath: String
+    ) : JsTsSymbolTarget
+
+    data class ClassMember(
+        override val modulePath: String,
+        val className: String,
+        val memberName: String
+    ) : JsTsSymbolTarget
+}
+
+private val JS_TS_IDENTIFIER_REGEX = Regex("^[A-Za-z_$][A-Za-z0-9_$]*$")
+private val JS_TS_ALLOWED_EXTENSIONS = listOf("ts", "tsx", "js", "jsx", "mjs", "cjs")
+private val JS_TS_ALLOWED_EXTENSIONS_SET = JS_TS_ALLOWED_EXTENSIONS.toSet()
+
+internal fun parseJsTsSymbolTarget(symbol: String): Result<JsTsSymbolTarget> {
+    if (symbol.isBlank() || symbol != symbol.trim()) {
+        return ErrorMessages.jsTsUnsupportedGrammar(symbol).toArgumentFailure()
+    }
+
+    val hashIndex = symbol.indexOf('#')
+    if (hashIndex <= 0 || hashIndex != symbol.lastIndexOf('#') || hashIndex == symbol.lastIndex) {
+        return ErrorMessages.jsTsUnsupportedGrammar(symbol).toArgumentFailure()
+    }
+
+    val modulePath = symbol.substring(0, hashIndex)
+    val target = symbol.substring(hashIndex + 1)
+
+    if (!isValidModulePath(modulePath)) {
+        return ErrorMessages.jsTsUnsupportedGrammar(symbol).toArgumentFailure()
+    }
+
+    if (target == "default") {
+        return Result.success(JsTsSymbolTarget.DefaultExport(modulePath))
+    }
+
+    if (!target.contains('.')) {
+        return if (isValidJsTsIdentifier(target)) {
+            Result.success(JsTsSymbolTarget.NamedExport(modulePath, target))
+        } else {
+            ErrorMessages.jsTsUnsupportedGrammar(symbol).toArgumentFailure()
+        }
+    }
+
+    val dotIndex = target.indexOf('.')
+    if (dotIndex <= 0 || dotIndex != target.lastIndexOf('.') || dotIndex == target.lastIndex) {
+        return ErrorMessages.jsTsUnsupportedGrammar(symbol).toArgumentFailure()
+    }
+
+    val className = target.substring(0, dotIndex)
+    val memberName = target.substring(dotIndex + 1)
+    if (!isValidJsTsIdentifier(className) || !isValidJsTsIdentifier(memberName)) {
+        return ErrorMessages.jsTsUnsupportedGrammar(symbol).toArgumentFailure()
+    }
+
+    return Result.success(JsTsSymbolTarget.ClassMember(modulePath, className, memberName))
+}
+
+private fun isValidModulePath(modulePath: String): Boolean {
+    if (modulePath.isBlank()) return false
+    if (modulePath.contains('#')) return false
+    return modulePath.none { it.isWhitespace() }
+}
+
+private fun isValidJsTsIdentifier(value: String): Boolean = JS_TS_IDENTIFIER_REGEX.matches(value)
+
+internal data class JsTsModuleCandidate(
+    val relativePath: String,
+    val isIndexCandidate: Boolean
+)
+
+internal fun expandJsTsModuleCandidates(modulePath: String): List<JsTsModuleCandidate> {
+    val normalized = modulePath.replace('\\', '/').trim('/').removeSuffix("/")
+    if (normalized.isBlank()) return emptyList()
+
+    val lastSegment = normalized.substringAfterLast('/')
+    val explicitExt = lastSegment.substringAfterLast('.', missingDelimiterValue = "")
+    if (explicitExt.isNotBlank() && explicitExt in JS_TS_ALLOWED_EXTENSIONS_SET) {
+        return listOf(JsTsModuleCandidate(normalized, isIndexCandidate = false))
+    }
+
+    val directFiles = JS_TS_ALLOWED_EXTENSIONS.map { ext ->
+        JsTsModuleCandidate("$normalized.$ext", isIndexCandidate = false)
+    }
+    val indexFiles = JS_TS_ALLOWED_EXTENSIONS.map { ext ->
+        JsTsModuleCandidate("$normalized/index.$ext", isIndexCandidate = true)
+    }
+    return directFiles + indexFiles
+}
+
+internal fun deterministicSingleMatchOrFailure(
+    symbol: String,
+    candidates: List<Pair<String, PsiNamedElement>>
+): Result<PsiNamedElement> {
+    return when (candidates.size) {
+        0 -> ErrorMessages.jsTsNotFound(symbol).toArgumentFailure()
+        1 -> Result.success(candidates.first().second)
+        else -> ErrorMessages.jsTsAmbiguousMatch(symbol, candidates.map { it.first }).toArgumentFailure()
+    }
+}
+
+class JavaScriptSymbolReferenceHandler(
+    private val classLookup: (String) -> Class<*>? = { fqcn ->
+        try {
+            Class.forName(fqcn)
+        } catch (_: ClassNotFoundException) {
+            null
+        }
+    }
+) : BaseJavaScriptHandler<PsiNamedElement>(), SymbolReferenceHandler {
+
+    override val languageId = "JavaScript"
+    override val languageName = "JavaScript"
+
+    override fun canHandle(element: PsiElement): Boolean = isAvailable() && isJavaScriptLanguage(element)
+
+    override fun isAvailable(): Boolean = PluginDetectors.javaScript.isAvailable
+
+    override fun resolveSymbol(project: Project, symbol: String): Result<PsiNamedElement> {
+        val target = parseJsTsSymbolTarget(symbol).getOrElse { return Result.failure(it) }
+        ensureCapabilityAvailable()?.let { return Result.failure(it) }
+
+        val psiManager = PsiManager.getInstance(project)
+        val roots = ProjectUtils.getModuleContentRoots(project).ifEmpty { listOfNotNull(project.basePath) }
+        val candidates = mutableListOf<Pair<String, PsiNamedElement>>()
+
+        for (moduleCandidate in expandJsTsModuleCandidates(target.modulePath)) {
+            val named = resolveNamedElementFromCandidate(project, psiManager, roots, moduleCandidate, target)
+            if (named != null) {
+                candidates.add(moduleCandidate.relativePath to named)
+            }
+        }
+
+        return deterministicSingleMatchOrFailure(symbol, candidates)
+    }
+
+    private fun ensureCapabilityAvailable(): IllegalArgumentException? {
+        val hasPsiCore = classLookup("com.intellij.lang.javascript.psi.JSNamedElement") != null ||
+            classLookup("com.intellij.lang.javascript.psi.JSFile") != null
+        return if (hasPsiCore) null
+        else IllegalArgumentException(ErrorMessages.jsTsUnsupportedLanguageCapability("JavaScript PSI classes are unavailable"))
+    }
+
+    private fun resolveNamedElementFromCandidate(
+        project: Project,
+        psiManager: PsiManager,
+        roots: List<String>,
+        moduleCandidate: JsTsModuleCandidate,
+        target: JsTsSymbolTarget
+    ): PsiNamedElement? {
+        val virtualFile = resolveVirtualFile(roots, moduleCandidate.relativePath) ?: return null
+        if (!ProjectUtils.isAccessibleFile(project, virtualFile)) return null
+        val psiFile = psiManager.findFile(virtualFile) ?: return null
+        return when (target) {
+            is JsTsSymbolTarget.NamedExport -> findNamedExport(psiFile, target.exportName)
+            is JsTsSymbolTarget.DefaultExport -> findDefaultExport(psiFile)
+            is JsTsSymbolTarget.ClassMember -> findClassMember(psiFile, target.className, target.memberName)
+        }
+    }
+
+    private fun resolveVirtualFile(roots: List<String>, relativePath: String): com.intellij.openapi.vfs.VirtualFile? {
+        val fs = LocalFileSystem.getInstance()
+        for (root in roots) {
+            val fullPath = "$root/$relativePath"
+            val found = fs.findFileByPath(fullPath)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findNamedExport(file: PsiFile, exportName: String): PsiNamedElement? {
+        val matches = mutableListOf<PsiNamedElement>()
+        PsiTreeUtil.processElements(file) { element ->
+            val named = element as? PsiNamedElement
+            if (named != null && named.name == exportName && isExportCandidate(named)) {
+                matches.add(named)
+            }
+            true
+        }
+        return matches.singleOrNull()
+    }
+
+    private fun findDefaultExport(file: PsiFile): PsiNamedElement? {
+        val matches = mutableListOf<PsiNamedElement>()
+        PsiTreeUtil.processElements(file) { element ->
+            val named = element as? PsiNamedElement
+            if (named != null && isDefaultExportCandidate(named)) {
+                matches.add(named)
+            }
+            true
+        }
+        return matches.singleOrNull()
+    }
+
+    private fun findClassMember(file: PsiFile, className: String, memberName: String): PsiNamedElement? {
+        val classCandidates = mutableListOf<PsiElement>()
+        PsiTreeUtil.processElements(file) { element ->
+            val named = element as? PsiNamedElement
+            if (named != null && named.name == className && isClassLike(named)) {
+                classCandidates.add(named)
+            }
+            true
+        }
+        if (classCandidates.size != 1) return null
+        val classElement = classCandidates.single()
+
+        val memberMatches = mutableListOf<PsiNamedElement>()
+        PsiTreeUtil.processElements(classElement) { element ->
+            val named = element as? PsiNamedElement
+            if (named != null && named.name == memberName && isClassMemberLike(named)) {
+                memberMatches.add(named)
+            }
+            true
+        }
+        return memberMatches.singleOrNull()
+    }
+
+    private fun isExportCandidate(named: PsiNamedElement): Boolean {
+        val cls = named.javaClass
+        val className = cls.name
+        if (className.contains("JSImportSpecifier") || className.contains("ES6Export")) return true
+        return callBooleanMethod(named, "isExported") == true || callBooleanMethod(named, "isExport") == true
+    }
+
+    private fun isDefaultExportCandidate(named: PsiNamedElement): Boolean {
+        val className = named.javaClass.name
+        if (className.contains("ES6ExportDefaultAssignment") || className.contains("ES6ExportDefaultDeclaration")) {
+            return true
+        }
+        return callBooleanMethod(named, "isDefaultExport") == true
+    }
+
+    private fun isClassLike(named: PsiNamedElement): Boolean {
+        val className = named.javaClass.name
+        if (className.contains("JSClass")) return true
+        return callBooleanMethod(named, "isClass") == true
+    }
+
+    private fun isClassMemberLike(named: PsiNamedElement): Boolean {
+        val className = named.javaClass.name
+        if (className.contains("JSFunction") || className.contains("JSField") || className.contains("TypeScriptField")) {
+            return true
+        }
+        return callBooleanMethod(named, "isFunction") == true || callBooleanMethod(named, "isField") == true
+    }
+
+    private fun callBooleanMethod(target: Any, methodName: String): Boolean? {
+        return try {
+            val m = target.javaClass.methods.firstOrNull { it.name == methodName && it.parameterCount == 0 } ?: return null
+            m.invoke(target) as? Boolean
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+class TypeScriptSymbolReferenceHandler : SymbolReferenceHandler by JavaScriptSymbolReferenceHandler() {
+    override val languageId = "TypeScript"
+    override val languageName = "TypeScript"
 }
 
 /**
@@ -98,22 +373,14 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
             langId == "TypeScript JSX"
     }
 
-    /**
-     * Checks if a file is a JavaScript/TypeScript file by extension.
-     */
-    protected fun isJavaScriptFile(file: com.intellij.openapi.vfs.VirtualFile): Boolean {
-        val ext = file.extension?.lowercase() ?: return false
-        return ext in listOf("js", "jsx", "ts", "tsx", "mjs", "cjs")
-    }
-
     protected val jsClassClass: Class<*>? by lazy {
         try {
             // Try ES6 class first (com.intellij.lang.javascript.psi.ecmal4.JSClass)
             Class.forName("com.intellij.lang.javascript.psi.ecmal4.JSClass")
-        } catch (e: ClassNotFoundException) {
+        } catch (_: ClassNotFoundException) {
             try {
                 Class.forName("com.intellij.lang.javascript.psi.JSClass")
-            } catch (e2: ClassNotFoundException) {
+            } catch (_: ClassNotFoundException) {
                 LOG.debug("JSClass not found")
                 null
             }
@@ -123,7 +390,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
     protected val jsFunctionClass: Class<*>? by lazy {
         try {
             Class.forName("com.intellij.lang.javascript.psi.JSFunction")
-        } catch (e: ClassNotFoundException) {
+        } catch (_: ClassNotFoundException) {
             LOG.debug("JSFunction not found")
             null
         }
@@ -132,30 +399,16 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
     protected val jsCallExpressionClass: Class<*>? by lazy {
         try {
             Class.forName("com.intellij.lang.javascript.psi.JSCallExpression")
-        } catch (e: ClassNotFoundException) {
+        } catch (_: ClassNotFoundException) {
             LOG.debug("JSCallExpression not found")
             null
-        }
-    }
-
-    protected val jsNamedElementClass: Class<*>? by lazy {
-        try {
-            Class.forName("com.intellij.lang.javascript.psi.JSNamedElement")
-        } catch (e: ClassNotFoundException) {
-            try {
-                // Fallback to base PsiNamedElement
-                PsiNamedElement::class.java
-            } catch (e2: Exception) {
-                LOG.debug("JSNamedElement not found")
-                null
-            }
         }
     }
 
     protected val jsVariableClass: Class<*>? by lazy {
         try {
             Class.forName("com.intellij.lang.javascript.psi.JSVariable")
-        } catch (e: ClassNotFoundException) {
+        } catch (_: ClassNotFoundException) {
             LOG.debug("JSVariable not found")
             null
         }
@@ -207,20 +460,6 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
     }
 
     /**
-     * Checks if element is a JSVariable using reflection.
-     */
-    protected fun isJSVariable(element: PsiElement): Boolean {
-        return jsVariableClass?.isInstance(element) == true
-    }
-
-    /**
-     * Checks if element is a JSNamedElement using reflection.
-     */
-    protected fun isJSNamedElement(element: PsiElement): Boolean {
-        return jsNamedElementClass?.isInstance(element) == true
-    }
-
-    /**
      * Finds containing JSClass using reflection.
      */
     protected fun findContainingJSClass(element: PsiElement): PsiElement? {
@@ -247,7 +486,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         return try {
             val method = element.javaClass.getMethod("getName")
             method.invoke(element) as? String
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -259,7 +498,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         return try {
             val method = element.javaClass.getMethod("getQualifiedName")
             method.invoke(element) as? String
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -272,7 +511,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
             val isInterfaceMethod = jsClass.javaClass.getMethod("isInterface")
             val isInterface = isInterfaceMethod.invoke(jsClass) as? Boolean ?: false
             if (isInterface) "INTERFACE" else "CLASS"
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "CLASS"
         }
     }
@@ -284,7 +523,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         return try {
             val method = jsClass.javaClass.getMethod("getSuperClasses")
             method.invoke(jsClass) as? Array<*>
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -296,23 +535,8 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         return try {
             val method = jsClass.javaClass.getMethod("getImplementedInterfaces")
             method.invoke(jsClass) as? Array<*>
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
-        }
-    }
-
-    /**
-     * Determines the kind of a JavaScript element.
-     */
-    protected fun determineElementKind(element: PsiElement): String {
-        return when {
-            isJSClass(element) -> getClassKind(element)
-            isJSFunction(element) -> {
-                val containingClass = findContainingJSClass(element)
-                if (containingClass != null && containingClass != element) "METHOD" else "FUNCTION"
-            }
-            isJSVariable(element) -> "VARIABLE"
-            else -> "SYMBOL"
         }
     }
 
@@ -323,12 +547,12 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         return try {
             val findFunctionMethod = jsClass.javaClass.getMethod("findFunctionByName", String::class.java)
             findFunctionMethod.invoke(jsClass, methodName) as? PsiElement
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             try {
                 val getFunctionsMethod = jsClass.javaClass.getMethod("getFunctions")
                 val functions = getFunctionsMethod.invoke(jsClass) as? Array<*> ?: return null
                 functions.filterIsInstance<PsiElement>().find { getName(it) == methodName }
-            } catch (e2: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }
@@ -939,7 +1163,7 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
             val referenceMethod = methodExpr.javaClass.getMethod("getReference")
             val reference = referenceMethod.invoke(methodExpr) as? com.intellij.psi.PsiReference
             reference?.resolve()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -1100,12 +1324,12 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
                         val getTypeMethod = param.javaClass.getMethod("getType")
                         val typeElement = getTypeMethod.invoke(param)
                         typeElement?.toString()
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         null
                     }
 
                     if (type != null) "$name: $type" else name
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     null
                 }
             }.joinToString(", ")
@@ -1116,7 +1340,7 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
                 val getReturnTypeMethod = jsFunction.javaClass.getMethod("getReturnType")
                 val returnTypeElement = getReturnTypeMethod.invoke(jsFunction)
                 returnTypeElement?.toString()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
 
@@ -1125,7 +1349,7 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
             } else {
                 "$functionName($params)"
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             getName(jsFunction) ?: "unknown"
         }
     }
@@ -1159,10 +1383,6 @@ class TypeScriptSuperMethodsHandler : SuperMethodsHandler by JavaScriptSuperMeth
  */
 class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(), StructureHandler {
 
-    companion object {
-        private val LOG = logger<JavaScriptStructureHandler>()
-    }
-
     override val languageId = "JavaScript"
 
     override fun canHandle(element: PsiElement): Boolean {
@@ -1186,38 +1406,38 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
                 return emptyList()
             }
 
-            // Find top-level classes
-            if (jsClassClass != null) {
-                @Suppress("UNCHECKED_CAST")
-                val classes = PsiTreeUtil.findChildrenOfType(file, jsClassClass as Class<PsiElement>)
-                classes?.forEach { jsClass ->
-                    if (isTopLevel(jsClass, file)) {
-                        structure.add(extractClassStructure(jsClass, project))
-                    }
-                }
-            }
+             // Find top-level classes
+             if (jsClassClass != null) {
+                 @Suppress("UNCHECKED_CAST")
+                 val classes = PsiTreeUtil.findChildrenOfType(file, jsClassClass as Class<PsiElement>)
+                 classes.forEach { jsClass ->
+                     if (isTopLevel(jsClass, file)) {
+                         structure.add(extractClassStructure(jsClass, project))
+                     }
+                 }
+             }
 
-            // Find top-level functions
-            if (jsFunctionClass != null) {
-                @Suppress("UNCHECKED_CAST")
-                val functions = PsiTreeUtil.findChildrenOfType(file, jsFunctionClass as Class<PsiElement>)
-                functions?.forEach { jsFunction ->
-                    if (isTopLevel(jsFunction, file)) {
-                        structure.add(extractFunctionStructure(jsFunction, project))
-                    }
-                }
-            }
+             // Find top-level functions
+             if (jsFunctionClass != null) {
+                 @Suppress("UNCHECKED_CAST")
+                 val functions = PsiTreeUtil.findChildrenOfType(file, jsFunctionClass as Class<PsiElement>)
+                 functions.forEach { jsFunction ->
+                     if (isTopLevel(jsFunction, file)) {
+                         structure.add(extractFunctionStructure(jsFunction, project))
+                     }
+                 }
+             }
 
-            // Find top-level variables
-            if (jsVariableClass != null) {
-                @Suppress("UNCHECKED_CAST")
-                val variables = PsiTreeUtil.findChildrenOfType(file, jsVariableClass as Class<PsiElement>)
-                variables?.forEach { jsVariable ->
-                    if (isTopLevel(jsVariable, file)) {
-                        structure.add(extractVariableStructure(jsVariable, project))
-                    }
-                }
-            }
+             // Find top-level variables
+             if (jsVariableClass != null) {
+                 @Suppress("UNCHECKED_CAST")
+                 val variables = PsiTreeUtil.findChildrenOfType(file, jsVariableClass as Class<PsiElement>)
+                 variables.forEach { jsVariable ->
+                     if (isTopLevel(jsVariable, file)) {
+                         structure.add(extractVariableStructure(jsVariable, project))
+                     }
+                 }
+             }
 
         } catch (e: ClassNotFoundException) {
             LOG.warn("JavaScript PSI class not found: ${e.message}")
@@ -1253,19 +1473,19 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             }
         } catch (_: Exception) {
             // getFunctions() not available, try children scan
-            try {
-                if (jsFunctionClass != null) {
-                    @Suppress("UNCHECKED_CAST")
-                    val methods = PsiTreeUtil.findChildrenOfType(jsClass, jsFunctionClass as Class<PsiElement>)
-                    methods?.forEach { method ->
-                        if (method.parent == jsClass || method.parent?.parent == jsClass) {
-                            children.add(extractMethodStructure(method, project))
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-                // Ignore
-            }
+             try {
+                 if (jsFunctionClass != null) {
+                     @Suppress("UNCHECKED_CAST")
+                     val methods = PsiTreeUtil.findChildrenOfType(jsClass, jsFunctionClass as Class<PsiElement>)
+                     methods.forEach { method ->
+                         if (method.parent == jsClass || method.parent?.parent == jsClass) {
+                             children.add(extractMethodStructure(method, project))
+                         }
+                     }
+                 }
+             } catch (_: Exception) {
+                 // Ignore
+             }
         }
 
         try {

@@ -24,7 +24,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.roots.ModuleRootModificationUtil
@@ -217,6 +217,21 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
+    fun testFindDefinitionToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindDefinitionToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindDefinitionTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
     // Navigation Tools Tests
 
     fun testTypeHierarchyToolMissingParams() = runBlocking {
@@ -326,6 +341,21 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
+    fun testFindImplementationsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindImplementationsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindImplementationsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
     fun testFindClassToolInvalidScopeReturnsStructuredError() = runBlocking {
         val tool = FindClassTool()
 
@@ -426,9 +456,7 @@ class ToolsTest : BasePlatformTestCase() {
 
         invokeLegacySymbolContributor(
             contributor = contributor,
-            pattern = "ScopeSymbol",
             scope = scope,
-            languageFilter = null,
             nameFilter = { true },
             matcher = matcher,
             results = results,
@@ -455,6 +483,21 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    fun testFindUsagesToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindUsagesToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindUsagesTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
     }
 
     // Refactoring Tools Tests
@@ -753,6 +796,39 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
+    fun testFindSuperMethodsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindSuperMethodsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindSuperMethodsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        // Representative routing check only: JS super-method semantics may not be meaningful in minimal fixtures,
+        // but malformed symbol grammar must still be rejected by the JS/TS symbol handler path.
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
+    fun testCallHierarchyToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+            put("direction", "callers")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
     // Registry tests that require platform services (McpSettings)
 
     fun testToolDefinitionsHaveRequiredFields() {
@@ -775,9 +851,7 @@ class ToolsTest : BasePlatformTestCase() {
 
     private fun invokeLegacySymbolContributor(
         contributor: ChooseByNameContributor,
-        pattern: String,
         scope: GlobalSearchScope,
-        languageFilter: Set<String>?,
         nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolData>,
@@ -791,10 +865,10 @@ class ToolsTest : BasePlatformTestCase() {
             OptimizedSymbolSearch,
             contributor,
             project,
-            pattern,
+            "ScopeSymbol",
             scope,
             10,
-            languageFilter,
+            null,
             nameFilter,
             matcher,
             results,
@@ -814,5 +888,24 @@ class ToolsTest : BasePlatformTestCase() {
             project: com.intellij.openapi.project.Project,
             includeNonProjectItems: Boolean
         ): Array<NavigationItem> = itemsByName[name] ?: emptyArray()
+    }
+
+    private fun requireJsTsToolRoutingCapability(testName: String): Boolean {
+        if (!PluginDetectors.javaScript.isAvailable) {
+            System.err.println("$testName: skipped - JavaScript plugin not available")
+            return false
+        }
+        return try {
+            Class.forName("com.intellij.lang.javascript.psi.JSNamedElement")
+            if (LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("JavaScript") == null) {
+                System.err.println("$testName: skipped - JavaScript symbol reference handler not registered")
+                false
+            } else {
+                true
+            }
+        } catch (_: ClassNotFoundException) {
+            System.err.println("$testName: skipped - JavaScript PSI classes unavailable")
+            false
+        }
     }
 }

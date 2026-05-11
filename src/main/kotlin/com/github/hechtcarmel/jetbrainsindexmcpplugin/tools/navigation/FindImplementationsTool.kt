@@ -51,13 +51,14 @@ class FindImplementationsTool : AbstractMcpTool() {
 
         Target (mutually exclusive):
         - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
-        - language + symbol: fully qualified symbol reference (currently supported for Java only; necessary for fresh search, ignored when cursor is provided)
+        - language + symbol: fully qualified symbol reference (currently supported for Java + JS/TS; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
         Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
         Example: {"language": "Java", "symbol": "com.example.Repository", "scope": "project_and_libraries"}
+        Example: {"language": "JavaScript", "symbol": "src/interfaces#IRepository"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
