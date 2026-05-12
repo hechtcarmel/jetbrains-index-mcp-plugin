@@ -4,19 +4,26 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.lang.LanguageNamesValidation
-import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.rename.RenameProcessor
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.refactoring.rename.naming.AutomaticRenamerFactory
 import com.intellij.util.containers.MultiMap
+import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -40,6 +47,68 @@ class RenameSymbolTool : AbstractMcpTool() {
 
     companion object {
         private val LOG = logger<RenameSymbolTool>()
+
+        private val JS_TS_LANGUAGE_IDS = setOf(
+            "JavaScript",
+            "ECMAScript 6",
+            "JSX Harmony",
+            "TypeScript",
+            "TypeScript JSX"
+        )
+
+        private val JS_TS_SOURCE_EXTENSIONS = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs")
+
+        internal fun shouldBypassDialogSubstitutionForFileRename(
+            languageId: String,
+            overrideStrategy: String
+        ): Boolean = overrideStrategy != "ask" && languageId in JS_TS_LANGUAGE_IDS
+
+        internal fun retargetJsTsModuleSpecifiers(
+            source: String,
+            importerDirPath: String,
+            oldFilePath: String,
+            newFilePath: String
+        ): String {
+            try {
+                val oldNoExtension = relativeModuleSpecifier(importerDirPath, oldFilePath, includeExtension = false)
+                val oldWithExtension = relativeModuleSpecifier(importerDirPath, oldFilePath, includeExtension = true)
+                val newNoExtension = relativeModuleSpecifier(importerDirPath, newFilePath, includeExtension = false)
+                val newWithExtension = relativeModuleSpecifier(importerDirPath, newFilePath, includeExtension = true)
+
+                val moduleSpecifierRegex = Regex(
+                    """(?m)(^\s*(?:import|export)\b[^\n;]*?\bfrom\s*["']|^\s*import\s*["']|\bimport\s*\(\s*["']|\brequire\s*\(\s*["'])([^"']+)(["'])"""
+                )
+
+                return moduleSpecifierRegex.replace(source) { match ->
+                    val specifier = match.groupValues[2]
+                    val replacement = when (specifier) {
+                        oldNoExtension -> newNoExtension
+                        oldWithExtension -> newWithExtension
+                        else -> return@replace match.value
+                    }
+                    match.groupValues[1] + replacement + match.groupValues[3]
+                }
+            } catch (_: IllegalArgumentException) {
+                return source
+            }
+        }
+
+        internal fun relativeModuleSpecifier(
+            importerDirPath: String,
+            targetFilePath: String,
+            includeExtension: Boolean
+        ): String {
+            val importerDir = Path.of(importerDirPath)
+            val target = Path.of(targetFilePath)
+            var relative = importerDir.relativize(target).toString().replace('\\', '/')
+            if (!includeExtension) {
+                relative = relative.substringBeforeLast('.', relative)
+            }
+            if (!relative.startsWith(".")) {
+                relative = "./$relative"
+            }
+            return relative
+        }
     }
 
     override val name = "ide_refactor_rename"
@@ -105,6 +174,11 @@ class RenameSymbolTool : AbstractMcpTool() {
         val element: PsiNamedElement,
         val oldName: String,
         val error: String? = null
+    )
+
+    private data class JsTsFileRenameContext(
+        val oldFilePath: String,
+        val newFileName: String
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -378,6 +452,8 @@ class RenameSymbolTool : AbstractMcpTool() {
         // - "rename_only_current": use the element as-is (no dialog)
         // - "ask": delegate to substituteElementToRename (shows dialog)
         val targetElement = resolveRenameTarget(element, overrideStrategy)
+        val jsTsFileRename = buildJsTsFileRenameContext(element, targetElement, newName, overrideStrategy)
+        val modifiedFilesBeforeRename = collectUnsavedProjectFiles(project)
 
         // Compute the effective name for the rename target.
         //
@@ -421,6 +497,13 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         // Execute the rename - this modifies files in place (primary + all related elements)
         renameProcessor.run()
+
+        if (jsTsFileRename != null) {
+            retargetJsTsRelativeImportsAfterFileRename(project, jsTsFileRename, affectedFiles)
+        }
+
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        affectedFiles.addAll(collectUnsavedProjectFiles(project) - modifiedFilesBeforeRename)
 
         val relatedRenamesCount = renameProcessor.elements.count { it != targetElement }
         for (renamedElement in renameProcessor.elements) {
@@ -490,6 +573,90 @@ class RenameSymbolTool : AbstractMcpTool() {
         return newName
     }
 
+    private fun buildJsTsFileRenameContext(
+        element: PsiNamedElement,
+        targetElement: PsiNamedElement,
+        newName: String,
+        overrideStrategy: String
+    ): JsTsFileRenameContext? {
+        if (element !is PsiFile || targetElement !is PsiFile) return null
+        if (!shouldBypassDialogSubstitutionForFileRename(element.language.id, overrideStrategy)) return null
+
+        val oldVirtualFile = element.virtualFile ?: return null
+        val newFileName = computeEffectiveNewName(element, targetElement, newName)
+        if (oldVirtualFile.name == newFileName) return null
+
+        return JsTsFileRenameContext(
+            oldFilePath = oldVirtualFile.path,
+            newFileName = newFileName
+        )
+    }
+
+    private fun retargetJsTsRelativeImportsAfterFileRename(
+        project: Project,
+        context: JsTsFileRenameContext,
+        affectedFiles: MutableSet<String>
+    ) {
+        val renamedFile = findRenamedVirtualFile(context) ?: return
+        val fileIndex = ProjectRootManager.getInstance(project).fileIndex
+        val psiManager = PsiManager.getInstance(project)
+        val fileDocumentManager = FileDocumentManager.getInstance()
+
+        val filesToUpdate = mutableListOf<Pair<VirtualFile, String>>()
+        fileIndex.iterateContent { candidate ->
+            if (!candidate.isDirectory && isJavaScriptOrTypeScriptFile(candidate)) {
+                val document = fileDocumentManager.getDocument(candidate)
+                val importerDir = candidate.parent?.path
+                if (document != null && importerDir != null) {
+                    val updated = retargetJsTsModuleSpecifiers(
+                        source = document.text,
+                        importerDirPath = importerDir,
+                        oldFilePath = context.oldFilePath,
+                        newFilePath = renamedFile.path
+                    )
+                    if (updated != document.text) {
+                        filesToUpdate.add(candidate to updated)
+                    }
+                }
+            }
+            true
+        }
+
+        if (filesToUpdate.isEmpty()) return
+
+        WriteCommandAction.writeCommandAction(project)
+            .withName("Retarget JS/TS Imports After File Rename")
+            .withGroupId("MCP Refactoring")
+            .run<Throwable> {
+                for ((file, updatedText) in filesToUpdate) {
+                    val document = fileDocumentManager.getDocument(file) ?: continue
+                    document.setText(updatedText)
+                    psiManager.findFile(file)?.let { PsiDocumentManager.getInstance(project).commitDocument(document) }
+                    affectedFiles.add(getRelativePath(project, file))
+                }
+            }
+    }
+
+    private fun findRenamedVirtualFile(context: JsTsFileRenameContext): VirtualFile? {
+        val parentPath = context.oldFilePath.substringBeforeLast('/', "")
+        if (parentPath.isBlank()) return null
+        val newPath = "$parentPath/${context.newFileName}"
+        return com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(newPath)
+    }
+
+    private fun isJavaScriptOrTypeScriptFile(file: VirtualFile): Boolean {
+        return file.extension in JS_TS_SOURCE_EXTENSIONS
+    }
+
+    private fun collectUnsavedProjectFiles(project: Project): Set<String> {
+        val fileDocumentManager = FileDocumentManager.getInstance()
+        return fileDocumentManager.unsavedDocuments
+            .mapNotNull(fileDocumentManager::getFile)
+            .filter { ProjectUtils.isProjectFile(project, it) }
+            .map { getRelativePath(project, it) }
+            .toSet()
+    }
+
     /**
      * Checks if an [AutomaticRenamerFactory] is an accessor (getter/setter) or test renamer.
      *
@@ -515,6 +682,10 @@ class RenameSymbolTool : AbstractMcpTool() {
      *   - "ask": delegate to substituteElementToRename (shows IDE dialog)
      */
     private fun resolveRenameTarget(element: PsiNamedElement, overrideStrategy: String): PsiNamedElement {
+        if (element is PsiFile && shouldBypassDialogSubstitutionForFileRename(element.language.id, overrideStrategy)) {
+            return element
+        }
+
         when (overrideStrategy) {
             "rename_base" -> {
                 // Resolve to the deepest super method to avoid the dialog

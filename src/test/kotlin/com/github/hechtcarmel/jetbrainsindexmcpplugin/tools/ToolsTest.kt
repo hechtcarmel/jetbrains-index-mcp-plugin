@@ -24,7 +24,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.roots.ModuleRootModificationUtil
@@ -36,7 +40,9 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -51,6 +57,11 @@ import kotlinx.serialization.json.put
  * For schema and registration tests that don't need the platform, see ToolsUnitTest.
  */
 class ToolsTest : BasePlatformTestCase() {
+
+    private companion object {
+        const val JS_TS_FIXTURE_SOURCE_ROOT = "src/test/testData/javascript/webstormIntegration"
+        const val JS_TS_FIXTURE_PROJECT_ROOT = "src/webstormIntegration"
+    }
 
     override fun setUp() {
         super.setUp()
@@ -217,6 +228,21 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
+    fun testFindDefinitionToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindDefinitionToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindDefinitionTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
     // Navigation Tools Tests
 
     fun testTypeHierarchyToolMissingParams() = runBlocking {
@@ -280,6 +306,168 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
+    fun testCallHierarchyToolJavaScriptFixtureRoutesThroughBarrelImports() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptFixtureRoutesThroughBarrelImports")) return@runBlocking
+
+        addWebstormIntegrationFixtures(
+            "barrels/plugin-config.ts",
+            "barrels/named-barrel.ts",
+            "barrels/export-star-barrel.ts",
+            "barrels/barrel-consumer.ts",
+            "barrels/unrelated-plugin-config.ts",
+            "barrels/unrelated-barrel.ts",
+            "barrels/unrelated-barrel-consumer.ts"
+        )
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", fixtureSymbol("barrels/plugin-config.ts", "loadPluginConfig"))
+            put("direction", "callers")
+        })
+
+        assertFalse("Barrel-import callers should be routed through JS/TS symbol resolution", result.isError)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        val callersByName = payload.calls.associateBy { it.name }
+        val callerNames = callersByName.keys
+        val productionCaller = callersByName["loadProductionConfigThroughNamedBarrel"]
+        assertTrue("Named barrel caller should be present", callerNames.contains("loadFromNamedBarrel"))
+        assertTrue("Export-star barrel caller should be present", callerNames.contains("loadFromExportStarBarrel"))
+        assertNotNull("Proposal barrel-import production caller should be present", productionCaller)
+        assertEquals(
+            "Proposal caller should come from the production barrel-consumer fixture",
+            fixtureProjectPath("barrels/barrel-consumer.ts"),
+            productionCaller?.file
+        )
+        assertFalse(
+            "Unrelated same-named barrel consumer should not be reported as a caller",
+            callerNames.contains("loadFromUnrelatedBarrel")
+        )
+    }
+
+    fun testCallHierarchyToolTypeScriptOverloadSymbolSeedsImplementationCapableEntry() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolTypeScriptOverloadSymbolSeedsImplementationCapableEntry")) return@runBlocking
+
+        addWebstormIntegrationFixture("overloads/overloaded-export.ts")
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "TypeScript")
+            put("symbol", fixtureSymbol("overloads/overloaded-export.ts", "getProjectId"))
+            put("direction", "callees")
+        })
+
+        assertFalse("TypeScript overload symbols should resolve to an implementation-capable call-hierarchy seed", result.isError)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        assertEquals("Seed should point at the implementation signature", 10, payload.element.line)
+        assertTrue(
+            "Implementation seed should expose callees that declaration-only overload signatures miss",
+            payload.calls.any { it.name == "readProjectIdFromConfig" }
+        )
+    }
+
+    fun testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallees() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallees")) return@runBlocking
+
+        addWebstormIntegrationFixture("overloads/overloaded-export.ts")
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", fixtureProjectPath("overloads/overloaded-export.ts"))
+            put("line", 4)
+            put("column", 17)
+            put("direction", "callees")
+        })
+
+        assertFalse("Overload signature position should normalize to the implementation for callees", result.isError)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        assertEquals("Normalized seed should point at implementation line", 10, payload.element.line)
+        assertTrue("Normalized position seed should expose readProjectIdFromConfig callee", payload.calls.any { it.name == "readProjectIdFromConfig" })
+    }
+
+    fun testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallers() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallers")) return@runBlocking
+
+        myFixture.addFileToProject(
+            fixtureProjectPath("overloads/overloaded-position-callers.ts"),
+            """
+            export function getProjectId(input: string): string;
+            export function getProjectId(input: { workspace: string; project: string }): string;
+            export function getProjectId(input: string | { workspace: string; project: string }): string {
+              return typeof input === "string" ? input : `${'$'}{input.workspace}/${'$'}{input.project}`;
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            fixtureProjectPath("overloads/overloaded-position-callers-consumer.ts"),
+            """
+            import { getProjectId } from "./overloaded-position-callers";
+
+            export function readProjectId(): string {
+              return getProjectId("workspace/project");
+            }
+            """.trimIndent()
+        )
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", fixtureProjectPath("overloads/overloaded-position-callers.ts"))
+            put("line", 1)
+            put("column", 17)
+            put("direction", "callers")
+        })
+
+        assertFalse("Overload signature position should normalize to the implementation for callers", result.isError)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        assertEquals("Normalized caller seed should point at implementation line", 3, payload.element.line)
+        assertTrue("Normalized caller seed should expose consumer call sites", payload.calls.any { it.name == "readProjectId" })
+    }
+
+    fun testCallHierarchyToolJavaScriptFixturePrioritizesRealisticIndexBarrelImportsBeforeVisibleLimit() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptFixtureRoutesThroughRealisticIndexBarrelImports")) return@runBlocking
+
+        addWebstormIntegrationFixtures(
+            "barrels/realistic/config/loader.ts",
+            "barrels/realistic/config/index.ts",
+            "barrels/realistic/src/loader.test.ts",
+            "barrels/realistic/src/index.ts",
+            "barrels/realistic/unrelated-config/loader.ts",
+            "barrels/realistic/unrelated-config/index.ts",
+            "barrels/realistic/src/unrelated.ts"
+        )
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", fixtureSymbol("barrels/realistic/config/loader.ts", "loadPluginConfig"))
+            put("direction", "callers")
+        })
+
+        assertFalse("Realistic index barrel callers should be routed through JS/TS symbol resolution", result.isError)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        val callersByName = payload.calls.associateBy { it.name }
+        val productionCaller = callersByName["bootstrapPluginConfig"]
+        assertEquals(
+            "Visible caller list should stay capped even when test noise exceeds the limit",
+            20,
+            payload.calls.size
+        )
+        assertTrue(
+            "Fixture should exercise the >20 direct test callers regression",
+            callersByName.keys.any { it.startsWith("loadPluginConfigFromTest") }
+        )
+        assertNotNull("Directory index consumer should be present", productionCaller)
+        assertEquals(
+            "Directory index consumer should come from realistic src/index.ts",
+            fixtureProjectPath("barrels/realistic/src/index.ts"),
+            productionCaller?.file
+        )
+        assertFalse(
+            "Unrelated same-named config barrel consumer should not be reported as a caller",
+            callersByName.containsKey("bootstrapUnrelatedPluginConfig")
+        )
+    }
+
     fun testFindImplementationsToolMissingParams() = runBlocking {
         val tool = FindImplementationsTool()
 
@@ -324,6 +512,21 @@ class ToolsTest : BasePlatformTestCase() {
 
         assertTrue("Should error with unsupported language", result.isError)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
+    }
+
+    fun testFindImplementationsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindImplementationsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindImplementationsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
     }
 
     fun testFindClassToolInvalidScopeReturnsStructuredError() = runBlocking {
@@ -426,9 +629,7 @@ class ToolsTest : BasePlatformTestCase() {
 
         invokeLegacySymbolContributor(
             contributor = contributor,
-            pattern = "ScopeSymbol",
             scope = scope,
-            languageFilter = null,
             nameFilter = { true },
             matcher = matcher,
             results = results,
@@ -455,6 +656,21 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    fun testFindUsagesToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindUsagesToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindUsagesTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
     }
 
     // Refactoring Tools Tests
@@ -528,6 +744,108 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    fun testFileStructureToolTypeAliasFixtureCoverageHook() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFileStructureToolTypeAliasFixtureCoverageHook")) return@runBlocking
+
+        addWebstormIntegrationFixture("types/type-alias-vs-interface.ts")
+
+        val tool = FileStructureTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", fixtureProjectPath("types/type-alias-vs-interface.ts"))
+        })
+
+        assertFalse("Type alias fixture should be accepted by file structure tool", result.isError)
+        val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
+        assertTrue("Type alias output should remain distinct from classes", payload.structure.contains("typealias FileStructureAlias"))
+        assertFalse("Type alias output should not regress back to class formatting", payload.structure.contains("class FileStructureAlias"))
+        assertTrue("Interface output should remain visible beside type aliases", payload.structure.contains("interface FileStructureInterface"))
+        assertTrue("Class output should remain visible beside type aliases", payload.structure.contains("class FileStructureClass"))
+    }
+
+    fun testFindImplementationsToolInterfaceImplementsFixtureCoverageHook() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindImplementationsToolInterfaceImplementsFixtureCoverageHook")) return@runBlocking
+
+        addWebstormIntegrationFixture("interface-implements/thoth-client-interface.ts")
+
+        val tool = FindImplementationsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", fixtureSymbol("interface-implements/thoth-client-interface.ts", "ThothClient"))
+        })
+
+        assertFalse("Interface+implements fixture should be wired into implementations coverage", result.isError)
+        val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
+        assertTrue(
+            "HttpThothClient should remain the regression implements target",
+            payload.implementations.any { it.name == "HttpThothClient" }
+        )
+        assertTrue(
+            "MemoryThothClient should remain the second deterministic implements target",
+            payload.implementations.any { it.name == "MemoryThothClient" }
+        )
+    }
+
+    fun testFindSuperMethodsToolInterfaceImplementsMethodFixtureCoverageHook() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindSuperMethodsToolInterfaceImplementsMethodFixtureCoverageHook")) return@runBlocking
+
+        addWebstormIntegrationFixture("interface-implements/thoth-client-interface.ts")
+
+        val tool = FindSuperMethodsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", fixtureProjectPath("interface-implements/thoth-client-interface.ts"))
+            put("line", 6)
+            put("column", 3)
+        })
+
+        assertFalse("Class implements method fixture should be accepted by find super methods", result.isError)
+        val payload = json.decodeFromString<SuperMethodsResult>(errorTextless(result))
+        assertEquals("fetch", payload.method.name)
+        assertTrue(
+            "Implements scenario should resolve back to the interface method",
+            payload.hierarchy.any { it.name == "fetch" && it.containingClass == "ThothClient" && it.isInterface }
+        )
+    }
+
+    fun testFileStructureToolTypeImportAliasFixtureCoverageHook() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFileStructureToolTypeImportAliasFixtureCoverageHook")) return@runBlocking
+
+        addWebstormIntegrationFixtures(
+            "aliases/alias-source.ts",
+            "aliases/import-type-alias.ts"
+        )
+
+        val tool = FileStructureTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", fixtureProjectPath("aliases/import-type-alias.ts"))
+        })
+
+        assertFalse("Type import alias fixture should be accepted by file structure tool", result.isError)
+        val structure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
+        assertTrue("Type import alias coverage should mention ImportedPluginNameAlias", structure.contains("typealias ImportedPluginNameAlias"))
+        assertTrue("Type import alias coverage should keep importedPluginName visible", structure.contains("var importedPluginName"))
+        assertTrue("Type import alias coverage should keep echoImportedPluginName visible", structure.contains("function echoImportedPluginName"))
+    }
+
+    fun testFileStructureToolAsConstDerivedTypeFixtureCoverageHook() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFileStructureToolAsConstDerivedTypeFixtureCoverageHook")) return@runBlocking
+
+        addWebstormIntegrationFixtures(
+            "derived/const-derived-types.ts"
+        )
+
+        val tool = FileStructureTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", fixtureProjectPath("derived/const-derived-types.ts"))
+        })
+
+        assertFalse("as const derived fixture should be accepted by file structure tool", result.isError)
+        val derivedStructure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
+        assertTrue("as const coverage should mention THOTH_STATUS", derivedStructure.contains("var THOTH_STATUS"))
+        assertTrue("Derived type coverage should mention ThothStatus", derivedStructure.contains("ThothStatus"))
+        assertTrue("Derived type coverage should mention DEFAULT_THOTH_STATUS", derivedStructure.contains("var DEFAULT_THOTH_STATUS"))
+        assertTrue("Derived type coverage should mention formatThothStatus", derivedStructure.contains("formatThothStatus"))
     }
 
     fun testMarkdownStructureHandlerBuildsHeadingHierarchy() {
@@ -753,6 +1071,39 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
+    fun testFindSuperMethodsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testFindSuperMethodsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = FindSuperMethodsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+        })
+
+        // Representative routing check only: JS super-method semantics may not be meaningful in minimal fixtures,
+        // but malformed symbol grammar must still be rejected by the JS/TS symbol handler path.
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
+    fun testCallHierarchyToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
+        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
+
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("language", "JavaScript")
+            put("symbol", "invalidSymbolWithoutHash")
+            put("direction", "callers")
+        })
+
+        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
+        assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
     // Registry tests that require platform services (McpSettings)
 
     fun testToolDefinitionsHaveRequiredFields() {
@@ -775,9 +1126,7 @@ class ToolsTest : BasePlatformTestCase() {
 
     private fun invokeLegacySymbolContributor(
         contributor: ChooseByNameContributor,
-        pattern: String,
         scope: GlobalSearchScope,
-        languageFilter: Set<String>?,
         nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolData>,
@@ -791,16 +1140,44 @@ class ToolsTest : BasePlatformTestCase() {
             OptimizedSymbolSearch,
             contributor,
             project,
-            pattern,
+            "ScopeSymbol",
             scope,
             10,
-            languageFilter,
+            null,
             nameFilter,
             matcher,
             results,
             seen
         )
     }
+
+    private fun addWebstormIntegrationFixtures(vararg relativePaths: String) {
+        relativePaths.forEach(::addWebstormIntegrationFixture)
+    }
+
+    private fun addWebstormIntegrationFixture(relativePath: String) {
+        val sourcePath = Path.of(JS_TS_FIXTURE_SOURCE_ROOT).resolve(relativePath)
+        myFixture.addFileToProject(fixtureProjectPath(relativePath), Files.readString(sourcePath))
+    }
+
+    private fun fixtureProjectPath(relativePath: String): String = "$JS_TS_FIXTURE_PROJECT_ROOT/$relativePath"
+
+    private fun fixtureSymbol(relativePath: String, exportName: String): String {
+        return "$JS_TS_FIXTURE_PROJECT_ROOT/${relativePath.removeJsTsExtension()}#$exportName"
+    }
+
+    private fun String.removeJsTsExtension(): String {
+        return removeSuffix(".d.ts")
+            .removeSuffix(".ts")
+            .removeSuffix(".tsx")
+            .removeSuffix(".js")
+            .removeSuffix(".jsx")
+            .removeSuffix(".mjs")
+            .removeSuffix(".cjs")
+    }
+
+    private fun errorTextless(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String =
+        (result.content.first() as ContentBlock.Text).text
 
     class LegacyContributor(
         private val itemsByName: Map<String, Array<NavigationItem>>
@@ -814,5 +1191,24 @@ class ToolsTest : BasePlatformTestCase() {
             project: com.intellij.openapi.project.Project,
             includeNonProjectItems: Boolean
         ): Array<NavigationItem> = itemsByName[name] ?: emptyArray()
+    }
+
+    private fun requireJsTsToolRoutingCapability(testName: String): Boolean {
+        if (!PluginDetectors.javaScript.isAvailable) {
+            System.err.println("$testName: skipped - JavaScript plugin not available")
+            return false
+        }
+        return try {
+            Class.forName("com.intellij.lang.javascript.psi.JSNamedElement")
+            if (LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("JavaScript") == null) {
+                System.err.println("$testName: skipped - JavaScript symbol reference handler not registered")
+                false
+            } else {
+                true
+            }
+        } catch (_: ClassNotFoundException) {
+            System.err.println("$testName: skipped - JavaScript PSI classes unavailable")
+            false
+        }
     }
 }

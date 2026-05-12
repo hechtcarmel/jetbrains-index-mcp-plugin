@@ -6,6 +6,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript.isJsTsElementOrFile
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript.resolveJsTsCallHierarchySeed
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
@@ -44,12 +46,13 @@ class CallHierarchyTool : AbstractMcpTool() {
 
         Target (mutually exclusive):
         - file + line + column: position-based lookup
-        - language + symbol: fully qualified symbol reference (currently supported for Java only)
+        - language + symbol: fully qualified symbol reference (currently supported for Java + JS/TS)
 
         Parameters: direction (required): "callers" or "callees". depth (optional, default: 3, max: 5). scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
 
         Example: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callers"}
         Example: {"language": "Java", "symbol": "com.example.Service#processRequest(String)", "direction": "callers", "scope": "project_and_libraries"}
+        Example: {"language": "JavaScript", "symbol": "src/handlers#processRequest", "direction": "callers"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
@@ -88,7 +91,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            val element = resolveCallHierarchySeed(project, arguments).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
 
@@ -118,6 +121,21 @@ class CallHierarchyTool : AbstractMcpTool() {
                 calls = hierarchyData.calls.map { convertToCallElement(it) }
             ))
         }
+    }
+
+    private fun resolveCallHierarchySeed(project: Project, arguments: JsonObject): Result<com.intellij.psi.PsiElement> {
+        val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            return Result.failure(it)
+        }
+        val explicitLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val shouldNormalizeJsTsSeed = explicitLanguage == "JavaScript" ||
+            explicitLanguage == "TypeScript" ||
+            isJsTsElementOrFile(element)
+        if (!shouldNormalizeJsTsSeed) {
+            return Result.success(element)
+        }
+
+        return Result.success(resolveJsTsCallHierarchySeed(element))
     }
 
     /**
