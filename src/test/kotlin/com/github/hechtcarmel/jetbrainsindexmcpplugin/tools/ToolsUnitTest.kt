@@ -16,11 +16,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImple
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ConvertJavaToKotlinTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
@@ -38,6 +40,40 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ToolsUnitTest : TestCase() {
+    fun testAllKnownToolsHaveOutputSchemas() {
+        val tools = listOf(
+            BuildProjectTool(),
+            CallHierarchyTool(),
+            ConvertJavaToKotlinTool(),
+            GetDiagnosticsTool(),
+            FileStructureTool(),
+            FindClassTool(),
+            FindDefinitionTool(),
+            FindFileTool(),
+            FindImplementationsTool(),
+            FindUsagesTool(),
+            FindSuperMethodsTool(),
+            FindSymbolTool(),
+            GetActiveFileTool(),
+            GetIndexStatusTool(),
+            MoveFileTool(),
+            OpenFileTool(),
+            OptimizeImportsTool(),
+            ReadFileTool(),
+            RenameSymbolTool(),
+            SafeDeleteTool(),
+            ReformatCodeTool(),
+            SearchTextTool(),
+            SyncFilesTool(),
+            TypeHierarchyTool()
+        )
+
+        assertEquals(ToolNames.ALL.sorted(), tools.map { it.name }.sorted())
+        tools.forEach { tool ->
+            assertNotNull("${tool.name} should have outputSchema", tool.outputSchema)
+        }
+    }
+
     private fun assertHasScopeAndNoLegacyFilters(properties: kotlinx.serialization.json.JsonObject?) {
         val scopeProperty = properties?.get(ParamNames.SCOPE)?.jsonObject
         assertNotNull("Should have scope property", scopeProperty)
@@ -193,6 +229,20 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
         assertNotNull("Should have className property", properties?.get(ParamNames.CLASS_NAME))
         assertHasScopeAndNoLegacyFilters(properties)
+
+        val outputSchema = tool.outputSchema!!
+        val typeElementRef = "#/\$defs/typeElement"
+        val outputProperties = outputSchema[SchemaConstants.PROPERTIES]?.jsonObject!!
+        assertEquals(typeElementRef, outputProperties["element"]?.jsonObject?.get("\$ref")?.jsonPrimitive?.content)
+        assertEquals(typeElementRef, outputProperties["supertypes"]?.jsonObject?.get("items")?.jsonObject?.get("\$ref")?.jsonPrimitive?.content)
+        assertEquals(typeElementRef, outputProperties["subtypes"]?.jsonObject?.get("items")?.jsonObject?.get("\$ref")?.jsonPrimitive?.content)
+
+        val typeElement = outputSchema["\$defs"]?.jsonObject?.get("typeElement")?.jsonObject!!
+        val supertypes = typeElement[SchemaConstants.PROPERTIES]?.jsonObject?.get("supertypes")?.jsonObject!!
+        assertEquals(
+            typeElementRef,
+            supertypes["items"]?.jsonObject?.get("\$ref")?.jsonPrimitive?.content
+        )
     }
 
     fun testCallHierarchyToolSchema() {
@@ -211,6 +261,19 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
         assertNotNull("Should have symbol property", properties?.get(ParamNames.SYMBOL))
         assertHasScopeAndNoLegacyFilters(properties)
+
+        val outputSchema = tool.outputSchema!!
+        val callElementRef = "#/\$defs/callElement"
+        val outputProperties = outputSchema[SchemaConstants.PROPERTIES]?.jsonObject!!
+        assertEquals(callElementRef, outputProperties["element"]?.jsonObject?.get("\$ref")?.jsonPrimitive?.content)
+        assertEquals(callElementRef, outputProperties["calls"]?.jsonObject?.get("items")?.jsonObject?.get("\$ref")?.jsonPrimitive?.content)
+
+        val callElement = outputSchema["\$defs"]?.jsonObject?.get("callElement")?.jsonObject!!
+        val children = callElement[SchemaConstants.PROPERTIES]?.jsonObject?.get("children")?.jsonObject!!
+        assertEquals(
+            callElementRef,
+            children["items"]?.jsonObject?.get("\$ref")?.jsonPrimitive?.content
+        )
     }
 
     fun testFindImplementationsToolSchema() {

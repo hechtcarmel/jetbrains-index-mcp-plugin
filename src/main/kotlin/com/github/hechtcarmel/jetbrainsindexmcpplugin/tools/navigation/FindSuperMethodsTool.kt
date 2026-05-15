@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 
@@ -43,25 +44,87 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
+        .file(
+            required = false,
+            description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup."
+        )
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .property(
+            "method", SchemaBuilder.tool()
+                .stringProperty("name", "Method name.", required = true)
+                .stringProperty("signature", "Method signature.", required = true)
+                .stringProperty("containingClass", "Class or type that contains the method.", required = true)
+                .stringProperty("file", "Project-relative file path containing the method.", required = true)
+                .intProperty("line", "1-based line number of the method.", required = true)
+                .intProperty("column", "1-based column number of the method.", required = true)
+                .stringProperty(
+                    "language",
+                    "Programming language for the method, when known.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true
+        )
+        .arrayProperty(
+            "hierarchy", "Super method hierarchy from immediate parent to root.", SchemaBuilder.tool()
+                .stringProperty("name", "Super method name.", required = true)
+                .stringProperty("signature", "Super method signature.", required = true)
+                .stringProperty(
+                    "containingClass",
+                    "Class or interface that declares the super method.",
+                    required = true
+                )
+                .stringProperty("containingClassKind", "Kind of the declaring type.", required = true)
+                .stringProperty(
+                    "file",
+                    "Project-relative file path containing the super method, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "line",
+                    "1-based line number of the super method, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "column",
+                    "1-based column number of the super method, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .booleanProperty("isInterface", "Whether the declaring type is an interface.", required = true)
+                .intProperty("depth", "Inheritance depth from the original method.", required = true)
+                .stringProperty(
+                    "language",
+                    "Programming language for the super method, when known.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true
+        )
+        .intProperty("totalCount", "Number of super methods in the hierarchy.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
-                return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
-            }
+            val element =
+                resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+                    return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+                }
 
             // Find appropriate handler for this element's language
             val handler = LanguageHandlerRegistry.getSuperMethodsHandler(element)
             if (handler == null) {
                 return@suspendingReadAction createErrorResult(
                     "No super methods handler available for language: ${element.language.id}. " +
-                    "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()}"
+                            "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForSuperMethods()}"
                 )
             }
 
@@ -75,32 +138,34 @@ class FindSuperMethodsTool : AbstractMcpTool() {
             }
 
             // Convert handler result to tool result
-            createJsonResult(SuperMethodsResult(
-                method = MethodInfo(
-                    name = superMethodsData.method.name,
-                    signature = superMethodsData.method.signature,
-                    containingClass = superMethodsData.method.containingClass,
-                    file = superMethodsData.method.file,
-                    line = superMethodsData.method.line,
-                    column = superMethodsData.method.column,
-                    language = superMethodsData.method.language
-                ),
-                hierarchy = superMethodsData.hierarchy.map { superMethod ->
-                    SuperMethodInfo(
-                        name = superMethod.name,
-                        signature = superMethod.signature,
-                        containingClass = superMethod.containingClass,
-                        containingClassKind = superMethod.containingClassKind,
-                        file = superMethod.file,
-                        line = superMethod.line,
-                        column = superMethod.column,
-                        isInterface = superMethod.isInterface,
-                        depth = superMethod.depth,
-                        language = superMethod.language
-                    )
-                },
-                totalCount = superMethodsData.hierarchy.size
-            ))
+            createJsonResult(
+                SuperMethodsResult(
+                    method = MethodInfo(
+                        name = superMethodsData.method.name,
+                        signature = superMethodsData.method.signature,
+                        containingClass = superMethodsData.method.containingClass,
+                        file = superMethodsData.method.file,
+                        line = superMethodsData.method.line,
+                        column = superMethodsData.method.column,
+                        language = superMethodsData.method.language
+                    ),
+                    hierarchy = superMethodsData.hierarchy.map { superMethod ->
+                        SuperMethodInfo(
+                            name = superMethod.name,
+                            signature = superMethod.signature,
+                            containingClass = superMethod.containingClass,
+                            containingClassKind = superMethod.containingClassKind,
+                            file = superMethod.file,
+                            line = superMethod.line,
+                            column = superMethod.column,
+                            isInterface = superMethod.isInterface,
+                            depth = superMethod.depth,
+                            language = superMethod.language
+                        )
+                    },
+                    totalCount = superMethodsData.hierarchy.size
+                )
+            )
         }
     }
 }

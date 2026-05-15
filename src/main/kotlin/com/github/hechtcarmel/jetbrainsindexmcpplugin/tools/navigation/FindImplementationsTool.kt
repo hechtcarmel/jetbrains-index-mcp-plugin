@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.util.PsiModificationTracker
@@ -68,6 +69,36 @@ class FindImplementationsTool : AbstractMcpTool() {
         .scopeProperty("Search scope. Default: project_files.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "implementations", "Implementations found for the target symbol.", SchemaBuilder.tool()
+                .stringProperty("name", "Implementing class or method name.", required = true)
+                .stringProperty("file", "Project-relative file path containing the implementation.", required = true)
+                .intProperty("line", "1-based line number of the implementation.", required = true)
+                .intProperty("column", "1-based column number of the implementation.", required = true)
+                .stringProperty("kind", "Implementation kind, such as class or method.", required = true)
+                .stringProperty(
+                    "language",
+                    "Programming language for the implementation, when known.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true
+        )
+        .intProperty("totalCount", "Total number of implementations returned for this page.", required = true)
+        .stringProperty(
+            "nextCursor",
+            "Cursor for the next result page, when more results are available.",
+            required = true,
+            nullable = true
+        )
+        .booleanProperty("hasMore", "Whether more implementations are available.", required = true)
+        .intProperty("totalCollected", "Total number of implementations collected for pagination.", required = true)
+        .intProperty("offset", "Zero-based offset of this page in the collected results.", required = true)
+        .intProperty("pageSize", "Number of results requested for this page.", required = true)
+        .booleanProperty("stale", "Whether the cached pagination data may be stale.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

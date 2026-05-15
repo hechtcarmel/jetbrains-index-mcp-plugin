@@ -33,6 +33,12 @@ class OpenFileTool : AbstractMcpTool() {
         .intProperty("column", "1-based column number to navigate to. Requires line to be specified.")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .stringProperty("file", "Project-relative path of the opened file.", required = true)
+        .booleanProperty("opened", "Whether the file was opened successfully.", required = true)
+        .stringProperty("message", "Human-readable open file status message.", required = true)
+        .build()
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val filePath = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")

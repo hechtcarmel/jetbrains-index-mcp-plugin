@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
@@ -78,6 +79,49 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             put("default", false)
             put("description", "Force deletion even if usages exist. Default: false. Use with caution!")
         })
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("success", "Whether safe delete completed successfully.")
+        .stringArrayProperty("affectedFiles", "Project-relative files affected by safe delete.")
+        .intProperty("changesCount", "Number of files or references changed by safe delete.")
+        .stringProperty("message", "Human-readable safe delete status message.")
+        .booleanProperty("canDelete", "Whether the target can be deleted without forcing.")
+        .stringProperty("elementName", "Name of the symbol considered for deletion.")
+        .stringProperty("elementType", "Kind of symbol considered for deletion.")
+        .intProperty("usageCount", "Number of usages blocking symbol deletion.")
+        .stringProperty("fileName", "Name of the file considered for deletion.")
+        .intProperty("symbolCount", "Number of symbols found in the file.")
+        .intProperty("externalUsageCount", "Number of external usages blocking file deletion.")
+        .arrayProperty(
+            "blockingUsages", "Usages that prevent safe deletion.", items = SchemaBuilder.tool()
+                .stringProperty("file", "Project-relative file path containing the usage.", required = true)
+                .intProperty("line", "1-based line number of the usage.", required = true)
+                .intProperty("column", "1-based column number of the usage.", required = true)
+                .stringProperty("context", "Source context surrounding the usage.", required = true)
+                .build()
+        )
+        .stringProperty("error", "Error explaining why no target symbol could be deleted.")
+        .property(
+            "position",
+            SchemaBuilder.tool()
+                .intProperty("line", "1-based requested line number.", required = true)
+                .intProperty("column", "1-based requested column number.", required = true)
+                .stringProperty("elementType", "PSI element type at the requested position.", required = true)
+                .build()
+        )
+        .arrayProperty(
+            "suggestions",
+            "Nearby symbols that may be valid safe delete targets.",
+            items = SchemaBuilder.tool()
+                .stringProperty("name", "Suggested symbol name.", required = true)
+                .stringProperty("type", "Suggested symbol type.", required = true)
+                .intProperty("line", "1-based line number of the suggested symbol.", required = true)
+                .intProperty("column", "1-based column number of the suggested symbol.", required = true)
+                .intProperty("distance", "Distance from the requested position.", required = true)
+                .build()
+        )
+        .stringProperty("hint", "Hint for selecting a valid symbol position.")
         .build()
 
     /**

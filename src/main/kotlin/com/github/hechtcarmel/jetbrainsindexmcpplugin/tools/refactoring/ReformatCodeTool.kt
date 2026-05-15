@@ -66,6 +66,13 @@ class ReformatCodeTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.REARRANGE_CODE, "Rearrange code members according to arrangement rules. Default: true.")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("success", "Whether code reformatting completed successfully.", required = true)
+        .stringArrayProperty("affectedFiles", "Project-relative files affected by code reformatting.", required = true)
+        .intProperty("changesCount", "Number of files changed by code reformatting.", required = true)
+        .stringProperty("message", "Human-readable reformatting status message.", required = true)
+        .build()
+
     /**
      * Data class holding validated reformat parameters from Phase 1.
      */

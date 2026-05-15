@@ -770,6 +770,9 @@ class ToolsTest : BasePlatformTestCase() {
 
             assertNotNull("Definition should have inputSchema", definition.inputSchema)
             assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+            assertNotNull("Definition should have outputSchema", definition.outputSchema)
+            assertEquals(SchemaConstants.TYPE_OBJECT, definition.outputSchema?.get(SchemaConstants.TYPE)?.jsonPrimitive?.content)
         }
     }
 

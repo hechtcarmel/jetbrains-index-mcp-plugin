@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TextMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiComment
@@ -69,6 +70,31 @@ class SearchTextTool : AbstractMcpTool() {
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "matches", "Text matches found for the query.", SchemaBuilder.tool()
+                .stringProperty("file", "Project-relative file path containing the text match.", required = true)
+                .intProperty("line", "1-based line number of the match.", required = true)
+                .intProperty("column", "1-based column number of the match.", required = true)
+                .stringProperty("context", "Source context surrounding the match.", required = true)
+                .stringProperty("contextType", "Context category, such as code, comments, or strings.", required = true)
+                .build(), required = true
+        )
+        .intProperty("totalCount", "Total number of text matches returned for this page.", required = true)
+        .stringProperty("query", "Original text search query.", required = true)
+        .stringProperty(
+            "nextCursor",
+            "Cursor for the next result page, when more results are available.",
+            required = true,
+            nullable = true
+        )
+        .booleanProperty("hasMore", "Whether more text matches are available.", required = true)
+        .intProperty("totalCollected", "Total number of text matches collected for pagination.", required = true)
+        .intProperty("offset", "Zero-based offset of this page in the collected results.", required = true)
+        .intProperty("pageSize", "Number of results requested for this page.", required = true)
+        .booleanProperty("stale", "Whether the cached pagination data may be stale.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

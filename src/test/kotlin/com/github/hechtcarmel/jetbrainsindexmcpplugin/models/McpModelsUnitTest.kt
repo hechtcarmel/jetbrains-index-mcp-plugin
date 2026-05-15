@@ -109,7 +109,8 @@ class McpModelsUnitTest : TestCase() {
         val definition = ToolDefinition(
             name = "test_tool",
             description = "A test tool",
-            inputSchema = schema
+            inputSchema = schema,
+            outputSchema = schema
         )
 
         val serialized = json.encodeToString(definition)
@@ -118,6 +119,22 @@ class McpModelsUnitTest : TestCase() {
         assertEquals("test_tool", deserialized.name)
         assertEquals("A test tool", deserialized.description)
         assertNotNull(deserialized.inputSchema)
+        assertNotNull(deserialized.outputSchema)
+        assertTrue(serialized.contains("\"outputSchema\""))
+    }
+
+    fun testToolDefinitionOmitsMissingOutputSchema() {
+        val schema = buildJsonObject { put("type", "object") }
+
+        val serialized = json.encodeToString(
+            ToolDefinition(
+                name = "test_tool",
+                description = "A test tool",
+                inputSchema = schema
+            )
+        )
+
+        assertFalse(serialized.contains("\"outputSchema\""))
     }
 
     // ServerInfo tests
