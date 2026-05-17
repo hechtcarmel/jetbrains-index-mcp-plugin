@@ -1,12 +1,17 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeStructureViewExtractor
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import com.intellij.navigation.ItemPresentation
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
@@ -60,6 +65,7 @@ object PhpHandlers {
             registry.registerImplementationsHandler(PhpImplementationsHandler())
             registry.registerCallHierarchyHandler(PhpCallHierarchyHandler())
             registry.registerSuperMethodsHandler(PhpSuperMethodsHandler())
+            registry.registerStructureHandler(PhpStructureHandler())
 
             LOG.info("Registered PHP handlers")
         } catch (e: ClassNotFoundException) {
@@ -436,6 +442,306 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
             } catch (e2: Exception) {
                 null
             }
+        }
+    }
+}
+
+/**
+ * PHP implementation of [StructureHandler].
+ *
+ * Uses IntelliJ's public Structure View API so the PHP plugin owns PHP tree
+ * construction, ordering, and nesting. This handler only normalizes the
+ * resulting tree elements into the MCP [StructureNode] model.
+ */
+class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHandler {
+
+    override val languageId = "PHP"
+
+    private val phpNamespaceClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.PhpNamespace") }
+    private val phpConstantClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.Constant") }
+    private val phpEnumCaseClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.PhpEnumCase") }
+    private val phpIncludeClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.PhpInclude") }
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isPhpLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean {
+        return PluginDetectors.php.isAvailable && phpClassClass != null && methodClass != null
+    }
+
+    override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
+        if (!canHandle(file)) return emptyList()
+
+        return IdeStructureViewExtractor.extract(
+            file = file,
+            project = project,
+            classifier = PhpStructureClassifier()
+        )
+    }
+
+    private inner class PhpStructureClassifier : IdeStructureViewExtractor.Classifier {
+        override fun describe(
+            value: Any?,
+            presentation: ItemPresentation
+        ): IdeStructureViewExtractor.StructureElementInfo? {
+            val element = value as? PsiElement ?: return null
+
+            return when {
+                isPhpClass(element) -> describeClass(element, presentation)
+                isMethod(element) -> describeMethod(element, presentation)
+                isFunction(element) -> describeFunction(element, presentation)
+                isField(element) -> describeField(element, presentation)
+                isPhpNamespace(element) -> describeNamespace(element, presentation)
+                isPhpConstant(element) -> describeConstant(element, presentation)
+                isPhpEnumCase(element) -> describeEnumCase(element, presentation)
+                isPhpInclude(element) -> describeInclude(element, presentation)
+                else -> null
+            }
+        }
+    }
+
+    private fun describeClass(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = getName(element) ?: presentation.presentableText?.trim() ?: return null
+        val kind = when {
+            invokeBoolean(element, "isInterface") -> StructureKind.INTERFACE
+            invokeBoolean(element, "isTrait") -> StructureKind.TRAIT
+            invokeBoolean(element, "isEnum") -> StructureKind.ENUM
+            else -> StructureKind.CLASS
+        }
+
+        val signatureParts = mutableListOf<String>()
+        getSuperClass(element)?.let { superClass ->
+            val superName = getName(superClass) ?: getFQN(superClass)
+            if (!superName.isNullOrBlank()) {
+                signatureParts += "extends $superName"
+            }
+        }
+
+        val interfaces = getImplementedInterfaces(element)
+            ?.filterIsInstance<PsiElement>()
+            ?.mapNotNull { getName(it) ?: getFQN(it) }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+        if (interfaces.isNotEmpty()) {
+            signatureParts += "implements ${interfaces.joinToString(", ")}"
+        }
+
+        val traits = getTraits(element)
+            ?.filterIsInstance<PsiElement>()
+            ?.mapNotNull { getName(it) ?: getFQN(it) }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+        if (traits.isNotEmpty()) {
+            signatureParts += "uses ${traits.joinToString(", ")}"
+        }
+
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = kind,
+            modifiers = modifiersFor(element, includeVisibility = false),
+            signature = signatureParts.joinToString(" ").ifBlank { null }
+        )
+    }
+
+    private fun describeNamespace(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = getName(element)
+            ?: invokeString(element, "getFQN")
+            ?: presentation.presentableText?.trim()
+            ?: return null
+
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name.trim('\\'),
+            kind = StructureKind.NAMESPACE
+        )
+    }
+
+    private fun describeMethod(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = displayName(element, presentation) ?: return null
+        val kind = if (name.equals("__construct", ignoreCase = true) || invokeBoolean(element, "isConstructor")) {
+            StructureKind.CONSTRUCTOR
+        } else {
+            StructureKind.METHOD
+        }
+
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = kind,
+            modifiers = modifiersFor(element, includeVisibility = true),
+            signature = signatureFromPresentation(name, presentation)
+        )
+    }
+
+    private fun describeFunction(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = displayName(element, presentation) ?: return null
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = StructureKind.FUNCTION,
+            modifiers = modifiersFor(element, includeVisibility = false),
+            signature = signatureFromPresentation(name, presentation)
+        )
+    }
+
+    private fun describeField(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = displayName(element, presentation) ?: return null
+        val kind = if (invokeBoolean(element, "isConstant")) {
+            StructureKind.CONSTANT
+        } else {
+            StructureKind.PROPERTY
+        }
+
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = kind,
+            modifiers = modifiersFor(element, includeVisibility = true),
+            signature = signatureFromPresentation(name, presentation)
+        )
+    }
+
+    private fun describeConstant(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = displayName(element, presentation) ?: return null
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = StructureKind.CONSTANT,
+            modifiers = modifiersFor(element, includeVisibility = true),
+            signature = signatureFromPresentation(name, presentation)
+        )
+    }
+
+    private fun describeEnumCase(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = displayName(element, presentation) ?: return null
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = StructureKind.ENUM_CASE,
+            signature = signatureFromPresentation(name, presentation)
+        )
+    }
+
+    private fun describeInclude(
+        element: PsiElement,
+        presentation: ItemPresentation
+    ): IdeStructureViewExtractor.StructureElementInfo? {
+        val name = presentation.presentableText?.trim()
+            ?: element.text?.trim()?.lineSequence()?.firstOrNull()
+            ?: return null
+
+        return IdeStructureViewExtractor.StructureElementInfo(
+            name = name,
+            kind = StructureKind.INCLUDE
+        )
+    }
+
+    private fun isPhpNamespace(element: PsiElement): Boolean {
+        return phpNamespaceClass?.isInstance(element) == true
+    }
+
+    private fun isPhpConstant(element: PsiElement): Boolean {
+        return phpConstantClass?.isInstance(element) == true
+    }
+
+    private fun isPhpEnumCase(element: PsiElement): Boolean {
+        return phpEnumCaseClass?.isInstance(element) == true
+    }
+
+    private fun isPhpInclude(element: PsiElement): Boolean {
+        return phpIncludeClass?.isInstance(element) == true ||
+            element.javaClass.name.contains("Include", ignoreCase = true)
+    }
+
+    private fun modifiersFor(element: PsiElement, includeVisibility: Boolean): List<String> {
+        val modifiers = mutableListOf<String>()
+
+        if (includeVisibility) {
+            accessModifier(element)?.let { modifiers += it }
+        }
+        if (invokeBoolean(element, "isAbstract")) modifiers += "abstract"
+        if (invokeBoolean(element, "isFinal")) modifiers += "final"
+        if (invokeBoolean(element, "isStatic")) modifiers += "static"
+        if (invokeBoolean(element, "isReadonly")) modifiers += "readonly"
+
+        return modifiers.distinct()
+    }
+
+    private fun accessModifier(element: PsiElement): String? {
+        val access = invokeString(element, "getAccess")?.lowercase() ?: return null
+        return when {
+            "private" in access -> "private"
+            "protected" in access -> "protected"
+            "public" in access -> "public"
+            else -> null
+        }
+    }
+
+    private fun displayName(element: PsiElement, presentation: ItemPresentation): String? {
+        val psiName = getName(element)?.takeIf { it.isNotBlank() }
+        val text = presentation.presentableText?.trim()?.takeIf { it.isNotBlank() }
+        if (psiName == null) return text
+        val presentationToken = text
+            ?.substringBefore(' ')
+            ?.substringBefore(':')
+            ?.substringBefore('(')
+
+        return if (presentationToken == "\$$psiName") presentationToken else psiName
+    }
+
+    private fun signatureFromPresentation(name: String, presentation: ItemPresentation): String? {
+        val text = presentation.presentableText?.trim() ?: return null
+        val normalizedName = name.removePrefix("\$")
+        val prefixes = listOf(name, "\$$normalizedName").distinct()
+
+        for (prefix in prefixes) {
+            if (text == prefix) return null
+            if (text.startsWith(prefix)) {
+                return text.removePrefix(prefix).trim().ifBlank { null }
+            }
+        }
+
+        return null
+    }
+
+    private fun invokeBoolean(element: PsiElement, methodName: String): Boolean {
+        return try {
+            element.javaClass.getMethod(methodName).invoke(element) as? Boolean ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun invokeString(element: PsiElement, methodName: String): String? {
+        return try {
+            element.javaClass.getMethod(methodName).invoke(element)?.toString()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun loadOptionalClass(className: String): Class<*>? {
+        return try {
+            Class.forName(className)
+        } catch (e: ClassNotFoundException) {
+            LOG.debug("$className not found")
+            null
         }
     }
 }

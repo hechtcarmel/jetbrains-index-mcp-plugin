@@ -99,12 +99,15 @@ object TreeFormatter {
             StructureKind.OBJECT -> "object"
             StructureKind.TRAIT -> "trait"
             StructureKind.CONSTRUCTOR -> "constructor"
+            StructureKind.CONSTANT -> "constant"
+            StructureKind.ENUM_CASE -> "enum case"
             StructureKind.NAMESPACE -> "namespace"
             StructureKind.PACKAGE -> "package"
             StructureKind.MODULE -> "module"
             StructureKind.TYPE_ALIAS -> "typealias"
             StructureKind.VARIABLE -> "var"
             StructureKind.HEADING -> "heading"
+            StructureKind.INCLUDE -> "include"
             StructureKind.UNKNOWN -> "unknown"
 
             // Language-specific keywords for methods, functions, fields, and properties

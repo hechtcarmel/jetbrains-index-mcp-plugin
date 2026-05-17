@@ -39,7 +39,7 @@ These tools activate based on available language plugins:
 | `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
+| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
 
 ### Java-Specific Refactoring Tools
 
@@ -1195,7 +1195,7 @@ These tools activate based on available language plugins:
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
-Navigation tools appear according to installed language plugins. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
+Navigation tools appear according to installed language plugins. PHP file structure requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
 
 ### ide_type_hierarchy
 
@@ -1605,10 +1605,12 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Markdown.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
+
+PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
 **Use when:**
-- Getting an overview of a file's classes, methods, fields, or Markdown heading outline
+- Getting an overview of a file's classes, methods, fields, PHP namespaces/constants/enum cases, or Markdown heading outline
 - Understanding code organization without reading the full file
 - Navigating large files
 

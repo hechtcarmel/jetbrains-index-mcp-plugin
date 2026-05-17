@@ -210,7 +210,9 @@ Get hierarchical file structure like IDE's Structure panel.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
-**Languages**: Java, Kotlin, Python, JS/TS, Markdown.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown.
+
+PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
 ### ide_read_file (disabled by default)
 Read file content by path or qualified name, including library/jar sources.

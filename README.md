@@ -47,7 +47,7 @@ These tools activate based on installed language plugins:
 - **Call Hierarchy** - Trace method/function call relationships
 - **Find Implementations** - Discover interface/abstract implementations
 - **Find Super Methods** - Navigate method override hierarchies
-- **File Structure** - View hierarchical file structure like IDE's Structure view, including Markdown heading outlines (disabled by default)
+- **File Structure** - View hierarchical file structure like IDE's Structure view, including PHP Structure View trees and Markdown heading outlines (disabled by default)
 
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
@@ -260,7 +260,9 @@ These tools activate based on available language plugins:
 | `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
 | `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+
+PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
 ### Java-Specific Refactoring Tools
 
