@@ -10,10 +10,10 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | `file` | string | For project files, path relative to project root (e.g., `src/main/App.java`). `ide_read_file` and some read-only position-based navigation tools also accept dependency/library paths returned by the plugin as absolute paths or `jar://` URLs; check each tool section because support is tool-specific. |
 | `line` | integer | **1-based** line number |
 | `column` | integer | **1-based** column number. Place on the symbol name, not whitespace. For dotted expressions like `json.dumps()` or `os.path.join()`, point to the member token (`dumps`, `join`) when targeting the member definition. |
-| `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
-| `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
+| `language` | string | Language of the symbol (e.g., `"Java"`, `"PHP"`). Required when using `symbol`. |
+| `symbol` | string | Fully qualified symbol reference. Java format: `com.example.ClassName`, `com.example.ClassName#memberName`. PHP format: `\\App\\Service\\UserService`, `\\App\\Service\\UserService::method()`, `\\App\\Service\\UserService::$property`. |
 
-**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. The two groups are **mutually exclusive**. Currently supported for Java only. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. The two groups are **mutually exclusive**. Supported languages: Java, PHP. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
 
 ## Response Format
 
