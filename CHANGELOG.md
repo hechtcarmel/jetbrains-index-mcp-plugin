@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **PHP symbol reference handler** — PHP now supports `language`+`symbol` parameter mode for `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, and `ide_find_super_methods`. Accepts symbol formats with PHP namespaces (e.g., `\\App\\Service\\UserService`, `\\App\\Service\\UserService::find()`, `\\App\\Service\\UserService::\$property`). Fixes [#179](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/179).
 
 ## [4.16.3] - 2026-05-06
 ### Fixed

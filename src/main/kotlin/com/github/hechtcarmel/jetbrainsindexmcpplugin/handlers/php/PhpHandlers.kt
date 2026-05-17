@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
@@ -7,6 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
@@ -60,6 +63,7 @@ object PhpHandlers {
             registry.registerImplementationsHandler(PhpImplementationsHandler())
             registry.registerCallHierarchyHandler(PhpCallHierarchyHandler())
             registry.registerSuperMethodsHandler(PhpSuperMethodsHandler())
+            registry.registerSymbolReferenceHandler(PhpSymbolReferenceHandler())
 
             LOG.info("Registered PHP handlers")
         } catch (e: ClassNotFoundException) {
@@ -436,6 +440,93 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
             } catch (e2: Exception) {
                 null
             }
+        }
+    }
+
+    /**
+     * Finds a PHP class, interface, or trait by its fully qualified name using PhpIndex.
+     */
+    protected fun getClassByFQN(project: Project, fqn: String): PsiElement? {
+        val phpIndex = getPhpIndex(project) ?: return null
+        val lookupMethods = listOf(
+            "getClassesByFQN",
+            "getInterfacesByFQN",
+            "getTraitsByFQN"
+        )
+
+        for (methodName in lookupMethods) {
+            val element = try {
+                val method = phpIndex.javaClass.getMethod(methodName, String::class.java)
+                toPsiElements(method.invoke(phpIndex, fqn)).firstOrNull()
+            } catch (e: NoSuchMethodException) {
+                LOG.debug("PhpIndex.$methodName(String) is not available")
+                null
+            } catch (e: Exception) {
+                LOG.debug("Error resolving PHP type by FQN $fqn using $methodName: ${e.message}")
+                null
+            }
+
+            if (element != null) {
+                return element
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Finds a field by name in a PhpClass using reflection.
+     * Uses `getOwnFields()` API, falling back to searching `getFields()`.
+     */
+    protected fun findFieldInClass(phpClass: PsiElement, fieldName: String): PsiElement? {
+        return findNamedElementInClassCollection(
+            phpClass = phpClass,
+            memberName = fieldName,
+            primaryMethodName = "getOwnFields",
+            fallbackMethodName = "getFields"
+        )
+    }
+
+    /**
+     * Finds a constant by name in a PhpClass using reflection.
+     * Uses `getOwnConstants()` API, falling back to searching `getConstants()`.
+     */
+    protected fun findConstantInClass(phpClass: PsiElement, constantName: String): PsiElement? {
+        return findNamedElementInClassCollection(
+            phpClass = phpClass,
+            memberName = constantName,
+            primaryMethodName = "getOwnConstants",
+            fallbackMethodName = "getConstants"
+        )
+    }
+
+    private fun findNamedElementInClassCollection(
+        phpClass: PsiElement,
+        memberName: String,
+        primaryMethodName: String,
+        fallbackMethodName: String
+    ): PsiElement? {
+        fun invoke(methodName: String): PsiElement? {
+            val method = phpClass.javaClass.getMethod(methodName)
+            return toPsiElements(method.invoke(phpClass)).find { getName(it) == memberName }
+        }
+
+        return try {
+            invoke(primaryMethodName) ?: invoke(fallbackMethodName)
+        } catch (e: Exception) {
+            try {
+                invoke(fallbackMethodName)
+            } catch (e2: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun toPsiElements(value: Any?): Sequence<PsiElement> {
+        return when (value) {
+            is Array<*> -> value.asSequence().filterIsInstance<PsiElement>()
+            is Iterable<*> -> value.asSequence().filterIsInstance<PsiElement>()
+            else -> emptySequence()
         }
     }
 }
@@ -1152,6 +1243,156 @@ class PhpSuperMethodsHandler : BasePhpHandler<SuperMethodsData>(), SuperMethodsH
             "$methodName($params)"
         } catch (e: Exception) {
             getName(method) ?: "unknown"
+        }
+    }
+}
+
+/**
+ * PHP implementation of [SymbolReferenceHandler].
+ *
+ * Resolves PHP symbol reference strings (e.g., `\\App\\Service\\UserService::find()`) to PSI elements.
+ *
+ * Supported symbol formats:
+ * - `\\App\\Service\\UserService` - Class/interface/trait by fully qualified name
+ * - `App\\Service\\UserService` - Same, without leading backslash (auto-normalized)
+ * - `\\App\\Service\\UserService::find` - Method by name
+ * - `\\App\\Service\\UserService::find()` - Method with parameters (ignored; PHP has no overloading by type)
+ * - `\\App\\Service\\UserService::\$name` - Field/property
+ * - `\\App\\Service\\UserService::ROLE_ADMIN` - Class constant
+ */
+class PhpSymbolReferenceHandler : BasePhpHandler<PsiNamedElement>(), SymbolReferenceHandler {
+
+    companion object {
+        // A valid PHP identifier (simplified: covers the vast majority of code)
+        private const val IDENTIFIER = """[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*"""
+
+        // A PHP namespace segment (same as identifier)
+        private const val NAMESPACE_SEGMENT = IDENTIFIER
+
+        // Fully qualified name with optional leading backslash and backslash-separated segments
+        // In the triple-quoted string, \\ = regex \\ (matches one literal \\)
+        private const val FQN = """\\?(?:$NAMESPACE_SEGMENT\\)*$NAMESPACE_SEGMENT"""
+
+        // Property prefixed with $, regex: \$ matches literal $
+        private const val PROPERTY = "\\$" + IDENTIFIER
+
+        // Method call with optional parameters, e.g. methodName(...)
+        private const val METHOD_CALL = """$IDENTIFIER\([^)]*\)"""
+
+        // Member: method call, property, or plain identifier (constant/method name)
+        private const val MEMBER = """(?:$METHOD_CALL|$PROPERTY|$IDENTIFIER)"""
+
+        // Full pattern: FQN with optional ::member
+        internal val PHP_SYMBOL_PATTERN = """^$FQN(::$MEMBER)?$""".toRegex()
+
+        private val SYMBOL_EXAMPLES = listOf(
+            "'\\App\\Service\\UserService'",
+            "'\\App\\Service\\UserService::find'",
+            "'\\App\\Service\\UserService::find()'",
+            "'\\App\\Service\\UserService::\$property'",
+            "'\\App\\Service\\UserService::ROLE_ADMIN'"
+        )
+    }
+
+    override val languageId = "PHP"
+    override val languageName = "PHP"
+
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isPhpLanguage(element)
+
+    override fun isAvailable(): Boolean =
+        PluginDetectors.php.isAvailable && phpClassClass != null && phpNamedElementClass != null
+
+    override fun resolveSymbol(project: Project, symbol: String): Result<PsiNamedElement> {
+        val trimmed = symbol.trim()
+
+        if (!PHP_SYMBOL_PATTERN.matches(trimmed)) {
+            return ErrorMessages.invalidSymbolFormat(trimmed, SYMBOL_EXAMPLES).toArgumentFailure()
+        }
+
+        val fullyQualifiedName: String
+        val memberPart: String?
+
+        val memberSeparatorIndex = trimmed.indexOf("::")
+        if (memberSeparatorIndex >= 0) {
+            fullyQualifiedName = trimmed.substring(0, memberSeparatorIndex)
+            memberPart = trimmed.substring(memberSeparatorIndex + 2)
+        } else {
+            fullyQualifiedName = trimmed
+            memberPart = null
+        }
+
+        // Normalize to leading backslash (PhpIndex resolves both forms but leading \ is canonical)
+        val classFqn = if (fullyQualifiedName.startsWith("\\")) fullyQualifiedName else "\\$fullyQualifiedName"
+
+        val phpClass = getClassByFQN(project, classFqn)
+            ?: return ErrorMessages.typeNotFound(classFqn, project.name).toArgumentFailure()
+
+        if (memberPart == null) {
+            return phpClass.toPsiNamedElementResult()
+        }
+
+        return resolvePhpMember(phpClass, classFqn, memberPart)
+    }
+
+    private fun resolvePhpMember(
+        phpClass: PsiElement,
+        classFqn: String,
+        memberPart: String
+    ): Result<PsiNamedElement> {
+        // Strip parameter parentheses for method lookup (PHP has no overloading by type)
+        val hasParens = memberPart.endsWith(")") && memberPart.contains("(")
+        val memberName = if (hasParens) {
+            memberPart.substring(0, memberPart.indexOf('('))
+        } else {
+            memberPart
+        }
+
+        val isProperty = memberName.startsWith("$")
+
+        if (isProperty) {
+            // Field/property: strip the leading $ for the getName comparison
+            val fieldName = memberName.substring(1)
+            val field = findFieldInClass(phpClass, fieldName)
+                ?: return ErrorMessages.memberNotFoundInType(memberPart, classFqn).toArgumentFailure()
+            return field.toPsiNamedElementResult()
+        }
+
+        if (hasParens) {
+            // Explicit method call syntax with (): look up method by name (ignore params)
+            val method = findMethodInClass(phpClass, memberName)
+                ?: return ErrorMessages.memberNotFoundInType(memberPart, classFqn).toArgumentFailure()
+            return method.toPsiNamedElementResult()
+        }
+
+        // No parentheses and no $ prefix: could be constant, method, or field
+        // Resolve order: constant -> method -> field as graceful fallback
+        // Try constant first
+        val constant = findConstantInClass(phpClass, memberName)
+        if (constant != null) {
+            return constant.toPsiNamedElementResult()
+        }
+
+        // Try method
+        val method = findMethodInClass(phpClass, memberName)
+        if (method != null) {
+            return method.toPsiNamedElementResult()
+        }
+
+        // Try field (some PHP property names don't use $ syntax in getName)
+        val field = findFieldInClass(phpClass, memberName)
+        if (field != null) {
+            return field.toPsiNamedElementResult()
+        }
+
+        return ErrorMessages.memberNotFoundInType(memberPart, classFqn).toArgumentFailure()
+    }
+
+    private fun PsiElement.toPsiNamedElementResult(): Result<PsiNamedElement> {
+        return if (this is PsiNamedElement) {
+            Result.success(this)
+        } else {
+            ErrorMessages.SYMBOL_NOT_RESOLVED.toArgumentFailure()
         }
     }
 }
