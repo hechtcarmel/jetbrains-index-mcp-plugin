@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ActiveFileInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.GetActiveFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
@@ -29,6 +30,39 @@ class GetActiveFileTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "activeFiles", "Active editor files visible in the IDE.", items = SchemaBuilder.tool()
+                .stringProperty("file", "Project-relative path of the active file.", required = true)
+                .intProperty(
+                    "line",
+                    "1-based caret line number, when an editor caret is available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "column",
+                    "1-based caret column number, when an editor caret is available.",
+                    required = true,
+                    nullable = true
+                )
+                .stringProperty(
+                    "selectedText",
+                    "Selected text in the editor, when present.",
+                    required = true,
+                    nullable = true
+                )
+                .booleanProperty("hasSelection", "Whether the active editor has selected text.", required = true)
+                .stringProperty(
+                    "language",
+                    "File type or language name for the active file, when known.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true
+        )
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

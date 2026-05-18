@@ -29,6 +29,17 @@ class GetIndexStatusTool : AbstractMcpTool() {
         .projectPath()
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("isDumbMode", "Whether the IDE is currently in dumb mode.", required = true)
+        .booleanProperty("isIndexing", "Whether indexing is currently active.", required = true)
+        .numberProperty(
+            "indexingProgress",
+            "Indexing progress from 0.0 to 1.0, when available.",
+            required = true,
+            nullable = true
+        )
+        .build()
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val dumbService = DumbService.getInstance(project)
         val isDumb = dumbService.isDumb

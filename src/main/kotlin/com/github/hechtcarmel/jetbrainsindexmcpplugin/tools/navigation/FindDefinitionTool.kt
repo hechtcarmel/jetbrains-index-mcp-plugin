@@ -49,6 +49,19 @@ class FindDefinitionTool : AbstractMcpTool() {
         .intProperty(ParamNames.MAX_PREVIEW_LINES, "Maximum lines for fullElementPreview. Truncates large classes/functions. Default: 50, Max: 500. Only used when fullElementPreview=true.")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .stringProperty("file", "Project-relative file path of the definition.", required = true)
+        .intProperty("line", "1-based line number of the definition.", required = true)
+        .intProperty("column", "1-based column number of the definition.", required = true)
+        .stringProperty("preview", "Code preview or full element text for the definition.", required = true)
+        .stringProperty("symbolName", "Name of the resolved symbol.", required = true)
+        .stringArrayProperty(
+            "astPath",
+            "Structural path to the resolved definition in the syntax tree.",
+            required = true
+        )
+        .build()
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val fullElementPreview = arguments[ParamNames.FULL_ELEMENT_PREVIEW]?.jsonPrimitive?.content?.toBoolean() ?: false
         val maxPreviewLines = (arguments[ParamNames.MAX_PREVIEW_LINES]?.jsonPrimitive?.int ?: DEFAULT_MAX_PREVIEW_LINES)

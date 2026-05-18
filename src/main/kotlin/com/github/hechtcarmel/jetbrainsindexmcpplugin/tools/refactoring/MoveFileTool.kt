@@ -75,6 +75,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
         .stringProperty("destination", "Target directory path relative to project root. The file will be moved into this directory. Created automatically if it doesn't exist. REQUIRED.", required = true)
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("success", "Whether the refactoring completed successfully.", required = true)
+        .stringArrayProperty("affectedFiles", "Project-relative files affected by the refactoring.", required = true)
+        .intProperty("changesCount", "Number of files or references changed by the refactoring.", required = true)
+        .stringProperty("message", "Human-readable refactoring status message.", required = true)
+        .build()
+
     internal enum class MoveBackend {
         GENERIC_FILE_MOVE,
         PHP_SEMANTIC_MOVE

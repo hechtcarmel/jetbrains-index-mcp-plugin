@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.IntentionInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.intention.IntentionManager
@@ -80,6 +81,141 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         .enumProperty(ParamNames.TEST_RESULT_FILTER, "Filter test results: 'failed' (default) or 'all'.", listOf("failed", "all"))
         .intProperty(ParamNames.MAX_BUILD_ERRORS, "Max build errors to return. Default: 100, max: 500.")
         .intProperty(ParamNames.MAX_TEST_RESULTS, "Max test results to return. Default: 100, max: 500.")
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "problems", "Code analysis problems for the requested file or range.", SchemaBuilder.tool()
+                .stringProperty("message", "Problem or diagnostic message.", required = true)
+                .stringProperty("severity", "Problem severity, such as ERROR or WARNING.", required = true)
+                .stringProperty("file", "Project-relative file path containing the problem.", required = true)
+                .intProperty("line", "1-based start line of the problem.", required = true)
+                .intProperty("column", "1-based start column of the problem.", required = true)
+                .intProperty(
+                    "endLine",
+                    "1-based end line of the problem, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "endColumn",
+                    "1-based end column of the problem, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true, nullable = true
+        )
+        .arrayProperty(
+            "intentions", "Available intentions and quick fixes for the requested position.", SchemaBuilder.tool()
+                .stringProperty("name", "Intention or quick-fix name.", required = true)
+                .stringProperty(
+                    "description",
+                    "Intention or quick-fix description, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true, nullable = true
+        )
+        .intProperty("problemCount", "Number of reported code analysis problems.", required = true, nullable = true)
+        .intProperty(
+            "intentionCount",
+            "Number of reported intentions and quick fixes.",
+            required = true,
+            nullable = true
+        )
+        .booleanProperty("analysisFresh", "Whether code analysis data was fresh.", required = true, nullable = true)
+        .booleanProperty("analysisTimedOut", "Whether code analysis timed out.", required = true, nullable = true)
+        .stringProperty(
+            "analysisMessage",
+            "Additional code analysis status message, when available.",
+            required = true,
+            nullable = true
+        )
+        .arrayProperty(
+            "buildErrors", "Build errors and warnings from the last build output.", SchemaBuilder.tool()
+                .stringProperty("category", "Build message category, such as ERROR or WARNING.", required = true)
+                .stringProperty("message", "Build diagnostic text.", required = true)
+                .stringProperty(
+                    "file",
+                    "Project-relative file path for the build message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "line",
+                    "1-based line number for the build message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "column",
+                    "1-based column number for the build message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true, nullable = true
+        )
+        .intProperty("buildErrorCount", "Number of build errors reported.", required = true, nullable = true)
+        .intProperty("buildWarningCount", "Number of build warnings reported.", required = true, nullable = true)
+        .booleanProperty(
+            "buildErrorsTruncated",
+            "Whether build diagnostics were truncated.",
+            required = true,
+            nullable = true
+        )
+        .intProperty(
+            "buildTimestamp",
+            "Timestamp of the build diagnostics, when available.",
+            required = true,
+            nullable = true
+        )
+        .arrayProperty(
+            "testResults", "Test results from open test run tabs.", SchemaBuilder.tool()
+                .stringProperty("name", "Test name.", required = true)
+                .stringProperty("suite", "Test suite name, when available.", required = true, nullable = true)
+                .stringProperty("status", "Test status, such as passed, failed, or ignored.", required = true)
+                .intProperty(
+                    "durationMs",
+                    "Test duration in milliseconds, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .stringProperty(
+                    "errorMessage",
+                    "Failure or error message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .stringProperty("stacktrace", "Failure stack trace, when available.", required = true, nullable = true)
+                .stringProperty(
+                    "file",
+                    "Project-relative test file path, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty("line", "1-based test line number, when available.", required = true, nullable = true)
+                .build(), required = true, nullable = true
+        )
+        .property(
+            "testSummary", SchemaBuilder.tool()
+                .intProperty("total", "Total number of tests reported.", required = true)
+                .intProperty("passed", "Number of passed tests.", required = true)
+                .intProperty("failed", "Number of failed tests.", required = true)
+                .intProperty("ignored", "Number of ignored or skipped tests.", required = true)
+                .stringProperty(
+                    "runConfigName",
+                    "Test run configuration name, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true, nullable = true
+        )
+        .booleanProperty(
+            "testResultsTruncated",
+            "Whether test results were truncated.",
+            required = true,
+            nullable = true
+        )
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -308,7 +444,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         intentions: MutableList<IntentionInfo>
     ) {
         IntentionManager.getInstance()
-            .getAvailableIntentions()
+            .availableIntentions
             .take(MAX_INTENTIONS)
             .forEach { action ->
                 try {

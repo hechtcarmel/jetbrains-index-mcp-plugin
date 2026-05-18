@@ -100,6 +100,24 @@ class SchemaBuilderUnitTest : TestCase() {
         assertEquals(SchemaConstants.TYPE_BOOLEAN, prop[SchemaConstants.TYPE]?.jsonPrimitive?.content)
     }
 
+    fun testNullableProperty() {
+        val schema = SchemaBuilder.tool()
+            .stringProperty("message", "Nullable message.", required = true, nullable = true)
+            .build()
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject!!
+        val typeValues = properties["message"]
+            ?.jsonObject
+            ?.get(SchemaConstants.TYPE)
+            ?.jsonArray
+            ?.map { it.jsonPrimitive.content }
+
+        assertEquals(listOf(SchemaConstants.TYPE_STRING, "null"), typeValues)
+
+        val required = schema[SchemaConstants.REQUIRED]?.jsonArray?.map { it.jsonPrimitive.content }!!
+        assertTrue("nullable property should still be required when requested", required.contains("message"))
+    }
+
     fun testProjectPathNotRequired() {
         val schema = SchemaBuilder.tool()
             .projectPath()

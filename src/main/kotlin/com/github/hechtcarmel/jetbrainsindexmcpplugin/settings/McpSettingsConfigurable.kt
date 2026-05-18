@@ -33,7 +33,6 @@ import java.awt.event.FocusEvent
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
-import java.util.function.Supplier
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -50,6 +49,7 @@ class McpSettingsConfigurable : Configurable {
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private var availableProjectsModeComboBox: ComboBox<McpSettings.AvailableProjectsMode>? = null
     private var responseFormatComboBox: ComboBox<McpSettings.ResponseFormat>? = null
+    private var toolsOutputOutputSchemaCheckBox: JBCheckBox? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
 
@@ -111,6 +111,9 @@ class McpSettingsConfigurable : Configurable {
                 value?.let(::responseFormatLabel).orEmpty()
             }
         }
+        toolsOutputOutputSchemaCheckBox = JBCheckBox(McpBundle.message("settings.toolsOutputOutputSchema")).apply {
+            toolTipText = McpBundle.message("settings.toolsOutputOutputSchema.tooltip")
+        }
 
         val warningLabel = JBLabel(McpBundle.message("settings.syncExternalChanges.warning")).apply {
             foreground = JBColor.RED
@@ -137,6 +140,7 @@ class McpSettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.availableProjectsMode") + ":"), availableProjectsModeComboBox!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.responseFormat") + ":"), responseFormatComboBox!!, 1, false)
+            .addComponent(toolsOutputOutputSchemaCheckBox!!, 1)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
@@ -183,7 +187,8 @@ class McpSettingsConfigurable : Configurable {
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges ||
             availableProjectsModeComboBox?.selectedItem != settings.availableProjectsMode ||
-            responseFormatComboBox?.selectedItem != settings.responseFormat) {
+            responseFormatComboBox?.selectedItem != settings.responseFormat ||
+            toolsOutputOutputSchemaCheckBox?.isSelected != settings.toolsOutputOutputSchema) {
             return true
         }
 
@@ -243,6 +248,7 @@ class McpSettingsConfigurable : Configurable {
         settings.responseFormat =
             responseFormatComboBox?.selectedItem as? McpSettings.ResponseFormat
                 ?: McpSettings.ResponseFormat.JSON
+        settings.toolsOutputOutputSchema = toolsOutputOutputSchemaCheckBox?.isSelected ?: false
 
         val disabledTools = mutableSetOf<String>()
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -330,6 +336,7 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
         availableProjectsModeComboBox?.selectedItem = settings.availableProjectsMode
         responseFormatComboBox?.selectedItem = settings.responseFormat
+        toolsOutputOutputSchemaCheckBox?.isSelected = settings.toolsOutputOutputSchema
         
         hostValidationErrorLabel?.isVisible = false
         hostValidationIcon?.isVisible = false
@@ -427,6 +434,7 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox = null
         availableProjectsModeComboBox = null
         responseFormatComboBox = null
+        toolsOutputOutputSchemaCheckBox = null
         toolCheckBoxes.clear()
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null

@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import kotlinx.serialization.json.*
+import kotlinx.serialization.json.put
 
 class SchemaBuilder private constructor() {
     private val properties = linkedMapOf<String, JsonObject>()
@@ -67,38 +68,101 @@ class SchemaBuilder private constructor() {
         }
     }
 
-    fun stringProperty(name: String, description: String, required: Boolean = false) = apply {
+    fun stringProperty(
+        name: String,
+        description: String,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) = apply {
+        properties[name] = typedSchema(SchemaConstants.TYPE_STRING, description, nullable)
+        if (required) requiredFields.add(name)
+    }
+
+    fun stringProperty(name: String, description: String, required: Boolean) =
+        stringProperty(name, description, required, nullable = false)
+
+    fun intProperty(
+        name: String,
+        description: String,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) = apply {
+        properties[name] = typedSchema(SchemaConstants.TYPE_INTEGER, description, nullable)
+        if (required) requiredFields.add(name)
+    }
+
+    fun intProperty(name: String, description: String, required: Boolean) =
+        intProperty(name, description, required, nullable = false)
+
+    fun numberProperty(
+        name: String,
+        description: String,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) = apply {
+        properties[name] = typedSchema("number", description, nullable)
+        if (required) requiredFields.add(name)
+    }
+
+    fun booleanProperty(
+        name: String,
+        description: String,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) = apply {
+        properties[name] = typedSchema(SchemaConstants.TYPE_BOOLEAN, description, nullable)
+        if (required) requiredFields.add(name)
+    }
+
+    fun booleanProperty(name: String, description: String, required: Boolean) =
+        booleanProperty(name, description, required, nullable = false)
+
+    fun enumProperty(
+        name: String,
+        description: String,
+        values: List<String>,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) = apply {
         properties[name] = buildJsonObject {
+            putType(SchemaConstants.TYPE_STRING, nullable)
+            put(SchemaConstants.DESCRIPTION, description)
+            putJsonArray("enum") {
+                values.forEach { add(JsonPrimitive(it)) }
+                if (nullable) add(JsonNull)
+            }
+        }
+        if (required) requiredFields.add(name)
+    }
+
+    fun enumProperty(name: String, description: String, values: List<String>, required: Boolean) =
+        enumProperty(name, description, values, required, nullable = false)
+
+    fun arrayProperty(
+        name: String,
+        description: String,
+        items: JsonObject,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) = apply {
+        properties[name] = buildJsonObject {
+            putType(SchemaConstants.TYPE_ARRAY, nullable)
+            put(SchemaConstants.DESCRIPTION, description)
+            put("items", items)
+        }
+        if (required) requiredFields.add(name)
+    }
+
+    fun stringArrayProperty(
+        name: String,
+        description: String,
+        required: Boolean = false,
+        nullable: Boolean = false
+    ) =
+        arrayProperty(name, description, items = buildJsonObject {
             put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-            put(SchemaConstants.DESCRIPTION, description)
-        }
-        if (required) requiredFields.add(name)
-    }
+        }, required = required, nullable = nullable)
 
-    fun intProperty(name: String, description: String, required: Boolean = false) = apply {
-        properties[name] = buildJsonObject {
-            put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
-            put(SchemaConstants.DESCRIPTION, description)
-        }
-        if (required) requiredFields.add(name)
-    }
-
-    fun booleanProperty(name: String, description: String, required: Boolean = false) = apply {
-        properties[name] = buildJsonObject {
-            put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
-            put(SchemaConstants.DESCRIPTION, description)
-        }
-        if (required) requiredFields.add(name)
-    }
-
-    fun enumProperty(name: String, description: String, values: List<String>, required: Boolean = false) = apply {
-        properties[name] = buildJsonObject {
-            put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
-            put(SchemaConstants.DESCRIPTION, description)
-            putJsonArray("enum") { values.forEach { add(JsonPrimitive(it)) } }
-        }
-        if (required) requiredFields.add(name)
-    }
 
     fun scopeProperty(description: String, required: Boolean = false) = apply {
         enumProperty(
@@ -109,10 +173,13 @@ class SchemaBuilder private constructor() {
         )
     }
 
-    fun property(name: String, schema: JsonObject, required: Boolean = false) = apply {
-        properties[name] = schema
+    fun property(name: String, schema: JsonObject, required: Boolean = false, nullable: Boolean = false) = apply {
+        properties[name] = if (nullable) schema.withNullableType() else schema
         if (required) requiredFields.add(name)
     }
+
+    fun property(name: String, schema: JsonObject, required: Boolean) =
+        property(name, schema, required, nullable = false)
 
     fun build(): JsonObject = buildJsonObject {
         put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
@@ -134,3 +201,33 @@ class SchemaBuilder private constructor() {
         fun tool() = SchemaBuilder()
     }
 }
+
+private fun typedSchema(type: String, description: String, nullable: Boolean = false): JsonObject = buildJsonObject {
+    putType(type, nullable)
+    put(SchemaConstants.DESCRIPTION, description)
+}
+
+private fun JsonObject.withNullableType(): JsonObject = buildJsonObject {
+    for ((key, value) in this@withNullableType) {
+        if (key == SchemaConstants.TYPE && value is JsonPrimitive && value.isString) {
+            putJsonArray(SchemaConstants.TYPE) {
+                add(value)
+                add(JsonPrimitive("null"))
+            }
+        } else {
+            put(key, value)
+        }
+    }
+}
+
+private fun JsonObjectBuilder.putType(type: String, nullable: Boolean) {
+    if (nullable) {
+        putJsonArray(SchemaConstants.TYPE) {
+            add(JsonPrimitive(type))
+            add(JsonPrimitive("null"))
+        }
+    } else {
+        put(SchemaConstants.TYPE, type)
+    }
+}
+

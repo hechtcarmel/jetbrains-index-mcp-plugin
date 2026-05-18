@@ -41,6 +41,12 @@ class FileStructureTool : AbstractMcpTool() {
         .file(description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). REQUIRED.")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .stringProperty("file", "Project-relative file path that was analyzed.", required = true)
+        .stringProperty("language", "Language of the analyzed file.", required = true)
+        .stringProperty("structure", "Text representation of the file structure.", required = true)
+        .build()
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")

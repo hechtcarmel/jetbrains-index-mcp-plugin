@@ -8,6 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -99,10 +100,24 @@ class JsonRpcHandler @JvmOverloads constructor(
     private fun processToolsList(request: JsonRpcRequest): JsonRpcResponse {
         val tools = toolRegistry.getToolDefinitions()
         val result = ToolsListResult(tools = tools)
+        val encodedResult = json.encodeToJsonElement(result)
+        val cleanedResult = if(!McpSettings.getInstance().toolsOutputOutputSchema){
+            JsonObject(
+                encodedResult.jsonObject.mapValues { (_, value) ->
+                    when (value) {
+                        is JsonArray -> JsonArray(value.map { item ->
+                            if (item is JsonObject) JsonObject(item.filterKeys { it != "outputSchema" })
+                            else item
+                        })
+                        else -> value
+                    }
+                }
+            )
+        } else encodedResult
 
         return JsonRpcResponse(
             id = request.id,
-            result = json.encodeToJsonElement(result)
+            result = cleanedResult
         )
     }
 

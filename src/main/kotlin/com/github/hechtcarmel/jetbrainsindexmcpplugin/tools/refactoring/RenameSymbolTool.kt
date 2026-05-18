@@ -98,6 +98,13 @@ class RenameSymbolTool : AbstractMcpTool() {
         )
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("success", "Whether the rename completed successfully.", required = true)
+        .stringArrayProperty("affectedFiles", "Project-relative files affected by the rename.", required = true)
+        .intProperty("changesCount", "Number of files or references changed by the rename.", required = true)
+        .stringProperty("message", "Human-readable rename status message.", required = true)
+        .build()
+
     /**
      * Data class holding validated rename parameters from Phase 1.
      */
