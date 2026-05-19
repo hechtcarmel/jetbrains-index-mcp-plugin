@@ -985,7 +985,7 @@ For Markdown heading outlines, use `ide_file_structure`.
 
 ### ide_refactor_rename
 
-Renames a symbol and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
+Renames a symbol or file and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
 
 **Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Ruby, and any language with IntelliJ plugin support.
 
@@ -993,6 +993,7 @@ Renames a symbol and updates all references across the project. This tool uses I
 - Language-specific name validation (identifier rules, keyword detection)
 - **Fully headless/autonomous operation** (no popups or dialogs)
 - **Automatic related element renaming** - getters/setters, overriding methods, test classes are renamed automatically
+- Explicit `targetType` mode selection (`symbol` or `file`)
 - Conflict detection before rename execution (returns error instead of showing dialog)
 - Single atomic operation - all renames (primary + related) can be undone with one Ctrl/Cmd+Z
 
@@ -1006,8 +1007,9 @@ Renames a symbol and updates all references across the project. This tool uses I
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | string | Yes | Path to the file containing the symbol |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `targetType` | string | No | `symbol` (requires 1-based `line` + `column`) or `file` (renames the file itself; placeholder coordinates are ignored) |
+| `line` | integer | No | 1-based line number for symbol rename |
+| `column` | integer | No | 1-based column number for symbol rename |
 | `newName` | string | Yes | The new name for the symbol |
 | `overrideStrategy` | string | No | How to handle overriding methods: `"rename_base"` (default), `"rename_only_current"`, or `"ask"` |
 | `relatedRenamingStrategy` | string | No | How to handle automatic renaming of related symbols: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"` |

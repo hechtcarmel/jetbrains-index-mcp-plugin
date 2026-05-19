@@ -24,6 +24,7 @@ object ParamNames {
     const val TARGET_DIRECTORY = "targetDirectory"
     const val REPLACE_ALL = "replaceAll"
     const val FORCE = "force"
+    const val TARGET_TYPE_CAMEL = "targetType"
     const val TARGET_TYPE = "target_type"
     const val OPTIMIZE_IMPORTS = "optimizeImports"
     const val REARRANGE_CODE = "rearrangeCode"

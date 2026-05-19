@@ -163,6 +163,231 @@ class JsonRpcHandlerUnitTest : TestCase() {
         assertEquals(JsonRpcErrorCodes.METHOD_NOT_FOUND, response.error?.code)
     }
 
+    fun testToolCallRejectsArrayArgumentsWithInvalidParams() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 9,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": "unknown_tool",
+                "${ParamNames.ARGUMENTS}": []
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertTrue(response.error?.message?.contains("arguments") == true)
+        assertTrue(response.error?.message?.contains("object") == true)
+    }
+
+    fun testToolCallTreatsNullArgumentsAsEmptyObject() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 10,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": "unknown_tool",
+                "${ParamNames.ARGUMENTS}": null
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(
+            "Null arguments should preserve existing empty-object semantics",
+            JsonRpcErrorCodes.METHOD_NOT_FOUND,
+            response.error?.code
+        )
+        assertTrue(response.error?.message?.contains("unknown_tool") == true)
+    }
+
+    fun testToolCallRejectsArrayParamsWithInvalidParams() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 11,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": []
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertTrue(response.error?.message?.contains("params") == true)
+        assertTrue(response.error?.message?.contains("object") == true)
+    }
+
+    fun testToolCallMalformedArgumentsDoesNotReturnParseError() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 12,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": "unknown_tool",
+                "${ParamNames.ARGUMENTS}": 42
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
+    fun testToolCallRejectsNonStringToolNameWithInvalidParams() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 14,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": { "value": "unknown_tool" },
+                "${ParamNames.ARGUMENTS}": {}
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertTrue(response.error?.message?.contains("name") == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
+    fun testToolCallRejectsBooleanToolNameWithInvalidParams() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 15,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": true,
+                "${ParamNames.ARGUMENTS}": {}
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertTrue(response.error?.message?.contains("name") == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
+    fun testToolCallRejectsNumericToolNameWithInvalidParams() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 17,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": 123,
+                "${ParamNames.ARGUMENTS}": {}
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertTrue(response.error?.message?.contains("name") == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
+    fun testToolCallRejectsObjectProjectPathWithInvalidParams() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 18,
+              "method": "${JsonRpcMethods.TOOLS_CALL}",
+              "params": {
+                "${ParamNames.NAME}": "unknown_tool",
+                "${ParamNames.ARGUMENTS}": {
+                  "${ParamNames.PROJECT_PATH}": {}
+                }
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, response.error?.code)
+        assertTrue(response.error?.message?.contains(ParamNames.PROJECT_PATH) == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.INTERNAL_ERROR)
+    }
+
+    fun testNonPrimitiveMethodReturnsInvalidRequestGracefully() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 13,
+              "method": { "name": "${JsonRpcMethods.TOOLS_CALL}" },
+              "params": {
+                "${ParamNames.NAME}": "unknown_tool"
+              }
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, response.error?.code)
+        assertTrue(response.error?.message?.contains("method") == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
+    fun testNumericMethodReturnsInvalidRequestGracefully() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 16,
+              "method": 123,
+              "params": {}
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, response.error?.code)
+        assertTrue(response.error?.message?.contains("method") == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
+    fun testBooleanMethodReturnsInvalidRequestGracefully() = runBlocking {
+        val requestJson = """
+            {
+              "jsonrpc": "2.0",
+              "id": 19,
+              "method": false,
+              "params": {}
+            }
+        """.trimIndent()
+
+        val responseJson = handler.handleRequest(requestJson)
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, response.error?.code)
+        assertTrue(response.error?.message?.contains("method") == true)
+        assertFalse(response.error?.code == JsonRpcErrorCodes.PARSE_ERROR)
+    }
+
     fun testParseError() = runBlocking {
         val responseJson = handler.handleRequest("not valid json")
         val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)

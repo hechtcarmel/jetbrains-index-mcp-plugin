@@ -35,6 +35,8 @@ import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.nio.file.Files
+import java.nio.file.Path
 
 class ToolsUnitTest : TestCase() {
     private fun assertHasScopeAndNoLegacyFilters(properties: kotlinx.serialization.json.JsonObject?) {
@@ -463,11 +465,41 @@ class ToolsUnitTest : TestCase() {
         assertFalse("line should NOT be required (optional for file rename)", required.contains(ParamNames.LINE))
         assertFalse("column should NOT be required (optional for file rename)", required.contains(ParamNames.COLUMN))
 
+        assertNotNull("Should have targetType property", properties?.get("targetType"))
+        val targetTypeProp = properties?.get("targetType")?.jsonObject
+        val targetTypeEnum = targetTypeProp?.get("enum")?.jsonArray?.map { it.jsonPrimitive.content }
+        assertEquals(listOf("symbol", "file"), targetTypeEnum)
+
         // Verify relatedRenamingStrategy has enum values
         val relatedStrategyProp = properties?.get("relatedRenamingStrategy")?.jsonObject
         assertNotNull("relatedRenamingStrategy should have enum", relatedStrategyProp?.get("enum"))
         val enumValues = relatedStrategyProp?.get("enum")?.jsonArray?.map { it.jsonPrimitive.content }
         assertEquals(listOf("all", "none", "accessors_and_tests", "ask"), enumValues)
+    }
+
+    fun testRenameSymbolToolResolvesFileModeWhenTargetTypeFileEvenWithZeroCoordinates() {
+        val decision = invokeRenameModeResolver("file", 0, 0)
+
+        assertEquals("File rename should win when targetType=file", "FileRenameMode", decision.javaClass.simpleName)
+    }
+
+    fun testRenameSymbolToolRejectsZeroCoordinatesInSymbolMode() {
+        val decision = invokeRenameModeResolver("symbol", 0, 0)
+
+        assertEquals("Symbol mode with 0/0 should be rejected", "InvalidRenameMode", decision.javaClass.simpleName)
+        val errorMessage = decision.javaClass.getMethod("getError").invoke(decision) as String
+        assertTrue(errorMessage.contains("1-based"))
+        assertTrue(errorMessage.contains("targetType=file"))
+    }
+
+    fun testRenameSymbolToolPreservesLegacyNullNullFileMode() {
+        val decision = invokeRenameModeResolver(null, null, null)
+
+        assertEquals("Legacy null/null request should still be file rename", "FileRenameMode", decision.javaClass.simpleName)
+    }
+
+    private fun invokeRenameModeResolver(targetType: String?, line: Int?, column: Int?): Any {
+        return RenameSymbolTool.resolveRenameMode(targetType, line, column)
     }
 
     fun testRenameSymbolToolBypassesDialogSubstitutionForHeadlessJsTsFileRename() {
@@ -490,50 +522,89 @@ class ToolsUnitTest : TestCase() {
         )
     }
 
-    fun testRenameSymbolToolRetargetsJsTsModuleSpecifiersAfterFileRename() {
-        val source = """
-            import { leafThing } from './leaf';
-            import './leaf';
-            const lazy = import('./leaf');
-            const cjs = require('./leaf.ts');
-            export { leafThing as exportedLeafThing } from './leaf';
-            const untouched = "from './leaf'";
-            // from './leaf'
-            import { otherThing } from './other';
-        """.trimIndent()
-
-        val updated = RenameSymbolTool.retargetJsTsModuleSpecifiers(
-            source = source,
-            importerDirPath = "C:/repo/src",
-            oldFilePath = "C:/repo/src/leaf.ts",
-            newFilePath = "C:/repo/src/leaf-renamed.ts"
+    fun testRenameSymbolToolRetargetsJsTsFileRenamesSemantically() {
+        assertTrue(
+            "TypeScript file renames should use semantic file-retargeting hooks when not asking the user",
+            RenameSymbolTool.shouldRetargetJsTsFileRenameSemantically("TypeScript", "rename_base")
         )
-
-        assertTrue(updated.contains("from './leaf-renamed'"))
-        assertTrue(updated.contains("import './leaf-renamed'"))
-        assertTrue(updated.contains("import('./leaf-renamed')"))
-        assertTrue(updated.contains("require('./leaf-renamed.ts')"))
-        assertTrue(updated.contains("const untouched = \"from './leaf'\""))
-        assertTrue(updated.contains("// from './leaf'"))
-        assertTrue(updated.contains("from './other'"))
+        assertTrue(
+            "JavaScript file renames should use semantic file-retargeting hooks when not asking the user",
+            RenameSymbolTool.shouldRetargetJsTsFileRenameSemantically("JavaScript", "rename_only_current")
+        )
+        assertFalse(
+            "Explicit ask mode must preserve the interactive dialog path",
+            RenameSymbolTool.shouldRetargetJsTsFileRenameSemantically("TypeScript", "ask")
+        )
+        assertFalse(
+            "Non-JS/TS files should stay on the generic rename path",
+            RenameSymbolTool.shouldRetargetJsTsFileRenameSemantically("JAVA", "rename_base")
+        )
     }
 
-    fun testRenameSymbolToolBuildsRelativeSpecifiersAcrossDirectories() {
-        assertEquals(
-            "../models/leaf-renamed",
-            RenameSymbolTool.relativeModuleSpecifier(
-                importerDirPath = "C:/repo/src/features",
-                targetFilePath = "C:/repo/src/models/leaf-renamed.ts",
-                includeExtension = false
+    fun testRenameSymbolToolDoesNotExposeJsTsRegexRetargetingHelpers() {
+        val companionClass = RenameSymbolTool.Companion::class.java
+        val retargetMethod = runCatching {
+            companionClass.getDeclaredMethod(
+                "retargetJsTsModuleSpecifiers\$jetbrains_index_mcp_plugin",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java
             )
+        }.getOrNull()
+
+        val relativeMethod = runCatching {
+            companionClass.getDeclaredMethod(
+                "relativeModuleSpecifier\$jetbrains_index_mcp_plugin",
+                String::class.java,
+                String::class.java,
+                Boolean::class.javaPrimitiveType
+            )
+        }.getOrNull()
+
+        assertFalse(
+            "JS/TS module-specifier regex retargeting should not be part of the rename tool contract",
+            retargetMethod != null
         )
-        assertEquals(
-            "./leaf-renamed.ts",
-            RenameSymbolTool.relativeModuleSpecifier(
-                importerDirPath = "C:/repo/src/models",
-                targetFilePath = "C:/repo/src/models/leaf-renamed.ts",
-                includeExtension = true
-            )
+        assertFalse(
+            "Relative module-specifier text rewriting helper should not remain public/internal on the rename tool",
+            relativeMethod != null
+        )
+    }
+
+    fun testRenameSymbolToolJsTsRetargetingDoesNotUseMoveFileHandlerState() {
+        val retargetingStateClass = RenameSymbolTool::class.java.declaredClasses
+            .singleOrNull { it.simpleName == "JsTsFileRenameRetargeting" }
+
+        assertNotNull("JS/TS retargeting state should remain explicit and inspectable", retargetingStateClass)
+        assertFalse(
+            "Same-directory JS/TS file rename retargeting must not depend on MoveFileHandler state",
+            retargetingStateClass!!.declaredFields.any { field ->
+                field.type.name.contains("MoveFileHandler")
+            }
+        )
+    }
+
+    fun testRenameSymbolToolJsTsRetargetingDoesNotSilentlySkipMissingReferences() {
+        val sourcePath = Path.of(
+            System.getProperty("user.dir"),
+            "src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/tools/refactoring/RenameSymbolTool.kt"
+        )
+        val source = Files.readString(sourcePath)
+        val finalizeBody = source.substringAfter("private fun finalizeJsTsFileRenameRetargeting(")
+            .substringBefore("private fun markJsTsRetargetingImporterAffected(")
+
+        assertFalse(
+            "A stale smart pointer must fail JS/TS retargeting instead of silently continuing",
+            finalizeBody.contains("?: continue")
+        )
+        assertTrue(
+            "Missing references must be reported as JS/TS retargeting failures",
+            finalizeBody.contains("collected reference could not be found")
+        )
+        assertTrue(
+            "Already-updated references may only be skipped after explicit renamed-file resolution verification",
+            finalizeBody.contains("isEquivalentTo(renamedFile)")
         )
     }
 

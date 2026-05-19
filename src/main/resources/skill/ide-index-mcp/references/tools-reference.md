@@ -274,17 +274,16 @@ Analyze a file for errors, warnings, and available quick fixes/intentions.
 ## Refactoring Tools
 
 ### ide_refactor_rename
-Rename a symbol and update ALL references (semantic rename, not find-replace). Works across ALL languages.
+Rename a symbol or file and update ALL references (semantic rename, not find-replace). Works across ALL languages.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target:** `file` + `targetType="file"` for file rename, or `file` + `targetType="symbol"` + `line` + `column` for symbol rename. Without `targetType`, legacy `null/null => file` and `line`+`column => symbol` behavior remains.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | string | conditional | Relative file path. Required for position-based lookup. |
-| `line` | integer | conditional | 1-based line. Required for position-based lookup. |
-| `column` | integer | conditional | 1-based column. Required for position-based lookup. |
-| `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
-| `symbol` | string | conditional | Fully qualified symbol reference. For JS/TS, use module-qualified forms: `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. Required for symbol-based lookup. |
+| `targetType` | string | no | `symbol` or `file`. When `file`, placeholder `line`/`column` values are ignored. |
+| `line` | integer | no | 1-based line for symbol rename. |
+| `column` | integer | no | 1-based column for symbol rename. |
 | `newName` | string | yes | New name for the symbol |
 | `overrideStrategy` | enum | no | `rename_base` (default), `rename_only_current`, `ask` |
 | `project_path` | string | no | Project root path |
