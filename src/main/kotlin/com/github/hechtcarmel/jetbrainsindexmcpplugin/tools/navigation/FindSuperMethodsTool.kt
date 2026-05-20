@@ -16,7 +16,7 @@ import kotlinx.serialization.json.JsonObject
 /**
  * Tool for finding super methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -27,7 +27,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
     override val description = """
         Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Scala.
 
         NOT supported for Rust: Rust uses trait implementations rather than classical inheritance, so there are no "super methods" in the traditional sense. Use ide_find_definition or ide_type_hierarchy instead.
 
