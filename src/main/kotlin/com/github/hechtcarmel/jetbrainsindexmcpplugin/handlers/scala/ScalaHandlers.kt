@@ -10,29 +10,42 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiModifier
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ClassInheritorsSearch
 import com.intellij.psi.search.searches.OverridingMethodsSearch
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.Processor
+import org.jetbrains.plugins.scala.lang.psi.api.ScalaFile
+import org.jetbrains.plugins.scala.lang.psi.api.expr.ScMethodCall
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValue
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValueOrVariable
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScVariable
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScClass
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScMember
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScObject
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTemplateDefinition
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTrait
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition
 
 /**
  * Registration entry point for Scala language handlers.
  *
- * This class is loaded via reflection when the Scala plugin is available.
- * It registers all Scala-specific handlers with the [LanguageHandlerRegistry].
+ * This class is loaded via reflection when the Scala plugin is available
+ * (see [LanguageHandlerRegistry]). It registers all Scala-specific handlers.
  *
- * ## Scala PSI Classes Used (via reflection)
+ * ## Optionality
  *
- * - `org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition` - Base for type definitions
- * - `org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScClass` - Class definitions
- * - `org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTrait` - Trait definitions
- * - `org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScObject` - Object/singleton definitions
- * - `org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction` - Function/method declarations
- * - `org.jetbrains.plugins.scala.lang.psi.api.expr.ScMethodCall` - Method calls
- * - `org.jetbrains.plugins.scala.lang.psi.stubs.index.ScAllClassNamesIndex` - Class name index
- * - `org.jetbrains.plugins.scala.lang.psi.stubs.index.ScFunctionNameIndex` - Function name index
+ * The Scala plugin is declared as optional in plugin.xml:
+ * `<depends optional="true" config-file="scala-features.xml">org.intellij.scala</depends>`
+ *
+ * This class itself has no Scala PSI imports, so it can be loaded safely even if the Scala
+ * plugin is absent (the registry guards against that via [ScalaPluginDetector]).
+ * The handler classes (ScalaTypeHierarchyHandler etc.) do import Scala PSI types, but they
+ * are only instantiated after the plugin-availability check passes — JVM lazy class loading
+ * ensures they are never loaded when the Scala plugin is absent.
  */
 object ScalaHandlers {
 
@@ -50,30 +63,44 @@ object ScalaHandlers {
             return
         }
 
-        try {
-            // Verify Scala classes are accessible before registering
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction")
+        registry.registerTypeHierarchyHandler(ScalaTypeHierarchyHandler())
+        registry.registerImplementationsHandler(ScalaImplementationsHandler())
+        registry.registerCallHierarchyHandler(ScalaCallHierarchyHandler())
+        registry.registerSuperMethodsHandler(ScalaSuperMethodsHandler())
+        registry.registerStructureHandler(ScalaStructureHandler())
 
-            registry.registerTypeHierarchyHandler(ScalaTypeHierarchyHandler())
-            registry.registerImplementationsHandler(ScalaImplementationsHandler())
-            registry.registerCallHierarchyHandler(ScalaCallHierarchyHandler())
-            registry.registerSuperMethodsHandler(ScalaSuperMethodsHandler())
-            registry.registerStructureHandler(ScalaStructureHandler())
-
-            LOG.info("Registered Scala handlers")
-        } catch (e: ClassNotFoundException) {
-            LOG.warn("Scala PSI classes not found, skipping registration: ${e.message}")
-        } catch (e: Exception) {
-            LOG.warn("Failed to register Scala handlers: ${e.message}")
-        }
+        LOG.info("Registered Scala handlers")
     }
 }
 
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
 /**
- * Base class for Scala handlers with common utilities.
+ * Converts a `scala.collection.Seq<T>` to a Kotlin [List].
  *
- * Uses reflection to access Scala PSI classes to avoid compile-time dependencies.
+ * Scala Seq does not implement java.lang.Iterable directly, but its `.iterator()`
+ * returns a `scala.collection.Iterator<T>` whose `hasNext()` and `next()` methods
+ * are Java-callable (they are regular abstract methods on the Scala Iterator trait).
+ */
+private fun <T> scala.collection.Seq<T>.toKotlinList(): List<T> {
+    val result = mutableListOf<T>()
+    val it = iterator()
+    while (it.hasNext()) result.add(it.next())
+    return result
+}
+
+// ---------------------------------------------------------------------------
+// Base class
+// ---------------------------------------------------------------------------
+
+/**
+ * Base class for Scala handlers providing common PSI utilities.
+ *
+ * Uses direct Scala PSI imports — no reflection required. These classes are only
+ * instantiated (and thus loaded by the JVM) after the Scala plugin availability
+ * check in [ScalaHandlers.register] confirms the plugin is present.
  */
 abstract class BaseScalaHandler<T> : LanguageHandler<T> {
 
@@ -81,92 +108,62 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
         private val LOG = logger<BaseScalaHandler<*>>()
     }
 
-    /**
-     * Checks if the element is from Scala language.
-     */
-    protected fun isScalaLanguage(element: PsiElement): Boolean {
-        return element.language.id == "Scala"
+    protected fun isScalaLanguage(element: PsiElement): Boolean =
+        element.language.id == "Scala"
+
+    // Type checks using direct Kotlin 'is' operator
+
+    protected fun isScTypeDefinition(element: PsiElement): Boolean = element is ScTypeDefinition
+    protected fun isScClass(element: PsiElement): Boolean = element is ScClass
+    protected fun isScTrait(element: PsiElement): Boolean = element is ScTrait
+    protected fun isScObject(element: PsiElement): Boolean = element is ScObject
+    protected fun isScFunction(element: PsiElement): Boolean = element is ScFunction
+
+    // Navigation helpers
+
+    protected fun findContainingScTypeDefinition(element: PsiElement): ScTypeDefinition? {
+        if (element is ScTypeDefinition) return element
+        return PsiTreeUtil.getParentOfType(element, ScTypeDefinition::class.java)
     }
 
-    // Scala PSI class references (loaded via reflection)
-    
-    protected val scTypeDefinitionClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
+    protected fun findContainingScFunction(element: PsiElement): ScFunction? {
+        if (element is ScFunction) return element
+        return PsiTreeUtil.getParentOfType(element, ScFunction::class.java)
     }
 
-    protected val scClassClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScClass")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
+    // Property accessors (direct, no reflection)
+
+    protected fun getName(element: PsiElement): String? =
+        (element as? ScTypeDefinition)?.name
+            ?: (element as? ScFunction)?.name
+            ?: (element as? ScValueOrVariable)?.let {
+                // ScValueOrVariable implements ScDeclaredElementsHolder; name is on the first declared element
+                try { (element as com.intellij.psi.PsiNamedElement).name } catch (_: Exception) { null }
+            }
+
+    protected fun getQualifiedName(element: PsiElement): String? =
+        (element as? ScTypeDefinition)?.qualifiedName
+
+    protected fun getSupers(element: PsiElement): List<PsiElement> =
+        (element as? ScTemplateDefinition)?.supers()?.toKotlinList() ?: emptyList()
+
+    protected fun isCaseClass(element: PsiElement): Boolean =
+        (element as? ScTypeDefinition)?.isCase ?: false
+
+    protected fun isPackageObject(element: PsiElement): Boolean =
+        (element as? ScTypeDefinition)?.isPackageObject ?: false
+
+    protected fun getTypeKind(element: PsiElement): String = when {
+        element is ScTrait -> "TRAIT"
+        element is ScObject -> if (isPackageObject(element)) "OBJECT" else "OBJECT"
+        element is ScClass -> if (isCaseClass(element)) "CASE_CLASS" else "CLASS"
+        else -> "UNKNOWN"
     }
 
-    protected val scTraitClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTrait")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
+    // Location helpers
 
-    protected val scObjectClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScObject")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
-
-    protected val scTemplateDefinitionClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTemplateDefinition")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
-
-    protected val scFunctionClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
-
-    protected val scMethodCallClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.expr.ScMethodCall")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
-
-    protected val scValueClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.statements.ScValue")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
-
-    protected val scVariableClass: Class<*>? by lazy {
-        try {
-            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.statements.ScVariable")
-        } catch (e: ClassNotFoundException) {
-            null
-        }
-    }
-
-    // Utility methods
-
-    protected fun getRelativePath(project: Project, file: com.intellij.openapi.vfs.VirtualFile): String {
-        return ProjectUtils.getToolFilePath(project, file)
-    }
+    protected fun getRelativePath(project: Project, file: com.intellij.openapi.vfs.VirtualFile): String =
+        ProjectUtils.getToolFilePath(project, file)
 
     protected fun getLineNumber(project: Project, element: PsiElement): Int? {
         val psiFile = element.containingFile ?: return null
@@ -181,185 +178,50 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
         return element.textOffset - document.getLineStartOffset(line) + 1
     }
 
-    /**
-     * Checks if element is a ScTypeDefinition using reflection.
-     */
-    protected fun isScTypeDefinition(element: PsiElement): Boolean {
-        return scTypeDefinitionClass?.isInstance(element) == true
-    }
+    // Parameter signature builder
 
-    /**
-     * Checks if element is a ScClass using reflection.
-     */
-    protected fun isScClass(element: PsiElement): Boolean {
-        return scClassClass?.isInstance(element) == true
-    }
-
-    /**
-     * Checks if element is a ScTrait using reflection.
-     */
-    protected fun isScTrait(element: PsiElement): Boolean {
-        return scTraitClass?.isInstance(element) == true
-    }
-
-    /**
-     * Checks if element is a ScObject using reflection.
-     */
-    protected fun isScObject(element: PsiElement): Boolean {
-        return scObjectClass?.isInstance(element) == true
-    }
-
-    /**
-     * Checks if element is a ScFunction using reflection.
-     */
-    protected fun isScFunction(element: PsiElement): Boolean {
-        return scFunctionClass?.isInstance(element) == true
-    }
-
-    /**
-     * Finds containing ScTypeDefinition using reflection.
-     */
-    protected fun findContainingScTypeDefinition(element: PsiElement): PsiElement? {
-        if (isScTypeDefinition(element)) return element
-        val scTypeDef = scTypeDefinitionClass ?: return null
-        @Suppress("UNCHECKED_CAST")
-        return PsiTreeUtil.getParentOfType(element, scTypeDef as Class<out PsiElement>)
-    }
-
-    /**
-     * Finds containing ScFunction using reflection.
-     */
-    protected fun findContainingScFunction(element: PsiElement): PsiElement? {
-        if (isScFunction(element)) return element
-        val scFunc = scFunctionClass ?: return null
-        @Suppress("UNCHECKED_CAST")
-        return PsiTreeUtil.getParentOfType(element, scFunc as Class<out PsiElement>)
-    }
-
-    /**
-     * Gets the name of a Scala named element via reflection.
-     */
-    protected fun getName(element: PsiElement): String? {
+    protected fun buildMethodSignature(function: ScFunction): String {
         return try {
-            val method = element.javaClass.getMethod("name")
-            method.invoke(element) as? String
-        } catch (e: Exception) {
-            null
+            val params = function.paramClauses().clauses().toKotlinList()
+                .flatMap { clause -> clause.parameters().toKotlinList() }
+                .mapNotNull { param -> param.name }
+                .joinToString(", ")
+            "${function.name}($params)"
+        } catch (_: Exception) {
+            function.name ?: "unknown"
         }
     }
 
-    /**
-     * Gets the qualified name of a ScTypeDefinition via reflection.
-     */
-    protected fun getQualifiedName(element: PsiElement): String? {
-        return try {
-            val method = element.javaClass.getMethod("qualifiedName")
-            method.invoke(element) as? String
-        } catch (e: Exception) {
-            null
-        }
-    }
+    // Modifier extraction
 
-    /**
-     * Gets supertypes of a ScTemplateDefinition via reflection.
-     * Returns Scala Seq which we convert to List.
-     */
-    protected fun getSupers(element: PsiElement): List<PsiElement> {
-        return try {
-            val method = element.javaClass.getMethod("supers")
-            val scalaSeq = method.invoke(element)
-            scalaSeqToList(scalaSeq)
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    /**
-     * Converts Scala Seq to Java List using reflection.
-     * Handles both scala.collection.Seq and scala.collection.immutable.Seq
-     */
-    protected fun scalaSeqToList(scalaSeq: Any?): List<PsiElement> {
-        if (scalaSeq == null) return emptyList()
-        
-        return try {
-            // Try to get iterator and convert to list
-            val iteratorMethod = scalaSeq.javaClass.getMethod("iterator")
-            val iterator = iteratorMethod.invoke(scalaSeq)
-            
-            val result = mutableListOf<PsiElement>()
-            val hasNextMethod = iterator.javaClass.getMethod("hasNext")
-            val nextMethod = iterator.javaClass.getMethod("next")
-            
-            while (hasNextMethod.invoke(iterator) as Boolean) {
-                val element = nextMethod.invoke(iterator)
-                if (element is PsiElement) {
-                    result.add(element)
-                }
+    protected fun extractModifiers(element: PsiElement): List<String> {
+        val modifierList = (element as? com.intellij.psi.PsiModifierListOwner)?.modifierList
+            ?: return emptyList()
+        val modifiers = mutableListOf<String>()
+        if (modifierList.hasModifierProperty(PsiModifier.PRIVATE)) modifiers.add("private")
+        if (modifierList.hasModifierProperty(PsiModifier.PROTECTED)) modifiers.add("protected")
+        if (modifierList.hasModifierProperty(PsiModifier.ABSTRACT)) modifiers.add("abstract")
+        if (modifierList.hasModifierProperty(PsiModifier.FINAL)) modifiers.add("final")
+        // Scala-specific modifiers via ScModifierList
+        try {
+            val scModList = modifierList as? org.jetbrains.plugins.scala.lang.psi.api.base.ScModifierList
+            if (scModList != null) {
+                if (scModList.hasModifierProperty("implicit")) modifiers.add("implicit")
+                if (scModList.hasModifierProperty("override")) modifiers.add("override")
+                if (scModList.hasModifierProperty("sealed")) modifiers.add("sealed")
             }
-            result
-        } catch (e: Exception) {
-            LOG.debug("Failed to convert Scala Seq to List: ${e.message}")
-            emptyList()
-        }
-    }
-
-    /**
-     * Unwraps Scala Option to nullable value using reflection.
-     */
-    protected fun <T> scalaOptionToNullable(scalaOption: Any?): T? {
-        if (scalaOption == null) return null
-        
-        return try {
-            val isDefinedMethod = scalaOption.javaClass.getMethod("isDefined")
-            val isDefined = isDefinedMethod.invoke(scalaOption) as Boolean
-            
-            if (isDefined) {
-                val getMethod = scalaOption.javaClass.getMethod("get")
-                @Suppress("UNCHECKED_CAST")
-                getMethod.invoke(scalaOption) as? T
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            LOG.debug("Failed to unwrap Scala Option: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * Gets the type kind (CLASS, TRAIT, OBJECT) for a ScTypeDefinition.
-     */
-    protected fun getTypeKind(element: PsiElement): String {
-        return when {
-            isScTrait(element) -> "TRAIT"
-            isScObject(element) -> "OBJECT"
-            isScClass(element) -> {
-                // Check if case class
-                if (isCaseClass(element)) "CASE_CLASS" else "CLASS"
-            }
-            else -> "UNKNOWN"
-        }
-    }
-
-    /**
-     * Checks if a class is a case class via reflection.
-     */
-    protected fun isCaseClass(element: PsiElement): Boolean {
-        return try {
-            if (!isScClass(element)) return false
-            val method = element.javaClass.getMethod("isCase")
-            method.invoke(element) as? Boolean ?: false
-        } catch (e: Exception) {
-            false
-        }
+        } catch (_: Exception) {}
+        return modifiers
     }
 }
 
+// ---------------------------------------------------------------------------
+// TypeHierarchyHandler
+// ---------------------------------------------------------------------------
+
 /**
  * Scala implementation of [TypeHierarchyHandler].
- *
- * Supports Scala classes, traits, objects, and case classes.
- * Handles multiple trait inheritance and trait linearization.
+ * Supports classes, traits, objects, and case classes.
  */
 class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHierarchyHandler {
 
@@ -369,11 +231,10 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
 
     override val languageId = "Scala"
 
-    override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && isScalaLanguage(element)
-    }
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable && scTypeDefinitionClass != null
+    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun getTypeHierarchy(
         element: PsiElement,
@@ -382,9 +243,6 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
     ): TypeHierarchyData? {
         val scTypeDef = findContainingScTypeDefinition(element) ?: return null
         val searchScope = createNavigationSearchScope(project, scope)
-
-        val supertypes = getSupertypes(project, scTypeDef, searchScope = searchScope)
-        val subtypes = getSubtypes(project, scTypeDef, searchScope)
 
         return TypeHierarchyData(
             element = TypeElementData(
@@ -395,14 +253,14 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
                 kind = getTypeKind(scTypeDef),
                 language = "Scala"
             ),
-            supertypes = supertypes,
-            subtypes = subtypes
+            supertypes = getSupertypes(project, scTypeDef, searchScope = searchScope),
+            subtypes = getSubtypes(project, scTypeDef, searchScope)
         )
     }
 
     private fun getSupertypes(
         project: Project,
-        scTypeDef: PsiElement,
+        scTypeDef: ScTypeDefinition,
         visited: MutableSet<String> = mutableSetOf(),
         depth: Int = 0,
         searchScope: GlobalSearchScope
@@ -410,87 +268,74 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         if (depth > MAX_HIERARCHY_DEPTH) return emptyList()
 
         val typeName = getQualifiedName(scTypeDef) ?: getName(scTypeDef) ?: return emptyList()
-        if (typeName in visited || typeName == "scala.AnyRef" || typeName == "scala.Any") {
-            return emptyList()
-        }
+        if (typeName in visited || typeName == "scala.AnyRef" || typeName == "scala.Any") return emptyList()
         visited.add(typeName)
 
-        val supertypes = mutableListOf<TypeElementData>()
-
+        val result = mutableListOf<TypeElementData>()
         try {
-            val supers = getSupers(scTypeDef)
-            for (superType in supers) {
+            for (superType in getSupers(scTypeDef)) {
                 val superName = getQualifiedName(superType) ?: getName(superType)
                 if (superName != null && superName != "scala.AnyRef" && superName != "scala.Any") {
                     if (!shouldIncludeNavigationElement(searchScope, superType)) continue
-                    val superSupertypes = getSupertypes(project, superType, visited, depth + 1, searchScope)
-                    supertypes.add(TypeElementData(
+                    val superSupers = (superType as? ScTypeDefinition)?.let {
+                        getSupertypes(project, it, visited, depth + 1, searchScope)
+                    } ?: emptyList()
+                    result.add(TypeElementData(
                         name = superName,
                         qualifiedName = getQualifiedName(superType),
                         file = superType.containingFile?.virtualFile?.let { getRelativePath(project, it) },
                         line = getLineNumber(project, superType),
                         kind = getTypeKind(superType),
                         language = "Scala",
-                        supertypes = superSupertypes.takeIf { it.isNotEmpty() }
+                        supertypes = superSupers.takeIf { it.isNotEmpty() }
                     ))
                 }
             }
-        } catch (e: Exception) {
-            // Handle gracefully
-        }
-
-        return supertypes
+        } catch (_: Exception) {}
+        return result
     }
 
     private fun getSubtypes(
         project: Project,
-        scTypeDef: PsiElement,
+        scTypeDef: ScTypeDefinition,
         searchScope: GlobalSearchScope
     ): List<TypeElementData> {
         val results = mutableListOf<TypeElementData>()
-        
         try {
-            // ScTypeDefinition extends PsiClass — use platform API directly
-            if (scTypeDef is com.intellij.psi.PsiClass) {
-                ClassInheritorsSearch.search(scTypeDef, searchScope, true).forEach(Processor { inheritor ->
-                    if (isScTypeDefinition(inheritor)) {
-                        if (shouldIncludeNavigationElement(searchScope, inheritor)) {
-                            val file = inheritor.containingFile?.virtualFile
-                            results.add(TypeElementData(
-                                name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
-                                qualifiedName = getQualifiedName(inheritor),
-                                file = file?.let { getRelativePath(project, it) },
-                                line = getLineNumber(project, inheritor),
-                                kind = getTypeKind(inheritor),
-                                language = "Scala"
-                            ))
-                        }
-                    }
-                    results.size < 100
-                })
-            }
-        } catch (e: Exception) {
-            // Handle gracefully
-        }
-        
+            ClassInheritorsSearch.search(scTypeDef, searchScope, true).forEach(Processor { inheritor ->
+                if (inheritor is ScTypeDefinition && shouldIncludeNavigationElement(searchScope, inheritor)) {
+                    results.add(TypeElementData(
+                        name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
+                        qualifiedName = getQualifiedName(inheritor),
+                        file = inheritor.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        line = getLineNumber(project, inheritor),
+                        kind = getTypeKind(inheritor),
+                        language = "Scala"
+                    ))
+                }
+                results.size < 100
+            })
+        } catch (_: Exception) {}
         return results
     }
 }
 
+// ---------------------------------------------------------------------------
+// ImplementationsHandler
+// ---------------------------------------------------------------------------
+
 /**
  * Scala implementation of [ImplementationsHandler].
- *
  * Finds implementations of traits, abstract classes, and method overrides.
  */
 class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>(), ImplementationsHandler {
 
     override val languageId = "Scala"
 
-    override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && isScalaLanguage(element)
-    }
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable && scTypeDefinitionClass != null
+    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun findImplementations(
         element: PsiElement,
@@ -498,100 +343,74 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
         scope: BuiltInSearchScope
     ): List<ImplementationData>? {
         val searchScope = createNavigationSearchScope(project, scope)
-        val function = findContainingScFunction(element)
-        if (function != null) {
-            return findMethodImplementations(project, function, searchScope)
-        }
 
-        val typeDef = findContainingScTypeDefinition(element)
-        if (typeDef != null) {
-            return findTypeImplementations(project, typeDef, searchScope)
-        }
-
+        findContainingScFunction(element)?.let { return findMethodImplementations(project, it, searchScope) }
+        findContainingScTypeDefinition(element)?.let { return findTypeImplementations(project, it, searchScope) }
         return null
     }
 
     private fun findMethodImplementations(
         project: Project,
-        function: PsiElement,
+        function: ScFunction,
         searchScope: GlobalSearchScope
     ): List<ImplementationData> {
         val results = mutableListOf<ImplementationData>()
-        
         try {
-            // ScFunction extends PsiMethod — use platform API directly
-            if (function is com.intellij.psi.PsiMethod) {
-                OverridingMethodsSearch.search(function, searchScope, true).forEach(Processor { overriding ->
-                    if (isScFunction(overriding)) {
-                        if (shouldIncludeNavigationElement(searchScope, overriding)) {
-                            val file = overriding.containingFile?.virtualFile
-                            if (file != null) {
-                                val containingType = findContainingScTypeDefinition(overriding)
-                                val typeName = containingType?.let { getName(it) } ?: ""
-                                val functionName = getName(overriding) ?: "unknown"
-                                results.add(ImplementationData(
-                                    name = if (typeName.isNotEmpty()) "$typeName.$functionName" else functionName,
-                                    file = getRelativePath(project, file),
-                                    line = getLineNumber(project, overriding) ?: 0,
-                                    column = getColumnNumber(project, overriding) ?: 0,
-                                    kind = "METHOD",
-                                    language = "Scala"
-                                ))
-                            }
-                        }
+            OverridingMethodsSearch.search(function, searchScope, true).forEach(Processor { overriding ->
+                if (overriding is ScFunction && shouldIncludeNavigationElement(searchScope, overriding)) {
+                    overriding.containingFile?.virtualFile?.let { file ->
+                        val typeName = findContainingScTypeDefinition(overriding)?.let { getName(it) } ?: ""
+                        val funcName = overriding.name ?: "unknown"
+                        results.add(ImplementationData(
+                            name = if (typeName.isNotEmpty()) "$typeName.$funcName" else funcName,
+                            file = getRelativePath(project, file),
+                            line = getLineNumber(project, overriding) ?: 0,
+                            column = getColumnNumber(project, overriding) ?: 0,
+                            kind = "METHOD",
+                            language = "Scala"
+                        ))
                     }
-                    results.size < 100
-                })
-            }
-        } catch (e: Exception) {
-            // Handle gracefully
-        }
-        
+                }
+                results.size < 100
+            })
+        } catch (_: Exception) {}
         return results
     }
 
     private fun findTypeImplementations(
         project: Project,
-        typeDef: PsiElement,
+        typeDef: ScTypeDefinition,
         searchScope: GlobalSearchScope
     ): List<ImplementationData> {
         val results = mutableListOf<ImplementationData>()
-        
         try {
-            // ScTypeDefinition extends PsiClass — use platform API directly
-            if (typeDef is com.intellij.psi.PsiClass) {
-                ClassInheritorsSearch.search(typeDef, searchScope, true).forEach(Processor { inheritor ->
-                    if (isScTypeDefinition(inheritor)) {
-                        if (shouldIncludeNavigationElement(searchScope, inheritor)) {
-                            val file = inheritor.containingFile?.virtualFile
-                            if (file != null) {
-                                results.add(ImplementationData(
-                                    name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
-                                    file = getRelativePath(project, file),
-                                    line = getLineNumber(project, inheritor) ?: 0,
-                                    column = getColumnNumber(project, inheritor) ?: 0,
-                                    kind = getTypeKind(inheritor),
-                                    language = "Scala"
-                                ))
-                            }
-                        }
+            ClassInheritorsSearch.search(typeDef, searchScope, true).forEach(Processor { inheritor ->
+                if (inheritor is ScTypeDefinition && shouldIncludeNavigationElement(searchScope, inheritor)) {
+                    inheritor.containingFile?.virtualFile?.let { file ->
+                        results.add(ImplementationData(
+                            name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
+                            file = getRelativePath(project, file),
+                            line = getLineNumber(project, inheritor) ?: 0,
+                            column = getColumnNumber(project, inheritor) ?: 0,
+                            kind = getTypeKind(inheritor),
+                            language = "Scala"
+                        ))
                     }
-                    results.size < 100
-                })
-            }
-        } catch (e: Exception) {
-            // Handle gracefully
-        }
-        
+                }
+                results.size < 100
+            })
+        } catch (_: Exception) {}
         return results
     }
 }
 
+// ---------------------------------------------------------------------------
+// CallHierarchyHandler
+// ---------------------------------------------------------------------------
+
 /**
  * Scala implementation of [CallHierarchyHandler].
- *
  * Finds callers and callees of Scala methods/functions.
- * Handles inheritance and method overrides for accurate call tree.
  */
 class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHierarchyHandler {
 
@@ -604,11 +423,10 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
 
     override val languageId = "Scala"
 
-    override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && isScalaLanguage(element)
-    }
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable && scFunctionClass != null
+    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -627,34 +445,21 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
             findCalleesRecursive(project, scFunction, depth, visited, searchScope = searchScope)
         }
 
-        return CallHierarchyData(
-            element = createCallElement(project, scFunction),
-            calls = calls
-        )
+        return CallHierarchyData(element = createCallElement(project, scFunction), calls = calls)
     }
 
-    /**
-     * Finds all super methods that the given method overrides.
-     * This is used to also search for callers of base methods, since those
-     * calls could be dispatched to this method at runtime (polymorphism).
-     */
-    private fun findAllSuperMethods(project: Project, scFunction: PsiElement): Set<PsiElement> {
-        val superMethods = mutableSetOf<PsiElement>()
-        try {
-            // ScFunction has a superMethods property that returns Seq[PsiMethod]
-            val superMethodsMethod = scFunction.javaClass.getMethod("superMethods")
-            val scalaSeq = superMethodsMethod.invoke(scFunction)
-            val supers = scalaSeqToList(scalaSeq)
-            superMethods.addAll(supers.take(MAX_SUPER_METHODS))
-        } catch (e: Exception) {
-            LOG.debug("Failed to get super methods: ${e.message}")
+    private fun getSuperMethods(function: ScFunction): List<PsiElement> {
+        return try {
+            function.superMethods().toKotlinList().take(MAX_SUPER_METHODS)
+        } catch (_: Exception) {
+            LOG.debug("Failed to get super methods for ${function.name}")
+            emptyList()
         }
-        return superMethods
     }
 
     private fun findCallersRecursive(
         project: Project,
-        scFunction: PsiElement,
+        scFunction: ScFunction,
         depth: Int,
         visited: MutableSet<String>,
         stackDepth: Int = 0,
@@ -667,11 +472,9 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         visited.add(functionKey)
 
         return try {
-            // Collect all methods to search: current method + all super methods it overrides
-            val methodsToSearch = mutableSetOf(scFunction)
-            methodsToSearch.addAll(findAllSuperMethods(project, scFunction))
+            val methodsToSearch = mutableSetOf<PsiElement>(scFunction)
+            methodsToSearch.addAll(getSuperMethods(scFunction))
 
-            // Search for references to all methods in the hierarchy using platform API directly
             val allReferences = mutableListOf<com.intellij.psi.PsiReference>()
             for (methodToSearch in methodsToSearch) {
                 if (allReferences.size >= MAX_RESULTS_PER_LEVEL) break
@@ -685,20 +488,13 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
                 .mapNotNull { reference ->
                     val refElement = reference.element
                     val containingFunction = findContainingScFunction(refElement)
-                    if (containingFunction != null && containingFunction != scFunction && !methodsToSearch.contains(containingFunction)) {
-                        val containingFile = containingFunction.containingFile?.virtualFile
-                        if (containingFile == null || !searchScope.contains(containingFile)) {
-                            return@mapNotNull null
-                        }
+                    if (containingFunction != null
+                        && containingFunction != scFunction
+                        && !methodsToSearch.contains(containingFunction)) {
+                        val file = containingFunction.containingFile?.virtualFile
+                        if (file == null || !searchScope.contains(file)) return@mapNotNull null
                         val children = if (depth > 1) {
-                            findCallersRecursive(
-                                project,
-                                containingFunction,
-                                depth - 1,
-                                visited,
-                                stackDepth + 1,
-                                searchScope
-                            )
+                            findCallersRecursive(project, containingFunction, depth - 1, visited, stackDepth + 1, searchScope)
                         } else null
                         createCallElement(project, containingFunction, children)
                     } else null
@@ -712,7 +508,7 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
 
     private fun findCalleesRecursive(
         project: Project,
-        scFunction: PsiElement,
+        scFunction: ScFunction,
         depth: Int,
         visited: MutableSet<String>,
         stackDepth: Int = 0,
@@ -726,13 +522,10 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
 
         val callees = mutableListOf<CallElementData>()
         try {
-            val scMethodCallClass = this.scMethodCallClass ?: return emptyList()
-            @Suppress("UNCHECKED_CAST")
-            val callExpressions = PsiTreeUtil.findChildrenOfType(scFunction, scMethodCallClass as Class<out PsiElement>)
-
+            val callExpressions = PsiTreeUtil.findChildrenOfType(scFunction, ScMethodCall::class.java)
             callExpressions.take(MAX_RESULTS_PER_LEVEL).forEach { callExpr ->
                 val calledFunction = resolveCallExpression(callExpr)
-                if (calledFunction != null && isScFunction(calledFunction)) {
+                if (calledFunction is ScFunction) {
                     if (!shouldIncludeNavigationElement(searchScope, calledFunction)) return@forEach
                     val children = if (depth > 1) {
                         findCalleesRecursive(project, calledFunction, depth - 1, visited, stackDepth + 1, searchScope)
@@ -749,48 +542,36 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         return callees
     }
 
-    private fun resolveCallExpression(callExpr: PsiElement): PsiElement? {
+    private fun resolveCallExpression(callExpr: ScMethodCall): PsiElement? {
         return try {
-            // ScMethodCall has getInvokedExpr to get the reference
-            val invokedExprMethod = callExpr.javaClass.getMethod("getInvokedExpr")
-            val invokedExpr = invokedExprMethod.invoke(callExpr) as? PsiElement
-            
-            if (invokedExpr != null) {
-                // Try to resolve as reference
-                if (invokedExpr is com.intellij.psi.PsiReference) {
-                    invokedExpr.resolve()
-                } else {
-                    // Try to get reference from element
-                    val reference = invokedExpr.reference
-                    reference?.resolve()
-                }
-            } else null
+            val invokedExpr = callExpr.getInvokedExpr()
+            when (invokedExpr) {
+                is com.intellij.psi.PsiReference -> invokedExpr.resolve()
+                else -> invokedExpr.reference?.resolve()
+            }
         } catch (e: Exception) {
             LOG.debug("Failed to resolve call expression: ${e.message}")
             null
         }
     }
 
-    private fun getFunctionKey(scFunction: PsiElement): String {
-        val containingClass = findContainingScTypeDefinition(scFunction)
-        val className = containingClass?.let { getQualifiedName(it) ?: getName(it) } ?: ""
-        val functionName = getName(scFunction) ?: ""
+    private fun getFunctionKey(scFunction: ScFunction): String {
+        val className = findContainingScTypeDefinition(scFunction)
+            ?.let { getQualifiedName(it) ?: getName(it) } ?: ""
         val file = scFunction.containingFile?.virtualFile?.path ?: ""
-        return "$className.$functionName@$file"
+        return "$className.${scFunction.name}@$file"
     }
 
     private fun createCallElement(
         project: Project,
-        scFunction: PsiElement,
+        scFunction: ScFunction,
         children: List<CallElementData>? = null
     ): CallElementData {
-        val containingClass = findContainingScTypeDefinition(scFunction)
-        val className = containingClass?.let { getName(it) } ?: ""
-        val functionName = getName(scFunction) ?: "unknown"
+        val className = findContainingScTypeDefinition(scFunction)?.let { getName(it) } ?: ""
+        val funcName = scFunction.name ?: "unknown"
         val file = scFunction.containingFile?.virtualFile
-
         return CallElementData(
-            name = if (className.isNotEmpty()) "$className.$functionName" else functionName,
+            name = if (className.isNotEmpty()) "$className.$funcName" else funcName,
             file = file?.let { getRelativePath(project, it) } ?: "unknown",
             line = getLineNumber(project, scFunction) ?: 0,
             column = getColumnNumber(project, scFunction) ?: 0,
@@ -798,48 +579,15 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
             children = children
         )
     }
-
-    private fun buildMethodSignature(scFunction: PsiElement): String {
-        return try {
-            // ScFunction has parameterList
-            val parameterListMethod = scFunction.javaClass.getMethod("parameterList")
-            val paramList = parameterListMethod.invoke(scFunction)
-            
-            if (paramList != null) {
-                // Get clauses
-                val clausesMethod = paramList.javaClass.getMethod("clauses")
-                val clauses = clausesMethod.invoke(paramList)
-                
-                // Convert Scala Seq to list
-                val clausesList = scalaSeqToList(clauses)
-                
-                val params = clausesList.flatMap { clause ->
-                    try {
-                        val parametersMethod = clause.javaClass.getMethod("parameters")
-                        val parameters = parametersMethod.invoke(clause)
-                        scalaSeqToList(parameters)
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                }.mapNotNull { param ->
-                    getName(param)
-                }.joinToString(", ")
-                
-                val functionName = getName(scFunction) ?: "unknown"
-                "$functionName($params)"
-            } else {
-                getName(scFunction) ?: "unknown"
-            }
-        } catch (e: Exception) {
-            getName(scFunction) ?: "unknown"
-        }
-    }
 }
+
+// ---------------------------------------------------------------------------
+// SuperMethodsHandler
+// ---------------------------------------------------------------------------
 
 /**
  * Scala implementation of [SuperMethodsHandler].
- *
- * Finds methods that a given Scala method overrides/implements in the type hierarchy.
+ * Finds methods that a given Scala method overrides/implements.
  */
 class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMethodsHandler {
 
@@ -849,123 +597,80 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
 
     override val languageId = "Scala"
 
-    override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && isScalaLanguage(element)
-    }
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable && scFunctionClass != null
+    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val containingClass = findContainingScTypeDefinition(scFunction) ?: return null
 
-        val file = scFunction.containingFile?.virtualFile
         val methodData = MethodData(
-            name = getName(scFunction) ?: "unknown",
+            name = scFunction.name ?: "unknown",
             signature = buildMethodSignature(scFunction),
             containingClass = getQualifiedName(containingClass) ?: getName(containingClass) ?: "unknown",
-            file = file?.let { getRelativePath(project, it) } ?: "unknown",
+            file = scFunction.containingFile?.virtualFile?.let { getRelativePath(project, it) } ?: "unknown",
             line = getLineNumber(project, scFunction) ?: 0,
             column = getColumnNumber(project, scFunction) ?: 0,
             language = "Scala"
         )
 
-        val hierarchy = buildHierarchy(project, scFunction)
-
         return SuperMethodsData(
             method = methodData,
-            hierarchy = hierarchy
+            hierarchy = buildHierarchy(project, scFunction)
         )
     }
 
     private fun buildHierarchy(
         project: Project,
-        scFunction: PsiElement,
+        scFunction: ScFunction,
         visited: MutableSet<String> = mutableSetOf(),
         depth: Int = 1
     ): List<SuperMethodData> {
         val hierarchy = mutableListOf<SuperMethodData>()
-
         try {
-            // ScFunction has a superMethods property that returns Seq[PsiMethod]
-            val superMethodsMethod = scFunction.javaClass.getMethod("superMethods")
-            val scalaSeq = superMethodsMethod.invoke(scFunction)
-            val superMethods = scalaSeqToList(scalaSeq)
-
-            for (superMethod in superMethods) {
+            for (superMethod in scFunction.superMethods().toKotlinList()) {
                 val containingClass = findContainingScTypeDefinition(superMethod)
                 val className = containingClass?.let { getQualifiedName(it) ?: getName(it) } ?: "unknown"
-                val methodName = getName(superMethod) ?: "unknown"
+                val methodName = (superMethod as? ScFunction)?.name
+                    ?: (superMethod as? com.intellij.psi.PsiNamedElement)?.name
+                    ?: "unknown"
                 val key = "$className.$methodName"
-                
                 if (key in visited) continue
                 visited.add(key)
 
-                val file = superMethod.containingFile?.virtualFile
-
                 hierarchy.add(SuperMethodData(
                     name = methodName,
-                    signature = buildMethodSignature(superMethod),
+                    signature = (superMethod as? ScFunction)?.let { buildMethodSignature(it) } ?: methodName,
                     containingClass = className,
                     containingClassKind = containingClass?.let { getTypeKind(it) } ?: "UNKNOWN",
-                    file = file?.let { getRelativePath(project, it) },
+                    file = superMethod.containingFile?.virtualFile?.let { getRelativePath(project, it) },
                     line = getLineNumber(project, superMethod),
                     column = getColumnNumber(project, superMethod),
-                    isInterface = containingClass?.let { isScTrait(it) } ?: false,
+                    isInterface = containingClass is ScTrait,
                     depth = depth,
                     language = "Scala"
                 ))
 
-                // Recursively get super methods
-                if (isScFunction(superMethod)) {
+                if (superMethod is ScFunction) {
                     hierarchy.addAll(buildHierarchy(project, superMethod, visited, depth + 1))
                 }
             }
         } catch (e: Exception) {
             LOG.debug("Failed to build super method hierarchy: ${e.message}")
         }
-
         return hierarchy
-    }
-
-    private fun buildMethodSignature(scFunction: PsiElement): String {
-        return try {
-            val parameterListMethod = scFunction.javaClass.getMethod("parameterList")
-            val paramList = parameterListMethod.invoke(scFunction)
-            
-            if (paramList != null) {
-                val clausesMethod = paramList.javaClass.getMethod("clauses")
-                val clauses = clausesMethod.invoke(paramList)
-                val clausesList = scalaSeqToList(clauses)
-                
-                val params = clausesList.flatMap { clause ->
-                    try {
-                        val parametersMethod = clause.javaClass.getMethod("parameters")
-                        val parameters = parametersMethod.invoke(clause)
-                        scalaSeqToList(parameters)
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                }.mapNotNull { param ->
-                    getName(param)
-                }.joinToString(", ")
-                
-                val functionName = getName(scFunction) ?: "unknown"
-                "$functionName($params)"
-            } else {
-                getName(scFunction) ?: "unknown"
-            }
-        } catch (e: Exception) {
-            getName(scFunction) ?: "unknown"
-        }
     }
 }
 
+// ---------------------------------------------------------------------------
+// StructureHandler
+// ---------------------------------------------------------------------------
+
 /**
  * Scala implementation of [StructureHandler].
- *
- * Extracts the hierarchical structure of Scala source files including
- * classes, traits, objects, case classes, and their members.
+ * Extracts hierarchical structure of Scala source files.
  */
 class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), StructureHandler {
 
@@ -975,137 +680,93 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
 
     override val languageId = "Scala"
 
-    override fun canHandle(element: PsiElement): Boolean {
-        return isAvailable() && isScalaLanguage(element)
-    }
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable && scTypeDefinitionClass != null
+    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
-        val structure = mutableListOf<StructureNode>()
-
-        try {
-            val scalaFileClass = Class.forName("org.jetbrains.plugins.scala.lang.psi.api.ScalaFile")
-            if (!scalaFileClass.isInstance(file)) {
-                LOG.debug("File is not a ScalaFile: ${file.javaClass.name}, language: ${file.language.id}")
-                return emptyList()
-            }
-
-            // Use PsiTreeUtil to find all top-level type definitions
-            @Suppress("UNCHECKED_CAST")
-            val typeDefinitions = PsiTreeUtil.findChildrenOfType(file, scTypeDefinitionClass as Class<PsiElement>)
-            LOG.debug("Found ${typeDefinitions?.size ?: 0} type definitions in Scala file")
-
-            typeDefinitions?.forEach { typeDef ->
-                // Only include top-level types (not nested ones initially)
-                if (isTopLevel(typeDef, file)) {
-                    structure.add(extractTypeStructure(typeDef, project))
-                }
-            }
-
-            // Also find top-level functions
-            @Suppress("UNCHECKED_CAST")
-            val functions = PsiTreeUtil.findChildrenOfType(file, scFunctionClass as Class<PsiElement>)
-            LOG.debug("Found ${functions?.size ?: 0} functions in Scala file")
-
-            functions?.forEach { function ->
-                if (isTopLevel(function, file)) {
-                    structure.add(extractFunctionStructure(function, project))
-                }
-            }
-
-        } catch (e: ClassNotFoundException) {
-            LOG.warn("Scala PSI class not found: ${e.message}")
-        } catch (e: Exception) {
-            LOG.warn("Failed to extract Scala file structure: ${e.message}, ${e.javaClass.simpleName}")
+        if (file !is ScalaFile) {
+            LOG.debug("File is not a ScalaFile: ${file.javaClass.name}, language: ${file.language.id}")
+            return emptyList()
         }
 
+        val structure = mutableListOf<StructureNode>()
+        try {
+            // Top-level type definitions
+            PsiTreeUtil.findChildrenOfType(file, ScTypeDefinition::class.java)
+                .filter { isTopLevel(it, file) }
+                .forEach { structure.add(extractTypeStructure(it, project)) }
+
+            // Top-level functions
+            PsiTreeUtil.findChildrenOfType(file, ScFunction::class.java)
+                .filter { isTopLevel(it, file) }
+                .forEach { structure.add(extractFunctionStructure(it, project)) }
+
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract Scala file structure: ${e.message}")
+        }
         return structure.sortedBy { it.line }
     }
 
-    /**
-     * Check if an element is a top-level element (not nested inside a type definition).
-     */
     private fun isTopLevel(element: PsiElement, file: PsiFile): Boolean {
         var current: PsiElement? = element.parent
         while (current != null && current != file) {
-            if (isScTypeDefinition(current)) {
-                return false // Nested inside a type
-            }
+            if (current is ScTypeDefinition) return false
             current = current.parent
         }
         return true
     }
 
-    private fun extractTypeStructure(typeDef: PsiElement, project: Project): StructureNode {
+    private fun extractTypeStructure(typeDef: ScTypeDefinition, project: Project): StructureNode {
         val children = mutableListOf<StructureNode>()
-
         try {
-            // Get members using ScTemplateDefinition.members
-            val membersMethod = typeDef.javaClass.getMethod("members")
-            val membersSeq = membersMethod.invoke(typeDef)
-            val members = scalaSeqToList(membersSeq)
-
-            for (member in members) {
-                when {
-                    isScFunction(member) -> {
-                        children.add(extractFunctionStructure(member, project))
-                    }
-                    isScTypeDefinition(member) -> {
-                        children.add(extractTypeStructure(member, project))
-                    }
-                    isScValue(member) || isScVariable(member) -> {
-                        children.add(extractFieldStructure(member, project))
-                    }
+            typeDef.members().toKotlinList().forEach { member ->
+                when (member) {
+                    is ScFunction -> children.add(extractFunctionStructure(member, project))
+                    is ScTypeDefinition -> children.add(extractTypeStructure(member, project))
+                    is ScValue -> children.add(extractFieldStructure(member, project, isVar = false))
+                    is ScVariable -> children.add(extractFieldStructure(member, project, isVar = true))
+                    else -> {}
                 }
             }
         } catch (e: Exception) {
-            LOG.debug("Failed to extract Scala type structure: ${e.message}")
+            LOG.debug("Failed to extract Scala type members: ${e.message}")
         }
 
-        val name = getName(typeDef) ?: "unknown"
         val kind = when {
-            isScTrait(typeDef) -> StructureKind.TRAIT
-            isScObject(typeDef) -> {
-                // Check if package object
-                if (isPackageObject(typeDef)) StructureKind.PACKAGE_OBJECT else StructureKind.OBJECT
-            }
-            isCaseClass(typeDef) -> StructureKind.CASE_CLASS
-            isScClass(typeDef) -> StructureKind.CLASS
+            typeDef is ScTrait -> StructureKind.TRAIT
+            typeDef is ScObject && typeDef.isPackageObject -> StructureKind.PACKAGE_OBJECT
+            typeDef is ScObject -> StructureKind.OBJECT
+            typeDef.isCase -> StructureKind.CASE_CLASS
             else -> StructureKind.CLASS
         }
 
         return StructureNode(
-            name = name,
+            name = typeDef.name ?: "unknown",
             kind = kind,
             modifiers = extractModifiers(typeDef),
             signature = null,
             line = getLineNumber(project, typeDef) ?: 0,
-            children = children.takeIf { it.isNotEmpty() } ?: emptyList()
+            children = children
         )
     }
 
-    private fun extractFunctionStructure(function: PsiElement, project: Project): StructureNode {
-        val name = getName(function) ?: "unknown"
-        val signature = buildSignature(function)
-
+    private fun extractFunctionStructure(function: ScFunction, project: Project): StructureNode {
         return StructureNode(
-            name = name,
+            name = function.name ?: "unknown",
             kind = StructureKind.METHOD,
             modifiers = extractModifiers(function),
-            signature = signature,
+            signature = buildSignature(function),
             line = getLineNumber(project, function) ?: 0,
             children = emptyList()
         )
     }
 
-    private fun extractFieldStructure(field: PsiElement, project: Project): StructureNode {
-        val name = getName(field) ?: "unknown"
-        val kind = if (isScVariable(field)) StructureKind.VAR else StructureKind.VAL
-
+    private fun extractFieldStructure(field: ScValueOrVariable, project: Project, isVar: Boolean): StructureNode {
         return StructureNode(
-            name = name,
-            kind = kind,
+            name = (field as? com.intellij.psi.PsiNamedElement)?.name ?: "unknown",
+            kind = if (isVar) StructureKind.VAR else StructureKind.VAL,
             modifiers = extractModifiers(field),
             signature = null,
             line = getLineNumber(project, field) ?: 0,
@@ -1113,86 +774,15 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         )
     }
 
-    private fun extractModifiers(element: PsiElement): List<String> {
-        val modifiers = mutableListOf<String>()
-
-        try {
-            // Try to get modifiers using getModifierList
-            val modifierListMethod = element.javaClass.getMethod("getModifierList")
-            val modifierList = modifierListMethod.invoke(element)
-
-            if (modifierList != null) {
-                // Check common modifiers
-                val checkModifier = { modifier: String ->
-                    try {
-                        val hasMethod = modifierList.javaClass.getMethod("has", String::class.java)
-                        hasMethod.invoke(modifierList, modifier) as? Boolean ?: false
-                    } catch (e: Exception) {
-                        false
-                    }
-                }
-
-                if (checkModifier("private")) modifiers.add("private")
-                if (checkModifier("protected")) modifiers.add("protected")
-                if (checkModifier("abstract")) modifiers.add("abstract")
-                if (checkModifier("final")) modifiers.add("final")
-                if (checkModifier("implicit")) modifiers.add("implicit")
-                if (checkModifier("override")) modifiers.add("override")
-                if (checkModifier("sealed")) modifiers.add("sealed")
-            }
-        } catch (e: Exception) {
-            // Modifiers not available, return empty list
-        }
-
-        return modifiers
-    }
-
-    private fun buildSignature(function: PsiElement): String {
+    private fun buildSignature(function: ScFunction): String {
         return try {
-            val parameterListMethod = function.javaClass.getMethod("parameterList")
-            val paramList = parameterListMethod.invoke(function)
-            
-            if (paramList != null) {
-                val clausesMethod = paramList.javaClass.getMethod("clauses")
-                val clauses = clausesMethod.invoke(paramList)
-                val clausesList = scalaSeqToList(clauses)
-                
-                val params = clausesList.flatMap { clause ->
-                    try {
-                        val parametersMethod = clause.javaClass.getMethod("parameters")
-                        val parameters = parametersMethod.invoke(clause)
-                        scalaSeqToList(parameters)
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                }.mapNotNull { param ->
-                    getName(param)
-                }.joinToString(", ")
-                
-                "($params)"
-            } else {
-                "()"
-            }
-        } catch (e: Exception) {
+            val params = function.paramClauses().clauses().toKotlinList()
+                .flatMap { clause -> clause.parameters().toKotlinList() }
+                .mapNotNull { param -> param.name }
+                .joinToString(", ")
+            "($params)"
+        } catch (_: Exception) {
             "()"
-        }
-    }
-
-    private fun isScValue(element: PsiElement): Boolean {
-        return scValueClass?.isInstance(element) == true
-    }
-
-    private fun isScVariable(element: PsiElement): Boolean {
-        return scVariableClass?.isInstance(element) == true
-    }
-
-    private fun isPackageObject(element: PsiElement): Boolean {
-        return try {
-            if (!isScObject(element)) return false
-            val method = element.javaClass.getMethod("isPackageObject")
-            method.invoke(element) as? Boolean ?: false
-        } catch (e: Exception) {
-            false
         }
     }
 }
