@@ -24,6 +24,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
+- **Scala** - IntelliJ IDEA with Scala plugin
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 **Universal Tools (All Supported JetBrains IDEs)**
@@ -291,13 +292,13 @@ These tools work in all supported JetBrains IDEs.
 
 These tools activate based on available language plugins:
 
-| Tool | Description | Languages |
-|------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) with start and end line numbers for each element *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| Tool | Description | Languages                               |
+|------|-------------|-----------------------------------------|
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust, Scala |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP, Scala |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) with start and end line numbers for each element *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala |
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
@@ -362,7 +363,7 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 | CLion | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 | DataGrip | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
-> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Scala adds full navigation support (type hierarchy, call hierarchy, implementations, super methods, file structure) when the Scala plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
