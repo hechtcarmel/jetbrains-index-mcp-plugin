@@ -557,11 +557,11 @@ Manage which open projects the MCP server keeps active, in the background, dorma
 
 **Extended Navigation Tools (Language-Aware):**
 
-These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Markdown):
-- `ide_type_hierarchy` - Get type hierarchy for a class with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)
-- `ide_call_hierarchy` - Get call hierarchy for a method with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust). Supports `language`+`symbol` as an alternative to `file`+`line`+`column`.
-- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Scala, Markdown):
+- `ide_type_hierarchy` - Get type hierarchy for a class with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala)
+- `ide_call_hierarchy` - Get call hierarchy for a method with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala). Supports `language`+`symbol` as an alternative to `file`+`line`+`column`.
+- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, Scala — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, Scala — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
 - `ide_file_structure` - Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds` (disabled by default)
 
 **Java/Kotlin-Only Tools:**
@@ -590,6 +590,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
+- `handlers/scala/ScalaHandlers.kt` - Reflection-based Scala PSI access
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
@@ -605,7 +606,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
 4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` and `ide_list_tests` if Java plugin available
 
-**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+**Reflection Pattern:** Python, JavaScript, Go, PHP, Rust, and Scala handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
 
 ### Optimized Symbol Search
 
