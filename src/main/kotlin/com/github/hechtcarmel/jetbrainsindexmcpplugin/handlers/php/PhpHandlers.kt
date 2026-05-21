@@ -431,22 +431,56 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
     /**
      * Finds a method by name in a PhpClass using reflection.
-     * Uses `findMethodByName()` API, falling back to searching `getOwnMethods()`.
+     * Uses PhpStorm's `findMethodByName(CharSequence)` API so inherited methods
+     * and PHP's case-insensitive method names are handled by the PHP plugin.
      */
     protected fun findMethodInClass(phpClass: PsiElement, methodName: String): PsiElement? {
-        return try {
-            val findMethodByNameMethod = phpClass.javaClass.getMethod("findMethodByName", String::class.java)
-            findMethodByNameMethod.invoke(phpClass, methodName) as? PsiElement
-        } catch (e: Exception) {
-            // Fallback to getOwnMethods and search manually
-            try {
-                val getMethodsMethod = phpClass.javaClass.getMethod("getOwnMethods")
-                val methods = getMethodsMethod.invoke(phpClass) as? Array<*> ?: return null
-                methods.filterIsInstance<PsiElement>().find { getName(it) == methodName }
-            } catch (e2: Exception) {
+        return findMethodByName(phpClass, methodName)
+            ?: findMethodInClassCollections(phpClass, methodName)
+    }
+
+    private fun findMethodByName(phpClass: PsiElement, methodName: String): PsiElement? {
+        val parameterTypes = listOf(CharSequence::class.java, String::class.java)
+
+        for (parameterType in parameterTypes) {
+            val method = try {
+                val findMethodByNameMethod = phpClass.javaClass.getMethod("findMethodByName", parameterType)
+                findMethodByNameMethod.invoke(phpClass, methodName) as? PsiElement
+            } catch (_: NoSuchMethodException) {
+                null
+            } catch (e: Exception) {
+                LOG.debug("Error resolving PHP method $methodName using findMethodByName: ${e.message}")
                 null
             }
+
+            if (method != null) {
+                return method
+            }
         }
+
+        return null
+    }
+
+    private fun findMethodInClassCollections(phpClass: PsiElement, methodName: String): PsiElement? {
+        for (collectionMethodName in listOf("getOwnMethods", "getMethods")) {
+            val method = try {
+                val getMethodsMethod = phpClass.javaClass.getMethod(collectionMethodName)
+                toPsiElements(getMethodsMethod.invoke(phpClass)).find {
+                    getName(it)?.equals(methodName, ignoreCase = true) == true
+                }
+            } catch (_: NoSuchMethodException) {
+                null
+            } catch (e: Exception) {
+                LOG.debug("Error resolving PHP method $methodName using $collectionMethodName: ${e.message}")
+                null
+            }
+
+            if (method != null) {
+                return method
+            }
+        }
+
+        return null
     }
 
     /**
@@ -501,11 +535,17 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
         fieldName: String,
         findConstant: Boolean
     ): PsiElement? {
-        val booleanParameterTypes = listOfNotNull(Boolean::class.javaPrimitiveType, Boolean::class.javaObjectType)
+        val booleanPrimitiveType = Boolean::class.javaPrimitiveType ?: Boolean::class.javaObjectType
+        val signatureCandidates = listOf(
+            arrayOf(CharSequence::class.java, booleanPrimitiveType),
+            arrayOf(CharSequence::class.java, Boolean::class.javaObjectType),
+            arrayOf<Class<*>>(String::class.java, booleanPrimitiveType),
+            arrayOf<Class<*>>(String::class.java, Boolean::class.javaObjectType)
+        )
 
-        for (booleanParameterType in booleanParameterTypes) {
+        for (signature in signatureCandidates) {
             val field = try {
-                val method = phpClass.javaClass.getMethod("findFieldByName", String::class.java, booleanParameterType)
+                val method = phpClass.javaClass.getMethod("findFieldByName", *signature)
                 method.invoke(phpClass, fieldName, findConstant) as? PsiElement
             } catch (_: NoSuchMethodException) {
                 null
@@ -1858,9 +1898,9 @@ class PhpSymbolReferenceHandler : BasePhpHandler<PsiNamedElement>(), SymbolRefer
             return method.toPsiNamedElementResult()
         }
 
-        // No parentheses and no $ prefix: could be constant, method, or field
-        // Resolve order: constant -> method -> field as graceful fallback
-        // Try constant first
+        // No parentheses and no $ prefix: could be a constant or a method name.
+        // Properties require the documented `$property` syntax so a missing constant
+        // does not silently navigate to a same-named property.
         val constant = findConstantInClass(phpClass, memberName)
         if (constant != null) {
             return constant.toPsiNamedElementResult()
@@ -1870,12 +1910,6 @@ class PhpSymbolReferenceHandler : BasePhpHandler<PsiNamedElement>(), SymbolRefer
         val method = findMethodInClass(phpClass, memberName)
         if (method != null) {
             return method.toPsiNamedElementResult()
-        }
-
-        // Try field (some PHP property names don't use $ syntax in getName)
-        val field = findFieldInClass(phpClass, memberName)
-        if (field != null) {
-            return field.toPsiNamedElementResult()
         }
 
         return ErrorMessages.memberNotFoundInType(memberPart, classFqn).toArgumentFailure()
