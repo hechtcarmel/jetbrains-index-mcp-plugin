@@ -19,6 +19,8 @@ import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.util.Processor
 import com.intellij.util.containers.MultiMap
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -88,6 +90,50 @@ class RenameSymbolTool : AbstractMcpTool() {
                     }
                 }
                 else -> RenameModeDecision.InvalidRenameMode("Invalid targetType: '$targetType'. Must be 'symbol' or 'file'.")
+            }
+        }
+
+        internal fun resolveRenameMode(arguments: JsonObject): RenameModeDecision {
+            val targetType = arguments[ParamNames.TARGET_TYPE_CAMEL]?.jsonPrimitive?.content
+            return when (targetType) {
+                "file" -> RenameModeDecision.FileRenameMode
+                "symbol" -> resolveRenameMode(
+                    targetType,
+                    (readCoordinateValue(arguments[ParamNames.LINE]) as? CoordinateRead.Present)?.value,
+                    (readCoordinateValue(arguments[ParamNames.COLUMN]) as? CoordinateRead.Present)?.value
+                )
+                null -> {
+                    val line = readCoordinateValue(arguments[ParamNames.LINE])
+                    val column = readCoordinateValue(arguments[ParamNames.COLUMN])
+                    if (line is CoordinateRead.Invalid || column is CoordinateRead.Invalid) {
+                        return RenameModeDecision.InvalidRenameMode(
+                            "Both 'line' and 'column' must be provided for symbol rename, or both omitted for file rename."
+                        )
+                    }
+                    resolveRenameMode(
+                        targetType,
+                        (line as? CoordinateRead.Present)?.value,
+                        (column as? CoordinateRead.Present)?.value
+                    )
+                }
+                else -> RenameModeDecision.InvalidRenameMode("Invalid targetType: '$targetType'. Must be 'symbol' or 'file'.")
+            }
+        }
+
+        private sealed interface CoordinateRead {
+            data object Missing : CoordinateRead
+            data class Present(val value: Int) : CoordinateRead
+            data object Invalid : CoordinateRead
+        }
+
+        private fun readCoordinateValue(value: JsonElement?): CoordinateRead {
+            return try {
+                when (value) {
+                    null -> CoordinateRead.Missing
+                    else -> CoordinateRead.Present(value.jsonPrimitive.int)
+                }
+            } catch (_: Exception) {
+                CoordinateRead.Invalid
             }
         }
     }
@@ -179,9 +225,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }
-        val line = arguments["line"]?.jsonPrimitive?.int
-        val column = arguments["column"]?.jsonPrimitive?.int
-        val targetType = arguments[ParamNames.TARGET_TYPE_CAMEL]?.jsonPrimitive?.content
         val newName = arguments["newName"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: newName")
 
@@ -199,7 +242,7 @@ class RenameSymbolTool : AbstractMcpTool() {
             return createErrorResult("newName cannot be blank")
         }
 
-        val renameMode = resolveRenameMode(targetType, line, column)
+        val renameMode = resolveRenameMode(arguments)
         when (renameMode) {
             RenameModeDecision.FileRenameMode -> {
                 // continue

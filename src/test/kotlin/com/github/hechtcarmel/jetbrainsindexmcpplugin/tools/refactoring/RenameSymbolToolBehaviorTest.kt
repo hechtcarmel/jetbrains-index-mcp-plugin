@@ -7,6 +7,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -75,5 +76,26 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
         assertTrue(appText.contains("./utils/leaf-renamed"))
         assertFalse(appText.contains("./utils/leaf';"))
         IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    fun testExplicitFileRenameIgnoresMalformedCoordinatesDuringFullToolExecution() = runBlocking {
+        writeProjectFile(
+            "docs/readme.txt",
+            "Rename me through file mode.\n"
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "docs/readme.txt")
+            put("targetType", "file")
+            put("line", JsonPrimitive("not-a-number"))
+            put("column", JsonPrimitive("still-not-a-number"))
+            put("newName", "readme-renamed.txt")
+        })
+
+        assertFalse("Explicit file rename should ignore malformed line/column values: ${result.content}", result.isError)
+
+        val basePath = requireNotNull(project.basePath)
+        assertFalse(Files.exists(Path.of(basePath, "docs/readme.txt")))
+        assertTrue(Files.exists(Path.of(basePath, "docs/readme-renamed.txt")))
     }
 }

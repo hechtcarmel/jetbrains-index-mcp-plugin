@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.psi.PsiNamedElement
+import com.intellij.testFramework.IndexingTestUtil
+import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -120,6 +122,40 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
         assertTrue("Should return deterministic ambiguous_match error", message.startsWith("ambiguous_match:"))
         assertTrue("Should include direct candidate", message.contains("src/utils/format.ts"))
         assertTrue("Should include index candidate", message.contains("src/utils/format/index.ts"))
+    }
+
+    fun testResolveWorkspacePrefixedModulePathUsesProjectRootBeforeNestedContentRoot() {
+        if (!requireJsTsCapability("testResolveWorkspacePrefixedModulePathUsesProjectRootBeforeNestedContentRoot")) return
+
+        myFixture.addFileToProject(
+            "packages/app/src/user.ts",
+            """
+            export class User {
+                readonly source = "project-root";
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "packages/app/packages/app/src/user.ts",
+            """
+            export class User {
+                readonly source = "duplicated-module-root";
+            }
+            """.trimIndent()
+        )
+        val nestedContentRoot = myFixture.tempDirFixture.findOrCreateDir("packages/app")
+        PsiTestUtil.addContentRoot(module, nestedContentRoot)
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = handler.resolveSymbol(project, "packages/app/src/user#User")
+
+        assertTrue("Workspace-prefixed symbol should resolve successfully", result.isSuccess)
+        assertContainingFileSuffix(result.getOrThrow(), "packages/app/src/user.ts")
+        assertFalse(
+            "Resolver must not prepend the nested module root to an already workspace-prefixed path",
+            result.getOrThrow().containingFile.virtualFile.path.replace('\\', '/')
+                .endsWith("packages/app/packages/app/src/user.ts")
+        )
     }
 
     fun testResolveOverloadedExportFixtureCoverageHook() {

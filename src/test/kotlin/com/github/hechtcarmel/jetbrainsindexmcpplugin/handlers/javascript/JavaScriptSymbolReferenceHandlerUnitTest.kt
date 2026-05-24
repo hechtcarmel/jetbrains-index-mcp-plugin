@@ -208,6 +208,21 @@ class JavaScriptSymbolReferenceHandlerUnitTest : TestCase() {
         assertEquals(listOf("src/utils/date.ts"), candidates)
     }
 
+    fun testResolveJsTsSearchRootsPrefersProjectBasePathAndDeduplicates() {
+        val roots = resolveJsTsSearchRoots(
+            "src/webstormIntegration",
+            listOf("src/webstormIntegration/modules/app", "src/webstormIntegration")
+        )
+
+        assertEquals(
+            listOf(
+                "src/webstormIntegration",
+                "src/webstormIntegration/modules/app"
+            ),
+            roots
+        )
+    }
+
     fun testModuleCandidateExpansionExcludesDts() {
         val candidates = expandJsTsModuleCandidates("src/types").map { it.relativePath }
         assertFalse(candidates.any { it.endsWith(".d.ts") })

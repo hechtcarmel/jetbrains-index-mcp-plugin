@@ -194,6 +194,10 @@ internal fun deterministicSingleMatchOrFailure(
     }
 }
 
+internal fun resolveJsTsSearchRoots(basePath: String?, moduleRoots: List<String>): List<String> {
+    return (listOfNotNull(basePath) + moduleRoots).distinct()
+}
+
 private sealed interface OverloadedExportResolution {
     data class PreferImplementation(val implementation: PsiNamedElement) : OverloadedExportResolution
     data object NoSupportedImplementation : OverloadedExportResolution
@@ -578,7 +582,7 @@ class JavaScriptSymbolReferenceHandler(
         ensureCapabilityAvailable()?.let { return Result.failure(it) }
 
         val psiManager = PsiManager.getInstance(project)
-        val roots = ProjectUtils.getModuleContentRoots(project).ifEmpty { listOfNotNull(project.basePath) }
+        val roots = resolveJsTsSearchRoots(project.basePath, ProjectUtils.getModuleContentRoots(project))
         val candidates = mutableListOf<Pair<String, PsiNamedElement>>()
 
         for (moduleCandidate in expandJsTsModuleCandidates(target.modulePath)) {

@@ -33,8 +33,10 @@ import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -496,6 +498,30 @@ class ToolsUnitTest : TestCase() {
         val decision = invokeRenameModeResolver(null, null, null)
 
         assertEquals("Legacy null/null request should still be file rename", "FileRenameMode", decision.javaClass.simpleName)
+    }
+
+    fun testRenameSymbolToolFileModeIgnoresMalformedCoordinates() {
+        val decision = RenameSymbolTool.resolveRenameMode(
+            buildJsonObject {
+                put(ParamNames.TARGET_TYPE_CAMEL, kotlinx.serialization.json.JsonPrimitive("file"))
+                put(ParamNames.LINE, kotlinx.serialization.json.JsonPrimitive("not-a-number"))
+                put(ParamNames.COLUMN, kotlinx.serialization.json.JsonPrimitive("still-not-a-number"))
+            }
+        )
+
+        assertEquals("File rename should short-circuit before parsing coordinates", "FileRenameMode", decision.javaClass.simpleName)
+    }
+
+    fun testRenameSymbolToolSymbolModeRejectsMalformedCoordinates() {
+        val decision = RenameSymbolTool.resolveRenameMode(
+            buildJsonObject {
+                put(ParamNames.TARGET_TYPE_CAMEL, kotlinx.serialization.json.JsonPrimitive("symbol"))
+                put(ParamNames.LINE, kotlinx.serialization.json.JsonPrimitive("not-a-number"))
+                put(ParamNames.COLUMN, kotlinx.serialization.json.JsonPrimitive("still-not-a-number"))
+            }
+        )
+
+        assertEquals("Symbol rename should reject malformed coordinates", "InvalidRenameMode", decision.javaClass.simpleName)
     }
 
     private fun invokeRenameModeResolver(targetType: String?, line: Int?, column: Int?): Any {
