@@ -56,6 +56,38 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .scopeProperty("Search scope. Default: project_files.")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .property("element", typeElementRef, required = true)
+        .arrayProperty("supertypes", "Recursive supertype hierarchy for the target type.", items = typeElementRef, required = true)
+        .arrayProperty("subtypes", "Project subtypes of the target type.", items = typeElementRef, required = true)
+        .build()
+        .withTypeElementDefinition()
+
+    companion object {
+        private const val TYPE_ELEMENT_REF = "#/\$defs/typeElement"
+
+        private val typeElementRef: JsonObject = buildJsonObject {
+            put("\$ref", TYPE_ELEMENT_REF)
+        }
+
+        private val typeElement: JsonObject = SchemaBuilder.tool()
+            .stringProperty("name", "Type name.", required = true)
+            .stringProperty("file", "Project-relative file path for this type, when available.", required = true, nullable = true)
+            .stringProperty("kind", "Type kind, such as class, interface, enum, or trait.", required = true)
+            .stringProperty("language", "Programming language for this type, when known.", required = true, nullable = true)
+            .arrayProperty("supertypes", "Direct or recursive supertypes for this type.", items = typeElementRef, required = true, nullable = true)
+            .build()
+
+        private fun JsonObject.withTypeElementDefinition(): JsonObject = buildJsonObject {
+            for ((key, value) in this@withTypeElementDefinition) {
+                put(key, value)
+            }
+            put("\$defs", buildJsonObject {
+                put("typeElement", typeElement)
+            })
+        }
+    }
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         requireSmartMode(project)
 

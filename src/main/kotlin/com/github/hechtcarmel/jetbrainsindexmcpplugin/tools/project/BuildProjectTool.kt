@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildProjectResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.Disposable
@@ -61,6 +62,40 @@ class BuildProjectTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.REBUILD, "Full rebuild instead of incremental build. Default: false.")
         .booleanProperty(ParamNames.INCLUDE_RAW_OUTPUT, "Include raw build output log in response. Default: false.")
         .intProperty(ParamNames.TIMEOUT_SECONDS, "Timeout in seconds. Must be a positive integer. No timeout if omitted.")
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("success", "Whether the build completed without errors.", required = true)
+        .booleanProperty("aborted", "Whether the build was aborted before completion.", required = true)
+        .intProperty("errors", "Number of build errors, when known.", required = true, nullable = true)
+        .intProperty("warnings", "Number of build warnings, when known.", required = true, nullable = true)
+        .arrayProperty(
+            "buildMessages", "Structured build diagnostics emitted by the build.", SchemaBuilder.tool()
+                .stringProperty("category", "Build message category, such as ERROR or WARNING.", required = true)
+                .stringProperty("message", "Build diagnostic text.", required = true)
+                .stringProperty(
+                    "file",
+                    "Project-relative file path for the build message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "line",
+                    "1-based line number for the build message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "column",
+                    "1-based column number for the build message, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true
+        )
+        .booleanProperty("truncated", "Whether build messages or raw output were truncated.", required = true)
+        .stringProperty("rawOutput", "Raw build output log, when requested.", required = true, nullable = true)
+        .intProperty("durationMs", "Build duration in milliseconds.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

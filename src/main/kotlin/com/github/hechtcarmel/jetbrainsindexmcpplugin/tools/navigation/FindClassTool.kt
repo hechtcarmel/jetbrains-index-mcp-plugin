@@ -13,6 +13,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
@@ -83,6 +84,28 @@ class FindClassTool : AbstractMcpTool() {
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "classes",
+            "Classes and interfaces matching the search query.",
+            items = ToolResultSchemas.symbolMatch,
+            required = true
+        )
+        .intProperty("totalCount", "Total number of matching classes returned for this page.", required = true)
+        .stringProperty("query", "Original class search query.", required = true)
+        .stringProperty(
+            "nextCursor",
+            "Cursor for the next result page, when more results are available.",
+            required = true,
+            nullable = true
+        )
+        .booleanProperty("hasMore", "Whether more matching classes are available.", required = true)
+        .intProperty("totalCollected", "Total number of matching classes collected for pagination.", required = true)
+        .intProperty("offset", "Zero-based offset of this page in the collected results.", required = true)
+        .intProperty("pageSize", "Number of results requested for this page.", required = true)
+        .booleanProperty("stale", "Whether the cached pagination data may be stale.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

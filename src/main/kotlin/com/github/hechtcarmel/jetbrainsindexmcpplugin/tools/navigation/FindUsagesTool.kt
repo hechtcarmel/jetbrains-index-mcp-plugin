@@ -13,6 +13,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
@@ -81,6 +82,36 @@ class FindUsagesTool : AbstractMcpTool() {
         .intProperty("maxResults", "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "usages", "Usages found for the target symbol.", SchemaBuilder.tool()
+                .stringProperty("file", "Project-relative file path containing the usage.", required = true)
+                .intProperty("line", "1-based line number of the usage.", required = true)
+                .intProperty("column", "1-based column number of the usage.", required = true)
+                .stringProperty("context", "Source context surrounding the usage.", required = true)
+                .stringProperty(
+                    "type",
+                    "Usage category, such as method_call, field_access, or import.",
+                    required = true
+                )
+                .stringArrayProperty("astPath", "Structural path to the usage in the syntax tree.", required = true)
+                .build(), required = true
+        )
+        .intProperty("totalCount", "Total number of usages returned for this page.", required = true)
+        .booleanProperty("truncated", "Whether the result set was truncated.", required = true)
+        .stringProperty(
+            "nextCursor",
+            "Cursor for the next result page, when more results are available.",
+            required = true,
+            nullable = true
+        )
+        .booleanProperty("hasMore", "Whether more usages are available.", required = true)
+        .intProperty("totalCollected", "Total number of usages collected for pagination.", required = true)
+        .intProperty("offset", "Zero-based offset of this page in the collected results.", required = true)
+        .intProperty("pageSize", "Number of results requested for this page.", required = true)
+        .booleanProperty("stale", "Whether the cached pagination data may be stale.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

@@ -36,7 +36,8 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var responseFormat: ResponseFormat = ResponseFormat.JSON,
         var disabledTools: MutableSet<String> = mutableSetOf("ide_build_project", "ide_file_structure", "ide_find_symbol", "ide_read_file", "ide_get_active_file", "ide_open_file", "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin"),
         var serverPort: Int = -1, // -1 means use IDE-specific default
-        var serverHost: String = McpConstants.DEFAULT_SERVER_HOST
+        var serverHost: String = McpConstants.DEFAULT_SERVER_HOST,
+        var toolsOutputOutputSchema: Boolean = false
     )
 
     private var state = State()
@@ -62,6 +63,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var responseFormat: ResponseFormat
         get() = state.responseFormat
         set(value) { state.responseFormat = value }
+
+    var toolsOutputOutputSchema: Boolean
+        get() = state.toolsOutputOutputSchema
+        set(value) { state.toolsOutputOutputSchema = value }
 
     var disabledTools: Set<String>
         get() = state.disabledTools.toSet()

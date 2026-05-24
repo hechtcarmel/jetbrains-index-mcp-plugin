@@ -46,6 +46,17 @@ class OptimizeImportsTool : AbstractMcpTool() {
         .file()
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .booleanProperty("success", "Whether import optimization completed successfully.", required = true)
+        .stringArrayProperty(
+            "affectedFiles",
+            "Project-relative files affected by import optimization.",
+            required = true
+        )
+        .intProperty("changesCount", "Number of files changed by import optimization.", required = true)
+        .stringProperty("message", "Human-readable import optimization status message.", required = true)
+        .build()
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = requiredStringArg(arguments, ParamNames.FILE).getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")

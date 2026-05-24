@@ -63,9 +63,54 @@ class CallHierarchyTool : AbstractMcpTool() {
         .scopeProperty("Search scope. Default: project_files.")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .property("element", callElementRef, required = true)
+        .arrayProperty(
+            "calls",
+            "Top-level caller or callee nodes in the call hierarchy.",
+            items = callElementRef,
+            required = true
+        )
+        .build()
+        .withCallElementDefinition()
+
     companion object {
         private const val DEFAULT_DEPTH = 3
         private const val MAX_DEPTH = 5
+        private const val CALL_ELEMENT_REF = "#/\$defs/callElement"
+
+        private val callElementRef: JsonObject = buildJsonObject {
+            put("\$ref", CALL_ELEMENT_REF)
+        }
+
+        private val callElement: JsonObject = SchemaBuilder.tool()
+            .stringProperty("name", "Callable name or signature.", required = true)
+            .stringProperty("file", "Project-relative file path containing the callable.", required = true)
+            .intProperty("line", "1-based line number of the callable.", required = true)
+            .intProperty("column", "1-based column number of the callable.", required = true)
+            .stringProperty(
+                "language",
+                "Programming language for the callable, when known.",
+                required = true,
+                nullable = true
+            )
+            .arrayProperty(
+                "children",
+                "Nested caller or callee nodes in the call hierarchy.",
+                items = callElementRef,
+                required = true,
+                nullable = true
+            )
+            .build()
+
+        private fun JsonObject.withCallElementDefinition(): JsonObject = buildJsonObject {
+            for ((key, value) in this@withCallElementDefinition) {
+                put(key, value)
+            }
+            put("\$defs", buildJsonObject {
+                put("callElement", callElement)
+            })
+        }
     }
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

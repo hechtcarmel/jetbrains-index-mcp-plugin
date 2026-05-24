@@ -10,11 +10,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 
 class SyncFilesTool : AbstractMcpTool() {
 
@@ -31,13 +28,16 @@ class SyncFilesTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .property("paths", buildJsonObject {
-            put("type", "array")
-            putJsonObject("items") {
-                put("type", "string")
-            }
-            put("description", "File or directory paths relative to project root to sync. If omitted, syncs the entire project.")
-        })
+        .stringArrayProperty(
+            "paths",
+            "File or directory paths relative to project root to sync. If omitted, syncs the entire project."
+        )
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .stringArrayProperty("syncedPaths", "Project-relative paths that were synchronized.", required = true)
+        .booleanProperty("syncedAll", "Whether the entire project was synchronized.", required = true)
+        .stringProperty("message", "Human-readable synchronization status message.", required = true)
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {

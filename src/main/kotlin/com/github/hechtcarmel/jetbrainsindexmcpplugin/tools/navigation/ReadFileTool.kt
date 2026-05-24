@@ -39,6 +39,26 @@ class ReadFileTool : AbstractMcpTool() {
         .intProperty(ParamNames.END_LINE, "Ending line number (1-based, inclusive).")
         .build()
 
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .stringProperty("file", "Resolved file path that was read.", required = true)
+        .stringProperty("content", "File content returned for the requested range.", required = true)
+        .stringProperty("language", "Language or file type of the file, when known.", required = true, nullable = true)
+        .intProperty("lineCount", "Total number of lines in the returned content.", required = true)
+        .intProperty(
+            "startLine",
+            "1-based starting line returned, when a range was requested.",
+            required = true,
+            nullable = true
+        )
+        .intProperty(
+            "endLine",
+            "1-based ending line returned, when a range was requested.",
+            required = true,
+            nullable = true
+        )
+        .booleanProperty("isLibraryFile", "Whether the file came from a library or dependency.", required = true)
+        .build()
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
         val qualifiedName = arguments[ParamNames.QUALIFIED_NAME]?.jsonPrimitive?.content

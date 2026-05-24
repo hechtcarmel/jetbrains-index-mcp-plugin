@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonObject
  * Interface for MCP (Model Context Protocol) tools that can be invoked by AI assistants.
  *
  * MCP tools provide specific IDE functionality to external clients through the MCP protocol.
- * Each tool has a unique name, description, input schema, and execution logic.
+ * Each tool has a unique name, description, input schema, optional output schema, and execution logic.
  *
  * ## Implementing a Custom Tool
  *
@@ -99,6 +99,16 @@ interface McpTool {
      * @see com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
      */
     val inputSchema: JsonObject
+
+    /**
+     * Optional JSON Schema defining the tool's structured success output.
+     *
+     * Tools that return structured JSON should provide this schema so MCP clients can
+     * understand the shape of successful responses. Tools that only return plain text
+     * or have no stable structured response may leave this as null.
+     */
+    val outputSchema: JsonObject?
+        get() = null
 
     /**
      * Executes the tool with the given arguments.

@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.ToolResultSchemas
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -104,13 +105,53 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .property("files", buildJsonObject {
-            put("type", "array")
-            putJsonObject("items") {
-                put("type", "string")
-            }
-            put("description", "Java files to convert (relative to project root).")
-        }, required = true)
+        .stringArrayProperty("files", "Java files to convert (relative to project root).", required = true)
+        .build()
+
+    override val outputSchema: JsonObject = SchemaBuilder.tool()
+        .arrayProperty(
+            "files", "Per-file Java to Kotlin conversion results.", SchemaBuilder.tool()
+                .stringProperty("requestedPath", "Requested Java file path.", required = true)
+                .enumProperty(
+                    "status",
+                    "Conversion status for the requested file.",
+                    values = listOf("CONVERTED", "SKIPPED", "FAILED"),
+                    required = true
+                )
+                .stringProperty(
+                    "kotlinFile",
+                    "Generated Kotlin file path, when conversion succeeded.",
+                    required = true,
+                    nullable = true
+                )
+                .intProperty(
+                    "linesConverted",
+                    "Number of source lines converted, when available.",
+                    required = true,
+                    nullable = true
+                )
+                .booleanProperty(
+                    "javaFileDeleted",
+                    "Whether the original Java file was deleted, when applicable.",
+                    required = true,
+                    nullable = true
+                )
+                .stringProperty(
+                    "reason",
+                    "Reason the file was skipped or failed, when applicable.",
+                    required = true,
+                    nullable = true
+                )
+                .build(), required = true
+        )
+        .property(
+            "summary", SchemaBuilder.tool()
+                .intProperty("totalRequested", "Total number of requested Java files.", required = true)
+                .intProperty("converted", "Number of files converted successfully.", required = true)
+                .intProperty("skipped", "Number of files skipped.", required = true)
+                .intProperty("failed", "Number of files that failed conversion.", required = true)
+                .build(), required = true
+        )
         .build()
 
     /**
