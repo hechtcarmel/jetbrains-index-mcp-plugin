@@ -429,7 +429,7 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
 | `regex` | boolean | No | Treat `query` as a regular expression (default: false) |
 | `context` | string | No | Where to search: `"code"`, `"comments"`, `"strings"`, or `"all"` (default) |
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
-| `filePattern` | string | No | Glob pattern to filter files by name or project-relative path (e.g., `"*.kt"`, `"*.gradle.kts"`, `"src/**/*.java"`) |
+| `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
 | `limit` | integer | No | Maximum results (default: 100, max: 500) |
 
 **Example Request:**

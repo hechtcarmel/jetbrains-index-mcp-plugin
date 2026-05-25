@@ -6,10 +6,10 @@
 
 ## [4.19.0] - 2026-05-26
 ### Added
-- Added `regex` support to `ide_search_text`, including existing `context` filtering and pagination.
+- Added `regex` support to `ide_search_text` through IntelliJ's Find in Files path, including existing `context` filtering and pagination.
 
 ### Fixed
-- Wired `ide_search_text`'s documented `filePattern` glob filter into the schema and search execution path. Fixes [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).
+- Wired `ide_search_text`'s documented `filePattern` filter into the schema and search execution path using IntelliJ file mask semantics. Fixes [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).
 
 ## [4.18.0] - 2026-05-24
 ### Added

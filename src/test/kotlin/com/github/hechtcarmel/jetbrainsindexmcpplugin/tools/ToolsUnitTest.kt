@@ -16,7 +16,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImple
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextFilePatternMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
@@ -746,24 +745,6 @@ class ToolsUnitTest : TestCase() {
 
         assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
         assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
-    }
-
-    fun testSearchTextFilePatternMatcherMatchesBasenameGlob() {
-        val matcher = SearchTextFilePatternMatcher.fromGlob("*.xml")
-
-        assertNotNull(matcher)
-        assertTrue(matcher!!.matches("media/layout/main.xml", "main.xml"))
-        assertFalse(matcher.matches("media/js/pagination.js", "pagination.js"))
-        assertFalse(matcher.matches("tmp/opac_phase2_sql-mybatis.json", "opac_phase2_sql-mybatis.json"))
-    }
-
-    fun testSearchTextFilePatternMatcherMatchesRelativePathGlob() {
-        val matcher = SearchTextFilePatternMatcher.fromGlob("src/**/*.java")
-
-        assertNotNull(matcher)
-        assertTrue(matcher!!.matches("src/main/java/App.java", "App.java"))
-        assertFalse(matcher.matches("test/main/java/App.java", "App.java"))
-        assertFalse(matcher.matches("src/main/kotlin/App.kt", "App.kt"))
     }
 
     fun testGetActiveFileToolSchema() {

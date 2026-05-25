@@ -100,7 +100,7 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 **Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_search_text
-Search for text using IDE's pre-built word index for exact searches or file scanning for regex searches.
+Search for text using IDE's pre-built word index for exact searches or IntelliJ Find in Files for regex searches.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -108,7 +108,7 @@ Search for text using IDE's pre-built word index for exact searches or file scan
 | `regex` | boolean | no | Treat `query` as a regular expression. Default false |
 | `context` | enum | no | `all` (default), `code`, `comments`, `strings` |
 | `caseSensitive` | boolean | no | Default true |
-| `filePattern` | string | no | Glob file filter, e.g. `*.kt`, `src/**/*.java` |
+| `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
 | `limit` | integer | no | Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
