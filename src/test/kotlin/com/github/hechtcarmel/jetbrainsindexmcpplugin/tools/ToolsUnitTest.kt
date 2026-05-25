@@ -16,6 +16,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImple
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextFilePatternMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
@@ -735,14 +736,34 @@ class ToolsUnitTest : TestCase() {
 
         assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
         assertNotNull("Should have query property", properties?.get(ParamNames.QUERY))
+        assertNotNull("Should have regex property", properties?.get(ParamNames.REGEX))
         assertNotNull("Should have context property", properties?.get(ParamNames.CONTEXT))
         assertNotNull("Should have caseSensitive property", properties?.get(ParamNames.CASE_SENSITIVE))
+        assertNotNull("Should have filePattern property", properties?.get(ParamNames.FILE_PATTERN))
         assertNotNull("Should have limit property", properties?.get(ParamNames.LIMIT))
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))
 
         assertNull("Should not have anyOf (incompatible with Anthropic API)", schema["anyOf"])
         assertNull("Should not have required array (all params optional for pagination)", schema[SchemaConstants.REQUIRED])
+    }
+
+    fun testSearchTextFilePatternMatcherMatchesBasenameGlob() {
+        val matcher = SearchTextFilePatternMatcher.fromGlob("*.xml")
+
+        assertNotNull(matcher)
+        assertTrue(matcher!!.matches("media/layout/main.xml", "main.xml"))
+        assertFalse(matcher.matches("media/js/pagination.js", "pagination.js"))
+        assertFalse(matcher.matches("tmp/opac_phase2_sql-mybatis.json", "opac_phase2_sql-mybatis.json"))
+    }
+
+    fun testSearchTextFilePatternMatcherMatchesRelativePathGlob() {
+        val matcher = SearchTextFilePatternMatcher.fromGlob("src/**/*.java")
+
+        assertNotNull(matcher)
+        assertTrue(matcher!!.matches("src/main/java/App.java", "App.java"))
+        assertFalse(matcher.matches("test/main/java/App.java", "App.java"))
+        assertFalse(matcher.matches("src/main/kotlin/App.kt", "App.kt"))
     }
 
     fun testGetActiveFileToolSchema() {

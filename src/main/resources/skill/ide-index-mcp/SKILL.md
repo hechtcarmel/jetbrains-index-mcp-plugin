@@ -31,7 +31,7 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 | Go to a symbol's definition | `ide_find_definition` | Never - grep can't resolve through imports/generics |
 | Find a class by name | `ide_find_class` | Only if IDE unavailable |
 | Find a file by name | `ide_find_file` | `Glob` is fine for simple patterns |
-| Search for a word in code | `ide_search_text` | `Grep` is fine for regex patterns (IDE tool is exact-word only) |
+| Search for text in code | `ide_search_text` | `Grep` is fine when IDE context filtering is unnecessary |
 | Rename a symbol across project | `ide_refactor_rename` | Never - sed/replace breaks code |
 | Move a file to another directory | `ide_move_file` | Never - mv/git mv bypasses IDE move semantics |
 | Check for errors in a file | `ide_diagnostics` | Never - no equivalent |
@@ -41,7 +41,7 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 | Delete a symbol safely | `ide_refactor_safe_delete` | Never - manual deletion misses usages |
 | Find what a method overrides | `ide_find_super_methods` | Never - no equivalent |
 | Read file content | Built-in Read tool | `ide_read_file` only for library/jar sources |
-| Find text with regex | `Grep` | IDE search_text doesn't support regex |
+| Find text with regex | `ide_search_text` | Use `Grep` when you do not need IDE context filtering |
 
 ## Pre-Flight Check
 
@@ -121,7 +121,7 @@ Omit `paths` to sync the entire project.
 
 8. **Not syncing after external file changes**: After creating files via Write tool, call `ide_sync_files` before searching.
 
-9. **Using `ide_search_text` for regex**: This tool is exact-word only (uses word index). Use `Grep` for regex.
+9. **Assuming regex is the default in `ide_search_text`**: Regex requires `"regex": true`; otherwise the tool uses the faster exact-word index.
 
 10. **Using `ide_find_class` for methods/functions**: It searches classes only. Use `ide_search_text` for a quick word lookup.
 

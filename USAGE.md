@@ -425,10 +425,11 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | Yes | Exact word to search for (not a pattern/regex) |
+| `query` | string | Yes | Text to search for; treated as an exact word unless `regex` is `true` |
+| `regex` | boolean | No | Treat `query` as a regular expression (default: false) |
 | `context` | string | No | Where to search: `"code"`, `"comments"`, `"strings"`, or `"all"` (default) |
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
-| `filePattern` | string | No | Glob pattern to filter files (e.g., `"*.kt"`, `"*.gradle.kts"`) |
+| `filePattern` | string | No | Glob pattern to filter files by name or project-relative path (e.g., `"*.kt"`, `"*.gradle.kts"`, `"src/**/*.java"`) |
 | `limit` | integer | No | Maximum results (default: 100, max: 500) |
 
 **Example Request:**
@@ -442,6 +443,23 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
       "query": "TODO",
       "context": "comments",
       "filePattern": "*.kt"
+    }
+  }
+}
+```
+
+Regex example:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_search_text",
+    "arguments": {
+      "query": "Runtime\\.getRuntime\\(\\)\\.exec\\(",
+      "regex": true,
+      "context": "code",
+      "filePattern": "*.java"
     }
   }
 }

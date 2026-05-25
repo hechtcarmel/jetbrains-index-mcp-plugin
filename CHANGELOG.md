@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [4.19.0] - 2026-05-26
+### Added
+- Added `regex` support to `ide_search_text`, including existing `context` filtering and pagination.
+
+### Fixed
+- Wired `ide_search_text`'s documented `filePattern` glob filter into the schema and search execution path. Fixes [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).
+
 ## [4.18.0] - 2026-05-24
 ### Added
 - **PHP symbol reference handler** — PHP now supports `language`+`symbol` parameter mode for `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, and `ide_find_super_methods`. Accepts symbol formats with PHP namespaces (e.g., `\\App\\Service\\UserService`, `\\App\\Service\\UserService::find()`, `\\App\\Service\\UserService::$property`). Fixes [#179](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/179).
