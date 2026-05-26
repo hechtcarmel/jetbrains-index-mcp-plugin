@@ -124,22 +124,27 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
         if (previous == mode) return
         modes[path] = mode
         LOG.debug("${project.name}: $previous → $mode")
-        LifecycleEventLog.getInstance().log(
-            LifecycleEventLog.Entry(
-                project = project.name,
-                path = path,
-                event = "transition",
-                from = previous.name.lowercase(),
-                to = mode.name.lowercase(),
-                trigger = trigger
+
+        // For CLOSED, log after onClosed() resolves — it may keep the project dormant
+        // instead of closing, and we want the log to reflect the actual outcome.
+        if (mode != ProjectMode.CLOSED) {
+            LifecycleEventLog.getInstance().log(
+                LifecycleEventLog.Entry(
+                    project = project.name,
+                    path = path,
+                    event = "transition",
+                    from = previous.name.lowercase(),
+                    to = mode.name.lowercase(),
+                    trigger = trigger
+                )
             )
-        )
+        }
 
         when (mode) {
             ProjectMode.ACTIVE -> onActive(project, path)
             ProjectMode.BACKGROUND -> onBackground(project, path)
             ProjectMode.DORMANT -> onDormant(project, path)
-            ProjectMode.CLOSED -> onClosed(project, path)
+            ProjectMode.CLOSED -> onClosed(project, path, previous, trigger)
         }
     }
 
@@ -251,6 +256,9 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     }
 
     private fun onDormant(project: Project, path: String) {
+        // Cancel the focus alarm — if it fires after the inactivity alarm it would
+        // immediately wake the project back to background, defeating dormant.
+        cancelFocusAlarm(project)
         ApplicationManager.getApplication().invokeLater {
             if (!project.isDisposed) {
                 val fem = FileEditorManager.getInstance(project)
@@ -264,26 +272,35 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
         scheduleCloseTransition(project)
     }
 
-    private fun onClosed(project: Project, path: String) {
+    private fun onClosed(project: Project, path: String, previous: ProjectMode, trigger: String) {
         cancelAllAlarms(path)
 
         // Never close the last open managed project — MCP needs at least one project open
-        // to route requests. Leave it dormant so memory is still mostly freed but the
-        // server remains reachable. It will close naturally once another project opens.
+        // to route requests. Reset to dormant and reschedule so we try again later.
         val openManaged = ProjectManager.getInstance().openProjects
             .filter { !it.isDefault && isManaged(it) }
         if (openManaged.size <= 1) {
+            modes[path] = ProjectMode.DORMANT
+            scheduleCloseTransition(project)
             LOG.info("Keeping '${project.name}' dormant — closing it would leave MCP unreachable")
             LifecycleEventLog.getInstance().log(
                 LifecycleEventLog.Entry(
                     project = project.name, path = path,
-                    event = "transition", from = "dormant", to = "dormant",
+                    event = "transition", from = previous.name.lowercase(), to = "dormant",
                     trigger = "last_project_kept"
                 )
             )
             return
         }
 
+        // Log the actual close now that we've confirmed it will happen.
+        LifecycleEventLog.getInstance().log(
+            LifecycleEventLog.Entry(
+                project = project.name, path = path,
+                event = "transition", from = previous.name.lowercase(), to = "closed",
+                trigger = trigger
+            )
+        )
         markClosed(path)
         ApplicationManager.getApplication().invokeLater {
             if (!project.isDisposed) {
