@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.19.1] - 2026-05-26
+### Fixed
+- Fixed `ide_search_text` regex search and `filePattern` filtering for [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).
+
 ## [4.19.0] - 2026-05-26
 ### Added
 - Added `regex` support to `ide_search_text` through IntelliJ's Find in Files path, including existing `context` filtering and pagination.
