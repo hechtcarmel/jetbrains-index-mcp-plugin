@@ -43,8 +43,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
             "ide_close_project", "ide_open_project", "ide_set_power_save_mode",
             // Lifecycle management (opt-in — significant IDE behaviour changes)
             "ide_enroll_all_projects", "ide_get_project_modes", "ide_lifecycle_log",
-            "ide_project_status", "ide_release_all_projects",
-            "ide_release_project", "ide_set_all_project_modes", "ide_set_project_mode"
+            "ide_set_lifecycle_log_file", "ide_project_status", "ide_release_all_projects",
+            "ide_release_project", "ide_set_all_project_modes", "ide_set_project_mode",
+            // Plugin development tools (opt-in — irreversible actions)
+            "ide_install_plugin", "ide_restart"
         ),
         var serverPort: Int = -1, // -1 means use IDE-specific default
         var serverHost: String = McpConstants.DEFAULT_SERVER_HOST,
@@ -56,7 +58,9 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var lifecycleLogBufferSize: Int = 500,
         // Set true to write events to mcp-lifecycle.log (also enabled by LOG.isDebugEnabled).
         // Introduced in the stateless-tools PR; declared here so LifecycleEventLog can read it.
-        var lifecycleLogToFile: Boolean = false
+        var lifecycleLogToFile: Boolean = false,
+        var minimumOpenProjects: Int = 4,
+        var maximumOpenProjects: Int = 10
     )
 
     private var state = State()
@@ -118,6 +122,14 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var lifecycleLogToFile: Boolean
         get() = state.lifecycleLogToFile
         set(value) { state.lifecycleLogToFile = value }
+
+    var minimumOpenProjects: Int
+        get() = state.minimumOpenProjects
+        set(value) { state.minimumOpenProjects = value }
+
+    var maximumOpenProjects: Int
+        get() = state.maximumOpenProjects
+        set(value) { state.maximumOpenProjects = value }
 
     fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools
 

@@ -6,7 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.EnrollAllProjectsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.GetProjectModesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.LifecycleLogTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetLifecycleLogFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetLifecycleLogFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseAllProjectsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProjectModesTool

@@ -69,6 +69,28 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
         )
         notify(project, "MCP enrolled '${project.name}' into lifecycle management. " +
             "Power Save Mode enabled. Project will sleep when idle.")
+
+        evictIfOverCeiling(path)
+    }
+
+    private fun evictIfOverCeiling(excludePath: String) {
+        val max = runCatching { McpSettings.getInstance().maximumOpenProjects }.getOrDefault(10)
+        if (max <= 0) return
+        val openManaged = ProjectManager.getInstance().openProjects
+            .filter { !it.isDefault && isManaged(it) }
+        if (openManaged.size <= max) return
+
+        // Only evict non-ACTIVE projects — never close something the user is working in.
+        // Prefer DORMANT over BACKGROUND; skip eviction if everything is ACTIVE.
+        val candidate = openManaged
+            .filter { it.basePath != excludePath }
+            .filter { getMode(it) == ProjectMode.DORMANT || getMode(it) == ProjectMode.BACKGROUND }
+            .minByOrNull { if (getMode(it) == ProjectMode.DORMANT) 0 else 1 }
+
+        if (candidate != null) {
+            LOG.info("Evicting '${candidate.name}' — maximum open projects ($max) reached")
+            transition(candidate, ProjectMode.CLOSED, "max_projects_eviction")
+        }
     }
 
     fun release(project: Project) {
@@ -275,11 +297,12 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     private fun onClosed(project: Project, path: String, previous: ProjectMode, trigger: String) {
         cancelAllAlarms(path)
 
-        // Never close the last open managed project — MCP needs at least one project open
-        // to route requests. Reset to dormant and reschedule so we try again later.
+        // Never close below the minimum — MCP needs routing context and the user may want
+        // a minimum number of projects always available. Reset to dormant and reschedule.
+        val min = runCatching { McpSettings.getInstance().minimumOpenProjects }.getOrDefault(4)
         val openManaged = ProjectManager.getInstance().openProjects
             .filter { !it.isDefault && isManaged(it) }
-        if (openManaged.size <= 1) {
+        if (openManaged.size <= min) {
             modes[path] = ProjectMode.DORMANT
             scheduleCloseTransition(project)
             LOG.info("Keeping '${project.name}' dormant — closing it would leave MCP unreachable")

@@ -61,6 +61,8 @@ class McpSettingsConfigurable : Configurable {
     private var dormantToClosedSpinner: JSpinner? = null
     private var lifecycleLogBufferSizeSpinner: JSpinner? = null
     private var lifecycleLogToFileCheckBox: JBCheckBox? = null
+    private var minimumOpenProjectsSpinner: JSpinner? = null
+    private var maximumOpenProjectsSpinner: JSpinner? = null
     private var managedProjectsContent: JPanel? = null
 
     private var lastHostValidation: ValidationInfo? = null
@@ -169,12 +171,16 @@ class McpSettingsConfigurable : Configurable {
         dormantToClosedSpinner = JSpinner(SpinnerNumberModel(settings.dormantToClosedMinutes, 1, 120, 1))
         lifecycleLogBufferSizeSpinner = JSpinner(SpinnerNumberModel(settings.lifecycleLogBufferSize, 100, 10000, 100))
         lifecycleLogToFileCheckBox = JBCheckBox(McpBundle.message("lifecycle.logToFile.label"), settings.lifecycleLogToFile)
+        minimumOpenProjectsSpinner = JSpinner(SpinnerNumberModel(settings.minimumOpenProjects, 1, 20, 1))
+        maximumOpenProjectsSpinner = JSpinner(SpinnerNumberModel(settings.maximumOpenProjects, 0, 50, 1))
 
         return FormBuilder.createFormBuilder()
             .addComponent(lifecycleEnabledCheckBox!!)
             .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.focusToBackground.label")), focusToBackgroundSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.backgroundToDormant.label")), backgroundToDormantSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.dormantToClosed.label")), dormantToClosedSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.minimumOpenProjects.label")), minimumOpenProjectsSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.maximumOpenProjects.label")), maximumOpenProjectsSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.logBufferSize.label")), lifecycleLogBufferSizeSpinner!!, 1, false)
             .addComponent(lifecycleLogToFileCheckBox!!)
             .addComponent(createManagedProjectsPanel())
@@ -352,7 +358,9 @@ class McpSettingsConfigurable : Configurable {
             backgroundToDormantSpinner?.value != settings.backgroundToDormantMinutes ||
             dormantToClosedSpinner?.value != settings.dormantToClosedMinutes ||
             lifecycleLogBufferSizeSpinner?.value != settings.lifecycleLogBufferSize ||
-            lifecycleLogToFileCheckBox?.isSelected != settings.lifecycleLogToFile) {
+            lifecycleLogToFileCheckBox?.isSelected != settings.lifecycleLogToFile ||
+            minimumOpenProjectsSpinner?.value != settings.minimumOpenProjects ||
+            maximumOpenProjectsSpinner?.value != settings.maximumOpenProjects) {
             return true
         }
 
@@ -419,6 +427,8 @@ class McpSettingsConfigurable : Configurable {
         settings.dormantToClosedMinutes = dormantToClosedSpinner?.value as? Int ?: 10
         settings.lifecycleLogBufferSize = lifecycleLogBufferSizeSpinner?.value as? Int ?: 500
         settings.lifecycleLogToFile = lifecycleLogToFileCheckBox?.isSelected ?: false
+        settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
+        settings.maximumOpenProjects = maximumOpenProjectsSpinner?.value as? Int ?: 10
 
         val disabledTools = mutableSetOf<String>()
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -520,6 +530,8 @@ class McpSettingsConfigurable : Configurable {
         dormantToClosedSpinner?.value = settings.dormantToClosedMinutes
         lifecycleLogBufferSizeSpinner?.value = settings.lifecycleLogBufferSize
         lifecycleLogToFileCheckBox?.isSelected = settings.lifecycleLogToFile
+        minimumOpenProjectsSpinner?.value = settings.minimumOpenProjects
+        maximumOpenProjectsSpinner?.value = settings.maximumOpenProjects
 
         for ((toolName, checkbox) in toolCheckBoxes) {
             checkbox.isSelected = settings.isToolEnabled(toolName)
@@ -617,6 +629,8 @@ class McpSettingsConfigurable : Configurable {
         dormantToClosedSpinner = null
         lifecycleLogBufferSizeSpinner = null
         lifecycleLogToFileCheckBox = null
+        minimumOpenProjectsSpinner = null
+        maximumOpenProjectsSpinner = null
         managedProjectsContent = null
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
