@@ -1,0 +1,53 @@
+#!/bin/bash
+# pre-push hook: mechanical squash candidate check
+# Installed by git-squash skill. Blocks obvious policy violations before push.
+# Run /git-squash for the full AI-assisted analysis.
+# Bypass with: git push --no-verify
+
+remote="$1"
+
+SQUASH_PATTERNS='(^chore: (remove dead|apply spotless|fix formatting|remove unused|pin |add jandex)|^docs\([^)]+\): (align|fix wording|add missing)|^docs: fix stale|^fix\(test\):|^fix\(ci\):|^ci: (retrigger|trigger CI|use GH_PAT|standardise|add workflow)|^chore: (retroactive issue|pin )|^Revert ")'
+
+total=0
+candidates=0
+revert_pairs=0
+
+while read local_ref local_sha remote_ref remote_sha; do
+  # Skip branch deletions
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    # New branch — compare to default branch
+    base=$(git rev-parse --verify origin/main 2>/dev/null || git rev-parse --verify origin/master 2>/dev/null || echo "")
+    [ -z "$base" ] && continue
+    range="$base..$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  total=$(git log --oneline "$range" 2>/dev/null | wc -l | tr -d ' ')
+  [ "$total" -eq 0 ] && continue
+
+  candidates=$(git log --oneline "$range" 2>/dev/null | grep -cE "$SQUASH_PATTERNS" || true)
+
+  # Check for small commits (≤ 4 lines changed, no issue ref) — harder to do in hook,
+  # approximated by looking for fixup-style prefixes not caught above
+  small=$(git log --oneline "$range" 2>/dev/null | grep -cE "^[a-f0-9]+ (fix|chore|style|docs)\([^)]+\): .{1,30}$" | grep -v "#" || true)
+
+  if [ "$candidates" -gt 0 ]; then
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║  Squash policy check — candidates found                  ║"
+    echo "╠══════════════════════════════════════════════════════════╣"
+    echo "║  Commits in push:    $total"
+    echo "║  Squash candidates:  $candidates"
+    echo "║"
+    echo "║  Run /git-squash to review and clean history before      ║"
+    echo "║  pushing, or use --no-verify to skip this check.         ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0

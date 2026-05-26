@@ -1,0 +1,307 @@
+package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.intellij.ide.PowerSaveMode
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.project.ex.ProjectManagerEx
+import com.intellij.openapi.util.Disposer
+import com.intellij.util.Alarm
+import java.util.concurrent.ConcurrentHashMap
+
+@Service(Service.Level.APP)
+@State(name = "McpProjectModeService", storages = [Storage("mcp-lifecycle.xml")])
+class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, Disposable {
+
+    data class State(
+        var closedProjectPaths: MutableSet<String> = mutableSetOf(),
+        var managedProjectPaths: MutableSet<String> = mutableSetOf()
+    )
+
+    private var persistedState = State()
+
+    /** Live mode per project path. CLOSED paths are in persistedState only — the Project object no longer exists. */
+    private val modes = ConcurrentHashMap<String, ProjectMode>()
+
+    private val focusAlarms = ConcurrentHashMap<String, Alarm>()
+    private val inactivityAlarms = ConcurrentHashMap<String, Alarm>()
+
+    override fun getState(): State = persistedState
+
+    override fun loadState(state: State) {
+        // IntelliJ collapses real paths to macros (e.g. $USER_HOME$) when persisting but does
+        // not expand them back automatically for plain Set<String> fields — expand explicitly.
+        persistedState = State(
+            closedProjectPaths = state.closedProjectPaths.mapTo(mutableSetOf(), ::expandMacros),
+            managedProjectPaths = state.managedProjectPaths.mapTo(mutableSetOf(), ::expandMacros)
+        )
+        persistedState.closedProjectPaths.forEach { modes[it] = ProjectMode.CLOSED }
+    }
+
+    private fun expandMacros(path: String): String =
+        path.replace("\$USER_HOME\$", System.getProperty("user.home"))
+
+    override fun dispose() {
+        focusAlarms.values.forEach { Disposer.dispose(it) }
+        inactivityAlarms.values.forEach { Disposer.dispose(it) }
+    }
+
+    fun enroll(project: Project) {
+        val path = project.basePath ?: return
+        if (persistedState.managedProjectPaths.contains(path)) return
+        persistedState.managedProjectPaths.add(path)
+        modes[path] = ProjectMode.BACKGROUND
+        PowerSaveMode.setEnabled(true)
+        scheduleInactivityTransition(project)
+        LifecycleEventLog.getInstance().log(
+            LifecycleEventLog.Entry(project = project.name, path = path, event = "enroll", trigger = "mcp_call")
+        )
+        notify(project, "MCP enrolled '${project.name}' into lifecycle management. " +
+            "Power Save Mode enabled. Project will sleep when idle.")
+    }
+
+    fun release(project: Project) {
+        val path = project.basePath ?: return
+        release(path, project.name)
+        PowerSaveMode.setEnabled(false)
+    }
+
+    fun release(path: String) {
+        release(path, path.substringAfterLast("/"))
+        // Don't toggle PowerSaveMode here — other managed projects may still need it.
+        // releaseAll() handles the global reset after clearing everything.
+    }
+
+    private fun release(path: String, name: String) {
+        persistedState.managedProjectPaths.remove(path)
+        persistedState.closedProjectPaths.remove(path)
+        modes.remove(path)
+        cancelAllAlarms(path)
+        LifecycleEventLog.getInstance().log(
+            LifecycleEventLog.Entry(project = name, path = path, event = "release", trigger = "mcp_call")
+        )
+    }
+
+    fun releaseAll() {
+        persistedState.managedProjectPaths.toList().forEach { release(it) }
+        ApplicationManager.getApplication().invokeLater { PowerSaveMode.setEnabled(false) }
+    }
+
+    fun enrollAll(openProjects: List<Project>) {
+        openProjects.filter { !it.isDefault && !isManaged(it) }.forEach { enroll(it) }
+    }
+
+    fun isManaged(project: Project): Boolean =
+        project.basePath?.let { persistedState.managedProjectPaths.contains(it) } ?: false
+
+    fun isManaged(path: String): Boolean = persistedState.managedProjectPaths.contains(path)
+
+    fun getMode(project: Project): ProjectMode =
+        project.basePath?.let { getMode(it) } ?: ProjectMode.BACKGROUND
+
+    fun getMode(path: String): ProjectMode =
+        modes[path] ?: if (persistedState.closedProjectPaths.contains(path)) ProjectMode.CLOSED
+        else ProjectMode.BACKGROUND
+
+    /** Returns path → mode for all managed projects, including those we closed. */
+    fun getAllManagedModes(): Map<String, ProjectMode> =
+        persistedState.managedProjectPaths.associateWith { getMode(it) }
+
+    fun transition(project: Project, mode: ProjectMode, trigger: String = "mcp_call") {
+        val path = project.basePath ?: return
+        val previous = getMode(path)
+        if (previous == mode) return
+        modes[path] = mode
+        LOG.debug("${project.name}: $previous → $mode")
+        LifecycleEventLog.getInstance().log(
+            LifecycleEventLog.Entry(
+                project = project.name,
+                path = path,
+                event = "transition",
+                from = previous.name.lowercase(),
+                to = mode.name.lowercase(),
+                trigger = trigger
+            )
+        )
+
+        when (mode) {
+            ProjectMode.ACTIVE -> onActive(project, path)
+            ProjectMode.BACKGROUND -> onBackground(project, path)
+            ProjectMode.DORMANT -> onDormant(project, path)
+            ProjectMode.CLOSED -> onClosed(project, path)
+        }
+    }
+
+    /** Wakes a dormant project for an incoming MCP call without reopening editors. */
+    fun wakeForMcp(project: Project) {
+        val path = project.basePath ?: return
+        val woke = modes.replace(path, ProjectMode.DORMANT, ProjectMode.BACKGROUND)
+        if (getMode(path) == ProjectMode.CLOSED) return
+        if (woke) {
+            LifecycleEventLog.getInstance().log(
+                LifecycleEventLog.Entry(
+                    project = project.name,
+                    path = path,
+                    event = "wake",
+                    from = "dormant",
+                    to = "background",
+                    trigger = "mcp_call"
+                )
+            )
+        }
+        resetInactivityTimer(project)
+    }
+
+    fun scheduleFocusTransition(project: Project) {
+        val settings = McpSettings.getInstance()
+        if (!settings.lifecycleEnabled) return
+        val path = project.basePath ?: return
+        val alarm = focusAlarms.getOrPut(path) { Alarm(Alarm.ThreadToUse.POOLED_THREAD, this) }
+        alarm.cancelAllRequests()
+        alarm.addRequest(
+            { transition(project, ProjectMode.BACKGROUND, "timer:focus") },
+            settings.focusToBackgroundMinutes * 60_000L
+        )
+    }
+
+    fun cancelFocusAlarm(project: Project) {
+        focusAlarms[project.basePath ?: return]?.cancelAllRequests()
+    }
+
+    fun resetInactivityTimer(project: Project) {
+        val settings = McpSettings.getInstance()
+        if (!settings.lifecycleEnabled) return
+        if (getMode(project) == ProjectMode.ACTIVE) return
+        scheduleInactivityTransition(project)
+    }
+
+    private fun scheduleInactivityTransition(project: Project) {
+        val settings = McpSettings.getInstance()
+        val path = project.basePath ?: return
+        val alarm = inactivityAlarms.getOrPut(path) { Alarm(Alarm.ThreadToUse.POOLED_THREAD, this) }
+        alarm.cancelAllRequests()
+        alarm.addRequest({
+            if (!project.isDisposed && getMode(path) == ProjectMode.BACKGROUND) {
+                transition(project, ProjectMode.DORMANT, "timer:inactivity")
+            }
+        }, settings.backgroundToDormantMinutes * 60_000L)
+    }
+
+    private fun scheduleCloseTransition(project: Project) {
+        val settings = McpSettings.getInstance()
+        val path = project.basePath ?: return
+        val alarm = inactivityAlarms.getOrPut(path) { Alarm(Alarm.ThreadToUse.POOLED_THREAD, this) }
+        alarm.cancelAllRequests()
+        alarm.addRequest({
+            if (!project.isDisposed && getMode(path) == ProjectMode.DORMANT) {
+                transition(project, ProjectMode.CLOSED, "timer:close")
+            }
+        }, settings.dormantToClosedMinutes * 60_000L)
+    }
+
+    fun cancelAllAlarms(path: String) {
+        focusAlarms[path]?.cancelAllRequests()
+        inactivityAlarms[path]?.cancelAllRequests()
+    }
+
+    fun wasClosedByUs(path: String): Boolean = persistedState.closedProjectPaths.contains(path)
+
+    /** Updates the registry without touching an open project window — used when re-registering after restart. */
+    fun markClosed(path: String) {
+        persistedState.closedProjectPaths.add(path)
+        persistedState.managedProjectPaths.add(path)
+        modes[path] = ProjectMode.CLOSED
+    }
+
+    fun markReopened(path: String) {
+        val wasClosed = persistedState.closedProjectPaths.remove(path)
+        modes[path] = ProjectMode.BACKGROUND
+        if (wasClosed) {
+            val name = path.substringAfterLast("/")
+            LifecycleEventLog.getInstance().log(
+                LifecycleEventLog.Entry(project = name, path = path, event = "opened", trigger = "auto_open")
+            )
+        }
+    }
+
+    private fun onActive(project: Project, path: String) {
+        cancelAllAlarms(path)
+        ApplicationManager.getApplication().invokeLater {
+            if (!project.isDisposed) PowerSaveMode.setEnabled(false)
+        }
+    }
+
+    private fun onBackground(project: Project, path: String) {
+        cancelFocusAlarm(project)
+        ApplicationManager.getApplication().invokeLater {
+            if (!project.isDisposed) PowerSaveMode.setEnabled(true)
+        }
+        scheduleInactivityTransition(project)
+    }
+
+    private fun onDormant(project: Project, path: String) {
+        ApplicationManager.getApplication().invokeLater {
+            if (!project.isDisposed) {
+                val fem = FileEditorManager.getInstance(project)
+                fem.openFiles.forEach { fem.closeFile(it) }
+                // dropPsiCaches() is intentionally omitted: in IntelliJ 2025+ it internally
+                // calls runWriteAction, which requires a write-safe context that invokeLater
+                // scheduled from a pooled-thread Alarm does not provide. Closing editors
+                // already releases the strong PSI references; the cache reclaims via GC.
+            }
+        }
+        scheduleCloseTransition(project)
+    }
+
+    private fun onClosed(project: Project, path: String) {
+        cancelAllAlarms(path)
+
+        // Never close the last open managed project — MCP needs at least one project open
+        // to route requests. Leave it dormant so memory is still mostly freed but the
+        // server remains reachable. It will close naturally once another project opens.
+        val openManaged = ProjectManager.getInstance().openProjects
+            .filter { !it.isDefault && isManaged(it) }
+        if (openManaged.size <= 1) {
+            LOG.info("Keeping '${project.name}' dormant — closing it would leave MCP unreachable")
+            LifecycleEventLog.getInstance().log(
+                LifecycleEventLog.Entry(
+                    project = project.name, path = path,
+                    event = "transition", from = "dormant", to = "dormant",
+                    trigger = "last_project_kept"
+                )
+            )
+            return
+        }
+
+        markClosed(path)
+        ApplicationManager.getApplication().invokeLater {
+            if (!project.isDisposed) {
+                ProjectManagerEx.getInstanceEx().closeAndDispose(project)
+                LOG.info("closed: $path")
+            }
+        }
+    }
+
+    private fun notify(project: Project, message: String) {
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("Index MCP Server")
+            .createNotification(message, NotificationType.INFORMATION)
+            .notify(project)
+    }
+
+    companion object {
+        private val LOG = logger<ProjectModeService>()
+        fun getInstance(): ProjectModeService = service()
+    }
+}

@@ -4,6 +4,50 @@
 
 ## [Unreleased]
 
+### Added — Project lifecycle management
+
+Automatic sleep/wake management for IntelliJ projects used as MCP servers. When multiple
+projects are open simultaneously, idle ones consume memory unnecessarily and leave editors
+open for no reason. Lifecycle management addresses this with a four-state machine driven
+by window focus and MCP activity.
+
+**States:** `active` (full IDE, Power Save off) → `background` (Power Save on, MCP
+functional) → `dormant` (editors closed, PSI caches freed, index retained) → `closed`
+(project fully closed). Projects enroll automatically on first MCP use and auto-reopen
+transparently when an MCP tool targets a closed project — callers see normal results
+after a short indexing delay, with no changes required in existing tools.
+
+- **`ide_set_project_mode`** — explicitly set a managed project's lifecycle mode (`active`, `background`, `dormant`, `closed`).
+- **`ide_get_project_modes`** — list all MCP-managed projects and their current modes, including those we closed.
+- **`ide_project_status`** — combined snapshot: every open project and every managed project in one table, with open/managed/mode per row.
+- **`ide_release_project`** — unenroll a project, restoring full IDE behaviour and disabling Power Save Mode.
+- **`ide_set_all_project_modes`** — set all managed projects to the same mode at once (active, background, or dormant).
+- **`ide_enroll_all_projects`** — enroll every currently open project in lifecycle management at once; already-managed projects are skipped.
+- **`ide_release_all_projects`** — release every managed project (including closed ones) from lifecycle management at once.
+- **`ide_release_project` path parameter** — `ide_release_project` now accepts an optional `path` argument to release a closed managed project without needing it to be open.
+- **`ide_set_power_save_mode`** — toggle Power Save Mode directly, independently of lifecycle management.
+- **`ide_close_project`** — close a project window and free its memory.
+- **`ide_open_project`** — open a project by path and block until indexing completes, so subsequent MCP calls succeed immediately.
+- **`ide_install_plugin`** — install a plugin zip, auto-detecting `build/distributions/*.zip` when no explicit path is given.
+- **`ide_restart`** — restart the IDE. Terminates the MCP connection; call after `ide_install_plugin`.
+- **Lifecycle settings** — configurable timing thresholds (focus→background, background→dormant, dormant→closed) and a master enable/disable toggle in Settings → Index MCP Server.
+- **Interactive project list in Settings** — the lifecycle settings panel now shows all known projects (open and closed managed) with a checkbox per project (checked = enrolled), an X button to release individual projects, and "Enroll All Open" / "Release All" buttons. Changes take effect immediately without clicking Apply.
+- **"MCP: Open Project" action** — searchable popup (Cmd+Shift+A) listing managed projects by state; selecting one opens or wakes it.
+- **"MCP: Show Project States" action** — opens the lifecycle settings panel from the keyboard.
+
+**Enrollment on semantic use, not on open/close** — `ide_open_project` and `ide_close_project` are infrastructure tools and do not trigger lifecycle enrollment. Enrollment happens on the first real semantic tool call (find references, diagnostics, refactoring, etc.) after a project is open. This means a project can be opened for a quick inspection without being committed to lifecycle management.
+
+**MCP availability guarantee** — the lifecycle manager never closes the last open managed project. When only one managed project remains open and its close timer fires, it is kept in `dormant` state instead. This ensures MCP always has a routing context even when all other projects have been freed. If all projects are nevertheless closed (e.g., the user manually closes the last window), the first MCP tool call without a `project_path` automatically reopens a managed-closed project to restore access.
+
+See `docs/pr-lifecycle-management.md` for design rationale, API notes, and threading details.
+
+### Added — Lifecycle event log
+
+- **`ide_lifecycle_log`** — query recent lifecycle events from an in-memory ring buffer. Records every state transition, project open/close, focus change, timer firing, and MCP-triggered wake for all IntelliJ projects (not just managed ones). Each event includes a `trigger` field that identifies the cause: `timer:focus`, `timer:inactivity`, `timer:close`, `focus_gained`, `focus_lost`, `mcp_call`, `auto_open`, or `user`. Parameters: `limit` (default 50), `project` (path substring filter). Response includes `log_file` — the path to a persistent log file readable directly even when no project is open. File writes are gated on IntelliJ's debug logger (`LOG.isDebugEnabled`); enable via Help → Diagnostic Tools → Debug Log Settings by adding `#com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle`. No restart required.
+- **Event log buffer size** — configurable in Settings → Index MCP Server → Lifecycle (default 500, range 100–10,000).
+
+See `docs/pr-lifecycle-log.md` for design rationale and the trigger taxonomy.
+
 ## [4.18.0] - 2026-05-24
 ### Added
 - **PHP symbol reference handler** — PHP now supports `language`+`symbol` parameter mode for `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, and `ide_find_super_methods`. Accepts symbol formats with PHP namespaces (e.g., `\\App\\Service\\UserService`, `\\App\\Service\\UserService::find()`, `\\App\\Service\\UserService::$property`). Fixes [#179](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/179).

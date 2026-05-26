@@ -121,7 +121,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         // Extract optional project_path from arguments
         val projectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
 
-        val projectResult = projectResolver.resolve(projectPath)
+        val projectResult = projectResolver.resolveOrOpen(projectPath)
         if (projectResult.isError) {
             return JsonRpcResponse(
                 id = request.id,

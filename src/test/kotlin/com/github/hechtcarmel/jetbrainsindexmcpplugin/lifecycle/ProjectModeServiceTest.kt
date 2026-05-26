@@ -1,0 +1,256 @@
+package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
+
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+
+/**
+ * Tests the ProjectModeService state machine using a real application context.
+ *
+ * Focuses on correctness of the closed-project registry and mode transitions
+ * that don't require a real window (focus listeners are tested separately via
+ * integration). Side effects that touch external platform APIs (PowerSaveMode,
+ * FileEditorManager) are async via invokeLater and do not affect mode state
+ * assertions, which are synchronous.
+ */
+class ProjectModeServiceTest : BasePlatformTestCase() {
+
+    private lateinit var service: ProjectModeService
+
+    override fun setUp() {
+        super.setUp()
+        service = ProjectModeService.getInstance()
+        // Start each test with a clean state
+        service.loadState(ProjectModeService.State())
+    }
+
+    override fun tearDown() {
+        try {
+            // Release the test project so lifecycle timers don't bleed between tests
+            if (service.isManaged(project)) {
+                service.release(project)
+            }
+            // Reset persisted state
+            service.loadState(ProjectModeService.State())
+        } finally {
+            super.tearDown()
+        }
+    }
+
+    // ── Closed-project registry ───────────────────────────────────────────────
+
+    fun testWasClosedByUsReturnsFalseForUnknownPath() {
+        assertFalse(service.wasClosedByUs("/never/seen/project"))
+    }
+
+    fun testMarkClosedMakesWasClosedByUsReturnTrue() {
+        val path = "/some/closed/project"
+        service.markClosed(path)
+        assertTrue(service.wasClosedByUs(path))
+    }
+
+    fun testMarkClosedAlsoEnrollsIntoManagedSet() {
+        // A closed project must remain tracked as managed so it can be auto-reopened
+        val path = "/some/closed/project"
+        service.markClosed(path)
+        assertTrue("Closed projects must remain in managed set", service.isManaged(path))
+    }
+
+    fun testMarkReopenedRemovesFromClosedRegistry() {
+        val path = "/some/closed/project"
+        service.markClosed(path)
+        assertTrue(service.wasClosedByUs(path))  // sanity
+
+        service.markReopened(path)
+        assertFalse(
+            "After reopening, wasClosedByUs must return false",
+            service.wasClosedByUs(path)
+        )
+    }
+
+    fun testMarkReopenedSetsModeToBg() {
+        val path = "/some/closed/project"
+        service.markClosed(path)
+        service.markReopened(path)
+        assertEquals(
+            "Reopened project should be in BACKGROUND mode",
+            ProjectMode.BACKGROUND,
+            service.getMode(path)
+        )
+    }
+
+    fun testClosedProjectRegistryRoundTrip() {
+        // Simulates what happens across an IDE restart: state is persisted and reloaded
+        val path = "/persisted/project"
+        service.markClosed(path)
+
+        val persistedState = service.getState()
+        assertTrue(persistedState.closedProjectPaths.contains(path))
+
+        // Simulate restart: create fresh service, load persisted state
+        val fresh = ProjectModeService()
+        fresh.loadState(persistedState)
+
+        assertTrue("Closed path must survive state round-trip", fresh.wasClosedByUs(path))
+        assertEquals(
+            "Mode must be CLOSED after loading state with closed path",
+            ProjectMode.CLOSED,
+            fresh.getMode(path)
+        )
+    }
+
+    // ── Mode queries ─────────────────────────────────────────────────────────
+
+    fun testGetModeReturnsBackgroundForUnknownPath() {
+        assertEquals(
+            "Unknown projects default to BACKGROUND (not managed, not closed)",
+            ProjectMode.BACKGROUND,
+            service.getMode("/not/a/real/project")
+        )
+    }
+
+    fun testGetModeReturnsClosedForClosedPath() {
+        val path = "/closed/project"
+        service.markClosed(path)
+        assertEquals(ProjectMode.CLOSED, service.getMode(path))
+    }
+
+    fun testGetModeByProjectDelegatesToPathLookup() {
+        // Ensures both overloads return consistent results
+        service.enroll(project)
+        val byProject = service.getMode(project)
+        val byPath = service.getMode(project.basePath!!)
+        assertEquals("getMode(Project) and getMode(String) must agree", byProject, byPath)
+    }
+
+    fun testGetAllManagedModesIncludesEnrolledProject() {
+        service.enroll(project)
+        val modes = service.getAllManagedModes()
+        assertTrue(
+            "Enrolled project must appear in getAllManagedModes()",
+            modes.containsKey(project.basePath)
+        )
+    }
+
+    fun testGetAllManagedModesIncludesClosedProjects() {
+        val closedPath = "/closed/project"
+        service.markClosed(closedPath)
+        val modes = service.getAllManagedModes()
+        assertTrue(
+            "Closed project must appear in getAllManagedModes()",
+            modes.containsKey(closedPath)
+        )
+        assertEquals(ProjectMode.CLOSED, modes[closedPath])
+    }
+
+    fun testGetAllManagedModesIsEmptyWhenNothingManaged() {
+        assertTrue(service.getAllManagedModes().isEmpty())
+    }
+
+    // ── Enrollment ───────────────────────────────────────────────────────────
+
+    fun testEnrollMakesProjectManaged() {
+        assertFalse(service.isManaged(project))  // sanity: not enrolled yet
+        service.enroll(project)
+        assertTrue(service.isManaged(project))
+    }
+
+    fun testEnrollSetsInitialModeToBackground() {
+        service.enroll(project)
+        assertEquals(ProjectMode.BACKGROUND, service.getMode(project))
+    }
+
+    fun testEnrollIsIdempotent() {
+        service.enroll(project)
+        service.enroll(project)  // second call must not double-enroll or throw
+        assertTrue(service.isManaged(project))
+        assertEquals(ProjectMode.BACKGROUND, service.getMode(project))
+    }
+
+    fun testReleaseMakesProjectUnmanaged() {
+        service.enroll(project)
+        service.release(project)
+        assertFalse(service.isManaged(project))
+    }
+
+    fun testReleaseRemovesFromAllManagedModes() {
+        service.enroll(project)
+        service.release(project)
+        assertFalse(service.getAllManagedModes().containsKey(project.basePath))
+    }
+
+    // ── wakeForMcp — the auto-wake mechanism ─────────────────────────────────
+
+    fun testWakeForMcpDoesNothingWhenModeIsBackground() {
+        // A project already in BACKGROUND should stay BACKGROUND and not error
+        service.enroll(project)
+        assertEquals(ProjectMode.BACKGROUND, service.getMode(project))  // sanity
+
+        service.wakeForMcp(project)
+
+        assertEquals(
+            "wakeForMcp on BACKGROUND project must leave mode unchanged",
+            ProjectMode.BACKGROUND,
+            service.getMode(project)
+        )
+    }
+
+    fun testWakeForMcpChangesDormantToBackground() {
+        // Get the project to DORMANT state. transition() side effects (editor close,
+        // PSI cache drop) are async via invokeLater and harmless on a test project
+        // with no open editors. The mode change itself is synchronous.
+        service.enroll(project)
+        service.transition(project, ProjectMode.DORMANT)
+
+        assertEquals(ProjectMode.DORMANT, service.getMode(project))  // sanity
+
+        service.wakeForMcp(project)
+
+        assertEquals(
+            "wakeForMcp must change DORMANT → BACKGROUND",
+            ProjectMode.BACKGROUND,
+            service.getMode(project)
+        )
+    }
+
+    fun testWakeForMcpDoesNotAffectActiveMode() {
+        // ACTIVE projects are under user control — MCP calls should not downgrade them
+        service.enroll(project)
+        service.transition(project, ProjectMode.ACTIVE)
+
+        service.wakeForMcp(project)
+
+        assertEquals(
+            "wakeForMcp must not downgrade ACTIVE to BACKGROUND",
+            ProjectMode.ACTIVE,
+            service.getMode(project)
+        )
+    }
+
+    // ── State machine transitions ─────────────────────────────────────────────
+
+    fun testTransitionActiveChangesMode() {
+        service.enroll(project)
+        service.transition(project, ProjectMode.ACTIVE)
+        assertEquals(ProjectMode.ACTIVE, service.getMode(project))
+    }
+
+    fun testTransitionDormantChangesMode() {
+        service.enroll(project)
+        service.transition(project, ProjectMode.DORMANT)
+        assertEquals(ProjectMode.DORMANT, service.getMode(project))
+    }
+
+    fun testTransitionIsNoOpWhenModeUnchanged() {
+        service.enroll(project)
+        service.transition(project, ProjectMode.BACKGROUND)  // already BACKGROUND after enroll
+        assertEquals(ProjectMode.BACKGROUND, service.getMode(project))
+    }
+
+    fun testResetInactivityTimerIsNoOpInActiveMode() {
+        // In ACTIVE mode, MCP calls should not start the dormant countdown.
+        // We verify by checking no exception is thrown and mode is unchanged.
+        service.enroll(project)
+        service.transition(project, ProjectMode.ACTIVE)
+        service.resetInactivityTimer(project)  // must not throw or change state
+        assertEquals(ProjectMode.ACTIVE, service.getMode(project))
+    }
+}

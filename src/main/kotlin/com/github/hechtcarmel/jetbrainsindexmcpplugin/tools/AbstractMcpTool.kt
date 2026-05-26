@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
@@ -132,6 +133,15 @@ abstract class AbstractMcpTool : McpTool {
     protected open val requiresPsiSync: Boolean = true
 
     /**
+     * Whether this tool participates in lifecycle management (auto-enroll, auto-wake).
+     *
+     * Tools that explicitly manage lifecycle state (e.g., [ReleaseProjectTool]) should
+     * return false so they observe the project's actual managed state rather than
+     * triggering enrollment as a side effect of being called.
+     */
+    protected open val participatesInLifecycle: Boolean = true
+
+    /**
      * Human-readable list of languages that currently support language+symbol lookup.
      */
     protected fun supportedSymbolReferenceLanguagesDescription(): String {
@@ -221,6 +231,15 @@ abstract class AbstractMcpTool : McpTool {
      * @return A [ToolCallResult] containing the operation result or error
      */
     final override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
+        val modeService = ProjectModeService.getInstance()
+        if (participatesInLifecycle && McpSettings.getInstance().lifecycleEnabled) {
+            if (!modeService.isManaged(project)) {
+                modeService.enroll(project)
+            } else {
+                modeService.wakeForMcp(project)
+            }
+        }
+
         val settings = McpSettings.getInstance()
         if (requiresPsiSync && settings.syncExternalChanges) {
             ensurePsiUpToDate(project)
