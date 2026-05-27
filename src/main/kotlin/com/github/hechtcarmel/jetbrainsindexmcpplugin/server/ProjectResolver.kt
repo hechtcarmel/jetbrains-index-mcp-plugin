@@ -284,9 +284,22 @@ object ProjectResolver {
                 return Result(project = project)
             }
 
-            // Path given but not resolvable — upgrade the error with path diagnosis so the
-            // caller knows whether the path doesn't exist, isn't an IntelliJ project, or is
-            // simply not open yet.
+            // Path has a .idea directory but isn't open — open it regardless of whether we
+            // closed it. Covers first-time use, limbo state, and non-managed projects.
+            // Enrollment happens via the normal lifecycle middleware on the tool call that
+            // triggered this open.
+            val dir = java.io.File(normalizedPath)
+            if (dir.exists() && dir.isDirectory && java.io.File(dir, ".idea").exists()) {
+                LOG.info("Opening project with .idea at $normalizedPath")
+                val project = reopenAndAwaitSmartMode(normalizedPath)
+                if (project != null) {
+                    runCatching { ProjectModeService.getInstance() }.getOrNull()
+                        ?.resetInactivityTimer(project)
+                    return Result(project = project)
+                }
+            }
+
+            // Path given but not resolvable — upgrade the error with path diagnosis.
             return buildErrorResult(ErrorMessages.msgProjectNotFound(projectPath), projectPath)
         }
 
