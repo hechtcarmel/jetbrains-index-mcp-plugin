@@ -51,6 +51,26 @@ class LifecycleUnitTest : TestCase() {
         assertEquals(LifecycleEventLog.DEFAULT_CAPACITY, state.lifecycleLogBufferSize)
     }
 
+    fun testMinimumOpenProjectsDefaultIs4() {
+        assertEquals(4, McpSettings.State().minimumOpenProjects)
+    }
+
+    fun testMaximumOpenProjectsDefaultIs10() {
+        assertEquals(10, McpSettings.State().maximumOpenProjects)
+    }
+
+    fun testMinimumOpenProjectsIsConfigurable() {
+        val settings = McpSettings()
+        settings.loadState(McpSettings.State(minimumOpenProjects = 6))
+        assertEquals(6, settings.minimumOpenProjects)
+    }
+
+    fun testMaximumOpenProjectsZeroMeansUnlimited() {
+        val settings = McpSettings()
+        settings.loadState(McpSettings.State(maximumOpenProjects = 0))
+        assertEquals(0, settings.maximumOpenProjects)
+    }
+
     fun testLifecycleLogBufferSizeIsConfigurable() {
         val settings = McpSettings()
         settings.loadState(McpSettings.State(lifecycleLogBufferSize = 2000))
