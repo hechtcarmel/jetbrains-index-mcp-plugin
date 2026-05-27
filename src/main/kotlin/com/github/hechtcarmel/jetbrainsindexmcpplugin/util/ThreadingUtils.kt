@@ -40,20 +40,17 @@ object ThreadingUtils {
     }
 
     fun <T> runOnEdtAndWait(action: () -> T): T {
-        var result: T? = null
-        var exception: Throwable? = null
-
-        ApplicationManager.getApplication().invokeAndWait {
-            try {
-                result = action()
-            } catch (e: Throwable) {
-                exception = e
-            }
+        val application = ApplicationManager.getApplication()
+        if (application.isDispatchThread) {
+            return action()
         }
 
-        exception?.let { throw it }
-        @Suppress("UNCHECKED_CAST")
-        return result as T
+        var result: Result<T>? = null
+        application.invokeAndWait {
+            result = runCatching(action)
+        }
+
+        return result!!.getOrThrow()
     }
 
     suspend fun <T> runWhenSmart(
