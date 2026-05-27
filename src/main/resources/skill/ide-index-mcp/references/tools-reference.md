@@ -257,7 +257,7 @@ Analyze a file for errors, warnings, and available quick fixes/intentions.
 
 ## Refactoring Tools
 
-Rider-backed C# refactoring/formatting flows can depend on the live Rider UI: `ide_refactor_rename` and `ide_move_file` may use native dialog automation, while `ide_optimize_imports` and `ide_reformat_code` use editor-tab plus IDE-action flows. These paths fail closed when the required Rider window, dialog, or editor context is unavailable; Rider safe delete remains intentionally excluded.
+Rider-backed C# refactoring/formatting flows can depend on the live Rider UI: `ide_refactor_rename` and `ide_move_file` may use native dialog automation, while `ide_optimize_imports` and `ide_reformat_code` use editor-tab plus IDE-action flows. These paths fail closed when the required Rider window, dialog, or editor context is unavailable; Rider safe delete uses the ReSharper backend when available.
 
 ### ide_refactor_rename
 Rename a symbol and update ALL references (semantic rename, not find-replace). Works across ALL languages.
@@ -291,7 +291,7 @@ Move a file to a new directory. Applies language-aware reference, import, and pa
 **Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
 **Supports IDE undo** (Ctrl+Z).
 
-### ide_refactor_safe_delete (Java/Kotlin only; intentionally not available in Rider)
+### ide_refactor_safe_delete (Java/Kotlin, plus Rider .NET via ReSharper backend)
 Delete a symbol or file, checking for usages first.
 
 | Parameter | Type | Required | Description |
@@ -305,7 +305,7 @@ Delete a symbol or file, checking for usages first.
 
 **Returns (success)**: `{ success, affectedFiles, changesCount, message }`
 **Returns (blocked)**: `{ canDelete: false, elementName, usageCount, blockingUsages: [...], message }`
-**Only available in**: IntelliJ IDEA, Android Studio (requires Java plugin). Rider does not expose this tool by design.
+**Only available in**: IDEs with the Java plugin for Java/Kotlin targets, or Rider with the ReSharper backend for .NET targets.
 
 ### ide_reformat_code (disabled by default)
 Reformat code per project style (.editorconfig, IDE settings). Equivalent to Ctrl+Alt+L / Cmd+Opt+L.

@@ -53,7 +53,7 @@ These tools activate based on installed language plugins:
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
-- **Safe Delete** - Remove code with usage checking (Java/Kotlin only; intentionally not available in Rider)
+- **Safe Delete** - Remove code with usage checking (Java/Kotlin, plus Rider .NET via ReSharper backend)
 - **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
 
 **Rider C# note:** rename and move can fall back to native dialog automation, while optimize/reformat use editor-tab + IDE-action flows. F# remains beta/unstable and is not recommended for production.
@@ -265,12 +265,12 @@ These tools activate based on available language plugins:
 | `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider |
 | `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown, C#/F# in Rider |
 
-### Java-Specific Refactoring Tools
+### Conditional Refactoring Tools
 
 | Tool | Description |
 |------|-------------|
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
-| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only; intentionally not available in Rider) |
+| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin, plus Rider .NET via ReSharper backend) |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
 
@@ -288,7 +288,7 @@ These tools activate based on available language plugins:
 | RustRover | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
 | PhpStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 
-> **Rider note**: Rider-backed C# is the production focus for semantic navigation/refactoring; F# remains beta/unstable and is not production-ready. `ide_refactor_safe_delete` is intentionally excluded from Rider.
+> **Rider note**: Rider-backed C# is the production focus for semantic navigation/refactoring; F# remains beta/unstable and is not production-ready. `ide_refactor_safe_delete` is exposed in Rider when the ReSharper backend is available.
 
 **May Work (Untested):**
 

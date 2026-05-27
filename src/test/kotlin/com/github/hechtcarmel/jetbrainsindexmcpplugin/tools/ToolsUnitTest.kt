@@ -382,7 +382,7 @@ class ToolsUnitTest : TestCase() {
             ToolNames.FILE_STRUCTURE
         )
 
-        // Java-specific refactoring tools
+        // Conditional refactoring tools
         val refactoringTools = listOf(
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE
@@ -392,7 +392,7 @@ class ToolsUnitTest : TestCase() {
         val registeredNavTools = navigationTools.count { registry.getTool(it) != null }
         val registeredRefTools = refactoringTools.count { registry.getTool(it) != null }
 
-        // Check if SafeDeleteTool is specifically registered (indicates Java plugin is available)
+        // Check if SafeDeleteTool is specifically registered (indicates Java plugin or Rider backend is available)
         val safeDeleteRegistered = registry.getTool(ToolNames.REFACTOR_SAFE_DELETE) != null
 
         // In IntelliJ platform tests with Java plugin, all navigation and refactoring tools should be available.
@@ -406,11 +406,11 @@ class ToolsUnitTest : TestCase() {
         }
 
         if (safeDeleteRegistered) {
-            // If SafeDeleteTool is registered, Java plugin is available and both refactoring tools should be registered
-            assertEquals("When Java plugin available, both refactoring tools should be registered",
+            // If SafeDeleteTool is registered, an implementation backend is available and both refactoring tools should be registered.
+            assertEquals("When Java plugin or Rider backend is available, both refactoring tools should be registered",
                 2, registeredRefTools)
         } else {
-            // SafeDeleteTool requires Java plugin, but RenameSymbolTool is universal and should always be registered
+            // SafeDeleteTool requires Java plugin or Rider backend, but RenameSymbolTool is universal and should always be registered.
             assertTrue("RenameSymbolTool should always be registered (universal tool)",
                 registry.getTool(ToolNames.REFACTOR_RENAME) != null)
         }

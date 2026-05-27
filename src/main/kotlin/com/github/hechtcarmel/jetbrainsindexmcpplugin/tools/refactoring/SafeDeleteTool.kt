@@ -923,13 +923,14 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     }
 
     private fun getElementType(element: PsiElement): String {
+        val className = element.javaClass.simpleName.removePrefix("Psi")
         return when {
-            element is com.intellij.psi.PsiMethod -> "method"
-            element is com.intellij.psi.PsiClass -> "class"
-            element is com.intellij.psi.PsiField -> "field"
-            element is com.intellij.psi.PsiLocalVariable -> "variable"
-            element is com.intellij.psi.PsiParameter -> "parameter"
-            else -> element.javaClass.simpleName.removePrefix("Psi").lowercase()
+            className.contains("Method", ignoreCase = true) -> "method"
+            className.contains("Class", ignoreCase = true) -> "class"
+            className.contains("Field", ignoreCase = true) -> "field"
+            className.contains("LocalVariable", ignoreCase = true) -> "variable"
+            className.contains("Parameter", ignoreCase = true) -> "parameter"
+            else -> className.lowercase()
         }
     }
 }

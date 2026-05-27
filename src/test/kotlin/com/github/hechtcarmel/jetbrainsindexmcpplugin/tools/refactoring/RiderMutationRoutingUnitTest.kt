@@ -257,6 +257,7 @@ class RiderMutationRoutingUnitTest : TestCase() {
 
     fun testSafeDeleteToolContractsRiderDotNetBackendDeleteEndpoint() {
         val source = refactoringSource("SafeDeleteTool.kt")
+        val registrySource = File("src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/tools/ToolRegistry.kt").readText()
 
         assertContains(
             source,
@@ -267,6 +268,17 @@ class RiderMutationRoutingUnitTest : TestCase() {
             source,
             "RiderBackendSemanticService.isDotNetFile(file)",
             "Rider .cs/.csx safe delete should detect Rider-backed .NET files before generic deletion"
+        )
+        assertContains(
+            registrySource,
+            "PluginDetectors.java.isAvailable || RiderBackendSemanticService.isRiderEnvironment()",
+            "SafeDeleteTool registration should intentionally expose the Rider backend safe-delete path when Rider is available"
+        )
+        assertFalse(
+            "SafeDeleteTool should not require Java PSI classes just to classify deleted element types in Rider environments",
+            source.contains("com.intellij.psi.PsiMethod") ||
+                source.contains("com.intellij.psi.PsiClass") ||
+                source.contains("com.intellij.psi.PsiField")
         )
     }
 

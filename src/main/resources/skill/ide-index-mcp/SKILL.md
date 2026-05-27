@@ -42,7 +42,7 @@ Rider C# refactoring/formatting flows are UI-driven when needed: `ide_refactor_r
 | Understand class hierarchy | `ide_type_hierarchy` | Never - no equivalent |
 | Find who calls a method | `ide_call_hierarchy` | Never - grep misses indirect calls |
 | Find interface implementations | `ide_find_implementations` | Never - grep can't resolve type relationships |
-| Delete a symbol safely | `ide_refactor_safe_delete` | Never - manual deletion misses usages | Java/Kotlin only; intentionally not available in Rider |
+| Delete a symbol safely | `ide_refactor_safe_delete` | Never - manual deletion misses usages | Java/Kotlin, plus Rider .NET via ReSharper backend |
 | Find what a method overrides | `ide_find_super_methods` | Never - no equivalent |
 | Read file content | Built-in Read tool | `ide_read_file` only for library/jar sources |
 | Find text with regex | `Grep` | IDE search_text doesn't support regex |
@@ -94,7 +94,7 @@ Omit `paths` to sync the entire project.
 ### "I need to refactor"
 1. `ide_refactor_rename` - rename symbol + all references atomically
 2. `ide_move_file` - move file and let the IDE apply semantic updates when that language/backend supports them
-3. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin only; intentionally not available in Rider)
+3. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin, plus Rider .NET via ReSharper backend)
 4. `ide_reformat_code` - apply project code style (disabled by default)
 
 ### "I need to check for problems"

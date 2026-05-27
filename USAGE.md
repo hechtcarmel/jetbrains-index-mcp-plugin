@@ -31,7 +31,7 @@ These tools work in every supported JetBrains IDE:
 
 ### Rider C# and F# support
 
-Rider-backed C# requests use the ReSharper backend for supported search and mutation paths, including `ide_find_symbol`, `ide_refactor_rename`, and `ide_move_file`. `ide_refactor_safe_delete` is intentionally excluded from Rider and remains Java/Kotlin-only.
+Rider-backed C# requests use the ReSharper backend for supported search and mutation paths, including `ide_find_symbol`, `ide_refactor_rename`, `ide_move_file`, and `ide_refactor_safe_delete`.
 
 Rider C# refactoring/formatting flows are UI-driven when the backend cannot prove a fully headless path: `ide_refactor_rename` and `ide_move_file` rely on native dialog automation with an active Rider UI, while `ide_optimize_imports` and `ide_reformat_code` run through an editor tab plus IDE actions. These paths fail closed if the required Rider window, dialog, or editor context is unavailable.
 
@@ -1844,7 +1844,7 @@ Safely deletes an element, first checking for usages.
 }
 ```
 
-**Availability:** Java/Kotlin only; intentionally not available or exposed in Rider by design.
+**Availability:** Java/Kotlin when the Java plugin is available; Rider .NET when the ReSharper backend is available.
 
 **Example Response (blocked by usages):**
 
