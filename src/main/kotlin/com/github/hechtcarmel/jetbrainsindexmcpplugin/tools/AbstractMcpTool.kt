@@ -244,7 +244,17 @@ abstract class AbstractMcpTool : McpTool {
         if (requiresPsiSync && settings.syncExternalChanges) {
             ensurePsiUpToDate(project)
         }
-        return doExecute(project, arguments)
+        return try {
+            doExecute(project, arguments)
+        } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
+            // The IDE entered dumb mode (reindexing) during this call. This can happen
+            // when a project has just woken from dormant or a background process triggered
+            // reindexing. The caller should check ide_index_status and retry.
+            createErrorResult(
+                "IDE index is not ready — indexing is in progress. " +
+                "Call ide_index_status to check when it completes, then retry."
+            )
+        }
     }
 
     /**
