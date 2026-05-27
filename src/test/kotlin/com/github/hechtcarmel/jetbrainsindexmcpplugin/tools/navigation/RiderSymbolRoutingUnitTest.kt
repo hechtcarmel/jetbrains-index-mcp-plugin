@@ -16,8 +16,8 @@ class RiderSymbolRoutingUnitTest : TestCase() {
         )
         assertContains(
             source,
-            "language = optionalStringArg(arguments, ParamNames.LANGUAGE)",
-            "FindDefinitionTool should normalize blank requested language before calling the Rider backend-native definition path"
+            "language = normalizedRequestedLanguage",
+            "FindDefinitionTool should pass the normalized requested language before calling the Rider backend-native definition path"
         )
         assertContains(
             source,
@@ -46,8 +46,8 @@ class RiderSymbolRoutingUnitTest : TestCase() {
         )
         assertContains(
             source,
-            "language = optionalStringArg(arguments, ParamNames.LANGUAGE)",
-            "FindUsagesTool should normalize blank requested language before calling the Rider backend-native references path"
+            "language = normalizedRequestedLanguage",
+            "FindUsagesTool should pass the normalized requested language before calling the Rider backend-native references path"
         )
         assertContains(
             source,
@@ -129,6 +129,29 @@ class RiderSymbolRoutingUnitTest : TestCase() {
             "CallHierarchyTool should not hardcode only canonical Rider language ids for early symbol-mode routing",
             source.contains("requestedLanguage in setOf(\"C#\", \"F#\")")
         )
+    }
+
+    fun testRiderSymbolModeToolsNormalizeAliasesBeforeEarlyRouting() {
+        val expectations = listOf(
+            "FindDefinitionTool.kt",
+            "FindUsagesTool.kt",
+            "FindImplementationsTool.kt",
+            "FindSuperMethodsTool.kt",
+            "CallHierarchyTool.kt"
+        )
+
+        expectations.forEach { fileName ->
+            val source = navigationSource(fileName)
+            assertContains(
+                source,
+                "normalizeAcceptedRiderLanguageAlias(requestedLanguage)",
+                "$fileName should normalize accepted Rider language aliases before deciding symbol-mode backend routing"
+            )
+            assertFalse(
+                "$fileName should not hardcode only canonical Rider language ids for symbol-mode backend routing",
+                source.contains("requestedLanguage in setOf(\"C#\", \"F#\")")
+            )
+        }
     }
 
     fun testCallHierarchyDescriptionMakesRiderCallerScopeSemanticsExplicit() {

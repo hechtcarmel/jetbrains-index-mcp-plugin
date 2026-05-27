@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
@@ -56,8 +57,9 @@ class FindDefinitionTool : AbstractMcpTool() {
         val maxPreviewLines = (arguments[ParamNames.MAX_PREVIEW_LINES]?.jsonPrimitive?.int ?: DEFAULT_MAX_PREVIEW_LINES)
             .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            requestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#", "F#") &&
             optionalStringArg(arguments, ParamNames.SYMBOL) != null
 
         requireSmartMode(project)
@@ -67,7 +69,7 @@ class FindDefinitionTool : AbstractMcpTool() {
             file = optionalStringArg(arguments, ParamNames.FILE),
             line = optionalIntArg(arguments, ParamNames.LINE),
             column = optionalIntArg(arguments, ParamNames.COLUMN),
-            language = optionalStringArg(arguments, ParamNames.LANGUAGE),
+            language = normalizedRequestedLanguage,
             symbol = optionalStringArg(arguments, ParamNames.SYMBOL),
             fullElementPreview = fullElementPreview,
             maxPreviewLines = maxPreviewLines

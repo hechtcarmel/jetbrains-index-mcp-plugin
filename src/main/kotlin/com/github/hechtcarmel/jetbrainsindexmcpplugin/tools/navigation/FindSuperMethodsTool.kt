@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MethodInfo
@@ -58,14 +59,15 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val requestedSymbol = optionalStringArg(arguments, ParamNames.SYMBOL)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            requestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#", "F#") &&
             requestedSymbol != null
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val riderSymbolElement = resolveRiderSymbolModeElement(project, requestedLanguage, requestedSymbol, isRiderSymbolMode)
+            val riderSymbolElement = resolveRiderSymbolModeElement(project, normalizedRequestedLanguage, requestedSymbol, isRiderSymbolMode)
             val element = (riderSymbolElement
                 ?: resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true)).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)

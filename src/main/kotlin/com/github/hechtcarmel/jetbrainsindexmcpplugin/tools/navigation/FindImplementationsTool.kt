@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -78,9 +79,10 @@ class FindImplementationsTool : AbstractMcpTool() {
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val requestedSymbol = optionalStringArg(arguments, ParamNames.SYMBOL)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            requestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#", "F#") &&
             requestedSymbol != null
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments)
@@ -110,7 +112,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val riderSymbolElement = resolveRiderSymbolModeElement(project, requestedLanguage, requestedSymbol, isRiderSymbolMode)
+            val riderSymbolElement = resolveRiderSymbolModeElement(project, normalizedRequestedLanguage, requestedSymbol, isRiderSymbolMode)
             val element = (riderSymbolElement
                 ?: resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true)).getOrElse {
                 return@suspendingReadAction null to createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)

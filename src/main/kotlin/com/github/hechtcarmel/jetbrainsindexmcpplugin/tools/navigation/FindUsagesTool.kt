@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -112,8 +113,9 @@ class FindUsagesTool : AbstractMcpTool() {
             return createInvalidScopeError(rawScope)
         }
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            requestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#", "F#") &&
             optionalStringArg(arguments, ParamNames.SYMBOL) != null
         requireSmartMode(project)
 
@@ -122,7 +124,7 @@ class FindUsagesTool : AbstractMcpTool() {
             file = optionalStringArg(arguments, ParamNames.FILE),
             line = optionalIntArg(arguments, ParamNames.LINE),
             column = optionalIntArg(arguments, ParamNames.COLUMN),
-            language = optionalStringArg(arguments, ParamNames.LANGUAGE),
+            language = normalizedRequestedLanguage,
             symbol = optionalStringArg(arguments, ParamNames.SYMBOL),
             scope = scope,
             limit = collectLimit
