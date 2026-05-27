@@ -13,7 +13,7 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
 | `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
 
-**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. The two groups are **mutually exclusive**. Currently supported for Java, plus Rider-backed C#/F# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. A complete position target (`file` + positive `line` + positive `column`) takes precedence; otherwise a complete symbol target is used. Blank strings and non-positive `line`/`column` values are treated as absent. Currently supported for Java, plus Rider-backed C#/F# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
 
 ## Response Format
 
@@ -28,7 +28,7 @@ Parse the `text` field as JSON for structured data.
 ### ide_find_references
 Find all usages of a symbol (semantic, not text search).
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -50,7 +50,7 @@ Find all usages of a symbol (semantic, not text search).
 ### ide_find_definition
 Go to where a symbol is defined.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -115,7 +115,7 @@ Search for exact words using IDE's pre-built word index. O(1) lookups, not file 
 ### ide_find_implementations
 Find implementations of interfaces, abstract classes, or abstract methods.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -153,7 +153,7 @@ Search for any code symbol (classes, methods, fields, functions) by name.
 ### ide_find_super_methods
 Find parent methods that a given method overrides or implements.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -188,7 +188,7 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 ### ide_call_hierarchy
 Build call tree showing who calls a method or what a method calls.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -262,7 +262,7 @@ Rider-backed C# refactoring/formatting flows can depend on the live Rider UI: `i
 ### ide_refactor_rename
 Rename a symbol and update ALL references (semantic rename, not find-replace). Works across ALL languages.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target:** `file`+`line`+`column` for symbol rename, or `file` without line/column for file rename
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

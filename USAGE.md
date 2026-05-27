@@ -145,7 +145,7 @@ Some tools support identifying the target element by fully qualified symbol refe
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. Unsupported languages are rejected at runtime; use `file` + `line` + `column` for languages without symbol-reference support. |
 | `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
 
-**Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
+**Target selection:** A complete position target (`file` + positive `line` + positive `column`) takes precedence because it is more precise. If no complete position target is present, the tool uses a complete symbol target (`language` + `symbol`). Blank strings and non-positive `line`/`column` values are treated as absent for this selection, so clients may send default `""`/`0` values without causing a dual-mode error.
 
 **Supported languages:** Java, plus Rider-backed C#/F# for tools whose current IDE/runtime exposes the shared semantic symbol lane. Unsupported languages return an explicit error listing the currently supported symbol-reference languages for the active IDE session.
 
@@ -168,7 +168,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 - Understanding code dependencies
 - Preparing for refactoring
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -270,7 +270,7 @@ Finds the definition/declaration location of a symbol at a given source location
 - Understanding where a method, class, variable, or field is declared
 - Looking up the original definition from a usage site
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -1383,7 +1383,7 @@ Analyzes method call relationships to find callers or callees.
 - Analyzing impact of method changes
 - Debugging to understand how a method is reached
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -1477,7 +1477,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 - Finding classes that extend an abstract class
 - Finding all overriding methods for polymorphic behavior analysis
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -1571,7 +1571,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 **Position flexibility:** The position (line/column) can be anywhere within the method - on the name, inside the body, or on the @Override annotation. The tool automatically finds the enclosing method.
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
