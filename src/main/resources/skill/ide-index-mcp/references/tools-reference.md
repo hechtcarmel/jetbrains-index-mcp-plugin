@@ -10,10 +10,10 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | `file` | string | For project files, path relative to project root (e.g., `src/main/App.java`). `ide_read_file` and some read-only position-based navigation tools also accept dependency/library paths returned by the plugin as absolute paths or `jar://` URLs; check each tool section because support is tool-specific. |
 | `line` | integer | **1-based** line number |
 | `column` | integer | **1-based** column number. Place on the symbol name, not whitespace. For dotted expressions like `json.dumps()` or `os.path.join()`, point to the member token (`dumps`, `join`) when targeting the member definition. |
-| `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
-| `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
+| `language` | string | Language of the symbol (e.g., `"Java"`, `"PHP"`). Required when using `symbol`. |
+| `symbol` | string | Fully qualified symbol reference. Java format: `com.example.ClassName`, `com.example.ClassName#memberName`. PHP format: `\\App\\Service\\UserService`, `\\App\\Service\\UserService::method()`, `\\App\\Service\\UserService::CONSTANT`, `\\App\\Service\\UserService::$property`, `\\App\\Service\\StatusEnum::ACTIVE`. PHP properties require the `$property` form; plain `::name` resolves enum cases (on enum types), constants, or methods. |
 
-**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. A complete position target (`file` + positive `line` + positive `column`) takes precedence; otherwise a complete symbol target is used. Blank strings and non-positive `line`/`column` values are treated as absent. Currently supported for Java, plus Rider-backed C#/F# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. A complete position target (`file` + positive `line` + positive `column`) takes precedence; otherwise a complete symbol target is used. Blank strings and non-positive `line`/`column` values are treated as absent. Supported languages: Java, PHP, plus Rider-backed C#/F# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
 
 ## Response Format
 
@@ -100,13 +100,15 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 **Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_search_text
-Search for exact words using IDE's pre-built word index. O(1) lookups, not file scanning.
+Search for text using IDE's pre-built word index for exact searches or IntelliJ Find in Files for regex searches.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | yes | Exact word (NOT regex/pattern) |
+| `query` | string | yes | Text to search for; exact word unless `regex` is true |
+| `regex` | boolean | no | Treat `query` as a regular expression. Default false |
 | `context` | enum | no | `all` (default), `code`, `comments`, `strings` |
 | `caseSensitive` | boolean | no | Default true |
+| `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
 | `limit` | integer | no | Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
@@ -216,8 +218,10 @@ Get hierarchical file structure like IDE's Structure panel.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
-**Languages**: Java, Kotlin, Python, JS/TS, Markdown, Rider-backed C#/F#.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown, Rider-backed C#/F#.
 **Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+
+PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
 ### ide_read_file (disabled by default)
 Read file content by path or qualified name, including library/jar sources.

@@ -44,10 +44,11 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
         Target selection:
         - Complete file + positive line + positive column: position-based lookup, preferred when present because it is more precise (position can be anywhere within the method body)
-        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported when the requested language has a SymbolReferenceHandler, including Rider C#/F#). Blank strings and non-positive line/column values count as absent.
+        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported languages: ${supportedSymbolReferenceLanguagesDescription()}). Blank strings and non-positive line/column values count as absent.
 
         Example: {"file": "src/UserServiceImpl.java", "line": 25, "column": 10}
         Example: {"language": "Java", "symbol": "com.example.UserServiceImpl#getUser(String)"}
+        Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()

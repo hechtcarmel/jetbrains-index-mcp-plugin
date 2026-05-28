@@ -48,6 +48,8 @@ object ParamNames {
     const val LIMIT = "limit"
     const val CONTEXT = "context"
     const val CASE_SENSITIVE = "caseSensitive"
+    const val FILE_PATTERN = "filePattern"
+    const val REGEX = "regex"
     const val CURSOR = "cursor"
 
     // Preview parameters

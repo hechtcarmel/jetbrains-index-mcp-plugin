@@ -2,6 +2,12 @@
 
 # IDE Index MCP Server Changelog
 
+## [4.19.2] - 2026-05-28
+
+### Changed
+- Merged upstream `4.19.1` (`filePattern` and `regex` support in `ide_search_text`, PHP symbol-reference handler, PHP file structure, PHP move-file namespace inference for nested composer roots) into the Rider fork.
+- Adopted upstream's switch to `intellijIdea(...)` for the compile target (no longer published as IC for 2025.3+) and bumped `platformVersion` to `2025.3`.
+
 ## [4.18.5] - 2026-05-10
 
 ### Changed
@@ -83,6 +89,45 @@
 ## [4.17.0] - 2026-05-01
 ### Added
 - Added Rider C# and F# language handlers for hierarchy, implementation, call hierarchy, super-method, and file-structure tools using Rider's frontend navigation bridge to the ReSharper backend.
+
+## [4.19.1] - 2026-05-26
+### Fixed
+- Fixed `ide_search_text` regex search and `filePattern` filtering for [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).
+
+## [4.19.0] - 2026-05-26
+### Added
+- Added `regex` support to `ide_search_text` through IntelliJ's Find in Files path, including existing `context` filtering and pagination.
+
+### Fixed
+- Wired `ide_search_text`'s documented `filePattern` filter into the schema and search execution path using IntelliJ file mask semantics. Fixes [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).
+
+## [4.18.0] - 2026-05-24
+### Added
+- **PHP symbol reference handler** — PHP now supports `language`+`symbol` parameter mode for `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, and `ide_find_super_methods`. Accepts symbol formats with PHP namespaces (e.g., `\\App\\Service\\UserService`, `\\App\\Service\\UserService::find()`, `\\App\\Service\\UserService::$property`). Fixes [#179](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/179).
+- **PHP symbol reference member lookup** — Inherited and case-insensitive PHP methods resolve through PhpStorm's `findMethodByName(CharSequence)` API, field/constant lookup uses the matching `findFieldByName(CharSequence, boolean)` signature, and plain `Class::name` symbols do not fall back to properties without the documented `$property` syntax.
+- **PHP enum case resolution** — `EnumType::CASE` now resolves to enum case PSI elements via PhpStorm's `getEnumCases()` API. Enum case lookup runs before class constant lookup so `::CASE` correctly targets enum cases on enum types. `::CASE()` still resolves as a method call.
+
+## [4.17.3] - 2026-05-21
+### Fixed
+- Fixed `ide_move_file` PHP namespace inference for monorepos where `composer.json` is nested below the opened project root. The PHP semantic move now discovers the nearest ancestor Composer PSR-4 mapping and resolves it relative to that Composer file, so moves under nested source roots can update namespaces correctly. Fixes [#185](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/185).
+
+## [4.17.2] - 2026-05-18
+### Fixed
+- De-duplicated PHP interface and trait names in `ide_file_structure` class signatures.
+
+## [4.17.1] - 2026-05-17
+### Fixed
+- minor issues with - PHP support to `ide_file_structure`
+
+## [4.17.0] - 2026-05-17
+### Added
+- Added PHP support to `ide_file_structure` using the IDE Structure View API. Works in PhpStorm and IntelliJ IDEA Ultimate with the PHP plugin enabled.
+- PHP structure output includes namespace containers, constructor-promoted property modifiers, enum cases, constants, and includes while filtering implicit PHP runtime details from enums.
+- PHP structure output renders interface inheritance as `extends`, labels global namespace blocks, and filters synthetic `final` modifiers from properties/constants in final classes.
+
+## [4.16.3] - 2026-05-06
+### Fixed
+- **`ide_refactor_rename` no longer fails while committing documents from MCP requests** — Document commits now switch to a write-safe non-modal EDT context instead of using deprecated synchronous transaction submission from the request coroutine's write-unsafe modality. Fixes [#172](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/172).
 
 ## [4.16.2] - 2026-05-03
 ### Fixed

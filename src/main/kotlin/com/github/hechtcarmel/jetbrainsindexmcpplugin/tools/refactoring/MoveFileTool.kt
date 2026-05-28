@@ -56,9 +56,9 @@ import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.text.JTextComponent
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 
 /**
@@ -1432,19 +1432,50 @@ open class MoveFileTool : AbstractRefactoringTool() {
     }
 
     private fun determinePhpNamespaceFromComposer(project: Project, targetDirectory: PsiDirectory): String? {
-        val projectBasePath = project.basePath ?: return null
-        val composerFile = Path.of(projectBasePath, "composer.json")
-        if (!Files.isRegularFile(composerFile)) {
-            return null
+        val projectBasePath = project.basePath?.let { Path.of(it).normalize() } ?: return null
+        val targetPath = Path.of(targetDirectory.virtualFile.path).normalize()
+
+        return findComposerFiles(projectBasePath, targetPath)
+            .firstNotNullOfOrNull { composerFile ->
+                determinePhpNamespaceFromComposerFile(composerFile, targetDirectory.virtualFile.path)
+            }
+    }
+
+    private fun findComposerFiles(projectBasePath: Path, targetPath: Path): List<Path> {
+        val composerFiles = linkedSetOf<Path>()
+
+        if (targetPath.startsWith(projectBasePath)) {
+            var current: Path? = targetPath
+            while (current != null) {
+                val composerFile = current.resolve("composer.json")
+                if (Files.isRegularFile(composerFile)) {
+                    composerFiles.add(composerFile)
+                }
+                if (current == projectBasePath) {
+                    break
+                }
+                current = current.parent
+            }
         }
+
+        val projectComposer = projectBasePath.resolve("composer.json")
+        if (Files.isRegularFile(projectComposer)) {
+            composerFiles.add(projectComposer)
+        }
+
+        return composerFiles.toList()
+    }
+
+    private fun determinePhpNamespaceFromComposerFile(composerFile: Path, rawTargetPath: String): String? {
+        val composerBasePath = composerFile.parent ?: return null
 
         return try {
             val root = Json.parseToJsonElement(Files.readString(composerFile)).jsonObject
             val mappings = buildList {
-                addAll(extractComposerPsrMappings(root["autoload"] as? JsonObject, projectBasePath))
-                addAll(extractComposerPsrMappings(root["autoload-dev"] as? JsonObject, projectBasePath))
+                addAll(extractComposerPsrMappings(root["autoload"] as? JsonObject, composerBasePath))
+                addAll(extractComposerPsrMappings(root["autoload-dev"] as? JsonObject, composerBasePath))
             }
-            val targetPath = targetDirectory.virtualFile.path
+            val targetPath = normalizePath(rawTargetPath)
             val mapping = mappings
                 .filter { (namespacePrefix, directoryPath) ->
                     targetPath == directoryPath || targetPath.startsWith("$directoryPath/")
@@ -1468,31 +1499,33 @@ open class MoveFileTool : AbstractRefactoringTool() {
         }
     }
 
-    private fun extractComposerPsrMappings(section: JsonObject?, projectBasePath: String): List<Pair<String, String>> {
+    private fun extractComposerPsrMappings(section: JsonObject?, composerBasePath: Path): List<Pair<String, String>> {
         val psr4 = section?.get("psr-4") as? JsonObject ?: return emptyList()
         return buildList {
             for ((namespacePrefix, locationValue) in psr4) {
                 val namespace = normalizePhpNamespace(namespacePrefix)
                 when (locationValue) {
                     is JsonPrimitive -> {
-                        add(namespace to resolveComposerPath(projectBasePath, locationValue.content))
+                        add(namespace to resolveComposerPath(composerBasePath, locationValue.content))
                     }
-                    else -> {
-                        locationValue.jsonArray.forEach { entry ->
+                    is JsonArray -> {
+                        locationValue.forEach { entry ->
                             val entryValue = entry as? JsonPrimitive ?: return@forEach
-                            add(namespace to resolveComposerPath(projectBasePath, entryValue.content))
+                            add(namespace to resolveComposerPath(composerBasePath, entryValue.content))
                         }
                     }
+                    else -> Unit
                 }
             }
         }
     }
 
-    private fun resolveComposerPath(projectBasePath: String, rawPath: String): String {
-        return Path.of(projectBasePath)
-            .resolve(rawPath)
-            .normalize()
-            .toString()
+    private fun resolveComposerPath(composerBasePath: Path, rawPath: String): String {
+        return normalizePath(composerBasePath.resolve(rawPath).normalize().toString())
+    }
+
+    private fun normalizePath(path: String): String {
+        return path
             .replace('\\', '/')
             .removeSuffix("/")
     }

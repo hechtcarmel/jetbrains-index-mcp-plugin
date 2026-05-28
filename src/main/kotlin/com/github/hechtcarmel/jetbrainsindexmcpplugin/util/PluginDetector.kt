@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
-import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.ide.plugins.PluginManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.extensions.PluginId
 
@@ -22,8 +22,8 @@ class PluginDetector(
     private fun checkAvailable(): Boolean {
         for (pluginId in pluginIds) {
             try {
-                val plugin = PluginManagerCore.getPlugin(PluginId.getId(pluginId))
-                if (plugin != null && plugin.isEnabled) {
+                val plugin = PluginManager.getInstance().findEnabledPlugin(PluginId.getId(pluginId))
+                if (plugin != null) {
                     log.info("$name plugin detected via plugin ID ($pluginId)")
                     return true
                 }

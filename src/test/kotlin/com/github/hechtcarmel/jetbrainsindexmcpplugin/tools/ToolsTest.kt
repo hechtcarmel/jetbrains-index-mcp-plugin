@@ -11,6 +11,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImple
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
@@ -443,6 +444,55 @@ class ToolsTest : BasePlatformTestCase() {
         )
 
         assertEquals(listOf("ProjectScopeSymbol"), results.map { it.name })
+    }
+
+    fun testSearchTextToolFilePatternFiltersExactSearchResults() = runBlocking {
+        myFixture.addFileToProject("mappers/UserMapper.xml", "<mapper><select id=\"a\">select needle from sys_user</select></mapper>")
+        myFixture.addFileToProject("web/pagination.js", "const q = 'needle';")
+        myFixture.addFileToProject("tmp/opac_phase2_sql-mybatis.json", "{\"query\":\"needle\"}")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val tool = SearchTextTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "needle")
+            put("filePattern", "*.xml")
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", result.isError)
+        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
+
+        assertEquals(listOf("mappers/UserMapper.xml"), files)
+    }
+
+    fun testSearchTextToolRegexUsesFindInFilesOutsideReadAction() = runBlocking {
+        myFixture.addFileToProject(
+            "src/CommandRunner.java",
+            """
+            class CommandRunner {
+                void run() throws Exception {
+                    Runtime.getRuntime().exec("calc");
+                }
+            }
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val tool = SearchTextTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("query", "Runtime\\.getRuntime\\(\\)\\.exec\\(")
+            put("regex", true)
+            put("context", "code")
+            put("filePattern", "*.java")
+            put("pageSize", 10)
+        })
+
+        assertFalse("Regex search should succeed", result.isError)
+        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
+
+        assertEquals(listOf("src/CommandRunner.java"), files)
     }
 
     // Intelligence Tools Tests

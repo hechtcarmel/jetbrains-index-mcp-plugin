@@ -14,7 +14,6 @@ import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
-import org.jetbrains.kotlin.idea.configuration.hasKotlinPluginEnabled
 import java.lang.reflect.InvocationTargetException
 import kotlin.coroutines.intrinsics.intercepted
 import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
@@ -249,7 +248,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
                 continue
             }
 
-            if (!module.hasKotlinPluginEnabled()) {
+            if (!hasKotlinPluginEnabled(module)) {
                 target.result = skippedResult(
                     target.requestedPath,
                     "Module '${module.name}' does not have Kotlin plugin enabled"
@@ -277,6 +276,17 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         }
 
         return createFinalResult(preparation.targets)
+    }
+
+    private fun hasKotlinPluginEnabled(module: Module): Boolean {
+        return try {
+            val configurationUtils = Class.forName("org.jetbrains.kotlin.idea.configuration.ConfigureKotlinInProjectUtilsKt")
+            configurationUtils
+                .getMethod("hasKotlinPluginEnabled", Module::class.java)
+                .invoke(null, module) as Boolean
+        } catch (_: ReflectiveOperationException) {
+            false
+        }
     }
 
     /**

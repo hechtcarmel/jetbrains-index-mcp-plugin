@@ -73,7 +73,7 @@ These tools activate based on available language plugins:
 | `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, C#/F# in Rider |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown, C#/F# in Rider |
+| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown, C#/F# in Rider |
 
 ### Java-Specific Refactoring Tools
 
@@ -464,10 +464,11 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | Yes | Exact word to search for (not a pattern/regex) |
+| `query` | string | Yes | Text to search for; treated as an exact word unless `regex` is `true` |
+| `regex` | boolean | No | Treat `query` as a regular expression (default: false) |
 | `context` | string | No | Where to search: `"code"`, `"comments"`, `"strings"`, or `"all"` (default) |
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
-| `filePattern` | string | No | Glob pattern to filter files (e.g., `"*.kt"`, `"*.gradle.kts"`) |
+| `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
 | `limit` | integer | No | Maximum results (default: 100, max: 500) |
 
 **Example Request:**
@@ -481,6 +482,23 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
       "query": "TODO",
       "context": "comments",
       "filePattern": "*.kt"
+    }
+  }
+}
+```
+
+Regex example:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_search_text",
+    "arguments": {
+      "query": "Runtime\\.getRuntime\\(\\)\\.exec\\(",
+      "regex": true,
+      "context": "code",
+      "filePattern": "*.java"
     }
   }
 }
@@ -1257,7 +1275,7 @@ These tools activate based on available language plugins:
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
-Navigation tools appear according to installed language plugins. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
+Navigation tools appear according to installed language plugins. PHP file structure requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
 
 ### ide_type_hierarchy
 
@@ -1672,11 +1690,14 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Markdown, Rider-backed C#/F# in Rider.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
+
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Rider-backed C#/F# in Rider.
 **Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
 **Use when:**
-- Getting an overview of a file's classes, methods, fields, or Markdown heading outline
+- Getting an overview of a file's classes, methods, fields, PHP namespaces/constants/enum cases, or Markdown heading outline
 - Understanding code organization without reading the full file
 - Navigating large files
 

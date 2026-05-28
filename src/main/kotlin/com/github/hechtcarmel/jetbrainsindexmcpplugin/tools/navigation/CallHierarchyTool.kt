@@ -45,12 +45,13 @@ class CallHierarchyTool : AbstractMcpTool() {
 
         Target selection:
         - Complete file + positive line + positive column: position-based lookup, preferred when present because it is more precise
-        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported when the requested language has a SymbolReferenceHandler, including Rider C#/F#). Blank strings and non-positive line/column values count as absent.
+        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported languages: ${supportedSymbolReferenceLanguagesDescription()}). Blank strings and non-positive line/column values count as absent.
 
         Parameters: direction (required): "callers" or "callees". depth (optional, default: 3, max: 5). scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
 
         Example: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callers"}
         Example: {"language": "Java", "symbol": "com.example.Service#processRequest(String)", "direction": "callers", "scope": "project_and_libraries"}
+        Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()", "direction": "callers"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()

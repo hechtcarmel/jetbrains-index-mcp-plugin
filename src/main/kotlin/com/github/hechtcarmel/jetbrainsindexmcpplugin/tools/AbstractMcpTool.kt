@@ -134,6 +134,16 @@ abstract class AbstractMcpTool : McpTool {
     protected open val requiresPsiSync: Boolean = true
 
     /**
+     * Human-readable list of languages that currently support language+symbol lookup.
+     */
+    protected fun supportedSymbolReferenceLanguagesDescription(): String {
+        return LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference()
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(", ")
+            ?: "none"
+    }
+
+    /**
      * Executes an action on the EDT, reusing the current thread if already on EDT.
      *
      * This avoids deadlocks when called from `runBlocking` on EDT in tests

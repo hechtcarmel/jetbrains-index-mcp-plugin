@@ -787,8 +787,10 @@ class ToolsUnitTest : TestCase() {
 
         assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
         assertNotNull("Should have query property", properties?.get(ParamNames.QUERY))
+        assertNotNull("Should have regex property", properties?.get(ParamNames.REGEX))
         assertNotNull("Should have context property", properties?.get(ParamNames.CONTEXT))
         assertNotNull("Should have caseSensitive property", properties?.get(ParamNames.CASE_SENSITIVE))
+        assertNotNull("Should have filePattern property", properties?.get(ParamNames.FILE_PATTERN))
         assertNotNull("Should have limit property", properties?.get(ParamNames.LIMIT))
         assertNotNull("Should have cursor property", properties?.get("cursor"))
         assertNotNull("Should have pageSize property", properties?.get("pageSize"))

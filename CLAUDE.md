@@ -538,15 +538,16 @@ VirtualFileManager   // Virtual file system
 
 Every PR **must** include:
 
-1. **Version bump** — Update `pluginVersion` in `gradle.properties` following [SemVer](https://semver.org):
-   - **Patch** (3.x.**Y**): Bug fixes, internal refactoring with no behavior change
-   - **Minor** (3.**Y**.0): New features, new tools, protocol improvements
-   - **Major** (**Y**.0.0): Breaking changes to tool schemas, transport, or client configuration
-2. **CHANGELOG.md update** — Add an entry under `## [Unreleased]` following [Keep a Changelog](https://keepachangelog.com) format. Use sections: `Added`, `Changed`, `Fixed`, `Removed`, `Breaking`
-3. Follow existing code patterns and use `SchemaBuilder` for new tool schemas
-4. Add tests for new functionality
-5. Update this documentation (`CLAUDE.md`) for any structural or architectural changes
-6. Run `./gradlew test` to verify all tests pass (do NOT run platform tests yourself)
+1. **CHANGELOG.md update** — Add an entry under `## [Unreleased]` following [Keep a Changelog](https://keepachangelog.com) format. Use sections: `Added`, `Changed`, `Fixed`, `Removed`, `Breaking`
+2. Follow existing code patterns and use `SchemaBuilder` for new tool schemas
+3. Add tests for new functionality
+4. Update this documentation (`CLAUDE.md`) for any structural or architectural changes
+5. Run `./gradlew test` to verify all tests pass (do NOT run platform tests yourself)
+
+Only update `pluginVersion` in `gradle.properties` when the user explicitly asks to update the version. When requested, follow [SemVer](https://semver.org):
+- **Patch** (3.x.**Y**): Bug fixes, internal refactoring with no behavior change
+- **Minor** (3.**Y**.0): New features, new tools, protocol improvements
+- **Major** (**Y**.0.0): Breaking changes to tool schemas, transport, or client configuration
 
 ---
 

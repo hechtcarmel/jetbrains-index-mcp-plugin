@@ -16,6 +16,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResul
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -463,7 +464,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         val registry = ToolRegistry()
         registry.registerBuiltInTools()
 
-        val expectedTools = listOf(
+        val expectedTools = mutableListOf(
             // Navigation tools
             ToolNames.FIND_REFERENCES,
             ToolNames.FIND_DEFINITION,
@@ -490,11 +491,13 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.REFACTOR_SAFE_DELETE,
             ToolNames.REFORMAT_CODE,
             ToolNames.OPTIMIZE_IMPORTS,
-            ToolNames.CONVERT_JAVA_TO_KOTLIN,
             // Editor tools
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE
         )
+        if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
+            expectedTools.add(ToolNames.CONVERT_JAVA_TO_KOTLIN)
+        }
 
         assertEquals("Should have correct number of tools", expectedTools.size, registry.getAllTools().size)
 
