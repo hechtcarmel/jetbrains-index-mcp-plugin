@@ -55,6 +55,8 @@ class ProjectFocusActivity : ProjectActivity {
                 )
             )
         }
+        // A new project window is open — some pendingClose projects may now be eligible to close.
+        modeService.flushPendingCloses()
     }
 
     companion object {

@@ -37,6 +37,13 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     private val focusAlarms = ConcurrentHashMap<String, Alarm>()
     private val inactivityAlarms = ConcurrentHashMap<String, Alarm>()
 
+    /** Paths blocked from closing by the floor — awaiting event-driven flush. */
+    private val pendingClose = ConcurrentHashMap.newKeySet<String>()
+
+    /** Single safety-net alarm that runs the health check every 30 minutes. */
+    private val healthAlarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, this)
+    private var healthAlarmStarted = false
+
     override fun getState(): State = persistedState
 
     override fun loadState(state: State) {
@@ -55,6 +62,7 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     override fun dispose() {
         focusAlarms.values.forEach { Disposer.dispose(it) }
         inactivityAlarms.values.forEach { Disposer.dispose(it) }
+        Disposer.dispose(healthAlarm)
     }
 
     fun enroll(project: Project) {
@@ -71,6 +79,8 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
             "Power Save Mode enabled. Project will sleep when idle.")
 
         evictIfOverCeiling(path)
+        startHealthAlarmIfNeeded()
+        flushPendingCloses()
     }
 
     private fun evictIfOverCeiling(excludePath: String) {
@@ -297,15 +307,15 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     private fun onClosed(project: Project, path: String, previous: ProjectMode, trigger: String) {
         cancelAllAlarms(path)
 
-        // Never close below the minimum — MCP needs routing context and the user may want
-        // a minimum number of projects always available. Reset to dormant and reschedule.
+        // Never close below the minimum. Rather than rescheduling the alarm (which hammers
+        // the log every 10 min), add to pendingClose and wait for an event-driven flush.
         val min = runCatching { McpSettings.getInstance().minimumOpenProjects }.getOrDefault(4)
         val openManaged = ProjectManager.getInstance().openProjects
             .filter { !it.isDefault && isManaged(it) }
         if (openManaged.size <= min) {
             modes[path] = ProjectMode.DORMANT
-            scheduleCloseTransition(project)
-            LOG.info("Keeping '${project.name}' dormant — closing it would leave MCP unreachable")
+            pendingClose.add(path)
+            LOG.info("Keeping '${project.name}' dormant — added to pendingClose (floor=$min)")
             LifecycleEventLog.getInstance().log(
                 LifecycleEventLog.Entry(
                     project = project.name, path = path,
@@ -332,6 +342,137 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
             }
         }
     }
+
+    // ── pendingClose: event-driven flush ────────────────────────────────────
+
+    /** Flush projects that were blocked from closing by the floor, if they are now eligible. */
+    fun flushPendingCloses() {
+        if (pendingClose.isEmpty()) return
+        val min = runCatching { McpSettings.getInstance().minimumOpenProjects }.getOrDefault(4)
+        val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }
+        val openByPath = openProjects.associateBy { normalizePath(it.basePath ?: "") }
+        var current = openProjects.filter { isManaged(it) }.size
+
+        // Remove stale entries first (project woke up or was closed externally)
+        for (path in pendingClose.toList()) {
+            val proj = openByPath[path]
+            when {
+                proj == null -> pendingClose.remove(path)
+                getMode(path) != ProjectMode.DORMANT -> pendingClose.remove(path)
+            }
+        }
+
+        // Close eligible pending projects (prefer most dormant — DORMANT only)
+        for (path in pendingClose.toList()) {
+            if (current <= min) break
+            val proj = openByPath[path] ?: continue
+            if (getMode(path) != ProjectMode.DORMANT) continue
+            pendingClose.remove(path)
+            transition(proj, ProjectMode.CLOSED, "pending_close_flushed")
+            current--
+        }
+    }
+
+    /** Called by ProjectLifecycleListener when a project is closed externally (not by us). */
+    fun onProjectClosedExternally(path: String, name: String) {
+        val normalized = normalizePath(path)
+        if (pendingClose.remove(normalized)) {
+            // Was waiting to close — now it is; mark properly if managed
+            if (isManaged(normalized)) {
+                markClosed(normalized)
+                LifecycleEventLog.getInstance().log(
+                    LifecycleEventLog.Entry(project = name, path = normalized, event = "closed", trigger = "user")
+                )
+            }
+        }
+        flushPendingCloses()
+    }
+
+    // ── Health check ─────────────────────────────────────────────────────────
+
+    /**
+     * Verifies lifecycle invariants and logs what was observed vs what is expected.
+     * Distinguishes expected drift (floor/ceiling normal operation) from bugs
+     * (open project in closedProjectPaths, pendingClose project not dormant, etc.).
+     */
+    fun healthCheck(trigger: String) {
+        val min = runCatching { McpSettings.getInstance().minimumOpenProjects }.getOrDefault(4)
+        val max = runCatching { McpSettings.getInstance().maximumOpenProjects }.getOrDefault(10)
+        val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }
+        val openManaged = openProjects.filter { isManaged(it) }
+        val openCount = openManaged.size
+        val pendingCount = pendingClose.size
+
+        LOG.info("Health check [trigger=$trigger]: open=$openCount, pending=$pendingCount, min=$min, max=${if (max == 0) "unlimited" else max.toString()}")
+
+        val issues = mutableListOf<String>()
+        val notes = mutableListOf<String>()
+
+        if (max > 0 && openCount > max) {
+            issues.add("open count ($openCount) exceeds maximum ($max) — ceiling not enforced")
+        }
+        if (openCount < min && pendingCount == 0 && persistedState.managedProjectPaths.isNotEmpty()) {
+            notes.add("open count ($openCount) below minimum ($min) — some projects fully closed, pending=$pendingCount")
+        }
+
+        val openByPath = openProjects.associateBy { normalizePath(it.basePath ?: "") }
+        for (path in pendingClose.toList()) {
+            val proj = openByPath[path]
+            when {
+                proj == null -> issues.add("pendingClose '$path' not in openProjects — stale entry")
+                getMode(path) != ProjectMode.DORMANT ->
+                    issues.add("pendingClose '${proj.name}' is ${getMode(path)}, expected DORMANT")
+            }
+        }
+        for (proj in openManaged) {
+            val path = normalizePath(proj.basePath ?: "")
+            if (persistedState.closedProjectPaths.contains(path)) {
+                issues.add("'${proj.name}' is open but also in closedProjectPaths — state inconsistency")
+            }
+        }
+
+        if (issues.isEmpty() && notes.isEmpty()) {
+            LOG.debug("Health check: OK")
+        } else {
+            notes.forEach { LOG.info("  note: $it") }
+            issues.forEach { LOG.warn("  ISSUE: $it") }
+        }
+
+        val outcome = when {
+            issues.isNotEmpty() -> "bug:${issues.size} — ${issues.joinToString("; ")}"
+            notes.isNotEmpty() -> "drift:${notes.joinToString("; ")}"
+            else -> "ok"
+        }
+        LifecycleEventLog.getInstance().log(
+            LifecycleEventLog.Entry(
+                project = "health",
+                path = "",
+                event = "health_check",
+                from = "open=$openCount/pending=$pendingCount",
+                to = outcome,
+                trigger = trigger
+            )
+        )
+
+        flushPendingCloses()
+    }
+
+    private fun startHealthAlarmIfNeeded() {
+        if (!healthAlarmStarted) {
+            healthAlarmStarted = true
+            scheduleNextHealthCheck()
+        }
+    }
+
+    private fun scheduleNextHealthCheck() {
+        healthAlarm.cancelAllRequests()
+        healthAlarm.addRequest({
+            healthCheck("safety_net_30min")
+            scheduleNextHealthCheck()
+        }, 30 * 60_000L)
+    }
+
+    private fun normalizePath(path: String) = path.trimEnd('/', '\\').replace('\\', '/')
 
     private fun notify(project: Project, message: String) {
         NotificationGroupManager.getInstance()
