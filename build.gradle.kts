@@ -137,21 +137,30 @@ val configuredRiderRdJar = listOfNotNull(
     explicitRiderRdJar,
     riderHome?.resolve("lib/rd.jar"),
 ).firstOrNull { it.isFile }
-val configuredRiderProductClientJar = riderHome?.resolve("lib/product-client.jar")?.takeIf { it.isFile }
+val configuredRiderProductClientJar = listOfNotNull(
+    riderHome?.resolve("lib/product.jar"),
+    riderHome?.resolve("lib/product-client.jar"),
+).firstOrNull { it.isFile }
 val riderModelCompileFile = configuredRiderModelJar
     ?.let { layout.file(providers.provider { it }) }
     ?: layout.buildDirectory.file("rider-model/rider-model.jar")
 val riderRdCompileFile = configuredRiderRdJar
     ?.let { layout.file(providers.provider { it }) }
     ?: layout.buildDirectory.file("rider-model/rd.jar")
-// product-client.jar is included on the compile classpath because some Rider RD frontend
-// types (com.jetbrains.rdclient.protocol.* — used reflectively by RdProtocolBridge in
-// future Rider builds) live there. No source code references it directly today, so it is
-// listed here defensively to keep the IDE-platform bump path forward-compatible.
+// product.jar (Rider ≥ 2025.3) / product-client.jar (Rider ≤ 2025.1) hosts the Rider RD frontend
+// types such as com.jetbrains.rd.protocol.SolutionExtListener / Solution.getOrCreateExtension that
+// IndexMcpProtocolListener and the generated rd model rely on. Both legacy and current jar names
+// are extracted defensively; only one exists per distribution and the missing entry is a no-op.
 val riderProductClientCompileFile = configuredRiderProductClientJar
     ?.let { layout.file(providers.provider { it }) }
-    ?: layout.buildDirectory.file("rider-model/product-client.jar")
-val riderProtocolCompileFiles = files(riderModelCompileFile, riderRdCompileFile, riderProductClientCompileFile)
+    ?: layout.buildDirectory.file("rider-model/product.jar")
+val riderProductClientLegacyCompileFile = layout.buildDirectory.file("rider-model/product-client.jar")
+val riderProtocolCompileFiles = files(
+    riderModelCompileFile,
+    riderRdCompileFile,
+    riderProductClientCompileFile,
+    riderProductClientLegacyCompileFile,
+)
 
 if (configuredRiderModelJar != null) {
     artifacts.add(riderModel.name, configuredRiderModelJar)
@@ -170,6 +179,7 @@ if (configuredRiderModelJar != null) {
             include("lib/rd/rider-model.jar")
             include("lib/rider-model.jar")
             include("lib/rd.jar")
+            include("lib/product.jar")
             include("lib/product-client.jar")
             eachFile {
                 relativePath = RelativePath(true, name)
