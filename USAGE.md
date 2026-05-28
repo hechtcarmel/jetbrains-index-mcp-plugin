@@ -29,17 +29,51 @@ These tools work in every supported JetBrains IDE:
 | `ide_move_file` | Move file to new directory with IDE-aware move semantics | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
 
+### Rider C# and F# support
+
+Rider-backed C# requests use the ReSharper backend for supported search and mutation paths, including `ide_find_symbol`, `ide_refactor_rename`, `ide_move_file`, and `ide_refactor_safe_delete`.
+
+Rider C# refactoring/formatting flows are UI-driven when the backend cannot prove a fully headless path: `ide_refactor_rename` and `ide_move_file` rely on native dialog automation with an active Rider UI, while `ide_optimize_imports` and `ide_reformat_code` run through an editor tab plus IDE actions. These paths fail closed if the required Rider window, dialog, or editor context is unavailable.
+
+Mutation results use the canonical external rename statuses so bounded behavior stays visible: `success`, `no_op`, `needs_active_editor`, `conflict`, `unsupported_context`, and `failed`. Legacy verification terms may still appear in metadata or trace payloads, but not as terminal statuses.
+
+Rider C# rename is bounded, not fully autonomous: it can require an active editor, can stop for conflicts that would otherwise open a dialog, and can fail closed with the canonical external statuses above rather than claiming success.
+
+Rider-backed F# support is currently beta/unstable and not production-ready because Rider exposes fewer language/refactoring guarantees there than it does for C#. Treat F# mutation results as best-effort and expect broader limitation coverage or unsupported-context responses until the Rider language surface matures.
+
+Where Rider/ReSharper cannot prove a relationship semantically, the tool returns the bounded outcome instead of inferring support. This is especially important for ASP.NET convention-routing relationships and other platform-visible-only cases.
+
+**Rider rename reason/status codes**
+
+| Status | Meaning |
+|--------|---------|
+| `success` | The requested rename was applied and verified within the supported scope. |
+| `no_op` | The request resolved safely but produced zero code changes. |
+| `needs_active_editor` | The exact-target rename needs a live editor/caret context before it can be proven safely. |
+| `conflict` | The rename would require a preview/conflict dialog or other interactive resolution, so non-interactive execution is blocked. |
+| `unsupported_context` | The target or execution context cannot be proved safe for bounded rename, so the backend refuses to guess. |
+| `failed` | The rename did not complete successfully. |
+
+Legacy verification terms such as `verification_limited` and `verification_failed` may still appear in metadata or trace payloads, but they are not terminal external statuses and do not replace the top-level `status`.
+
+### Controlled Rider validation checklist
+
+- Use the repository's deterministic fixture tests as the primary proof path.
+- Keep examples path-agnostic; do not hardcode local checkout paths into usage guidance.
+- Record bounded limitations instead of inflating unsupported Rider behavior into success.
+- Prefer C# for production mutation workflows; treat F# as beta and not production-ready until Rider exposes stronger parity.
+
 ### Extended Tools (Language-Aware)
 
 These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, C#/F# in Rider |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider |
+| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown, C#/F# in Rider |
 
 ### Java-Specific Refactoring Tools
 
@@ -111,9 +145,9 @@ Some tools support identifying the target element by fully qualified symbol refe
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. Unsupported languages are rejected at runtime; use `file` + `line` + `column` for languages without symbol-reference support. |
 | `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
 
-**Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
+**Target selection:** A complete position target (`file` + positive `line` + positive `column`) takes precedence because it is more precise. If no complete position target is present, the tool uses a complete symbol target (`language` + `symbol`). Blank strings and non-positive `line`/`column` values are treated as absent for this selection, so clients may send default `""`/`0` values without causing a dual-mode error.
 
-**Supported languages:** Java only today. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+**Supported languages:** Java, plus Rider-backed C#/F# for tools whose current IDE/runtime exposes the shared semantic symbol lane. Unsupported languages return an explicit error listing the currently supported symbol-reference languages for the active IDE session.
 
 **Tools that support symbol references:** `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`.
 
@@ -127,12 +161,14 @@ These tools work in all JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, etc
 
 Finds all references to a symbol across the entire project using IntelliJ's semantic index.
 
+**Rider note:** Rider-backed C#/F# results are deduplicated deterministically before truncation/pagination. Source-unavailable/library-only placeholders are kept stable and sort after concrete source locations so over-limit responses remain explainable.
+
 **Use when:**
 - Locating where a method, class, variable, or field is called or accessed
 - Understanding code dependencies
 - Preparing for refactoring
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -203,6 +239,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
     }
   ],
   "totalCount": 2,
+  "message": null,
   "truncated": false,
   "nextCursor": null,
   "hasMore": false,
@@ -227,11 +264,13 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 
 Finds the definition/declaration location of a symbol at a given source location.
 
+**Rider note:** Rider-backed C#/F# symbol-mode definitions can resolve to `locationKind` values `source`, `metadata`, `decompiled`, or `sourceUnavailable`. Non-source outcomes include a `message` and `locationDisplayName` so callers can distinguish "resolved but not source-backed" from a hard failure.
+
 **Use when:**
 - Understanding where a method, class, variable, or field is declared
 - Looking up the original definition from a usage site
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -545,6 +584,7 @@ File problems are collected through explicit daemon analysis, so they do not dep
 - `analysisTimedOut = true` means the file analysis budget was exceeded; build/test sections may still be returned.
 - `analysisMessage` explains degraded cases such as timeouts or missing live editor context for intentions.
 - `line` and `column` affect intention lookup only; file problems are collected for the whole file, then filtered by `startLine` / `endLine` if provided.
+- Closed-file diagnostics are supplementary evidence only. A clean `ide_diagnostics` result does not prove that a Rider C# mutation succeeded or was semantically complete.
 
 **Severity Values:**
 - `ERROR` - Compilation error
@@ -853,6 +893,8 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 - CamelCase: "USvc" matches "UserService", "US" matches "UserService"
 - Qualified queries: "BasicSolver.run" matches a method in its containing class or module
 
+**Rider C# note:** `C#`, `CSharp`, and `CSHARP` are accepted aliases for the Rider C# search lane. When Rider/ReSharper is available, C# symbol search routes there; when it cannot prove a result, the tool reports the real bounded outcome rather than fabricating matches.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -954,6 +996,21 @@ For Markdown heading outlines, use `ide_file_structure`.
 
 > **Note**: All refactoring tools modify source files. Changes can be undone with Ctrl/Cmd+Z.
 
+### Rider rename outcome statuses
+
+For Rider-backed rename requests, treat `status` as the primary external outcome signal:
+
+| Status | Meaning |
+|--------|---------|
+| `success` | The requested rename was applied and verified within the supported scope. |
+| `no_op` | The request resolved safely but produced zero code changes. |
+| `needs_active_editor` | The target needs a live editor/caret context before it can be proven safely. |
+| `conflict` | The rename would require interactive conflict resolution, so non-interactive execution is blocked. |
+| `unsupported_context` | The target or execution context cannot be proved safe for a bounded rename. |
+| `failed` | The rename did not complete successfully. |
+
+Legacy verification terms such as `verification_limited` and `verification_failed` may still appear in metadata or trace payloads, but they are not terminal external statuses.
+
 ### ide_refactor_rename (Universal - All Languages)
 
 Renames a symbol and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
@@ -962,7 +1019,7 @@ Renames a symbol and updates all references across the project. This tool uses I
 
 **Features:**
 - Language-specific name validation (identifier rules, keyword detection)
-- **Fully headless/autonomous operation** (no popups or dialogs)
+- **Usually headless/autonomous operation** when the IDE can prove the target safely; Rider C# rename still fails closed with `needs_active_editor`, `conflict`, `unsupported_context`, or `failed` rather than pretending to be fully autonomous. Verification downgrade details, if any, stay in metadata/trace rather than replacing the terminal status.
 - **Automatic related element renaming** - getters/setters, overriding methods, test classes are renamed automatically
 - Conflict detection before rename execution (returns error instead of showing dialog)
 - Single atomic operation - all renames (primary + related) can be undone with one Ctrl/Cmd+Z
@@ -1051,7 +1108,7 @@ Renames a symbol and updates all references across the project. This tool uses I
 
 **Automatic Related Renames:**
 
-Related elements are automatically renamed without any prompts or dialogs:
+When a rename proceeds, related elements are automatically renamed without any prompts or dialogs:
 
 | Language | What Gets Auto-Renamed |
 |----------|------------------------|
@@ -1075,6 +1132,9 @@ Move a file to a new directory using the IDE's refactoring engine. Applies langu
 - Automatically creates destination directory if it doesn't exist
 - Detects name conflicts at the destination
 - Fails fast for ambiguous PHP semantic moves instead of reporting a false success
+- Rider-backed C# moves only report `success` when semantic updates can be proven; otherwise expect a non-success outcome, with any verification downgrade details confined to metadata/trace rather than exposed as terminal status names
+
+**Rider C# note:** ASP.NET convention-routing and other non-explicit semantic links are not fabricated by the move path. If Rider/ReSharper cannot prove the move is safe, the request fails closed.
 
 **Use when:**
 - Reorganizing project structure
@@ -1139,6 +1199,8 @@ Move a file to a new directory using the IDE's refactoring engine. Applies langu
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
 Reformat code according to the project's code style settings. Equivalent to the IDE's "Reformat Code" action (<kbd>Ctrl+Alt+L</kbd> / <kbd>Cmd+Opt+L</kbd>).
+
+**Rider note:** Rider-backed .NET formatting uses an editor tab plus IDE action flow, and partial line-range formatting is not supported there.
 
 **Use when:**
 - Applying consistent formatting after code changes
@@ -1313,13 +1375,15 @@ Retrieves the complete type hierarchy for a class or interface.
 
 Analyzes method call relationships to find callers or callees.
 
+**Rider note:** Rider-backed C#/F# caller results are ordered deterministically before truncation. When a framework-routed endpoint has no static callers, the tool returns an empty `calls` list with an explanatory `message`; this is a framework-routed static-analysis limitation, not automatic backend failure.
+
 **Use when:**
 - Tracing execution flow
 - Understanding code dependencies
 - Analyzing impact of method changes
 - Debugging to understand how a method is reached
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -1394,7 +1458,8 @@ Analyzes method call relationships to find callers or callees.
       "column": 17,
       "language": "Java"
     }
-  ]
+  ],
+  "message": null
 }
 ```
 
@@ -1404,14 +1469,15 @@ Analyzes method call relationships to find callers or callees.
 
 Finds all concrete implementations of an interface, abstract class, or abstract method.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust (not Go — Go uses implicit interfaces).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#/F# in Rider (not Go — Go uses implicit interfaces).
+**Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 **Use when:**
 - Locating classes that implement an interface
 - Finding classes that extend an abstract class
 - Finding all overriding methods for polymorphic behavior analysis
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -1494,7 +1560,8 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 
 Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP (not Go or Rust — they use composition/traits instead of classical inheritance).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rider-backed C#/F# in Rider (not Go or Rust — they use composition/traits instead of classical inheritance).
+**Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 **Use when:**
 - Finding which interface method an implementation overrides
@@ -1504,7 +1571,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 **Position flexibility:** The position (line/column) can be anywhere within the method - on the name, inside the body, or on the @Override annotation. The tool automatically finds the enclosing method.
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target selection:** complete `file` + positive `line` + positive `column` first; otherwise `language` + `symbol`. Blank strings and non-positive position values count as absent.
 
 **Parameters:**
 
@@ -1605,7 +1672,8 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Markdown.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Markdown, Rider-backed C#/F# in Rider.
+**Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 **Use when:**
 - Getting an overview of a file's classes, methods, fields, or Markdown heading outline
@@ -1776,6 +1844,8 @@ Safely deletes an element, first checking for usages.
 }
 ```
 
+**Availability:** Java/Kotlin when the Java plugin is available; Rider .NET when the ReSharper backend is available.
+
 **Example Response (blocked by usages):**
 
 ```json
@@ -1843,3 +1913,18 @@ Before calling index-dependent tools, you can check the index status:
 ```
 
 If `isDumbMode` is `true`, wait and retry later.
+**Example Response (Rider metadata-backed definition):**
+
+```json
+{
+  "file": "jar://metadata/System.Web.Http/ApiController.cs",
+  "line": 1,
+  "column": 1,
+  "preview": "Rider resolved 'ApiController' through metadata. Source is unavailable in this solution; use 'System.Web.Http.ApiController' as the external declaration identity.",
+  "symbolName": "ApiController",
+  "astPath": [],
+  "message": "Rider resolved 'ApiController' through metadata. Source is unavailable in this solution; use 'System.Web.Http.ApiController' as the external declaration identity.",
+  "locationKind": "metadata",
+  "locationDisplayName": "System.Web.Http.ApiController"
+}
+```

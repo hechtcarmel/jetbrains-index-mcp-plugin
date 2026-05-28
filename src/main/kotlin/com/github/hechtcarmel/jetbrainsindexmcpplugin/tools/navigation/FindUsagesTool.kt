@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -30,13 +31,8 @@ import com.intellij.util.Processor
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 class FindUsagesTool : AbstractMcpTool() {
 
@@ -44,6 +40,7 @@ class FindUsagesTool : AbstractMcpTool() {
         private val LOG = logger<FindUsagesTool>()
         private const val DEFAULT_MAX_RESULTS = 100
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
+        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode references require the Rider backend-native path and are unsupported when that backend is unavailable."
 
         internal fun searchInfrastructureErrorMessage(error: Throwable): String {
             val detail = error.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
@@ -61,9 +58,11 @@ class FindUsagesTool : AbstractMcpTool() {
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
 
-        Target (mutually exclusive):
-        - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
-        - language + symbol: fully qualified symbol reference (currently supported for Java only; necessary for fresh search, ignored when cursor is provided)
+        Rider note: C#/F# reference lookups use the ReSharper backend. Position targets must resolve to a Rider source file; dependency-backed/source-less locations should use language+symbol when available. Scope filtering hides source-less/library-only declarations unless project_and_libraries is explicitly requested. Rider rows are deduplicated deterministically before truncation/pagination so over-limit results stay explainable.
+
+        Target selection:
+        - Complete file + positive line + positive column: position-based lookup, preferred when present because it is more precise (necessary for fresh search, ignored when cursor is provided)
+        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported when the requested language has a SymbolReferenceHandler, including Rider C#/F#; necessary for fresh search, ignored when cursor is provided). Blank strings and non-positive line/column values count as absent. Note: Rider F# module/type-only symbol-mode searches in project_files use a bounded, cache-aware search to stay agent-friendly; cold IDE caches can still make the first search expensive, while position/member targets remain the preferred option for more deterministic latency.
         - cursor: pagination cursor from a previous response
 
         Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
@@ -91,6 +90,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 FindUsagesResult(
                     usages = items,
                     totalCount = page.totalCollected,
+                    message = null,
                     truncated = page.hasMore,
                     nextCursor = page.nextCursor,
                     hasMore = page.hasMore,
@@ -112,19 +112,25 @@ class FindUsagesTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
+        val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
+            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            optionalStringArg(arguments, ParamNames.SYMBOL) != null
         requireSmartMode(project)
 
         val riderReferences = RiderBackendSemanticService.findReferences(
             project = project,
-            file = arguments[ParamNames.FILE]?.jsonPrimitive?.content,
-            line = arguments[ParamNames.LINE]?.jsonPrimitive?.content?.toIntOrNull(),
-            column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.content?.toIntOrNull(),
-            language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content,
-            symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content,
+            file = optionalStringArg(arguments, ParamNames.FILE),
+            line = optionalPositionIntArg(arguments, ParamNames.LINE),
+            column = optionalPositionIntArg(arguments, ParamNames.COLUMN),
+            language = normalizedRequestedLanguage,
+            symbol = optionalStringArg(arguments, ParamNames.SYMBOL),
             scope = scope,
             limit = collectLimit
         )
         if (riderReferences.handled) {
+            riderReferences.errorMessage?.let { return createErrorResult(it) }
             val usages = riderReferences.value.orEmpty()
             val serializedResults = usages.map { usage ->
                 PaginationService.SerializedResult(
@@ -145,6 +151,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 FindUsagesResult(
                     usages = items,
                     totalCount = page.totalCollected,
+                    message = riderReferences.message,
                     truncated = page.hasMore,
                     nextCursor = page.nextCursor,
                     hasMore = page.hasMore,
@@ -154,6 +161,9 @@ class FindUsagesTool : AbstractMcpTool() {
                     stale = page.stale
                 )
             }
+        }
+        if (isRiderSymbolMode) {
+            return createErrorResult(RIDER_SYMBOL_MODE_UNSUPPORTED)
         }
 
         val cursorToken = suspendingReadAction {
@@ -254,12 +264,13 @@ class FindUsagesTool : AbstractMcpTool() {
         if (errorResult != null) return errorResult
 
         return buildPaginatedResult<UsageLocation, FindUsagesResult>(getPageFromCache(token!!, pageSize, project)) { items, page ->
-            FindUsagesResult(
-                usages = items,
-                totalCount = page.totalCollected,
-                truncated = page.hasMore,
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
+                FindUsagesResult(
+                    usages = items,
+                    totalCount = page.totalCollected,
+                    message = null,
+                    truncated = page.hasMore,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
                 totalCollected = page.totalCollected,
                 offset = page.offset,
                 pageSize = page.pageSize,

@@ -4,6 +4,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
@@ -18,17 +20,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
@@ -192,6 +191,7 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have line property", properties?.get(ParamNames.LINE))
         assertNotNull("Should have column property", properties?.get(ParamNames.COLUMN))
         assertNotNull("Should have className property", properties?.get(ParamNames.CLASS_NAME))
+        assertNotNull("Should have language property", properties?.get(ParamNames.LANGUAGE))
         assertHasScopeAndNoLegacyFilters(properties)
     }
 
@@ -382,7 +382,7 @@ class ToolsUnitTest : TestCase() {
             ToolNames.FILE_STRUCTURE
         )
 
-        // Java-specific refactoring tools
+        // Conditional refactoring tools
         val refactoringTools = listOf(
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE
@@ -392,7 +392,7 @@ class ToolsUnitTest : TestCase() {
         val registeredNavTools = navigationTools.count { registry.getTool(it) != null }
         val registeredRefTools = refactoringTools.count { registry.getTool(it) != null }
 
-        // Check if SafeDeleteTool is specifically registered (indicates Java plugin is available)
+        // Check if SafeDeleteTool is specifically registered (indicates Java plugin or Rider backend is available)
         val safeDeleteRegistered = registry.getTool(ToolNames.REFACTOR_SAFE_DELETE) != null
 
         // In IntelliJ platform tests with Java plugin, all navigation and refactoring tools should be available.
@@ -406,11 +406,11 @@ class ToolsUnitTest : TestCase() {
         }
 
         if (safeDeleteRegistered) {
-            // If SafeDeleteTool is registered, Java plugin is available and both refactoring tools should be registered
-            assertEquals("When Java plugin available, both refactoring tools should be registered",
+            // If SafeDeleteTool is registered, an implementation backend is available and both refactoring tools should be registered.
+            assertEquals("When Java plugin or Rider backend is available, both refactoring tools should be registered",
                 2, registeredRefTools)
         } else {
-            // SafeDeleteTool requires Java plugin, but RenameSymbolTool is universal and should always be registered
+            // SafeDeleteTool requires Java plugin or Rider backend, but RenameSymbolTool is universal and should always be registered.
             assertTrue("RenameSymbolTool should always be registered (universal tool)",
                 registry.getTool(ToolNames.REFACTOR_RENAME) != null)
         }
@@ -518,6 +518,17 @@ class ToolsUnitTest : TestCase() {
         assertTrue("Description should mention only file required for file mode", description.contains("REQUIRED: file only"))
     }
 
+    fun testRefactoringToolSchemasDoNotExposeOutputOnlyMutationFields() {
+        val tools = listOf(RenameSymbolTool(), MoveFileTool(), SafeDeleteTool())
+
+        tools.forEach { tool ->
+            val properties = tool.inputSchema[SchemaConstants.PROPERTIES]?.jsonObject
+            assertNotNull("${tool.name} should define properties", properties)
+            assertNull("${tool.name} should not expose output-only status input", properties?.get("status"))
+            assertNull("${tool.name} should not expose output-only verification input", properties?.get("verification"))
+        }
+    }
+
     // New navigation tools
 
     fun testFindSymbolToolSchema() {
@@ -583,10 +594,51 @@ class ToolsUnitTest : TestCase() {
         assertNotNull("Should have endLine property", properties?.get(ParamNames.END_LINE))
         assertNotNull("Should have optimizeImports property", properties?.get(ParamNames.OPTIMIZE_IMPORTS))
         assertNotNull("Should have rearrangeCode property", properties?.get(ParamNames.REARRANGE_CODE))
+        assertTrue(
+            "Rearrange code description should document conservative default",
+            properties?.get(ParamNames.REARRANGE_CODE)
+                ?.jsonObject
+                ?.get(SchemaConstants.DESCRIPTION)
+                ?.jsonPrimitive
+                ?.content
+                ?.contains("Default: false") == true
+        )
 
         val required = schema[SchemaConstants.REQUIRED]
         assertNotNull("Should have required array", required)
         assertTrue("Required should include 'file'", required.toString().contains("file"))
+    }
+
+    fun testReformatCodeToolNormalizesZeroRangeToFullFile() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 0, endLine = 0)
+
+        assertNull(normalized.error)
+        assertNull(normalized.startLine)
+        assertNull(normalized.endLine)
+    }
+
+    fun testReformatCodeToolRejectsNegativeStartLine() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = -1, endLine = 5)
+
+        assertEquals("startLine must be >= 1", normalized.error)
+    }
+
+    fun testReformatCodeToolRejectsNegativeEndLine() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 1, endLine = -1)
+
+        assertEquals("endLine must be >= 1", normalized.error)
+    }
+
+    fun testReformatCodeToolRejectsIncompleteRangeWhenZeroActsAsOmitted() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 1, endLine = 0)
+
+        assertEquals("Both startLine and endLine must be provided together, or neither.", normalized.error)
+    }
+
+    fun testReformatCodeToolRejectsIncompleteRangeWhenZeroActsAsOmittedSymmetrically() {
+        val normalized = ReformatCodeTool.normalizeOptionalLineRange(startLine = 0, endLine = 1)
+
+        assertEquals("Both startLine and endLine must be provided together, or neither.", normalized.error)
     }
 
     fun testOptimizeImportsToolSchema() {

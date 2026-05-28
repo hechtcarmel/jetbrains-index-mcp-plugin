@@ -1,12 +1,16 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -15,6 +19,8 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNamedElement
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -52,6 +58,7 @@ object RiderDotNetHandlers {
         registry.registerImplementationsHandler(RiderCSharpImplementationsHandler())
         registry.registerCallHierarchyHandler(RiderCSharpCallHierarchyHandler())
         registry.registerSuperMethodsHandler(RiderCSharpSuperMethodsHandler())
+        registry.registerSymbolReferenceHandler(RiderCSharpSymbolReferenceHandler())
         registry.registerStructureHandler(RiderCSharpStructureHandler())
 
         // F# handlers
@@ -59,6 +66,7 @@ object RiderDotNetHandlers {
         registry.registerImplementationsHandler(RiderFSharpImplementationsHandler())
         registry.registerCallHierarchyHandler(RiderFSharpCallHierarchyHandler())
         registry.registerSuperMethodsHandler(RiderFSharpSuperMethodsHandler())
+        registry.registerSymbolReferenceHandler(RiderFSharpSymbolReferenceHandler())
         registry.registerStructureHandler(RiderFSharpStructureHandler())
 
         LOG.info("Registered Rider protocol-based .NET handlers for C# and F#")
@@ -116,7 +124,7 @@ object RdProtocolBridge {
     // Reflection caches. Keys are class-name + member signature; values are immutable per JVM lifetime.
     // ConcurrentHashMap.computeIfAbsent is safe — Method/Constructor lookups are pure functions.
     private val methodCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Method>()
-    private val constructorCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Constructor<*>?>()
+    private val constructorCache = java.util.concurrent.ConcurrentHashMap<String, java.lang.reflect.Constructor<*>>()
 
     private fun cachedMethod(clazz: Class<*>, name: String, vararg paramTypes: Class<*>): java.lang.reflect.Method {
         val key = "${clazz.name}#$name(${paramTypes.joinToString(",") { it.name }})"
@@ -125,9 +133,8 @@ object RdProtocolBridge {
 
     private fun cachedConstructor(clazz: Class<*>, arity: Int): java.lang.reflect.Constructor<*>? {
         val key = "${clazz.name}#<init>($arity)"
-        return constructorCache.computeIfAbsent(key) {
-            clazz.constructors.firstOrNull { it.parameterCount == arity }
-        }
+        return constructorCache[key] ?: clazz.constructors.firstOrNull { it.parameterCount == arity }
+            ?.also { constructorCache[key] = it }
     }
 
     /**
@@ -193,6 +200,22 @@ object RdProtocolBridge {
      * @return The response object, or null
      */
     fun invokeCall(model: Any, callName: String, request: Any): Any? {
+        return when (val outcome = invokeCallResult(model, callName, request)) {
+            is RdCallOutcome.Success -> outcome.value
+            is RdCallOutcome.Timeout -> {
+                LOG.warn("Timed out waiting for Rider backend rd call '${outcome.callName}' after ${outcome.timeoutSeconds}s")
+                null
+            }
+            is RdCallOutcome.Failure -> {
+                LOG.warn(
+                    "Failed to invoke rd call '$callName': ${outcome.cause::class.java.simpleName}: ${outcome.cause.message}"
+                )
+                null
+            }
+        }
+    }
+
+    fun invokeCallResult(model: Any, callName: String, request: Any): RdCallOutcome<Any?> {
         return try {
             val callField = cachedMethod(model.javaClass, "get${callName.replaceFirstChar { it.uppercaseChar() }}")
             val rdCall = callField.invoke(model)
@@ -234,21 +257,21 @@ object RdProtocolBridge {
                 cachedMethod(scheduler.javaClass, "queue", kotlin.jvm.functions.Function0::class.java)
                     .invoke(scheduler, startRequest)
             }
-            val timeoutSeconds = rdCallTimeoutSeconds(callName)
+            val timeoutSeconds = timeoutSecondsForCall(callName)
             if (!resultLatch.await(timeoutSeconds, TimeUnit.SECONDS)) {
-                throw IllegalStateException("Timed out waiting for Rider backend rd call '$callName'")
+                return RdCallOutcome.Timeout(callName = callName, timeoutSeconds = timeoutSeconds)
             }
-            failure?.let { throw it }
-            unwrapRdTaskResult(taskResult)
+            failure?.let { return RdCallOutcome.Failure(callName = callName, cause = it) }
+            RdCallOutcome.Success(unwrapRdTaskResult(taskResult))
         } catch (e: Exception) {
             val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e.cause ?: e
-            LOG.warn("Failed to invoke rd call '$callName': ${cause::class.java.simpleName}: ${cause.message}")
-            null
+            RdCallOutcome.Failure(callName = callName, cause = cause)
         }
     }
 
-    private fun rdCallTimeoutSeconds(callName: String): Long = when (callName) {
-        "renameSymbol", "getCallHierarchy" -> 300L
+    internal fun timeoutSecondsForCall(callName: String): Long = when (callName) {
+        "renameSymbol" -> 300L
+        "getCallHierarchy" -> 30L
         else -> 60L
     }
 
@@ -306,15 +329,152 @@ const val MODEL_PKG = "com.jetbrains.rd.ide.model"
 
 data class RiderBackendResponse<T>(
     val handled: Boolean,
-    val value: T? = null
+    val value: T? = null,
+    val errorMessage: String? = null,
+    val message: String? = null
 )
+
+sealed interface RdCallOutcome<out T> {
+    data class Success<T>(val value: T) : RdCallOutcome<T>
+    data class Timeout(val callName: String, val timeoutSeconds: Long) : RdCallOutcome<Nothing>
+    data class Failure(val callName: String, val cause: Throwable) : RdCallOutcome<Nothing>
+}
+
+internal fun RdCallOutcome.Timeout.toUserMessage(operation: String): String =
+    "Rider backend timed out while $operation after ${timeoutSeconds}s (rd call '$callName')."
+
+internal fun RdCallOutcome.Failure.toUserMessage(operation: String): String {
+    val detail = cause.message?.takeIf { it.isNotBlank() } ?: cause.toString()
+    if (detail.contains("requires warmed ReSharper usage caches", ignoreCase = false)) {
+        return detail
+    }
+    return "Rider backend failed while $operation (rd call '$callName'): $detail"
+}
+
+internal class RiderBackendTimeoutException(
+    val callName: String,
+    val timeoutSeconds: Long,
+    operation: String
+) : IllegalStateException(RdCallOutcome.Timeout(callName, timeoutSeconds).toUserMessage(operation))
+
+internal data class RiderBackendSymbolResult(
+    val status: String,
+    val message: String?,
+    val symbolInfo: Any?
+)
+
+internal data class RiderBackendVerificationResult(
+    val status: String?,
+    val checksRun: List<String>,
+    val warnings: List<String>
+)
+
+internal data class RiderBackendRenameDiagnostics(
+    val resolutionStatus: String?,
+    val targetKind: String?,
+    val resolvedName: String?,
+    val sourceTokenText: String?,
+    val executionHint: String?,
+    val unsupportedReason: String?,
+    val traceStages: List<String>
+)
+
+internal data class RiderBackendMutationResult(
+    val success: Boolean,
+    val status: String?,
+    val message: String?,
+    val affectedFiles: List<String>,
+    val changesCount: Int,
+    val verification: RiderBackendVerificationResult?,
+    val renameDiagnostics: RiderBackendRenameDiagnostics?
+)
+
+internal object RiderBackendMutationResultMapper {
+    private const val RENAME_DIAGNOSTICS_PREFIX = "[backendSymbolRename:"
+    private val renameDiagnosticsEntryRegex = Regex("""(?:^|,\s*)([A-Za-z][A-Za-z0-9]*)=(.*?)(?=,\s*[A-Za-z][A-Za-z0-9]*=|$)""")
+
+    fun fromRdResult(result: Any): RiderBackendMutationResult {
+        val rawMessage = RdProtocolBridge.getProperty(result, "message") as? String
+        val parsedMessage = parseRenameDiagnostics(rawMessage)
+        val verification = parseVerification(RdProtocolBridge.getProperty(result, "verification"))
+        @Suppress("UNCHECKED_CAST")
+        val affectedFiles = (RdProtocolBridge.getProperty(result, "affectedFiles") as? List<String>) ?: emptyList()
+
+        return RiderBackendMutationResult(
+            success = RdProtocolBridge.getProperty(result, "success") as? Boolean ?: false,
+            status = RdProtocolBridge.getProperty(result, "status") as? String,
+            message = parsedMessage.userMessage,
+            affectedFiles = affectedFiles,
+            changesCount = RdProtocolBridge.getProperty(result, "changesCount") as? Int ?: 0,
+            verification = verification,
+            renameDiagnostics = parsedMessage.renameDiagnostics
+        )
+    }
+
+    private fun parseVerification(verification: Any?): RiderBackendVerificationResult? {
+        verification ?: return null
+        @Suppress("UNCHECKED_CAST")
+        val checksRun = (RdProtocolBridge.getProperty(verification, "checksRun") as? List<String>) ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val warnings = (RdProtocolBridge.getProperty(verification, "warnings") as? List<String>) ?: emptyList()
+        return RiderBackendVerificationResult(
+            status = RdProtocolBridge.getProperty(verification, "status") as? String,
+            checksRun = checksRun,
+            warnings = warnings
+        )
+    }
+
+    private fun parseRenameDiagnostics(message: String?): ParsedRiderBackendMessage {
+        if (message.isNullOrBlank()) {
+            return ParsedRiderBackendMessage(message, null)
+        }
+
+        val markerIndex = message.lastIndexOf(RENAME_DIAGNOSTICS_PREFIX)
+        if (markerIndex < 0 || !message.endsWith(']')) {
+            return ParsedRiderBackendMessage(message, null)
+        }
+
+        val userMessage = message.substring(0, markerIndex).trimEnd().ifBlank { null }
+        val payload = message.substring(markerIndex + RENAME_DIAGNOSTICS_PREFIX.length, message.length - 1).trim()
+        val entries = renameDiagnosticsEntryRegex.findAll(payload)
+            .associate { match ->
+                match.groupValues[1] to match.groupValues[2].trim()
+            }
+
+        val diagnostics = RiderBackendRenameDiagnostics(
+            resolutionStatus = entries["resolutionStatus"].normalizedDiagnosticValue(),
+            targetKind = entries["targetKind"].normalizedDiagnosticValue(),
+            resolvedName = entries["resolvedName"].normalizedDiagnosticValue(),
+            sourceTokenText = entries["sourceTokenText"].normalizedDiagnosticValue(),
+            executionHint = entries["executionHint"].normalizedDiagnosticValue(),
+            unsupportedReason = entries["unsupportedReason"].normalizedDiagnosticValue(),
+            traceStages = entries["traceStages"].normalizedDiagnosticValue()
+                ?.split('>')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?: emptyList()
+        )
+
+        return ParsedRiderBackendMessage(userMessage, diagnostics)
+    }
+
+    private fun String?.normalizedDiagnosticValue(): String? =
+        this?.takeUnless { it.isBlank() || it == "<null>" }
+
+    private data class ParsedRiderBackendMessage(
+        val userMessage: String?,
+        val renameDiagnostics: RiderBackendRenameDiagnostics?
+    )
+}
 
 object RiderBackendSemanticService {
     private val LOG = logger<RiderBackendSemanticService>()
 
+    fun isRiderEnvironment(): Boolean = RiderEnvironment.isAvailable
+
     private fun canHandleLanguage(language: String?): Boolean =
-        language == null || CSHARP_LANGUAGE_IDS.any { it.equals(language, ignoreCase = true) } ||
-            FSHARP_LANGUAGE_IDS.any { it.equals(language, ignoreCase = true) }
+        language == null || isAcceptedLanguageAlias(language, CSHARP_LANGUAGE_IDS) ||
+            isAcceptedLanguageAlias(language, FSHARP_LANGUAGE_IDS)
 
     fun isDotNetFile(file: String?): Boolean {
         val ext = file?.substringAfterLast('.', missingDelimiterValue = "")?.lowercase()
@@ -352,6 +512,38 @@ object RiderBackendSemanticService {
         )
     }
 
+    fun findSymbols(
+        project: Project,
+        query: String,
+        scope: BuiltInSearchScope,
+        language: String?,
+        limit: Int
+    ): RiderBackendResponse<List<SymbolMatch>> {
+        val normalizedLanguage = normalizeAcceptedCSharpAlias(language)
+        if (!canUseBackend(project) || normalizedLanguage != CSHARP_CANONICAL_LANGUAGE_ID) {
+            return RiderBackendResponse(handled = false)
+        }
+
+        val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdFindSymbolsRequest",
+            query,
+            scope.wireValue,
+            normalizedLanguage,
+            limit
+        ) ?: return RiderBackendResponse(handled = true)
+        val result = RdProtocolBridge.invokeCall(model, "findSymbols", request) ?: return RiderBackendResponse(handled = true)
+        @Suppress("UNCHECKED_CAST")
+        val symbols = (RdProtocolBridge.getProperty(result, "symbols") as? List<Any>) ?: emptyList()
+
+        return RiderBackendResponse(
+            handled = true,
+            value = symbols.mapNotNull { rdSymbolToSymbolMatch(project, it) }
+                .distinctBy { "${it.qualifiedName}:${it.file}:${it.line}:${it.column}" }
+                .take(limit)
+        )
+    }
+
     fun findDefinition(
         project: Project,
         file: String?,
@@ -366,8 +558,9 @@ object RiderBackendSemanticService {
         val symbolTarget = language != null && symbol != null && canHandleLanguage(language)
         if (!canUseBackend(project) || (!positionTarget && !symbolTarget)) return RiderBackendResponse(handled = false)
 
-        val target = createSemanticTarget(project, file, line, column, language, symbol)
-            ?: return RiderBackendResponse(handled = true)
+        val semanticTarget = buildSemanticTarget(project, file, line, column, language, symbol)
+        semanticTarget.errorMessage?.let { return RiderBackendResponse(handled = true, errorMessage = it) }
+        val target = semanticTarget.target ?: return RiderBackendResponse(handled = true)
         val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
         val request = RdProtocolBridge.createStruct(
             "$MODEL_PKG.RdFindDefinitionRequest",
@@ -379,16 +572,34 @@ object RiderBackendSemanticService {
         val definition = RdProtocolBridge.getProperty(result, "definition") ?: return RiderBackendResponse(handled = true)
         @Suppress("UNCHECKED_CAST")
         val astPath = (RdProtocolBridge.getProperty(result, "astPath") as? List<String>) ?: emptyList()
+        val locationKind =
+            (RdProtocolBridge.getProperty(result, "locationKind") as? String)
+                ?: (RdProtocolBridge.getProperty(definition, "locationKind") as? String)
+        val locationDisplayName =
+            (RdProtocolBridge.getProperty(result, "locationDisplayName") as? String)
+                ?: (RdProtocolBridge.getProperty(definition, "locationDisplayName") as? String)
+        val message = riderDefinitionMessage(
+            symbolName = RdProtocolBridge.getProperty(definition, "name") as? String ?: "unknown",
+            locationKind = locationKind,
+            locationDisplayName = locationDisplayName
+        )
         return RiderBackendResponse(
             handled = true,
             value = DefinitionResult(
                 file = displayPath(project, RdProtocolBridge.getProperty(definition, "filePath") as? String),
                 line = RdProtocolBridge.getProperty(definition, "line") as? Int ?: 1,
                 column = RdProtocolBridge.getProperty(definition, "column") as? Int ?: 1,
-                preview = RdProtocolBridge.getProperty(result, "preview") as? String ?: "",
+                preview = riderDefinitionPreview(
+                    preview = RdProtocolBridge.getProperty(result, "preview") as? String ?: "",
+                    message = message
+                ),
                 symbolName = RdProtocolBridge.getProperty(definition, "name") as? String ?: "unknown",
-                astPath = astPath
-            )
+                astPath = astPath,
+                message = message,
+                locationKind = locationKind,
+                locationDisplayName = locationDisplayName
+            ),
+            message = message
         )
     }
 
@@ -406,15 +617,31 @@ object RiderBackendSemanticService {
         val symbolTarget = language != null && symbol != null && canHandleLanguage(language)
         if (!canUseBackend(project) || (!positionTarget && !symbolTarget)) return RiderBackendResponse(handled = false)
 
-        val target = createSemanticTarget(project, file, line, column, language, symbol)
-            ?: return RiderBackendResponse(handled = true)
+        val semanticTarget = buildSemanticTarget(project, file, line, column, language, symbol)
+        semanticTarget.errorMessage?.let { return RiderBackendResponse(handled = true, errorMessage = it) }
+        val target = semanticTarget.target ?: return RiderBackendResponse(handled = true)
         val model = RdProtocolBridge.getModel(project) ?: return RiderBackendResponse(handled = true)
         val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdFindReferencesRequest", target, scope.wireValue, limit)
             ?: return RiderBackendResponse(handled = true)
-        val result = RdProtocolBridge.invokeCall(model, "findReferences", request) ?: return RiderBackendResponse(handled = true)
+        val result = when (val outcome = RdProtocolBridge.invokeCallResult(model, "findReferences", request)) {
+            is RdCallOutcome.Success -> outcome.value ?: return RiderBackendResponse(handled = true)
+            is RdCallOutcome.Timeout -> {
+                return RiderBackendResponse(
+                    handled = true,
+                    errorMessage = outcome.toUserMessage("finding references")
+                )
+            }
+            is RdCallOutcome.Failure -> {
+                return RiderBackendResponse(
+                    handled = true,
+                    errorMessage = outcome.toUserMessage("finding references")
+                )
+            }
+        }
         @Suppress("UNCHECKED_CAST")
         val references = (RdProtocolBridge.getProperty(result, "references") as? List<Any>) ?: emptyList()
-        return RiderBackendResponse(handled = true, value = references.map { reference ->
+        val message = RdProtocolBridge.getProperty(result, "message") as? String
+        val orderedDistinctReferences = references.map { reference ->
             UsageLocation(
                 file = displayPath(project, RdProtocolBridge.getProperty(reference, "filePath") as? String),
                 line = RdProtocolBridge.getProperty(reference, "line") as? Int ?: 1,
@@ -423,7 +650,39 @@ object RiderBackendSemanticService {
                 type = RdProtocolBridge.getProperty(reference, "kind") as? String ?: "reference",
                 astPath = (RdProtocolBridge.getProperty(reference, "astPath") as? List<String>) ?: emptyList()
             )
-        })
+        }.distinctAndOrderUsageLocations()
+            .take(limit)
+        return RiderBackendResponse(handled = true, value = orderedDistinctReferences, message = message)
+    }
+
+    fun getCallHierarchy(
+        project: Project,
+        file: String?,
+        line: Int?,
+        column: Int?,
+        language: String?,
+        symbol: String?,
+        direction: String,
+        depth: Int,
+        scope: BuiltInSearchScope
+    ): RiderBackendResponse<CallHierarchyData> {
+        val positionTarget = file != null && line != null && column != null && isDotNetFile(file)
+        val symbolTarget = language != null && symbol != null && canHandleLanguage(language)
+        if (!canUseBackend(project) || (!positionTarget && !symbolTarget)) return RiderBackendResponse(handled = false)
+
+        val semanticTarget = buildSemanticTarget(project, file, line, column, language, symbol)
+        semanticTarget.errorMessage?.let { return RiderBackendResponse(handled = true, errorMessage = it) }
+        val target = semanticTarget.target ?: return RiderBackendResponse(
+            handled = true,
+            errorMessage = symbolTarget.thenUnsupportedCallHierarchy()
+        )
+        val model = RdProtocolBridge.getModel(project)
+            ?: return RiderBackendResponse(
+                handled = true,
+                errorMessage = symbolTarget.thenUnsupportedCallHierarchy()
+            )
+        val displayLanguage = language?.trim()?.takeIf { it.isNotEmpty() } ?: "C#"
+        return invokeSemanticCallHierarchy(model, target, direction, depth, scope, symbolTarget, displayLanguage)
     }
 
     fun getTypeHierarchy(
@@ -450,23 +709,32 @@ object RiderBackendSemanticService {
      * `LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName` path.
      */
     fun resolveSymbolToPosition(project: Project, language: String, symbol: String): Triple<String, Int, Int>? {
-        if (!canUseBackend(project) || !canHandleLanguage(language)) return null
-        val target = createSemanticTarget(project, null, null, null, language, symbol) ?: return null
-        val model = RdProtocolBridge.getModel(project) ?: return null
-        val request = RdProtocolBridge.createStruct(
-            "$MODEL_PKG.RdFindDefinitionRequest",
-            target,
-            false,
-            1
-        ) ?: return null
-        val result = RdProtocolBridge.invokeCall(model, "findDefinition", request) ?: return null
-        val definition = RdProtocolBridge.getProperty(result, "definition") ?: return null
-        val backendPath = RdProtocolBridge.getProperty(definition, "filePath") as? String ?: return null
+        val resolution = resolveIndexedSymbol(project, language, symbol) ?: return null
+        val symbolInfo = resolution.symbolInfo ?: return null
+        val backendPath = RdProtocolBridge.getProperty(symbolInfo, "filePath") as? String ?: return null
         if (backendPath.isBlank()) return null
         val displayedPath = displayPath(project, backendPath)
-        val line = RdProtocolBridge.getProperty(definition, "line") as? Int ?: return null
-        val column = RdProtocolBridge.getProperty(definition, "column") as? Int ?: return null
+        val line = RdProtocolBridge.getProperty(symbolInfo, "line") as? Int ?: return null
+        val column = RdProtocolBridge.getProperty(symbolInfo, "column") as? Int ?: return null
         return Triple(displayedPath, line, column)
+    }
+
+    internal fun resolveIndexedSymbol(project: Project, language: String, symbol: String): RiderBackendSymbolResult? {
+        if (!canUseBackend(project) || !canHandleLanguage(language)) return null
+        val parsed = RiderSymbolParser.parse(language, symbol).getOrNull() ?: return null
+        val model = RdProtocolBridge.getModel(project) ?: return null
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdResolveSymbolIndexedRequest",
+            language,
+            parsed.normalizedSymbol
+        ) ?: return null
+        val result = RdProtocolBridge.invokeCall(model, "resolveSymbolIndexed", request) ?: return null
+        val status = RdProtocolBridge.getProperty(result, "status") as? String ?: return null
+        return RiderBackendSymbolResult(
+            status = status,
+            message = RdProtocolBridge.getProperty(result, "message") as? String,
+            symbolInfo = RdProtocolBridge.getProperty(result, "symbolInfo")
+        )
     }
 
     private fun canUseBackend(project: Project): Boolean =
@@ -486,16 +754,73 @@ object RiderBackendSemanticService {
         column: Int?,
         language: String?,
         symbol: String?
-    ): Any? {
-        val backendFile = file?.let { resolveBackendFilePath(project, it) }
-        return RdProtocolBridge.createStruct(
-            "$MODEL_PKG.RdSemanticTarget",
-            backendFile,
-            line,
-            column,
-            language,
-            symbol
+    ): Any? = buildSemanticTarget(project, file, line, column, language, symbol).target
+
+    private fun buildSemanticTarget(
+        project: Project,
+        file: String?,
+        line: Int?,
+        column: Int?,
+        language: String?,
+        symbol: String?
+    ): RiderSemanticTargetBuildResult {
+        val normalizedFile = file?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedLanguage = language?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedSymbol = symbol?.trim()?.takeIf { it.isNotEmpty() }
+        val hasPositionInput = normalizedFile != null || line != null || column != null
+        val backendFile = normalizedFile?.let { resolveBackendFilePath(project, it) }
+
+        if (backendFile != null && line != null && column != null) {
+            return RiderSemanticTargetBuildResult(
+                target = RdProtocolBridge.createStruct(
+                    "$MODEL_PKG.RdSemanticTarget",
+                    backendFile,
+                    line,
+                    column,
+                    null,
+                    null
+                )
+            )
+        }
+
+        if (normalizedLanguage != null && normalizedSymbol != null) {
+            return RiderSemanticTargetBuildResult(
+                target = RdProtocolBridge.createStruct(
+                    "$MODEL_PKG.RdSemanticTarget",
+                    null,
+                    null,
+                    null,
+                    normalizedLanguage,
+                    normalizedSymbol
+                )
+            )
+        }
+
+        if (hasPositionInput) {
+            return RiderSemanticTargetBuildResult(
+                errorMessage = buildUnresolvablePositionMessage(normalizedFile, line, column)
+            )
+        }
+
+        return RiderSemanticTargetBuildResult(
+            target = RdProtocolBridge.createStruct(
+                "$MODEL_PKG.RdSemanticTarget",
+                backendFile,
+                line,
+                column,
+                normalizedLanguage,
+                normalizedSymbol
+            )
         )
+    }
+
+    private fun buildUnresolvablePositionMessage(file: String?, line: Int?, column: Int?): String {
+        val targetLabel = listOfNotNull(file, line?.toString(), column?.toString())
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(":")
+            ?: "<unknown>"
+        return "Rider C#/F# position target '$targetLabel' could not be mapped to a Rider source file. " +
+            "Dependency-backed or source-less positions should use a language+symbol target when available."
     }
 
     private fun resolveBackendFilePath(project: Project, file: String): String? {
@@ -556,12 +881,45 @@ object RiderBackendSemanticService {
     }
 }
 
+private data class RiderSemanticTargetBuildResult(
+    val target: Any? = null,
+    val errorMessage: String? = null
+)
+
+internal const val RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED =
+    "Rider C#/F# symbol-mode call hierarchy requires the Rider backend-native path and is unsupported when that backend cannot resolve a callable semantic target."
+
+private fun Boolean.thenUnsupportedCallHierarchy(): String? =
+    if (this) RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED else null
+
 // ── Helper functions ────────────────────────────────────────────────────────
 
 private val CSHARP_EXTENSIONS = setOf("cs", "csx")
 private val FSHARP_EXTENSIONS = setOf("fs", "fsi", "fsx")
+internal const val CSHARP_CANONICAL_LANGUAGE_ID = "C#"
+internal const val FSHARP_CANONICAL_LANGUAGE_ID = "F#"
 private val CSHARP_LANGUAGE_IDS = setOf("C#", "CSHARP", "CSharp")
 private val FSHARP_LANGUAGE_IDS = setOf("F#", "FSHARP", "FSharp")
+internal const val IMPLEMENTATIONS_RESULT_LIMIT = PaginationService.DEFAULT_OVERCOLLECT
+internal const val CALL_HIERARCHY_RESULT_LIMIT = 20
+internal const val CALL_HIERARCHY_EXPANDED_CHILDREN_PER_NODE_LIMIT = 5
+
+internal fun normalizeAcceptedRiderLanguageAlias(language: String?): String? =
+    language?.takeIf { it.isNotBlank() }?.let {
+        when {
+            isAcceptedLanguageAlias(it, CSHARP_LANGUAGE_IDS) -> CSHARP_CANONICAL_LANGUAGE_ID
+            isAcceptedLanguageAlias(it, FSHARP_LANGUAGE_IDS) -> FSHARP_CANONICAL_LANGUAGE_ID
+            else -> it
+        }
+    }
+
+internal fun normalizeAcceptedCSharpAlias(language: String?): String? =
+    normalizeAcceptedRiderLanguageAlias(language)?.let {
+        if (it == CSHARP_CANONICAL_LANGUAGE_ID) it else language?.takeIf(String::isNotBlank)
+    }
+
+private fun isAcceptedLanguageAlias(language: String, aliases: Set<String>): Boolean =
+    aliases.any { it.equals(language, ignoreCase = true) }
 
 private fun riderBackendPath(file: VirtualFile): String =
     file.path.replace('/', File.separatorChar)
@@ -582,6 +940,38 @@ private fun createSourcePosition(project: Project, element: PsiElement): Any? {
     val line = document?.getLineNumber(offset)?.plus(1) ?: 1
     val column = document?.let { offset - it.getLineStartOffset(it.getLineNumber(offset)) + 1 } ?: 1
     return RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", filePath, line, column)
+}
+
+private fun findNamedElementAtPosition(project: Project, filePath: String, line: Int, column: Int): PsiNamedElement? {
+    val virtualFile = resolveProjectOrAbsoluteFile(project, filePath) ?: return null
+    val psiFile = PsiManager.getInstance(project).findFile(virtualFile) ?: return null
+    val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return null
+    val lineIndex = line - 1
+    if (lineIndex !in 0 until document.lineCount) return null
+    val lineStart = document.getLineStartOffset(lineIndex)
+    val lineEnd = document.getLineEndOffset(lineIndex)
+    val rawOffset = lineStart + (column - 1).coerceAtLeast(0)
+    val safeOffset = rawOffset.coerceIn(lineStart, lineEnd.coerceAtLeast(lineStart))
+    val leaf = psiFile.findElementAt(safeOffset)
+        ?: psiFile.findElementAt((safeOffset - 1).coerceAtLeast(0))
+        ?: return null
+    return PsiUtils.findNamedElement(leaf)
+}
+
+private fun resolveProjectOrAbsoluteFile(project: Project, filePath: String): VirtualFile? {
+    val normalized = filePath.replace('\\', File.separatorChar).replace('/', File.separatorChar)
+    LocalFileSystem.getInstance().findFileByPath(normalized)?.let { return it }
+    File(normalized).takeIf { it.isAbsolute && it.exists() }?.canonicalPath?.let {
+        return LocalFileSystem.getInstance().findFileByPath(it)
+    }
+    val roots = listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project)
+    for (root in roots) {
+        val candidate = File(root, normalized)
+        if (candidate.exists()) {
+            return LocalFileSystem.getInstance().findFileByPath(candidate.canonicalPath)
+        }
+    }
+    return null
 }
 
 // Wrap a (file, line, column) triple in a RdSemanticTarget so that backend
@@ -631,6 +1021,221 @@ private fun rdSymbolToCallElementData(symbol: Any, language: String): CallElemen
         language = language
     )
 }
+
+private fun invokeSemanticCallHierarchy(
+    model: Any,
+    target: Any,
+    direction: String,
+    depth: Int,
+    scope: BuiltInSearchScope,
+    symbolTarget: Boolean,
+    displayLanguage: String = "C#"
+): RiderBackendResponse<CallHierarchyData> {
+    val shouldBoundCallerExpansion = direction.equals("callers", ignoreCase = true) && depth > 1
+    val request = RdProtocolBridge.createStruct(
+        "$MODEL_PKG.RdCallHierarchyRequest",
+        target,
+        direction,
+        depth,
+        scope.wireValue,
+        CALL_HIERARCHY_RESULT_LIMIT
+    ) ?: return RiderBackendResponse(
+        handled = true,
+        errorMessage = symbolTarget.thenUnsupportedCallHierarchy()
+    )
+    val result = when (val outcome = RdProtocolBridge.invokeCallResult(model, "getCallHierarchy", request)) {
+        is RdCallOutcome.Success -> outcome.value
+        is RdCallOutcome.Timeout -> {
+            return RiderBackendResponse(
+                handled = true,
+                errorMessage = outcome.toUserMessage("resolving call hierarchy")
+            )
+        }
+        is RdCallOutcome.Failure -> {
+            return RiderBackendResponse(
+                handled = true,
+                errorMessage = outcome.toUserMessage("resolving call hierarchy")
+            )
+        }
+    } ?: return RiderBackendResponse(handled = true)
+
+    val root = RdProtocolBridge.getProperty(result, "root")
+        ?.let { rdSymbolToCallElementData(it, displayLanguage) }
+        ?: return RiderBackendResponse(
+            handled = true,
+            errorMessage = symbolTarget.thenUnsupportedCallHierarchy()
+        )
+    @Suppress("UNCHECKED_CAST")
+    val calls = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
+    val seen = mutableSetOf<String>()
+    val expansionState = RiderCallHierarchyExpansionState()
+    val distinctCalls = calls.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+        .sortedCallElements()
+        .filter { seen.add(callHierarchyKey(it)) }
+        .take(CALL_HIERARCHY_RESULT_LIMIT)
+    val convertedCalls = distinctCalls.mapIndexed { index, call ->
+        when {
+            depth <= 1 -> call.copy(children = emptyList())
+            shouldBoundCallerExpansion && index >= CALL_HIERARCHY_EXPANDED_CHILDREN_PER_NODE_LIMIT -> {
+                expansionState.truncated = true
+                call.copy(children = emptyList())
+            }
+            else -> expandSemanticCallHierarchy(model, call, direction, depth - 1, scope, seen, displayLanguage, expansionState)
+        }
+    }
+    val message = mergeCallHierarchyMessages(
+        RdProtocolBridge.getProperty(result, "message") as? String,
+        expansionState.noteOrNull()
+    )
+
+    return RiderBackendResponse(
+        handled = true,
+        value = CallHierarchyData(element = root, calls = convertedCalls),
+        message = message
+    )
+}
+
+private fun expandSemanticCallHierarchy(
+    model: Any,
+    call: CallElementData,
+    direction: String,
+    remainingDepth: Int,
+    scope: BuiltInSearchScope,
+    seen: MutableSet<String>,
+    displayLanguage: String,
+    expansionState: RiderCallHierarchyExpansionState
+): CallElementData {
+    if (remainingDepth <= 0) return call.copy(children = emptyList())
+
+    val target = createPositionTarget(call.file, call.line, call.column)
+        ?: return call.copy(children = emptyList())
+    val request = RdProtocolBridge.createStruct(
+        "$MODEL_PKG.RdCallHierarchyRequest",
+        target,
+        direction,
+        remainingDepth,
+        scope.wireValue,
+        CALL_HIERARCHY_RESULT_LIMIT
+    ) ?: return call.copy(children = emptyList())
+    val result = when (val outcome = RdProtocolBridge.invokeCallResult(model, "getCallHierarchy", request)) {
+        is RdCallOutcome.Success -> outcome.value
+        else -> null
+    } ?: return call.copy(children = emptyList())
+
+    @Suppress("UNCHECKED_CAST")
+    val children = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
+    val orderedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+        .sortedCallElements()
+        .filter { seen.add(callHierarchyKey(it)) }
+        .take(CALL_HIERARCHY_RESULT_LIMIT)
+    val convertedChildren = when {
+        direction.equals("callers", ignoreCase = true) -> {
+            val boundedChildren = boundExpandedCallerChildren(orderedChildren, expansionState)
+            if (remainingDepth == 1) {
+                boundedChildren.map { it.copy(children = emptyList()) }
+            } else {
+                boundedChildren.map { child ->
+                    expandSemanticCallHierarchy(model, child, direction, remainingDepth - 1, scope, seen, displayLanguage, expansionState)
+                }
+            }
+        }
+        remainingDepth == 1 -> orderedChildren.map { it.copy(children = emptyList()) }
+        else -> orderedChildren.map {
+            expandSemanticCallHierarchy(model, it, direction, remainingDepth - 1, scope, seen, displayLanguage, expansionState)
+        }
+    }
+    return call.copy(children = convertedChildren)
+}
+
+private fun boundExpandedCallerChildren(
+    children: List<CallElementData>,
+    expansionState: RiderCallHierarchyExpansionState? = null
+): List<CallElementData> {
+    if (children.size > CALL_HIERARCHY_EXPANDED_CHILDREN_PER_NODE_LIMIT) {
+        expansionState?.truncated = true
+    }
+    return children.take(CALL_HIERARCHY_EXPANDED_CHILDREN_PER_NODE_LIMIT)
+}
+
+private data class RiderCallHierarchyExpansionState(
+    var truncated: Boolean = false
+) {
+    fun noteOrNull(): String? =
+        if (truncated) {
+            "Partial callers expansion: Rider recursively expands only the first $CALL_HIERARCHY_EXPANDED_CHILDREN_PER_NODE_LIMIT children per node to keep backend requests bounded."
+        } else {
+            null
+        }
+}
+
+private fun mergeCallHierarchyMessages(primary: String?, secondary: String?): String? = when {
+    primary.isNullOrBlank() -> secondary
+    secondary.isNullOrBlank() -> primary
+    else -> "$primary $secondary"
+}
+
+private fun callHierarchyKey(call: CallElementData): String =
+    if (call.hasConcreteLocation()) {
+        "${call.file}:${call.line}:${call.column}:${call.name}"
+    } else {
+        "<source-unavailable>:${call.language}:${call.name}"
+    }
+
+private fun riderDefinitionMessage(symbolName: String, locationKind: String?, locationDisplayName: String?): String? =
+    when (locationKind) {
+        "metadata" ->
+            "Rider resolved '$symbolName' through metadata. Source is unavailable in this solution; use '${locationDisplayName ?: symbolName}' as the external declaration identity."
+        "decompiled" ->
+            "Rider resolved '$symbolName' through decompiled code. Treat '${locationDisplayName ?: symbolName}' as a best-available navigation surface, not a project-backed source file."
+        "sourceUnavailable" ->
+            "Rider resolved '$symbolName', but no source-backed declaration is available in this solution. Use '${locationDisplayName ?: symbolName}' as the external identity or retry with project_and_libraries for broader context."
+        else -> null
+    }
+
+private fun riderDefinitionPreview(preview: String, message: String?): String =
+    preview.ifBlank { message.orEmpty() }
+
+private fun List<UsageLocation>.distinctAndOrderUsageLocations(): List<UsageLocation> =
+    this.groupBy(::usageLocationKey)
+        .map { (_, group) -> group.minWithOrNull(compareByUsageLocation()) ?: group.first() }
+        .sortedWith(compareByUsageLocation())
+
+private fun usageLocationKey(location: UsageLocation): String =
+    if (location.hasConcreteLocation()) {
+        "${location.file}:${location.line}:${location.column}:${location.type}"
+    } else {
+        "<source-unavailable>:${location.type}:${location.context}:${location.astPath.joinToString(">")}" 
+    }
+
+private fun compareByUsageLocation(): Comparator<UsageLocation> =
+    compareBy<UsageLocation>(
+        { if (it.hasConcreteLocation()) 0 else 1 },
+        { sortableLocationPath(it.file) },
+        { if (it.line > 0) it.line else Int.MAX_VALUE },
+        { if (it.column > 0) it.column else Int.MAX_VALUE },
+        { it.type.lowercase() },
+        { it.context.lowercase() },
+        { it.astPath.joinToString(">") }
+    )
+
+private fun List<CallElementData>.sortedCallElements(): List<CallElementData> =
+    sortedWith(compareByCallElement())
+
+private fun compareByCallElement(): Comparator<CallElementData> =
+    compareBy<CallElementData>(
+        { if (it.hasConcreteLocation()) 0 else 1 },
+        { sortableLocationPath(it.file) },
+        { if (it.line > 0) it.line else Int.MAX_VALUE },
+        { if (it.column > 0) it.column else Int.MAX_VALUE },
+        { it.name.lowercase() },
+        { it.language.lowercase() }
+    )
+
+private fun sortableLocationPath(path: String): String = path.ifBlank { "~" }.lowercase()
+
+private fun UsageLocation.hasConcreteLocation(): Boolean = line > 0 && column > 0
+
+private fun CallElementData.hasConcreteLocation(): Boolean = line > 0 && column > 0
 
 private fun rdStructureKind(kind: String): StructureKind = when (kind.uppercase()) {
     "CLASS", "ABSTRACT_CLASS" -> StructureKind.CLASS
@@ -754,7 +1359,12 @@ abstract class RiderImplementationsHandler(
     override fun findImplementations(element: PsiElement, project: Project, scope: BuiltInSearchScope): List<ImplementationData>? {
         val model = RdProtocolBridge.getModel(project) ?: return null
         val position = createSourcePosition(project, element) ?: return null
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdImplementationsRequest", position, scope.wireValue) ?: return null
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdImplementationsRequest",
+            position,
+            scope.wireValue,
+            IMPLEMENTATIONS_RESULT_LIMIT
+        ) ?: return null
         val result = RdProtocolBridge.invokeCall(model, "findImplementations", request) ?: return null
 
         @Suppress("UNCHECKED_CAST")
@@ -790,9 +1400,15 @@ abstract class RiderCallHierarchyHandler(
     ): CallHierarchyData? {
         val model = RdProtocolBridge.getModel(project) ?: return null
         val target = createPositionTarget(project, element) ?: return null
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", target, direction, depth, scope.wireValue)
-            ?: return null
-        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return null
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdCallHierarchyRequest",
+            target,
+            direction,
+            depth,
+            scope.wireValue,
+            CALL_HIERARCHY_RESULT_LIMIT
+        ) ?: return null
+        val result = invokeCallHierarchy(model, request) ?: return null
 
         val root = RdProtocolBridge.getProperty(result, "root") ?: return null
         @Suppress("UNCHECKED_CAST")
@@ -804,9 +1420,12 @@ abstract class RiderCallHierarchyHandler(
         val seen = mutableSetOf<String>()
         val convertedCalls = calls.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
             .filter { seen.add(callKey(it)) }
-            .take(MAX_CHILDREN_PER_LEVEL)
+            .take(CALL_HIERARCHY_RESULT_LIMIT)
             .map { call ->
-                expandCallHierarchy(project, call, direction, depth - 1, scope, seen)
+                when {
+                    depth <= 1 -> call.copy(children = emptyList())
+                    else -> expandCallHierarchy(project, call, direction, depth - 1, scope, seen)
+                }
             }
 
         return CallHierarchyData(
@@ -826,18 +1445,45 @@ abstract class RiderCallHierarchyHandler(
         if (remainingDepth <= 0) return call.copy(children = emptyList())
         val target = createPositionTarget(call.file, call.line, call.column)
             ?: return call.copy(children = emptyList())
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdCallHierarchyRequest", target, direction, remainingDepth, scope.wireValue)
-            ?: return call.copy(children = emptyList())
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdCallHierarchyRequest",
+            target,
+            direction,
+            remainingDepth,
+            scope.wireValue,
+            CALL_HIERARCHY_RESULT_LIMIT
+        ) ?: return call.copy(children = emptyList())
         val model = RdProtocolBridge.getModel(project) ?: return call.copy(children = emptyList())
-        val result = RdProtocolBridge.invokeCall(model, "getCallHierarchy", request) ?: return call.copy(children = emptyList())
+        val result = invokeCallHierarchy(model, request) ?: return call.copy(children = emptyList())
         @Suppress("UNCHECKED_CAST")
         val children = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
-        val convertedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+        val orderedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
             .filter { seen.add(callKey(it)) }
-            .take(MAX_CHILDREN_PER_LEVEL)
-            .map { child -> expandCallHierarchy(project, child, direction, remainingDepth - 1, scope, seen) }
+            .take(CALL_HIERARCHY_RESULT_LIMIT)
+        val convertedChildren = when {
+            direction.equals("callers", ignoreCase = true) -> {
+                if (remainingDepth == 1) {
+                    orderedChildren.map { it.copy(children = emptyList()) }
+                } else {
+                    orderedChildren.map { child -> expandCallHierarchy(project, child, direction, remainingDepth - 1, scope, seen) }
+                }
+            }
+            remainingDepth == 1 -> orderedChildren.map { it.copy(children = emptyList()) }
+            else -> orderedChildren.map { child -> expandCallHierarchy(project, child, direction, remainingDepth - 1, scope, seen) }
+        }
         return call.copy(children = convertedChildren)
     }
+
+    private fun invokeCallHierarchy(model: Any, request: Any): Any? =
+        when (val outcome = RdProtocolBridge.invokeCallResult(model, "getCallHierarchy", request)) {
+            is RdCallOutcome.Success -> outcome.value
+            is RdCallOutcome.Timeout -> throw RiderBackendTimeoutException(
+                callName = outcome.callName,
+                timeoutSeconds = outcome.timeoutSeconds,
+                operation = "resolving call hierarchy"
+            )
+            is RdCallOutcome.Failure -> null
+        }
 
     private fun callKey(call: CallElementData): String =
         "${call.file}:${call.line}:${call.column}:${call.name}"
@@ -845,7 +1491,252 @@ abstract class RiderCallHierarchyHandler(
     private companion object {
         // Mirrors JavaCallHierarchyHandler.MAX_RESULTS_PER_LEVEL to keep behaviour consistent
         // across IDEs and to bound RD round-trips for fan-out methods.
-        const val MAX_CHILDREN_PER_LEVEL = 20
+    }
+}
+
+// ── Symbol Reference Handlers ────────────────────────────────────────────────
+
+internal data class ParsedRiderSymbol(
+    val languageName: String,
+    val containerQualifiedName: String,
+    val memberName: String?,
+    val parameterTypes: List<String>?,
+    val isConstructor: Boolean,
+    val normalizedSymbol: String
+)
+
+internal object RiderSymbolParser {
+    private val BUILT_IN_TYPE_ALIASES = mapOf(
+        "bool" to "System.Boolean",
+        "byte" to "System.Byte",
+        "sbyte" to "System.SByte",
+        "short" to "System.Int16",
+        "ushort" to "System.UInt16",
+        "int" to "System.Int32",
+        "uint" to "System.UInt32",
+        "long" to "System.Int64",
+        "ulong" to "System.UInt64",
+        "float" to "System.Single",
+        "double" to "System.Double",
+        "decimal" to "System.Decimal",
+        "char" to "System.Char",
+        "string" to "System.String",
+        "object" to "System.Object",
+        "unit" to "Microsoft.FSharp.Core.Unit",
+        "nativeint" to "System.IntPtr",
+        "unativeint" to "System.UIntPtr"
+    )
+
+    fun parse(languageName: String, symbol: String): Result<ParsedRiderSymbol> {
+        val trimmed = symbol.trim()
+        if (trimmed.isEmpty()) return invalidFormat(symbol, languageName)
+
+        val separatorIndex = trimmed.indexOf('#')
+        if (separatorIndex >= 0 && trimmed.indexOf('#', separatorIndex + 1) >= 0) {
+            return invalidFormat(symbol, languageName)
+        }
+
+        if (separatorIndex < 0) {
+            if ('(' in trimmed || ')' in trimmed) return invalidFormat(symbol, languageName)
+            val normalizedContainer = normalizeQualifiedName(trimmed)
+            if (normalizedContainer.isBlank()) return invalidFormat(symbol, languageName)
+            return Result.success(ParsedRiderSymbol(languageName, normalizedContainer, null, null, false, normalizedContainer))
+        }
+
+        val rawContainer = trimmed.substring(0, separatorIndex)
+        val rawMemberPart = trimmed.substring(separatorIndex + 1)
+        if (rawContainer.isBlank() || rawMemberPart.isBlank()) return invalidFormat(symbol, languageName)
+
+        val normalizedContainer = normalizeQualifiedName(rawContainer)
+        if (normalizedContainer.isBlank()) return invalidFormat(symbol, languageName)
+        val parsedMember = parseMemberPart(normalizedContainer, rawMemberPart) ?: return invalidFormat(symbol, languageName)
+        val normalizedSymbol = buildNormalizedSymbol(normalizedContainer, parsedMember)
+        return Result.success(
+            ParsedRiderSymbol(
+                languageName = languageName,
+                containerQualifiedName = normalizedContainer,
+                memberName = parsedMember.memberName,
+                parameterTypes = parsedMember.parameterTypes,
+                isConstructor = parsedMember.isConstructor,
+                normalizedSymbol = normalizedSymbol
+            )
+        )
+    }
+
+    internal fun callHierarchyCallableGuidance(languageName: String, symbol: String): String? {
+        val parsed = parse(languageName, symbol).getOrElse { return it.message ?: "Invalid Rider symbol format." }
+        if (parsed.memberName != null) return null
+
+        val normalizedSymbol = symbol.trim()
+        val dottedCallableSuggestion = suggestCallableHashSyntax(normalizedSymbol)
+        return if (dottedCallableSuggestion != null) {
+            "Rider $languageName call hierarchy needs a callable symbol. '$normalizedSymbol' looks like dotted member syntax; use '$dottedCallableSuggestion' instead."
+        } else {
+            val examples = symbolExamples(languageName).drop(1).joinToString(" or ")
+            "Rider $languageName call hierarchy needs a callable symbol. Use $examples."
+        }
+    }
+
+    private data class ParsedMember(val memberName: String, val parameterTypes: List<String>?, val isConstructor: Boolean)
+
+    private fun parseMemberPart(containerPart: String, memberPart: String): ParsedMember? {
+        val openParenIndex = memberPart.indexOf('(')
+        val memberName: String
+        val parameterTypes: List<String>?
+        if (openParenIndex < 0) {
+            memberName = memberPart.trim()
+            parameterTypes = null
+        } else {
+            val closeParenIndex = memberPart.lastIndexOf(')')
+            if (closeParenIndex != memberPart.length - 1 || closeParenIndex < openParenIndex) return null
+            memberName = memberPart.substring(0, openParenIndex).trim()
+            parameterTypes = parseParameterList(memberPart.substring(openParenIndex + 1, closeParenIndex)) ?: return null
+        }
+        if (memberName.isBlank()) return null
+
+        val normalizedMemberName = normalizeSimpleName(memberName)
+        val normalizedContainerLeaf = normalizeSimpleName(getContainerLeafName(containerPart))
+        val isConstructor = normalizedMemberName.equals(".ctor", ignoreCase = true) ||
+            normalizedMemberName.equals(normalizedContainerLeaf, ignoreCase = true)
+        return ParsedMember(if (isConstructor) ".ctor" else normalizedMemberName, parameterTypes, isConstructor)
+    }
+
+    private fun parseParameterList(rawParameters: String): List<String>? {
+        if (rawParameters.isBlank()) return emptyList()
+        val parts = mutableListOf<String>()
+        var start = 0
+        var angleDepth = 0
+        var bracketDepth = 0
+        for (i in rawParameters.indices) {
+            when (rawParameters[i]) {
+                '<' -> angleDepth++
+                '>' -> angleDepth--
+                '[' -> bracketDepth++
+                ']' -> bracketDepth--
+                ',' -> if (angleDepth == 0 && bracketDepth == 0) {
+                    val segment = rawParameters.substring(start, i).trim()
+                    if (segment.isBlank()) return null
+                    parts += canonicalizeTypeName(segment)
+                    start = i + 1
+                }
+            }
+            if (angleDepth < 0 || bracketDepth < 0) return null
+        }
+        if (angleDepth != 0 || bracketDepth != 0) return null
+        val lastSegment = rawParameters.substring(start).trim()
+        if (lastSegment.isBlank()) return null
+        parts += canonicalizeTypeName(lastSegment)
+        return parts
+    }
+
+    private fun buildNormalizedSymbol(containerPart: String, member: ParsedMember): String = when (member.parameterTypes) {
+        null -> "$containerPart#${member.memberName}"
+        else -> "$containerPart#${member.memberName}(${member.parameterTypes.joinToString(",")})"
+    }
+
+    private fun invalidFormat(symbol: String, languageName: String): Result<ParsedRiderSymbol> =
+        ErrorMessages.invalidSymbolFormat(symbol, symbolExamples(languageName)).toArgumentFailure()
+
+    private fun symbolExamples(languageName: String): List<String> = when (languageName) {
+        "F#" -> listOf(
+            "'Namespace.Type'",
+            "'Namespace.Type#memberName'",
+            "'Namespace.Module#functionName(string)'"
+        )
+        else -> listOf(
+            "'Namespace.Type'",
+            "'Namespace.Type#MemberName'",
+            "'Namespace.Type#MethodName(string, int[])'"
+        )
+    }
+
+    private fun getContainerLeafName(containerQualifiedName: String): String {
+        val normalized = normalizeQualifiedName(containerQualifiedName)
+        val separatorIndex = maxOf(normalized.lastIndexOf('.'), normalized.lastIndexOf('+'))
+        return if (separatorIndex >= 0) normalized.substring(separatorIndex + 1) else normalized
+    }
+
+    private fun normalizeQualifiedName(value: String): String {
+        val withoutGlobalPrefix = value.trim()
+            .replace("global::", "", ignoreCase = true)
+            .replace("global.", "", ignoreCase = true)
+        return canonicalizeTypeName(withoutGlobalPrefix)
+    }
+
+    private fun canonicalizeTypeName(value: String): String {
+        val normalized = normalizeSimpleName(value).replace("+", ".")
+        return BUILT_IN_TYPE_ALIASES.entries.firstOrNull { it.key.equals(normalized, ignoreCase = true) }?.value ?: normalized
+    }
+
+    private fun normalizeSimpleName(value: String): String {
+        val normalized = removeGenericPayload(value)
+            .replace("::", ".")
+            .replace(" ", "")
+            .trim()
+        return normalized.replace(Regex("`\\d+"), "")
+    }
+
+    private fun removeGenericPayload(value: String): String {
+        if (value.isEmpty()) return ""
+        val result = StringBuilder(value.length)
+        var depth = 0
+        for (ch in value) {
+            when (ch) {
+                '<' -> depth++
+                '>' -> if (depth > 0) depth--
+                else -> if (depth == 0) result.append(ch)
+            }
+        }
+        return result.toString()
+    }
+
+    private fun suggestCallableHashSyntax(symbol: String): String? {
+        if ('#' in symbol || '(' in symbol || ')' in symbol) return null
+        val normalized = normalizeQualifiedName(symbol)
+        if (normalized.count { it == '.' } < 2) return null
+        val separatorIndex = normalized.lastIndexOf('.')
+        if (separatorIndex <= 0 || separatorIndex == normalized.lastIndex) return null
+        val container = normalized.substring(0, separatorIndex)
+        val member = normalized.substring(separatorIndex + 1)
+        if (member.isBlank()) return null
+        return "$container#$member"
+    }
+}
+
+abstract class BaseRiderSymbolReferenceHandler(
+    languageId: String,
+    private val displayName: String,
+    supportedExtensions: Set<String>,
+    supportedLanguageIds: Set<String>,
+) : BaseRiderHandler<PsiNamedElement>(languageId, displayName, supportedExtensions, supportedLanguageIds), SymbolReferenceHandler {
+
+    override val languageName: String = displayName
+
+    override fun resolveSymbol(project: Project, symbol: String): Result<PsiNamedElement> {
+        val parsed = RiderSymbolParser.parse(displayName, symbol).getOrElse { return Result.failure(it) }
+        val resolution = RiderBackendSemanticService.resolveIndexedSymbol(project, displayName, parsed.normalizedSymbol)
+            ?: return Result.failure(IllegalArgumentException(ErrorMessages.COULD_NOT_RESOLVE_SYMBOL))
+
+        if (!resolution.status.equals("success", ignoreCase = true)) {
+            return Result.failure(
+                IllegalArgumentException(
+                    resolution.message ?: "Could not resolve Rider symbol '${parsed.normalizedSymbol}' (${resolution.status})."
+                )
+            )
+        }
+
+        val symbolInfo = resolution.symbolInfo
+            ?: return Result.failure(IllegalArgumentException(ErrorMessages.COULD_NOT_RESOLVE_SYMBOL))
+        val filePath = RdProtocolBridge.getProperty(symbolInfo, "filePath") as? String
+        val line = RdProtocolBridge.getProperty(symbolInfo, "line") as? Int
+        val column = RdProtocolBridge.getProperty(symbolInfo, "column") as? Int
+        if (filePath.isNullOrBlank() || line == null || column == null) {
+            return Result.failure(IllegalArgumentException(ErrorMessages.COULD_NOT_RESOLVE_SYMBOL))
+        }
+
+        val target = findNamedElementAtPosition(project, filePath, line, column)
+            ?: return Result.failure(IllegalArgumentException(ErrorMessages.COULD_NOT_RESOLVE_SYMBOL))
+        return Result.success(target)
     }
 }
 
@@ -934,6 +1825,7 @@ class RiderCSharpTypeHierarchyHandler : RiderTypeHierarchyHandler("C#", "C#", CS
 class RiderCSharpImplementationsHandler : RiderImplementationsHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpCallHierarchyHandler : RiderCallHierarchyHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpSuperMethodsHandler : RiderSuperMethodsHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
+class RiderCSharpSymbolReferenceHandler : BaseRiderSymbolReferenceHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpStructureHandler : RiderStructureHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 
 // ── Concrete F# Handlers ────────────────────────────────────────────────────
@@ -942,4 +1834,5 @@ class RiderFSharpTypeHierarchyHandler : RiderTypeHierarchyHandler("F#", "F#", FS
 class RiderFSharpImplementationsHandler : RiderImplementationsHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
 class RiderFSharpCallHierarchyHandler : RiderCallHierarchyHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
 class RiderFSharpSuperMethodsHandler : RiderSuperMethodsHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
+class RiderFSharpSymbolReferenceHandler : BaseRiderSymbolReferenceHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
 class RiderFSharpStructureHandler : RiderStructureHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)

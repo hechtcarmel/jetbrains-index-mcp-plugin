@@ -24,7 +24,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
-- **C# & F#** - Rider (via an in-process ReSharper backend bound through the rd protocol; resolves symbols, hierarchies, and rename/move directly against the ReSharper engine)
+- **C# & F#** - Rider (via an in-process ReSharper backend bound through the rd protocol; C# is the production-ready Rider lane, while F# remains beta/unstable and is not recommended for production; for F# references, `file + line + column` is the primary supported shape and `language + symbol` is best-effort/partial when safe resolution can be proven)
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 **Universal Tools (All Supported JetBrains IDEs)**
@@ -53,8 +53,10 @@ These tools activate based on installed language plugins:
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
-- **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
+- **Safe Delete** - Remove code with usage checking (Java/Kotlin, plus Rider .NET via ReSharper backend)
 - **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
+
+**Rider C# note:** rename and move can fall back to native dialog automation, while optimize/reformat use editor-tab + IDE-action flows. F# remains beta/unstable and is not recommended for production.
 
 ### Why Use This Plugin?
 
@@ -234,7 +236,7 @@ These tools work in all supported JetBrains IDEs.
 
 | Tool | Description |
 |------|-------------|
-| `ide_find_references` | Find all references to a symbol across the entire project |
+| `ide_find_references` | Find all references to a symbol across the entire project; in Rider, C# is production-ready, while F# remains beta/unstable and prefers `file + line + column` over partial `language + symbol` lookup |
 | `ide_find_definition` | Find the definition/declaration location of a symbol |
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
@@ -257,18 +259,18 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown |
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust, C#/F# in Rider |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, Markdown, C#/F# in Rider |
 
-### Java-Specific Refactoring Tools
+### Conditional Refactoring Tools
 
 | Tool | Description |
 |------|-------------|
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
-| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
+| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin, plus Rider .NET via ReSharper backend) |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
 
@@ -286,6 +288,8 @@ These tools activate based on available language plugins:
 | RustRover | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
 | PhpStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
 
+> **Rider note**: Rider-backed C# is the production focus for semantic navigation/refactoring; F# remains beta/unstable and is not production-ready. `ide_refactor_safe_delete` is exposed in Rider when the ReSharper backend is available.
+
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
@@ -294,7 +298,9 @@ These tools activate based on available language plugins:
 | CLion | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
 | DataGrip | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
 
-> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rider C# is the production-ready language lane; Rider F# is beta/unstable and not recommended for production. The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+
+> **Rider F# note**: `ide_find_references` supports F# only when the required F# plugin APIs are available. For F#, use `file + line + column` as the primary request shape; `language + symbol` is intentionally partial and may return an explicit limitation that recommends position lookup when the target cannot be resolved safely. F# remains beta/unstable and is not recommended for production.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 

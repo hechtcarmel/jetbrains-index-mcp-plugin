@@ -1,8 +1,13 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.MODEL_PKG
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdProtocolBridge
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MutationVerification
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
@@ -10,6 +15,8 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
@@ -19,6 +26,7 @@ import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
+import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -124,6 +132,13 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         data class NonPhysicalFile(val fileName: String) : FilePreparationResult()
     }
 
+    private sealed interface RiderSafeDeleteOutcome {
+        data class Success(val result: ToolCallResult) : RiderSafeDeleteOutcome
+        data object NotInRider : RiderSafeDeleteOutcome
+        data object FileNotFound : RiderSafeDeleteOutcome
+        data class BackendCallFailed(val reason: String) : RiderSafeDeleteOutcome
+    }
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
@@ -157,6 +172,18 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         column: Int,
         force: Boolean
     ): ToolCallResult {
+        if (RiderBackendSemanticService.isDotNetFile(file)) {
+            val riderResult = when (val riderOutcome = tryExecuteRiderSafeDelete(project, file, line, column, "symbol", force)) {
+                is RiderSafeDeleteOutcome.Success -> riderOutcome.result
+                is RiderSafeDeleteOutcome.NotInRider -> null
+                is RiderSafeDeleteOutcome.FileNotFound -> createErrorResult("File not found: $file")
+                is RiderSafeDeleteOutcome.BackendCallFailed -> createErrorResult(
+                    "Rider ReSharper backend safe delete failed: ${riderOutcome.reason}"
+                )
+            }
+            if (riderResult != null) return riderResult
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and check usages (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════
@@ -217,6 +244,18 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         file: String,
         force: Boolean
     ): ToolCallResult {
+        if (RiderBackendSemanticService.isDotNetFile(file)) {
+            val riderResult = when (val riderOutcome = tryExecuteRiderSafeDelete(project, file, null, null, "file", force)) {
+                is RiderSafeDeleteOutcome.Success -> riderOutcome.result
+                is RiderSafeDeleteOutcome.NotInRider -> null
+                is RiderSafeDeleteOutcome.FileNotFound -> createErrorResult("File not found: $file")
+                is RiderSafeDeleteOutcome.BackendCallFailed -> createErrorResult(
+                    "Rider ReSharper backend safe delete failed: ${riderOutcome.reason}"
+                )
+            }
+            if (riderResult != null) return riderResult
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Collect symbols and find external usages
         // ═══════════════════════════════════════════════════════════════════════
@@ -298,6 +337,137 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             )
         } else {
             createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"}")
+        }
+    }
+
+    private suspend fun tryExecuteRiderSafeDelete(
+        project: Project,
+        file: String,
+        line: Int?,
+        column: Int?,
+        targetType: String,
+        force: Boolean
+    ): RiderSafeDeleteOutcome {
+        commitDocuments(project)
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+
+        val absolutePath = suspendingReadAction {
+            val psiFile = getPsiFile(project, file) ?: return@suspendingReadAction null
+            psiFile.virtualFile.path
+        } ?: return RiderSafeDeleteOutcome.FileNotFound
+
+        val model = RdProtocolBridge.getModel(project) ?: return RiderSafeDeleteOutcome.NotInRider
+        val target = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdSemanticTarget",
+            absolutePath,
+            line,
+            column,
+            null,
+            null
+        ) ?: return RiderSafeDeleteOutcome.BackendCallFailed(
+            "Failed to create rd semantic target struct (rdgen mismatch?)"
+        )
+        val request = RdProtocolBridge.createStruct(
+            "$MODEL_PKG.RdSafeDeleteRequest",
+            target,
+            targetType,
+            force
+        ) ?: return RiderSafeDeleteOutcome.BackendCallFailed(
+            "Failed to create rd safe delete request struct (rdgen mismatch?)"
+        )
+        val result = RdProtocolBridge.invokeCall(model, "safeDelete", request)
+            ?: return RiderSafeDeleteOutcome.BackendCallFailed(
+                "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
+            )
+
+        return mapRiderSafeDeleteResult(project, targetType, result)
+    }
+
+    private suspend fun mapRiderSafeDeleteResult(project: Project, targetType: String, result: Any): RiderSafeDeleteOutcome {
+        val success = RdProtocolBridge.getProperty(result, "success") as? Boolean ?: false
+        val message = RdProtocolBridge.getProperty(result, "message") as? String ?: "Rider backend safe delete failed"
+        val status = RdProtocolBridge.getProperty(result, "status") as? String
+            ?: return RiderSafeDeleteOutcome.BackendCallFailed("Backend safe delete result omitted required status field")
+
+        @Suppress("UNCHECKED_CAST")
+        val rawAffectedFiles = (RdProtocolBridge.getProperty(result, "affectedFiles") as? List<String>) ?: emptyList()
+        val affectedFiles = rawAffectedFiles.map { absolute -> toRelativeProjectPath(project, absolute) }
+        val changesCount = RdProtocolBridge.getProperty(result, "changesCount") as? Int ?: 0
+        val verification = RiderMutationResultMapper.toMutationVerification(
+            RdProtocolBridge.getProperty(result, "verification"),
+            RdProtocolBridge::getProperty
+        )
+        val blockedUsages = toBlockedUsages(project, RdProtocolBridge.getProperty(result, "blockedUsages"))
+
+        val summary = RiderMutationResultMapper.summary(
+            legacySuccess = success,
+            status = status,
+            affectedFiles = affectedFiles,
+            changesCount = changesCount,
+            message = message,
+            verification = verification,
+            contract = RiderMutationResultMapper.StatusContract.PRESERVE_BLOCKED
+        )
+
+        refreshAffectedFiles(rawAffectedFiles)
+        refreshProjectRootsAndCommit(project)
+        commitDocuments(project)
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+
+        val payload = if (summary.status == "blocked" || (!summary.success && summary.status != "verification_failed" && blockedUsages.isNotEmpty())) {
+            RiderSafeDeleteBlockedResult(
+                canDelete = false,
+                targetType = targetType,
+                usageCount = blockedUsages.size,
+                blockingUsages = blockedUsages,
+                message = summary.message,
+                status = summary.status,
+                verification = summary.verification
+            )
+        } else {
+            summary.toRefactoringResult()
+        }
+
+        return RiderSafeDeleteOutcome.Success(createJsonResult(payload))
+    }
+
+    private fun toBlockedUsages(project: Project, rawBlockedUsages: Any?): List<UsageInfo> {
+        val usages = rawBlockedUsages as? List<*> ?: return emptyList()
+        return usages.mapNotNull { rawUsage ->
+            val usage = rawUsage ?: return@mapNotNull null
+            val filePath = RdProtocolBridge.getProperty(usage, "filePath") as? String ?: return@mapNotNull null
+            UsageInfo(
+                file = toRelativeProjectPath(project, filePath),
+                line = RdProtocolBridge.getProperty(usage, "line") as? Int ?: 1,
+                column = RdProtocolBridge.getProperty(usage, "column") as? Int ?: 1,
+                context = RdProtocolBridge.getProperty(usage, "context") as? String ?: ""
+            )
+        }
+    }
+
+    private fun toMutationVerification(rawVerification: Any?): MutationVerification? {
+        return RiderMutationResultMapper.toMutationVerification(rawVerification, RdProtocolBridge::getProperty)
+    }
+
+    private fun toRelativeProjectPath(project: Project, absolutePath: String): String {
+        return try {
+            val virtualFile = LocalFileSystem.getInstance().findFileByPath(absolutePath)
+            if (virtualFile != null) {
+                ProjectUtils.getToolFilePath(project, virtualFile)
+            } else {
+                absolutePath.replace('\\', '/')
+            }
+        } catch (_: Exception) {
+            absolutePath.replace('\\', '/')
+        }
+    }
+
+    private fun refreshAffectedFiles(paths: List<String>) {
+        val virtualFiles = paths.mapNotNull { path ->
+            LocalFileSystem.getInstance().refreshAndFindFileByPath(path.replace('\\', File.separatorChar))
+        }
+        if (virtualFiles.isNotEmpty()) {
+            VfsUtil.markDirtyAndRefresh(false, false, false, *virtualFiles.toTypedArray())
         }
     }
 
@@ -753,13 +923,14 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     }
 
     private fun getElementType(element: PsiElement): String {
+        val className = element.javaClass.simpleName.removePrefix("Psi")
         return when {
-            element is com.intellij.psi.PsiMethod -> "method"
-            element is com.intellij.psi.PsiClass -> "class"
-            element is com.intellij.psi.PsiField -> "field"
-            element is com.intellij.psi.PsiLocalVariable -> "variable"
-            element is com.intellij.psi.PsiParameter -> "parameter"
-            else -> element.javaClass.simpleName.removePrefix("Psi").lowercase()
+            className.contains("Method", ignoreCase = true) -> "method"
+            className.contains("Class", ignoreCase = true) -> "class"
+            className.contains("Field", ignoreCase = true) -> "field"
+            className.contains("LocalVariable", ignoreCase = true) -> "variable"
+            className.contains("Parameter", ignoreCase = true) -> "parameter"
+            else -> className.lowercase()
         }
     }
 }
@@ -812,6 +983,17 @@ data class SymbolInfo(
     val type: String,
     val line: Int,
     val column: Int
+)
+
+@Serializable
+data class RiderSafeDeleteBlockedResult(
+    val canDelete: Boolean,
+    val targetType: String,
+    val usageCount: Int,
+    val blockingUsages: List<UsageInfo>,
+    val message: String,
+    val status: String? = null,
+    val verification: MutationVerification? = null
 )
 
 @Serializable

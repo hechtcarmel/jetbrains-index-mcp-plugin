@@ -1,31 +1,73 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendMutationResultMapper
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendRenameDiagnostics
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.MODEL_PKG
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdProtocolBridge
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MutationVerification
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.lang.LanguageNamesValidation
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.application.EDT
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.fileEditor.TextEditor
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiManager
+import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiNamedElement
-import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.refactoring.RefactoringFactory
 import com.intellij.refactoring.rename.RenameProcessor
+import com.intellij.refactoring.rename.RenameHandler
+import com.intellij.refactoring.rename.RenameHandlerRegistry
+import com.intellij.refactoring.rename.PsiElementRenameHandler
 import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.refactoring.rename.naming.AutomaticRenamerFactory
 import com.intellij.util.containers.MultiMap
+import java.awt.AWTEvent
+import java.awt.Component
+import java.awt.Container
+import java.awt.Toolkit
+import java.awt.Window
+import java.awt.event.AWTEventListener
+import java.awt.event.WindowEvent
 import java.io.File
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import javax.swing.AbstractButton
+import javax.swing.JDialog
+import javax.swing.Timer
+import javax.swing.JTextField
+import javax.swing.text.JTextComponent
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -47,6 +89,1358 @@ class RenameSymbolTool : AbstractMcpTool() {
 
     companion object {
         private val LOG = logger<RenameSymbolTool>()
+        private const val STATUS_UNSUPPORTED = "unsupported"
+        private const val STATUS_SUCCESS = "success"
+        private const val STATUS_NO_OP = "no_op"
+        private const val STATUS_FAILED = "failed"
+        private const val STATUS_UNSUPPORTED_CONTEXT = "unsupported_context"
+        private const val STATUS_NEEDS_ACTIVE_EDITOR = "needs_active_editor"
+        private const val STATUS_CONFLICT = "conflict"
+        private const val TRACE_PARENT_LIMIT = 6
+        private const val TRACE_REFERENCE_LIMIT = 8
+        private const val TRACE_SNIPPET_LIMIT = 80
+        private const val RENAME_TRACE_FILE_NAME = "indexmcp-rename-trace.log"
+        private const val RENAME_TRACE_SYSTEM_PROPERTY = "indexmcp.rename.trace"
+        private const val RENAME_TRACE_ENV_VAR = "INDEXMCP_RENAME_TRACE"
+        private const val RENAME_TRACE_VALUE_LIMIT = 160
+        private const val RIDER_BACKEND_EDITOR_SYNC_DELAY_MS = 1_500L
+        private const val RIDER_DIALOG_AUTOMATION_TIMEOUT_MS = 15_000L
+        private const val RIDER_DIALOG_READINESS_TIMEOUT_MS = 10_000L
+        private const val RIDER_DIALOG_READINESS_POLL_MS = 200
+        private const val RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS = 5_000L
+        private const val RIDER_MUTATION_VERIFICATION_TIMEOUT_MS = 2_000L
+        private const val RIDER_MUTATION_VERIFICATION_INITIAL_POLL_MS = 50L
+        private const val RIDER_MUTATION_VERIFICATION_MAX_POLL_MS = 400L
+
+        internal data class RenameTargetResolution(
+            val candidate: PsiElement?,
+            val candidateName: String?,
+            val selectedReason: String,
+            val leafDescription: String,
+            val parentChainDescription: String,
+            val referenceDescription: String
+        )
+
+        internal data class PreferredRiderActionLanePlan(
+            val shouldInvoke: Boolean,
+            val reason: String
+        )
+
+        internal data class RefactoringFactoryFallbackPlan(
+            val shouldInvoke: Boolean,
+            val reason: String
+        )
+
+        private enum class RiderRenameExecutionLane {
+            BLOCKED,
+            HIGH_LEVEL_HANDLER,
+            // RefactoringFactory.createRename(...) remains a second choice lane and is currently refused unless a safe non-modal proof exists.
+        }
+
+        private data class RiderFrontendEditorLookup(
+            val editor: Editor?,
+            val reason: String,
+            val virtualFile: VirtualFile?,
+            val openedByTool: Boolean
+        )
+
+        private data class RiderDeterministicDataContext(
+            val availableKeys: List<String>,
+            val dataContext: DataContext?
+        )
+
+        internal data class RiderFrontendFeasibility(
+            val canProceed: Boolean,
+            val reason: String
+        )
+
+        private data class RiderFrontendPolicyEvaluation(
+            val shouldInvoke: Boolean,
+            val reason: String
+        )
+
+        private data class RiderRenameExecutionPlan(
+            val availableHandlerTitles: List<String>,
+            val selectedHandler: RenameHandler?,
+            val selectedHandlerClassName: String?,
+            val selectedHandlerTitle: String?,
+            val editorLookup: RiderFrontendEditorLookup,
+            val dataContext: RiderDeterministicDataContext,
+            val policy: RiderFrontendPolicyEvaluation,
+            val lane: RiderRenameExecutionLane,
+            val blockReason: String?
+        )
+
+        internal data class FrontendRenameFailureClassification(
+            val status: String?,
+            val userMessage: String
+        )
+
+        internal data class RiderRenameFollowUpDialogPlan(
+            val action: String,
+            val submitButtonLabel: String?,
+            val shouldCompleteAutomationAfterSubmit: Boolean,
+            val shouldDisableRelatedSymbols: Boolean,
+            val requiresRenameTextInput: Boolean,
+            val failureReason: String?
+        )
+
+        internal data class RiderSecondStageTimeoutDecision(
+            val shouldCompleteSuccess: Boolean,
+            val failureReason: String?
+        )
+
+        internal data class RiderAutomationTimeoutDecision(
+            val shouldDeferToMutationVerification: Boolean,
+            val shouldFail: Boolean,
+            val traceStatus: String,
+            val failureReason: String?
+        )
+
+        internal data class RiderPrimaryDialogSubmitPlan(
+            val shouldClick: Boolean,
+            val shouldAwaitSecondDialog: Boolean,
+            val failureReason: String?
+        )
+
+        internal enum class RelatedSymbolsDisableFailureKind {
+            NONE,
+            NO_SAFE_TOGGLE,
+            ACTIONABLE_CONTROL_REMAINED_SELECTED,
+            UNKNOWN
+        }
+
+        internal data class RelatedSymbolsDisableOutcome(
+            val attempted: Boolean,
+            val succeeded: Boolean,
+            val method: String,
+            val changedCount: Int,
+            val failureKind: RelatedSymbolsDisableFailureKind,
+            val failureReason: String?
+        )
+
+        internal data class FrontendRenameMutationCheck(
+            val verified: Boolean,
+            val reason: String,
+            val observedFilePath: String? = null
+        )
+
+        internal data class FrontendRenamePathEvidence(
+            val originalFilePath: String?,
+            val originalPathExists: Boolean,
+            val observedFilePath: String?,
+            val candidatePaths: List<String> = emptyList()
+        )
+
+        internal fun frontendRenamePathEvidence(
+            originalFilePath: String?,
+            originalPathExists: Boolean,
+            observedFilePath: String?,
+            candidatePaths: List<String> = emptyList()
+        ): FrontendRenamePathEvidence = FrontendRenamePathEvidence(
+            originalFilePath = originalFilePath,
+            originalPathExists = originalPathExists,
+            observedFilePath = observedFilePath,
+            candidatePaths = candidatePaths
+        )
+
+        internal data class FrontendRenameMutationPollResult(
+            val check: FrontendRenameMutationCheck,
+            val attemptCount: Int,
+            val totalWaitMs: Long
+        )
+
+        internal data class FrontendExactTargetCheck(
+            val consistent: Boolean,
+            val reason: String
+        )
+
+        private data class RenameCandidateInspection(
+            val name: String?,
+            val identifierRange: TextRange?,
+            val isPsiNamedElement: Boolean,
+            val isNameIdentifierOwner: Boolean,
+            val canProcessElement: Boolean?,
+            val processorClassName: String?,
+            val containerLike: Boolean,
+            val declarationLike: Boolean,
+            val traceDescription: String
+        )
+
+        internal fun shouldFallbackToFrontendForCompletedRiderSymbolRename(status: String?): Boolean {
+            return when (status?.trim()?.lowercase()) {
+                "unsupported", "not_supported" -> true
+                else -> false
+            }
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        internal fun shouldUseRiderBackendRename(
+            file: String,
+            isFileRename: Boolean,
+            relatedRenamingStrategy: String
+        ): Boolean {
+            return false
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        internal fun shouldUseRiderFrontendRenameAutomation(
+            file: String,
+            isFileRename: Boolean,
+            relatedRenamingStrategy: String
+        ): Boolean {
+            return !isFileRename &&
+                RiderBackendSemanticService.isDotNetFile(file)
+        }
+
+        internal fun planRiderPrimaryDialogSubmit(
+            buttonText: String?,
+            relatedRenamingStrategy: String,
+            relatedDisableSucceeded: Boolean,
+            relatedDisableFailureKind: RelatedSymbolsDisableFailureKind,
+            relatedDisableFailureReason: String?
+        ): RiderPrimaryDialogSubmitPlan {
+            val shouldAwaitSecondDialog = shouldAwaitSecondDialogAfterPrimarySubmit(buttonText)
+            if (shouldAwaitSecondDialog && relatedRenamingStrategy == "none" && !relatedDisableSucceeded &&
+                !shouldDeferPrimaryRelatedDisableFailureToFollowUp(relatedDisableFailureKind)) {
+                return RiderPrimaryDialogSubmitPlan(
+                    shouldClick = false,
+                    shouldAwaitSecondDialog = true,
+                    failureReason = relatedDisableFailureReason
+                        ?: "Rider rename dialog could not disable related-symbol renames safely before continuing."
+                )
+            }
+            return RiderPrimaryDialogSubmitPlan(
+                shouldClick = true,
+                shouldAwaitSecondDialog = shouldAwaitSecondDialog,
+                failureReason = null
+            )
+        }
+
+        internal fun shouldDeferPrimaryRelatedDisableFailureToFollowUp(
+            relatedDisableFailureKind: RelatedSymbolsDisableFailureKind
+        ): Boolean {
+            return relatedDisableFailureKind == RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE
+        }
+
+        internal fun shouldDisableRelatedSymbolsCheckbox(text: String?): Boolean {
+            val normalized = text?.trim()?.lowercase() ?: return false
+            if (normalized.isBlank()) {
+                return false
+            }
+            return normalized.contains("related symbols")
+        }
+
+        internal fun shouldTreatRenameNextFollowUpAsRelatedSymbolsDialog(
+            title: String?,
+            visibleTexts: List<String>,
+            visibleButtonLabels: List<String>,
+            relatedRenamingStrategy: String
+        ): Boolean {
+            if (relatedRenamingStrategy != "none" || !isSecondDialogCandidateTitle(title)) {
+                return false
+            }
+            val normalizedTexts = visibleTexts.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+            val normalizedButtons = visibleButtonLabels.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+            val combinedText = normalizedTexts.joinToString("\n")
+            val hasBackButton = normalizedButtons.any { it.equals("Back", ignoreCase = true) }
+            val hasNextButton = normalizedButtons.any { it.equals("Next", ignoreCase = true) }
+            return combinedText.contains(
+                "There are declarations that seem to have names related to the name of the type to be renamed",
+                ignoreCase = true
+            ) || normalizedTexts.any(::shouldDisableRelatedSymbolsCheckbox) ||
+                (title?.trim()?.equals("Rename", ignoreCase = true) == true && hasNextButton && hasBackButton)
+        }
+
+        internal fun shouldAwaitSecondDialogAfterPrimarySubmit(buttonText: String?): Boolean {
+            return buttonText?.trim()?.equals("Next", ignoreCase = true) == true
+        }
+
+        internal fun isSecondDialogCandidateTitle(title: String?): Boolean {
+            val normalized = title?.trim().orEmpty()
+            if (normalized.isBlank()) {
+                return false
+            }
+            return normalized.equals("Rename", ignoreCase = true) ||
+                normalized.contains("Refactor", ignoreCase = true) ||
+                normalized.contains("Preview", ignoreCase = true) ||
+                normalized.contains("Conflict", ignoreCase = true)
+        }
+
+        internal fun isTerminalRiderFollowUpSubmitButton(buttonText: String?): Boolean {
+            return when (buttonText?.trim()?.lowercase()) {
+                "do refactor", "refactor", "finish", "rename", "continue", "ok" -> true
+                else -> false
+            }
+        }
+
+        internal fun riderFrontendMutationCheckDelayMs(usedAsyncFollowUpClick: Boolean): Long {
+            return if (usedAsyncFollowUpClick) RIDER_DIALOG_READINESS_POLL_MS.toLong() else 0L
+        }
+
+        internal fun planRiderRenameFollowUpDialog(
+            title: String?,
+            visibleTexts: List<String>,
+            visibleButtonLabels: List<String>,
+            relatedRenamingStrategy: String
+        ): RiderRenameFollowUpDialogPlan {
+            if (!isSecondDialogCandidateTitle(title)) {
+                return RiderRenameFollowUpDialogPlan(
+                    action = "ignore",
+                    submitButtonLabel = null,
+                    shouldCompleteAutomationAfterSubmit = false,
+                    shouldDisableRelatedSymbols = false,
+                    requiresRenameTextInput = false,
+                    failureReason = null
+                )
+            }
+
+            val normalizedTexts = visibleTexts.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+            val normalizedButtons = visibleButtonLabels.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+            val combinedText = normalizedTexts.joinToString("\n")
+
+            if (combinedText.contains("operation is not supported", ignoreCase = true)) {
+                return RiderRenameFollowUpDialogPlan(
+                    action = "fail_unsupported",
+                    submitButtonLabel = null,
+                    shouldCompleteAutomationAfterSubmit = false,
+                    shouldDisableRelatedSymbols = false,
+                    requiresRenameTextInput = false,
+                    failureReason = "Rename: Operation is not supported"
+                )
+            }
+
+            val relatedSymbolsDialog = shouldTreatRenameNextFollowUpAsRelatedSymbolsDialog(
+                title = title,
+                visibleTexts = normalizedTexts,
+                visibleButtonLabels = normalizedButtons,
+                relatedRenamingStrategy = relatedRenamingStrategy
+            )
+
+            val submitButtonLabel = when {
+                relatedSymbolsDialog -> normalizedButtons.firstOrNull {
+                    it.equals("Next", ignoreCase = true) ||
+                        it.equals("Refactor", ignoreCase = true) ||
+                        it.equals("Rename", ignoreCase = true)
+                }
+
+                else -> normalizedButtons.firstOrNull {
+                    it.equals("Do Refactor", ignoreCase = true) ||
+                        it.equals("Refactor", ignoreCase = true) ||
+                        it.equals("Continue", ignoreCase = true) ||
+                        it.equals("Next", ignoreCase = true) ||
+                        it.equals("Rename", ignoreCase = true) ||
+                        it.equals("OK", ignoreCase = true)
+                }
+            }
+
+            if (submitButtonLabel == null) {
+                return RiderRenameFollowUpDialogPlan(
+                    action = "ignore",
+                    submitButtonLabel = null,
+                    shouldCompleteAutomationAfterSubmit = false,
+                    shouldDisableRelatedSymbols = false,
+                    requiresRenameTextInput = false,
+                    failureReason = null
+                )
+            }
+
+            return RiderRenameFollowUpDialogPlan(
+                action = "continue",
+                submitButtonLabel = submitButtonLabel,
+                shouldCompleteAutomationAfterSubmit = isTerminalRiderFollowUpSubmitButton(submitButtonLabel) &&
+                    !submitButtonLabel.equals("Next", ignoreCase = true),
+                shouldDisableRelatedSymbols = relatedSymbolsDialog && relatedRenamingStrategy == "none",
+                requiresRenameTextInput = false,
+                failureReason = null
+            )
+        }
+
+        internal fun evaluateRiderSecondStageTimeout(visibleDialogTitles: List<String>): RiderSecondStageTimeoutDecision {
+            val visibleCandidateTitles = visibleDialogTitles
+                .map { it.trim() }
+                .filter(::isSecondDialogCandidateTitle)
+
+            if (visibleCandidateTitles.isNotEmpty()) {
+                return RiderSecondStageTimeoutDecision(
+                    shouldCompleteSuccess = false,
+                    failureReason = "Follow-up Rider rename dialog remained visible after waiting ${RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS}ms: ${visibleCandidateTitles.joinToString(", ")}."
+                )
+            }
+
+            return RiderSecondStageTimeoutDecision(
+                shouldCompleteSuccess = true,
+                failureReason = null
+            )
+        }
+
+        internal fun evaluateRiderAutomationTimeout(
+            waitingForSecondDialog: Boolean,
+            usedAsyncFollowUpClick: Boolean,
+            visibleDialogTitles: List<String>
+        ): RiderAutomationTimeoutDecision {
+            if (usedAsyncFollowUpClick) {
+                val secondStageDecision = evaluateRiderSecondStageTimeout(visibleDialogTitles)
+                if (secondStageDecision.shouldCompleteSuccess) {
+                    return RiderAutomationTimeoutDecision(
+                        shouldDeferToMutationVerification = true,
+                        shouldFail = false,
+                        traceStatus = "defer-to-mutation-check",
+                        failureReason = null
+                    )
+                }
+
+                return RiderAutomationTimeoutDecision(
+                    shouldDeferToMutationVerification = false,
+                    shouldFail = true,
+                    traceStatus = "timeout-visible-dialog",
+                    failureReason = secondStageDecision.failureReason
+                )
+            }
+
+            return RiderAutomationTimeoutDecision(
+                shouldDeferToMutationVerification = false,
+                shouldFail = true,
+                traceStatus = "timeout",
+                failureReason = "Rider rename dialog automation timed out after ${RIDER_DIALOG_AUTOMATION_TIMEOUT_MS}ms"
+            )
+        }
+
+        internal fun attemptRequiredRelatedSymbolsDisable(container: Container): RelatedSymbolsDisableOutcome {
+            fun walk(container: Container, consumer: (Component) -> Unit) {
+                for (component in container.components) {
+                    consumer(component)
+                    if (component is Container) {
+                        walk(component, consumer)
+                    }
+                }
+            }
+
+            fun describe(component: Component): List<String> {
+                val texts = mutableListOf<String>()
+                when (component) {
+                    is AbstractButton -> {
+                        component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                        component.actionCommand?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                    }
+
+                    is javax.swing.JLabel -> component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                }
+                component.accessibleContext?.accessibleName?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                component.accessibleContext?.accessibleDescription?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                return texts.distinct()
+            }
+
+            fun tryDisable(button: AbstractButton, method: String): RelatedSymbolsDisableOutcome? {
+                if (!button.isShowing || !button.isEnabled || !button.isSelected || !describe(button).any(::shouldDisableRelatedSymbolsCheckbox)) {
+                    return null
+                }
+                button.doClick()
+                return if (!button.isSelected) {
+                    RelatedSymbolsDisableOutcome(true, true, method, 1, RelatedSymbolsDisableFailureKind.NONE, null)
+                } else {
+                    RelatedSymbolsDisableOutcome(
+                        attempted = true,
+                        succeeded = false,
+                        method = method,
+                        changedCount = 0,
+                        failureKind = RelatedSymbolsDisableFailureKind.ACTIONABLE_CONTROL_REMAINED_SELECTED,
+                        failureReason = "Rider rename dialog kept the related-symbol toggle selected after attempting to disable it."
+                    )
+                }
+            }
+
+            var resolvedOutcome: RelatedSymbolsDisableOutcome? = null
+            walk(container) { component ->
+                if (resolvedOutcome != null) {
+                    return@walk
+                }
+                val button = component as? AbstractButton ?: return@walk
+                val outcome = tryDisable(button, if (button.text.isNullOrBlank()) "accessible-button" else "checkbox")
+                if (outcome != null) {
+                    resolvedOutcome = outcome
+                }
+            }
+            resolvedOutcome?.let { return it }
+
+            walk(container) { component ->
+                if (resolvedOutcome != null) {
+                    return@walk
+                }
+                val label = component as? javax.swing.JLabel ?: return@walk
+                if (!label.isShowing || !shouldDisableRelatedSymbolsCheckbox(label.text)) {
+                    return@walk
+                }
+                val labeledButton = label.labelFor as? AbstractButton ?: return@walk
+                val outcome = tryDisable(labeledButton, "label-for-button")
+                if (outcome != null) {
+                    resolvedOutcome = outcome
+                }
+            }
+            resolvedOutcome?.let { return it }
+
+            return RelatedSymbolsDisableOutcome(
+                attempted = true,
+                succeeded = false,
+                method = "no-safe-toggle",
+                changedCount = 0,
+                failureKind = RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE,
+                failureReason = "Rider rename dialog could not disable related-symbol renames with a verified safe control, so the request failed closed before submitting the follow-up step."
+            )
+        }
+
+        internal fun isUnsupportedRiderFrontendFallbackTargetClass(className: String?): Boolean {
+            val normalized = className?.trim()?.lowercase() ?: return true
+            return normalized.contains("directory") ||
+                normalized.contains("package") ||
+                normalized.contains("namespace") ||
+                normalized.contains("folder")
+        }
+
+        internal fun summarizeFrontendRenameResult(
+            oldName: String,
+            newName: String,
+            relatedRenamesCount: Int,
+            affectedFiles: List<String>,
+            changesCount: Int,
+            riderFallbackStatus: String? = null,
+            mutationCheck: FrontendRenameMutationCheck? = null,
+            backendDiagnostics: RiderBackendRenameDiagnostics? = null,
+            verification: MutationVerification? = null
+        ): RefactoringResult {
+            val normalizedFiles = affectedFiles.distinct()
+            val normalizedChangesCount = changesCount.coerceAtLeast(0)
+            val cameFromRiderFallback = !riderFallbackStatus.isNullOrBlank()
+            val hasObservableChanges = normalizedChangesCount > 0 || normalizedFiles.isNotEmpty()
+
+            if (cameFromRiderFallback && !hasObservableChanges) {
+                return RefactoringResult(
+                    success = false,
+                    affectedFiles = emptyList(),
+                    changesCount = 0,
+                    message = "Rider frontend rename did not apply any observable rename for '$oldName' (status='$riderFallbackStatus'), so the request failed closed.",
+                    status = STATUS_UNSUPPORTED_CONTEXT
+                )
+            }
+
+            if (cameFromRiderFallback && hasObservableChanges && mutationCheck?.verified == false) {
+                return RefactoringResult(
+                    success = false,
+                    affectedFiles = emptyList(),
+                    changesCount = 0,
+                    message = "Rider frontend rename reported rename changes for '$oldName', but no real source mutation was verified: ${mutationCheck.reason}.",
+                    status = STATUS_NO_OP,
+                    verification = verification
+                )
+            }
+
+            if (cameFromRiderFallback && hasObservableChanges && mutationCheck == null) {
+                return RefactoringResult(
+                    success = false,
+                    affectedFiles = normalizedFiles,
+                    changesCount = normalizedChangesCount,
+                    message = "Rider frontend rename reported rename changes for '$oldName', but mutation proof could not be collected for verification.",
+                    status = STATUS_FAILED,
+                    verification = verification ?: MutationVerification(
+                        status = STATUS_FAILED,
+                        checksRun = listOf("rename_execution", "mutation_proof"),
+                        warnings = listOf("Mutation proof could not be collected after Rider frontend rename execution")
+                    )
+                )
+            }
+
+            val exactTargetCheck = verifyRiderFrontendExactTargetConsistency(oldName, backendDiagnostics)
+            if (cameFromRiderFallback && hasObservableChanges && exactTargetCheck?.consistent == false) {
+                return RefactoringResult(
+                    success = false,
+                    affectedFiles = normalizedFiles,
+                    changesCount = normalizedChangesCount,
+                    message = "Rider frontend rename applied edits for '$oldName', but exact-target verification failed: ${exactTargetCheck.reason}.",
+                    status = STATUS_FAILED,
+                    verification = verification?.let {
+                        it.copy(
+                            warnings = (it.warnings + exactTargetCheck.reason).distinct()
+                        )
+                    } ?: MutationVerification(
+                        status = STATUS_FAILED,
+                        checksRun = listOf("rename_execution", "exact_target_consistency"),
+                        warnings = listOf(exactTargetCheck.reason)
+                    )
+                )
+            }
+
+            val normalizedVerification = verification?.let { verificationResult ->
+                when (verificationResult.status.trim().lowercase()) {
+                    "verification_limited", "limited", "verification_failed", STATUS_FAILED -> verificationResult
+                    else -> null
+                }
+            }
+            if (cameFromRiderFallback && hasObservableChanges && normalizedVerification != null) {
+                return RefactoringResult(
+                    success = false,
+                    affectedFiles = normalizedFiles,
+                    changesCount = normalizedChangesCount,
+                    message = "Rider frontend rename applied edits for '$oldName', but verification remained insufficient: ${normalizedVerification.warnings.joinToString("; ").ifBlank { normalizedVerification.status }}.",
+                    status = STATUS_FAILED,
+                    verification = normalizedVerification
+                )
+            }
+
+            val relatedNote = if (relatedRenamesCount > 0) {
+                " (also renamed $relatedRenamesCount related element(s))"
+            } else {
+                ""
+            }
+
+            return RefactoringResult(
+                success = true,
+                affectedFiles = normalizedFiles,
+                changesCount = normalizedChangesCount,
+                message = "Successfully renamed '$oldName' to '$newName'$relatedNote",
+                verification = verification
+            )
+        }
+
+        internal fun verifyRiderFrontendExactTargetConsistency(
+            oldName: String?,
+            backendDiagnostics: RiderBackendRenameDiagnostics?
+        ): FrontendExactTargetCheck? {
+            backendDiagnostics ?: return null
+            val resolutionStatus = backendDiagnostics.resolutionStatus?.trim()?.lowercase()
+            if (!resolutionStatus.isNullOrBlank() && resolutionStatus != STATUS_SUCCESS) {
+                return FrontendExactTargetCheck(
+                    consistent = false,
+                    reason = "backend exact-target resolution stayed '$resolutionStatus' instead of proving a successful symbol bind"
+                )
+            }
+
+            val frontendName = oldName?.trim().orEmpty()
+            if (frontendName.isBlank()) {
+                return FrontendExactTargetCheck(
+                    consistent = false,
+                    reason = "frontend rename candidate had no stable name to compare with backend exact-target diagnostics"
+                )
+            }
+
+            val backendNames = listOfNotNull(
+                backendDiagnostics.resolvedName?.trim()?.takeIf { it.isNotEmpty() },
+                backendDiagnostics.sourceTokenText?.trim()?.takeIf { it.isNotEmpty() }
+            ).distinct()
+            if (backendNames.isEmpty()) {
+                return null
+            }
+
+            if (backendNames.any { it == frontendName }) {
+                return FrontendExactTargetCheck(
+                    consistent = true,
+                    reason = "frontend target '$frontendName' matched backend exact-target diagnostics"
+                )
+            }
+
+            return FrontendExactTargetCheck(
+                consistent = false,
+                reason = "backend exact target resolved ${backendNames.joinToString(" / ")} but frontend prepared '$frontendName'"
+            )
+        }
+
+        internal fun evaluatePreferredRiderActionLane(
+            availableHandlerTitles: List<String>,
+            selectedHandlerClassName: String?,
+            selectedHandlerIsKnownSafeNonModal: Boolean,
+            selectedHandlerBlockReason: String?
+        ): PreferredRiderActionLanePlan {
+            if (availableHandlerTitles.isEmpty()) {
+                return PreferredRiderActionLanePlan(false, "no rename handler available")
+            }
+            if (availableHandlerTitles.size > 1) {
+                return PreferredRiderActionLanePlan(false, "multiple rename handlers would require chooser UI")
+            }
+            if (selectedHandlerClassName.isNullOrBlank()) {
+                return PreferredRiderActionLanePlan(false, "rename handler selection did not resolve a concrete handler")
+            }
+            if (!selectedHandlerIsKnownSafeNonModal) {
+                return PreferredRiderActionLanePlan(
+                    false,
+                    selectedHandlerBlockReason ?: "selected rename handler is not a proven non-modal production lane"
+                )
+            }
+            return PreferredRiderActionLanePlan(true, "single deterministic non-modal rename handler is available")
+        }
+
+        internal fun assessPreferredRiderRenameHandlerClassName(selectedHandlerClassName: String?): PreferredRiderActionLanePlan {
+            return when (selectedHandlerClassName) {
+                null, "" -> PreferredRiderActionLanePlan(
+                    shouldInvoke = false,
+                    reason = "rename handler selection did not resolve a concrete handler"
+                )
+
+                "com.jetbrains.rdclient.actions.impl.BackendRenameHandler" -> PreferredRiderActionLanePlan(
+                    shouldInvoke = true,
+                    reason = "selected rename handler is on the proven Rider non-modal allowlist"
+                )
+
+                PsiElementRenameHandler::class.java.name -> PreferredRiderActionLanePlan(
+                    shouldInvoke = false,
+                    reason = "selected rename handler would show modal UI outside unit test mode"
+                )
+
+                else -> PreferredRiderActionLanePlan(
+                    shouldInvoke = false,
+                    reason = "selected rename handler is not on the proven non-modal allowlist: $selectedHandlerClassName"
+                )
+            }
+        }
+
+        internal fun evaluateSecondChoiceRiderRefactoringFactoryLane(
+            hasDeclarationEditor: Boolean,
+            canComposeDataContext: Boolean,
+            preferredLaneWasDeterministic: Boolean
+        ): RefactoringFactoryFallbackPlan {
+            val apiName = "${RefactoringFactory::class.java.simpleName}.createRename(...)"
+            if (!hasDeclarationEditor || !canComposeDataContext) {
+                return RefactoringFactoryFallbackPlan(
+                    shouldInvoke = false,
+                    reason = "$apiName second choice still requires the same editor/data-context preconditions"
+                )
+            }
+
+            if (preferredLaneWasDeterministic) {
+                return RefactoringFactoryFallbackPlan(
+                    shouldInvoke = false,
+                    reason = "$apiName second choice is unnecessary when the preferred handler lane is deterministic"
+                )
+            }
+
+            return RefactoringFactoryFallbackPlan(
+                shouldInvoke = false,
+                reason = "$apiName second choice is refused because this path still lacks a proven non-modal execution contract for Rider symbol rename"
+            )
+        }
+
+        internal fun classifyFrontendRenameFailure(
+            message: String?,
+            exceptionClassName: String?,
+            riderFallbackStatus: String?
+        ): FrontendRenameFailureClassification {
+            val normalizedMessage = message?.trim().orEmpty().ifBlank { "Unknown error during rename" }
+            val normalizedExceptionClass = exceptionClassName?.trim().orEmpty()
+            val unsupportedSignal = normalizedMessage.contains("not supported", ignoreCase = true) ||
+                normalizedMessage.contains("unsupported", ignoreCase = true) ||
+                normalizedExceptionClass.endsWith("UnsupportedOperationException")
+
+            if (!riderFallbackStatus.isNullOrBlank() && unsupportedSignal) {
+                return FrontendRenameFailureClassification(
+                    status = STATUS_UNSUPPORTED_CONTEXT,
+                    userMessage = "Rider frontend fallback reported an unsupported rename target: $normalizedMessage"
+                )
+            }
+
+            return FrontendRenameFailureClassification(
+                status = null,
+                userMessage = "Rename failed: $normalizedMessage"
+            )
+        }
+
+        internal fun buildBlockedRiderFrontendFallbackResult(
+            oldName: String,
+            backendStatus: String?,
+            actionReason: String
+        ): RefactoringResult {
+            val backendNote = backendStatus?.takeIf { it.isNotBlank() }?.let { " Backend reported '$it'." }.orEmpty()
+            val normalizedReason = actionReason.trim().lowercase()
+            val mappedStatus = when {
+                normalizedReason.contains("active editor") -> STATUS_NEEDS_ACTIVE_EDITOR
+                normalizedReason.contains("chooser ui") ||
+                    normalizedReason.contains("modal ui") ||
+                    normalizedReason.contains("preview") ||
+                    normalizedReason.contains("user interaction") ||
+                    normalizedReason.contains("conflict") -> STATUS_CONFLICT
+                else -> STATUS_UNSUPPORTED_CONTEXT
+            }
+            return RefactoringResult(
+                success = false,
+                affectedFiles = emptyList(),
+                changesCount = 0,
+                message = "Rider frontend fallback was blocked for '$oldName': $actionReason.$backendNote",
+                status = mappedStatus
+            )
+        }
+
+        internal fun verifyRiderFrontendMutation(
+            beforeName: String?,
+            afterName: String?,
+            beforeFileText: String?,
+            afterFileText: String?,
+            pathEvidence: FrontendRenamePathEvidence? = null
+        ): FrontendRenameMutationCheck {
+            val nameChanged = !beforeName.isNullOrBlank() && !afterName.isNullOrBlank() && beforeName != afterName
+            if (nameChanged) {
+                return FrontendRenameMutationCheck(true, "target name changed from '$beforeName' to '$afterName'")
+            }
+
+            val fileTextChanged = beforeFileText != null && afterFileText != null && beforeFileText != afterFileText
+            if (fileTextChanged) {
+                return FrontendRenameMutationCheck(true, "target file text changed")
+            }
+
+            if (pathEvidence != null && !pathEvidence.originalPathExists && !pathEvidence.observedFilePath.isNullOrBlank()) {
+                return FrontendRenameMutationCheck(
+                    verified = true,
+                    reason = "original file path disappeared and renamed container file was observed at '${pathEvidence.observedFilePath}'",
+                    observedFilePath = pathEvidence.observedFilePath
+                )
+            }
+
+            val missingPathReason = pathEvidence
+                ?.takeIf { !it.originalPathExists && it.originalFilePath != null }
+                ?.let { evidence ->
+                    "original file path '${evidence.originalFilePath}' disappeared but no renamed container file evidence was found"
+                }
+
+            return FrontendRenameMutationCheck(
+                false,
+                missingPathReason ?: "target name and containing file text remained unchanged"
+            )
+        }
+
+        internal fun collectRiderFrontendMutationPathEvidence(
+            project: Project,
+            targetFilePath: String?,
+            newName: String,
+            afterElement: PsiElement?
+        ): FrontendRenamePathEvidence? {
+            if (targetFilePath.isNullOrBlank()) {
+                return null
+            }
+
+            val localFileSystem = LocalFileSystem.getInstance()
+            val originalVirtualFile = localFileSystem.findFileByPath(targetFilePath)
+            val originalPathExists = originalVirtualFile != null
+            val candidatePaths = linkedSetOf<String>()
+
+            afterElement?.containingFile?.virtualFile?.path
+                ?.takeIf { it != targetFilePath }
+                ?.let(candidatePaths::add)
+
+            val inferredSiblingPath = inferRenamedSiblingPath(targetFilePath, newName)
+            if (!inferredSiblingPath.isNullOrBlank()) {
+                localFileSystem.findFileByPath(inferredSiblingPath)?.path?.let(candidatePaths::add)
+            }
+
+            if (!originalPathExists) {
+                findSiblingRenameCandidates(localFileSystem, targetFilePath, newName)
+                    .mapTo(candidatePaths) { it.path }
+
+                val inferredFileName = inferredSiblingPath?.let(::fileNameFromPath)
+                if (!inferredFileName.isNullOrBlank()) {
+                    FilenameIndex.getVirtualFilesByName(project, inferredFileName, GlobalSearchScope.projectScope(project))
+                        .asSequence()
+                        .map { it.path }
+                        .filter { it != targetFilePath }
+                        .forEach(candidatePaths::add)
+                }
+            }
+
+            return FrontendRenamePathEvidence(
+                originalFilePath = targetFilePath,
+                originalPathExists = originalPathExists,
+                observedFilePath = candidatePaths.firstOrNull(),
+                candidatePaths = candidatePaths.toList()
+            )
+        }
+
+        private fun inferRenamedSiblingPath(targetFilePath: String, newName: String): String? {
+            val originalFileName = fileNameFromPath(targetFilePath) ?: return null
+            val originalExtension = originalFileName.substringAfterLast('.', "")
+            val normalizedNewName = newName.trim().substringAfterLast('/').substringAfterLast('\\')
+            if (normalizedNewName.isBlank()) {
+                return null
+            }
+            val expectedFileName = if (originalExtension.isNotBlank() && !normalizedNewName.endsWith(".$originalExtension")) {
+                "$normalizedNewName.$originalExtension"
+            } else {
+                normalizedNewName
+            }
+            val parentPath = targetFilePath.replace('\\', '/').substringBeforeLast('/', "")
+            return if (parentPath.isBlank()) expectedFileName else "$parentPath/$expectedFileName"
+        }
+
+        private fun fileNameFromPath(path: String): String? {
+            val normalized = path.replace('\\', '/')
+            return normalized.substringAfterLast('/', "").takeIf { it.isNotBlank() }
+        }
+
+        private fun findSiblingRenameCandidates(
+            localFileSystem: LocalFileSystem,
+            targetFilePath: String,
+            newName: String
+        ): List<VirtualFile> {
+            val normalizedTargetPath = targetFilePath.replace('\\', '/')
+            val parentPath = normalizedTargetPath.substringBeforeLast('/', "")
+            if (parentPath.isBlank()) {
+                return emptyList()
+            }
+
+            val parent = localFileSystem.findFileByPath(parentPath) ?: return emptyList()
+            val targetFileName = fileNameFromPath(normalizedTargetPath) ?: return emptyList()
+            val extension = targetFileName.substringAfterLast('.', "")
+            val expectedBaseName = newName.trim().substringAfterLast('/').substringAfterLast('\\')
+            if (expectedBaseName.isBlank()) {
+                return emptyList()
+            }
+
+            return parent.children
+                .asSequence()
+                .filter { !it.isDirectory }
+                .filter { it.path != normalizedTargetPath }
+                .filter { child ->
+                    child.nameWithoutExtension == expectedBaseName &&
+                        (extension.isBlank() || child.extension == extension)
+                }
+                .toList()
+        }
+
+        internal suspend fun pollRiderFrontendMutationVerification(
+            initialDelayMs: Long,
+            timeoutMs: Long = RIDER_MUTATION_VERIFICATION_TIMEOUT_MS,
+            initialPollIntervalMs: Long = RIDER_MUTATION_VERIFICATION_INITIAL_POLL_MS,
+            maxPollIntervalMs: Long = RIDER_MUTATION_VERIFICATION_MAX_POLL_MS,
+            sleep: (Long) -> Unit = Thread::sleep,
+            verify: suspend () -> FrontendRenameMutationCheck
+        ): FrontendRenameMutationPollResult {
+            var totalWaitMs = 0L
+            var attemptCount = 0
+            var nextPollIntervalMs = initialPollIntervalMs.coerceAtLeast(1L)
+
+            if (initialDelayMs > 0) {
+                sleep(initialDelayMs)
+                totalWaitMs += initialDelayMs
+            }
+
+            var check = verify()
+            attemptCount += 1
+            while (!check.verified && totalWaitMs < timeoutMs) {
+                val remainingMs = timeoutMs - totalWaitMs
+                val waitMs = nextPollIntervalMs.coerceAtMost(maxPollIntervalMs).coerceAtMost(remainingMs)
+                if (waitMs <= 0L) {
+                    break
+                }
+                sleep(waitMs)
+                totalWaitMs += waitMs
+                check = verify()
+                attemptCount += 1
+                nextPollIntervalMs = (nextPollIntervalMs * 2).coerceAtMost(maxPollIntervalMs)
+            }
+
+            return FrontendRenameMutationPollResult(
+                check = check,
+                attemptCount = attemptCount,
+                totalWaitMs = totalWaitMs
+            )
+        }
+
+        internal fun verifyDotNetFileRenameDeclaredTypeIdentity(
+            beforeFileText: String?,
+            afterFileText: String?
+        ): MutationVerification? {
+            val declaredTypeNamesBefore = extractDotNetDeclaredTypeNames(beforeFileText)
+            val declaredTypeNamesAfter = extractDotNetDeclaredTypeNames(afterFileText)
+
+            if (declaredTypeNamesBefore == declaredTypeNamesAfter) {
+                return null
+            }
+
+            return MutationVerification(
+                status = STATUS_FAILED,
+                checksRun = listOf("rename_execution", "declared_type_identity"),
+                warnings = listOf(
+                    "Declared type identity changed during .NET file rename: before [${declaredTypeNamesBefore.joinToString(", ").ifBlank { "<none>" }}], after [${declaredTypeNamesAfter.joinToString(", ").ifBlank { "<none>" }}]"
+                )
+            )
+        }
+
+        private fun extractDotNetDeclaredTypeNames(fileText: String?): List<String> {
+            if (fileText.isNullOrBlank()) {
+                return emptyList()
+            }
+
+            val declarationPattern = Regex(
+                """\b(?:class|struct|interface|enum|delegate|record(?:\s+class|\s+struct)?)\s+(@?[A-Za-z_][A-Za-z0-9_]*)"""
+            )
+
+            return declarationPattern.findAll(fileText)
+                .map { match -> match.groupValues[1].trim().trimStart('@') }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .sorted()
+                .toList()
+        }
+
+        internal fun evaluateRiderFrontendFeasibility(
+            hasDeclarationEditor: Boolean,
+            canComposeDataContext: Boolean
+        ): RiderFrontendFeasibility {
+            return when {
+                !hasDeclarationEditor -> RiderFrontendFeasibility(
+                    canProceed = false,
+                    reason = "active editor is required for Rider rename lane"
+                )
+
+                !canComposeDataContext -> RiderFrontendFeasibility(
+                    canProceed = false,
+                    reason = "deterministic data context could not be composed for Rider rename lane"
+                )
+
+                else -> RiderFrontendFeasibility(
+                    canProceed = true,
+                    reason = "declaration editor and deterministic data context are available"
+                )
+            }
+        }
+
+        internal fun resolveNamedElementCandidateForRename(element: PsiElement): PsiNamedElement? {
+            return inspectNamedElementCandidateForRename(element).candidate as? PsiNamedElement
+        }
+
+        internal fun inspectNamedElementCandidateForRename(
+            element: PsiElement,
+            requestedOffset: Int? = null,
+            processorSupportOverride: ((PsiElement) -> Boolean)? = null
+        ): RenameTargetResolution {
+            var current: PsiElement? = element
+            var depth = 0
+            val parentChain = mutableListOf<String>()
+            val referenceAttempts = mutableListOf<String>()
+            var localCandidate: PsiElement? = null
+            var localCandidateName: String? = null
+            var localCandidateReason: String? = null
+            var referenceCandidate: PsiElement? = null
+            var referenceCandidateName: String? = null
+            var referenceCandidateReason: String? = null
+
+            while (current != null) {
+                val currentInspection = inspectRenameCandidateSupport(current, processorSupportOverride)
+                if (depth < TRACE_PARENT_LIMIT) {
+                    parentChain += "d=$depth ${currentInspection.traceDescription}"
+                }
+
+                val currentRange = runCatching { current.textRange }.getOrNull()
+                val enclosesOffset = requestedOffset == null || currentRange?.containsOffset(requestedOffset) == true
+
+                val currentSupported = current !is PsiFile &&
+                    !currentInspection.name.isNullOrBlank() &&
+                    !currentInspection.containerLike &&
+                    enclosesOffset &&
+                    (
+                        currentInspection.isPsiNamedElement ||
+                            (currentInspection.declarationLike && currentInspection.canProcessElement == true)
+                        )
+
+                if (currentSupported && localCandidate == null) {
+                    localCandidate = current
+                    localCandidateName = currentInspection.name
+                    localCandidateReason = if (currentInspection.isPsiNamedElement) {
+                        "selected enclosing named element at depth=$depth"
+                    } else {
+                        "selected processable declaration-like element at depth=$depth"
+                    }
+                } else if (currentInspection.declarationLike) {
+                    when {
+                        currentInspection.containerLike -> {
+                            parentChain += "d=$depth rejected=container-like"
+                        }
+                        !enclosesOffset -> {
+                            parentChain += "d=$depth rejected=offset-outside"
+                        }
+                        currentInspection.name.isNullOrBlank() -> {
+                            parentChain += "d=$depth rejected=no-name"
+                        }
+                        !currentInspection.isPsiNamedElement && currentInspection.canProcessElement != true -> {
+                            parentChain += "d=$depth rejected=processor-unsupported"
+                        }
+                    }
+                }
+
+                current.references.forEachIndexed { index, reference ->
+                    if (referenceAttempts.size >= TRACE_REFERENCE_LIMIT) return@forEachIndexed
+
+                    val referenceRange = runCatching {
+                        reference.rangeInElement.shiftRight(currentRange?.startOffset ?: 0)
+                    }.getOrNull()
+                    val matchesOffset = requestedOffset == null || referenceRange?.containsOffset(requestedOffset) == true
+                    val resolved = runCatching { reference.resolve() }.getOrNull()
+                    val resolvedElement = resolved as? PsiElement
+                    val resolvedInspection = resolvedElement?.let {
+                        inspectRenameCandidateSupport(it, processorSupportOverride)
+                    }
+                    val resolvedSupported = resolvedElement != null &&
+                        resolvedElement !is PsiFile &&
+                        !resolvedInspection?.name.isNullOrBlank() &&
+                        resolvedInspection?.containerLike == false &&
+                        (
+                            resolvedInspection?.isPsiNamedElement == true ||
+                                (resolvedInspection?.declarationLike == true && resolvedInspection.canProcessElement == true)
+                            )
+
+                    referenceAttempts += buildString {
+                        append("d=")
+                        append(depth)
+                        append(" ref#=")
+                        append(index)
+                        append(" range=")
+                        append(describeRange(referenceRange))
+                        append(" matchesOffset=")
+                        append(matchesOffset)
+                        append(" resolved=")
+                        append(describeElementForTraceValue(resolved))
+                        if (resolvedInspection != null) {
+                            append(" support={")
+                            append(resolvedInspection.traceDescription)
+                            append("}")
+                        }
+                    }
+
+                    if (referenceCandidate == null && matchesOffset && resolvedSupported) {
+                        referenceCandidate = resolvedElement
+                        referenceCandidateName = resolvedInspection?.name
+                        referenceCandidateReason = "selected reference-resolved declaration from depth=$depth ref#=$index"
+                    }
+                }
+
+                current = current.parent
+                depth++
+            }
+
+            val selectedCandidate = localCandidate ?: referenceCandidate
+            val selectedCandidateName = localCandidateName ?: referenceCandidateName
+            val selectedReason = localCandidateReason
+                ?: referenceCandidateReason
+                ?: "no supported non-container named element found"
+
+            return RenameTargetResolution(
+                candidate = selectedCandidate,
+                candidateName = selectedCandidateName,
+                selectedReason = selectedReason,
+                leafDescription = describeElementForTraceValue(element),
+                parentChainDescription = if (parentChain.isEmpty()) "none" else parentChain.joinToString(" | "),
+                referenceDescription = if (referenceAttempts.isEmpty()) "none" else referenceAttempts.joinToString(" | ")
+            )
+        }
+
+        private fun inspectRenameCandidateSupport(
+            element: PsiElement,
+            processorSupportOverride: ((PsiElement) -> Boolean)? = null
+        ): RenameCandidateInspection {
+            val isPsiNamedElement = element is PsiNamedElement
+            val isNameIdentifierOwner = element is PsiNameIdentifierOwner
+            val identifierElement = when {
+                isNameIdentifierOwner -> runCatching { element.nameIdentifier }.getOrNull()
+                else -> findDeclarationIdentifierLikeChild(element)
+            }
+            val identifierRange = runCatching { identifierElement?.textRange }.getOrNull()
+            val directName = (element as? PsiNamedElement)?.name?.takeIf { !it.isNullOrBlank() }
+            val identifierText = runCatching { identifierElement?.text }
+                .getOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+            val candidateName = directName ?: identifierText
+            val processorInfo = safeCanProcessRenameElement(element, processorSupportOverride)
+            val containerLike = isUnsupportedRiderFrontendFallbackTargetClass(element.javaClass.name)
+            val declarationLike = isPsiNamedElement ||
+                isNameIdentifierOwner ||
+                element.javaClass.name.contains("declaration", ignoreCase = true) ||
+                identifierElement != null
+
+            val trace = buildString {
+                append("class=")
+                append(element.javaClass.name)
+                append(" range=")
+                append(describeRange(runCatching { element.textRange }.getOrNull()))
+                append(" isPsiNamedElement=")
+                append(isPsiNamedElement)
+                append(" name=")
+                append(directName ?: "<unnamed>")
+                append(" candidateName=")
+                append(candidateName ?: "<unnamed>")
+                append(" isNameIdentifierOwner=")
+                append(isNameIdentifierOwner)
+                append(" identifierRange=")
+                append(describeRange(identifierRange))
+                append(" declarationLike=")
+                append(declarationLike)
+                append(" canProcessElement=")
+                append(processorInfo.first?.toString() ?: "error")
+                append(" processor=")
+                append(processorInfo.second ?: "unknown")
+                append(" containerLike=")
+                append(containerLike)
+            }
+
+            return RenameCandidateInspection(
+                name = candidateName,
+                identifierRange = identifierRange,
+                isPsiNamedElement = isPsiNamedElement,
+                isNameIdentifierOwner = isNameIdentifierOwner,
+                canProcessElement = processorInfo.first,
+                processorClassName = processorInfo.second,
+                containerLike = containerLike,
+                declarationLike = declarationLike,
+                traceDescription = trace
+            )
+        }
+
+        private fun safeCanProcessRenameElement(
+            element: PsiElement,
+            processorSupportOverride: ((PsiElement) -> Boolean)? = null
+        ): Pair<Boolean?, String?> {
+            if (processorSupportOverride != null) {
+                return runCatching { processorSupportOverride(element) to "override" }
+                    .getOrElse { false to "override-error:${it::class.java.simpleName}" }
+            }
+
+            return runCatching {
+                val processor = RenamePsiElementProcessor.forElement(element)
+                processor.canProcessElement(element) to processor.javaClass.name
+            }.getOrElse {
+                false to "error:${it::class.java.simpleName}"
+            }
+        }
+
+        private fun findDeclarationIdentifierLikeChild(element: PsiElement): PsiElement? {
+            return runCatching {
+                element.children.firstOrNull { child ->
+                    child.javaClass.name.contains("identifier", ignoreCase = true) &&
+                        !child.text.isNullOrBlank()
+                }
+            }.getOrNull()
+        }
+
+        private fun describeRange(range: TextRange?): String {
+            return range?.let { "${it.startOffset}..${it.endOffset}" } ?: "unknown"
+        }
+
+        private fun safeSnippet(element: PsiElement?): String {
+            val raw = runCatching { element?.text }.getOrNull()
+                ?.replace("\n", "\\n")
+                ?.replace("\r", "\\r")
+                ?.replace(Regex("\\s+"), " ")
+                ?.trim()
+                .orEmpty()
+
+            if (raw.isEmpty()) return ""
+            return if (raw.length <= TRACE_SNIPPET_LIMIT) raw else raw.take(TRACE_SNIPPET_LIMIT) + "…"
+        }
+
+        internal fun describeElementForTraceValue(element: PsiElement?): String {
+            if (element == null) return "null"
+            val className = element.javaClass.name
+            val name = (element as? PsiNamedElement)?.name ?: "<unnamed>"
+            val snippet = safeSnippet(element)
+            return buildString {
+                append("class=")
+                append(className)
+                append(" name=")
+                append(name)
+                append(" range=")
+                append(describeRange(runCatching { element.textRange }.getOrNull()))
+                if (snippet.isNotEmpty()) {
+                    append(" snippet=")
+                    append(snippet)
+                }
+            }
+        }
+
+        private val renameTraceSequence = AtomicInteger(0)
+        private val renameTraceWriteLock = Any()
+        private val renameTraceTimestampFormatter: DateTimeFormatter = DateTimeFormatter.ISO_INSTANT
+
+        internal fun defaultRenameTraceLogFile(): File = File(System.getProperty("java.io.tmpdir"), RENAME_TRACE_FILE_NAME)
+
+        internal fun isRenameTraceEnabled(
+            systemPropertyValue: String? = System.getProperty(RENAME_TRACE_SYSTEM_PROPERTY),
+            envValue: String? = System.getenv(RENAME_TRACE_ENV_VAR)
+        ): Boolean {
+            fun String?.isTruthy(): Boolean {
+                return when (this?.trim()?.lowercase()) {
+                    "1", "true", "yes", "on" -> true
+                    else -> false
+                }
+            }
+            return systemPropertyValue.isTruthy() || envValue.isTruthy()
+        }
+
+        internal fun newRenameTraceSession(
+            enabled: Boolean = isRenameTraceEnabled(),
+            logFile: File = defaultRenameTraceLogFile()
+        ): RenameTraceSession {
+            val correlationId = "[IndexMcp.Rename #${renameTraceSequence.incrementAndGet()}]"
+            return RenameTraceSession(correlationId = correlationId, logFile = logFile, enabled = enabled)
+        }
+
+        internal fun formatRenameTraceLine(
+            correlationId: String,
+            event: String,
+            fields: Map<String, Any?>,
+            timestamp: Instant = Instant.now()
+        ): String {
+            val normalizedEvent = sanitizeRenameTraceValue(event)
+            val suffix = if (fields.isEmpty()) {
+                ""
+            } else {
+                fields.entries.joinToString(separator = " ", prefix = " ") { (key, value) ->
+                    "${key.trim()}=${sanitizeRenameTraceValue(value)}"
+                }
+            }
+            return "${renameTraceTimestampFormatter.format(timestamp)} $correlationId $normalizedEvent$suffix"
+        }
+
+        private fun sanitizeRenameTraceValue(value: Any?): String {
+            val normalized = when (value) {
+                null -> "null"
+                is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { sanitizeRenameTraceScalar(it) }
+                is Array<*> -> value.joinToString(prefix = "[", postfix = "]") { sanitizeRenameTraceScalar(it) }
+                else -> sanitizeRenameTraceScalar(value)
+            }
+            return if (normalized.length <= RENAME_TRACE_VALUE_LIMIT) normalized else normalized.take(RENAME_TRACE_VALUE_LIMIT) + "…"
+        }
+
+        private fun sanitizeRenameTraceScalar(value: Any?): String {
+            val raw = value?.toString().orEmpty()
+                .replace("\\", "\\\\")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .ifEmpty { "<blank>" }
+            val limited = if (raw.length <= RENAME_TRACE_VALUE_LIMIT) raw else raw.take(RENAME_TRACE_VALUE_LIMIT) + "…"
+            return if (limited.matches(Regex("[A-Za-z0-9_./:#\\-]+"))) limited else '"' + limited + '"'
+        }
+
+        internal class RenameTraceSession internal constructor(
+            val correlationId: String,
+            val logFile: File,
+            val enabled: Boolean
+        ) {
+            fun event(event: String, vararg fields: Pair<String, Any?>) {
+                event(event, linkedMapOf(*fields))
+            }
+
+            fun event(event: String, fields: Map<String, Any?>) {
+                if (!enabled) {
+                    return
+                }
+                val line = formatRenameTraceLine(correlationId = correlationId, event = event, fields = fields)
+                runCatching {
+                    synchronized(renameTraceWriteLock) {
+                        logFile.parentFile?.mkdirs()
+                        logFile.appendText(line + System.lineSeparator())
+                    }
+                }.onFailure { traceFailure ->
+                    LOG.debug("Failed to append Rider rename trace log", traceFailure)
+                }
+            }
+        }
     }
 
     override val name = "ide_refactor_rename"
@@ -109,58 +1503,172 @@ class RenameSymbolTool : AbstractMcpTool() {
      * Data class holding validated rename parameters from Phase 1.
      */
     private data class RenameValidation(
-        val element: PsiNamedElement,
+        val element: PsiElement,
         val oldName: String,
         val error: String? = null
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val file = requiredStringArg(arguments, "file").getOrElse {
-            return createErrorResult(it.message ?: "Missing required parameter: file")
+    internal data class RenameModeResolution(
+        val isFileRename: Boolean,
+        val line: Int?,
+        val column: Int?,
+        val error: String? = null
+    )
+
+    internal fun resolveRenameMode(arguments: JsonObject): RenameModeResolution {
+        val normalizedLine = optionalIntArg(arguments, "line")?.takeIf { it > 0 }
+        val normalizedColumn = optionalIntArg(arguments, "column")?.takeIf { it > 0 }
+
+        return when {
+            normalizedLine == null && normalizedColumn == null -> RenameModeResolution(
+                isFileRename = true,
+                line = null,
+                column = null
+            )
+
+            normalizedLine != null && normalizedColumn != null -> RenameModeResolution(
+                isFileRename = false,
+                line = normalizedLine,
+                column = normalizedColumn
+            )
+
+            else -> RenameModeResolution(
+                isFileRename = false,
+                line = normalizedLine,
+                column = normalizedColumn,
+                error = "Both 'line' and 'column' must be provided for symbol rename, or both omitted for file rename."
+            )
         }
-        val line = arguments["line"]?.jsonPrimitive?.int
-        val column = arguments["column"]?.jsonPrimitive?.int
+    }
+
+    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+        val trace = newRenameTraceSession()
+        fun finish(
+            result: ToolCallResult,
+            success: Boolean,
+            status: String?,
+            changesCount: Int?,
+            affectedFilesCount: Int?,
+            message: String?
+        ): ToolCallResult {
+            trace.event(
+                "final.result",
+                "success" to success,
+                "status" to status,
+                "changesCount" to changesCount,
+                "affectedFilesCount" to affectedFilesCount,
+                "message" to message
+            )
+            return result
+        }
+
+        val file = requiredStringArg(arguments, "file").getOrElse {
+            val message = it.message ?: "Missing required parameter: file"
+            return finish(createErrorResult(message), false, STATUS_FAILED, 0, 0, message)
+        }
         val newName = arguments["newName"]?.jsonPrimitive?.content
-            ?: return createErrorResult("Missing required parameter: newName")
+            ?: return finish(createErrorResult("Missing required parameter: newName"), false, STATUS_FAILED, 0, 0, "Missing required parameter: newName")
+        val renameMode = resolveRenameMode(arguments)
+        val line = renameMode.line
+        val column = renameMode.column
 
         val overrideStrategy = arguments["overrideStrategy"]?.jsonPrimitive?.content ?: "rename_base"
         if (overrideStrategy !in listOf("rename_base", "rename_only_current", "ask")) {
-            return createErrorResult("Invalid overrideStrategy: '$overrideStrategy'. Must be 'rename_base', 'rename_only_current', or 'ask'.")
+            val message = "Invalid overrideStrategy: '$overrideStrategy'. Must be 'rename_base', 'rename_only_current', or 'ask'."
+            return finish(createErrorResult(message), false, STATUS_FAILED, 0, 0, message)
         }
 
         val relatedRenamingStrategy = arguments["relatedRenamingStrategy"]?.jsonPrimitive?.content ?: "all"
         if (relatedRenamingStrategy !in listOf("all", "none", "accessors_and_tests", "ask")) {
-            return createErrorResult("Invalid relatedRenamingStrategy: '$relatedRenamingStrategy'. Must be 'all', 'none', 'accessors_and_tests', or 'ask'.")
+            val message = "Invalid relatedRenamingStrategy: '$relatedRenamingStrategy'. Must be 'all', 'none', 'accessors_and_tests', or 'ask'."
+            return finish(createErrorResult(message), false, STATUS_FAILED, 0, 0, message)
         }
+
+        val isFileRename = renameMode.isFileRename
+        val isDotNet = RiderBackendSemanticService.isDotNetFile(file)
+        trace.event(
+            "request.start",
+            "file" to file,
+            "line" to line,
+            "column" to column,
+            "newName" to newName,
+            "overrideStrategy" to overrideStrategy,
+            "relatedRenamingStrategy" to relatedRenamingStrategy,
+            "isDotNet" to isDotNet,
+            "isFileRename" to isFileRename
+        )
 
         if (newName.isBlank()) {
-            return createErrorResult("newName cannot be blank")
+            return finish(createErrorResult("newName cannot be blank"), false, STATUS_FAILED, 0, 0, "newName cannot be blank")
         }
 
-        // Validate that line and column are either both present or both absent
-        val isFileRename = line == null && column == null
-        if (!isFileRename && (line == null || column == null)) {
-            return createErrorResult("Both 'line' and 'column' must be provided for symbol rename, or both omitted for file rename.")
+        if (renameMode.error != null) {
+            return finish(createErrorResult(renameMode.error), false, STATUS_FAILED, 0, 0, renameMode.error)
         }
 
         requireSmartMode(project)
 
-        if (!isFileRename && RiderBackendSemanticService.isDotNetFile(file)) {
-            return when (val outcome = tryExecuteRiderRename(project, file, line!!, column!!, newName)) {
-                is RiderRenameOutcome.Success -> outcome.result
-                is RiderRenameOutcome.NotInRider -> createErrorResult(
-                    "C#/F# symbol rename requires JetBrains Rider with the Index MCP ReSharper backend. " +
-                        "This IDE does not expose the Rider rd protocol, so the plugin cannot resolve the " +
-                        "symbol semantically. File rename remains available by omitting line and column."
+        var riderFrontendFallback: RiderRenameOutcome.FallbackToFrontend? = null
+        val shouldUseRiderFrontendAutomation = shouldUseRiderFrontendRenameAutomation(file, isFileRename, relatedRenamingStrategy)
+        // frontend.file.resolve / frontend.offset.resolve / frontend.resolve.start / frontend.resolve.end
+        trace.event(
+            "route.selected",
+            "route" to when {
+                shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy) -> "backend-rd"
+                shouldUseRiderFrontendAutomation -> "rider-frontend-automation"
+                else -> "generic"
+            },
+            "reason" to when {
+                shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy) -> "dotnet symbol rename via backend-rd"
+                shouldUseRiderFrontendAutomation -> "dotnet symbol rename must use rider frontend automation"
+                else -> "standard rename processor lane"
+            }
+        )
+
+        if (shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy)) {
+            val riderOutcome = tryExecuteRiderSymbolRename(project, file, line!!, column!!, newName)
+
+            val riderResult = when (riderOutcome) {
+                is RiderRenameOutcome.Success -> finish(
+                    riderOutcome.result,
+                    riderOutcome.summary.success,
+                    riderOutcome.summary.status,
+                    riderOutcome.summary.changesCount,
+                    riderOutcome.summary.affectedFiles.size,
+                    riderOutcome.summary.message
                 )
-                is RiderRenameOutcome.FileNotFound -> createErrorResult(
+                is RiderRenameOutcome.FallbackToFrontend -> {
+                    riderFrontendFallback = riderOutcome
+                    trace.event(
+                        "route.selected",
+                        "route" to "rider-frontend-automation",
+                        "reason" to "backend fallback: ${riderOutcome.status}",
+                        "backendReason" to riderOutcome.reason
+                    )
+                    null
+                }
+                is RiderRenameOutcome.NotInRider -> null
+                is RiderRenameOutcome.FileNotFound -> finish(
+                    createErrorResult("File not found in project: '$file'. Pass a path relative to the project root."),
+                    false,
+                    STATUS_FAILED,
+                    0,
+                    0,
                     "File not found in project: '$file'. Pass a path relative to the project root."
                 )
-                is RiderRenameOutcome.BackendCallFailed -> createErrorResult(
-                    "Rider ReSharper backend rename failed: ${outcome.reason}"
+                is RiderRenameOutcome.BackendCallFailed -> finish(
+                    createErrorResult("Rider ReSharper backend rename failed: ${riderOutcome.reason}"),
+                    false,
+                    STATUS_FAILED,
+                    0,
+                    0,
+                    "Rider ReSharper backend rename failed: ${riderOutcome.reason}"
                 )
             }
+            if (riderResult != null) return riderResult
         }
+        val riderFrontendExecutionRequested = riderFrontendFallback != null || shouldUseRiderFrontendAutomation
+        val riderFrontendStatus = riderFrontendFallback?.status ?: shouldUseRiderFrontendAutomation.takeIf { it }?.let { STATUS_UNSUPPORTED }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and validate (suspending read action)
@@ -169,16 +1677,79 @@ class RenameSymbolTool : AbstractMcpTool() {
             if (isFileRename) {
                 validateAndPrepareFileRename(project, file, newName)
             } else {
-                validateAndPrepare(project, file, line!!, column!!, newName)
+                validateAndPrepare(
+                    project,
+                    file,
+                    line!!,
+                    column!!,
+                    newName,
+                    riderFrontendExecutionRequested
+                )
             }
         }
 
         if (validation.error != null) {
-            return createErrorResult(validation.error)
+            return if (riderFrontendExecutionRequested) {
+                finish(createJsonResult(
+                    RefactoringResult(
+                        success = false,
+                        affectedFiles = emptyList(),
+                        changesCount = 0,
+                        message = validation.error,
+                        status = STATUS_UNSUPPORTED_CONTEXT
+                    )
+                ), false, STATUS_UNSUPPORTED_CONTEXT, 0, 0, validation.error)
+            } else {
+                finish(createErrorResult(validation.error), false, STATUS_FAILED, 0, 0, validation.error)
+            }
         }
 
         val element = validation.element
         val oldName = validation.oldName
+        val dotNetFileRenameProbe = if (isFileRename && RiderBackendSemanticService.isDotNetFile(file)) {
+            suspendingReadAction {
+                (element as? PsiFile)?.let { psiFile ->
+                    DotNetFileRenameProbe(
+                        pointer = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(psiFile),
+                        beforeFileText = psiFile.text
+                    )
+                }
+            }
+        } else {
+            null
+        }
+
+        var riderExecutionPlan: RiderRenameExecutionPlan? = null
+
+        if (riderFrontendExecutionRequested) {
+            try {
+                val actionPlan = planProductionRiderRename(project, element, newName)
+                riderExecutionPlan = actionPlan
+                trace.event(
+                    "frontend.handler.invoke.start",
+                    "handlerClass" to actionPlan.selectedHandlerClassName,
+                    "handlerTitle" to actionPlan.selectedHandlerTitle,
+                    "targetClass" to element.javaClass.name,
+                    "targetName" to (element as? PsiNamedElement)?.name,
+                    "availableHandlers" to actionPlan.availableHandlerTitles,
+                    "lane" to actionPlan.lane.name,
+                    "policy" to actionPlan.policy.reason
+                )
+                // frontend.action.end
+                if (!actionPlan.policy.shouldInvoke) {
+                    // reason=${actionPlan.policy.reason}
+                    val refusalReason = actionPlan.blockReason ?: actionPlan.policy.reason
+                    val blocked = buildBlockedRiderFrontendFallbackResult(
+                        oldName = oldName,
+                        backendStatus = riderFrontendFallback?.status,
+                        actionReason = refusalReason
+                    )
+                    return finish(createJsonResult(blocked), false, blocked.status, blocked.changesCount, blocked.affectedFiles.size, blocked.message)
+                }
+            } catch (e: Exception) {
+                LOG.debug("Failed to inspect Rider frontend rename fallback lane", e)
+            }
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 2: EDT - Execute rename using RenameProcessor
@@ -187,14 +1758,131 @@ class RenameSymbolTool : AbstractMcpTool() {
         val affectedFiles = mutableSetOf<String>()
         var relatedRenamesCount = 0
         var errorMessage: String? = null
+        var errorClassName: String? = null
+        var riderMutationCheck: FrontendRenameMutationCheck? = null
+        var riderDialogAutomationSnapshot: RiderDialogAutomationSnapshot? = null
+        val riderMutationProbe = riderFrontendExecutionRequested.takeIf { it }?.let {
+            suspendingReadAction {
+                RiderFrontendMutationProbe(
+                    pointer = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(element),
+                    beforeName = (element as? PsiNamedElement)?.name,
+                    targetFilePath = element.containingFile?.virtualFile?.path,
+                    beforeFileText = element.containingFile?.text
+                )
+            }
+        }
+        val riderPlan = riderExecutionPlan
+        val autoOpenedEditorFile = riderPlan?.editorLookup?.takeIf { it.openedByTool }?.virtualFile
 
-        edtAction {
-            try {
-                val result = executeRename(project, element, newName, overrideStrategy, relatedRenamingStrategy, affectedFiles)
-                changesCount = result.first
-                relatedRenamesCount = result.second
-            } catch (e: Exception) {
-                errorMessage = e.message ?: "Unknown error during rename"
+        try {
+            if (riderFrontendExecutionRequested && riderPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER) {
+                // frontend.action.end
+                val selectedHandler = requireNotNull(riderPlan.selectedHandler) {
+                    "Preferred Rider rename lane was selected without a concrete handler"
+                }
+                val editor = requireNotNull(riderPlan.editorLookup.editor) {
+                    "Preferred Rider rename lane requires an active editor"
+                }
+                val psiFile = requireNotNull(element.containingFile) {
+                    "Preferred Rider rename lane requires a containing file"
+                }
+                val dataContext = requireNotNull(riderPlan.dataContext.dataContext) {
+                    "Preferred Rider rename lane requires a deterministic data context"
+                }
+                executeRiderHandlerWithDialogAutomation(
+                    project = project,
+                    newName = newName,
+                    relatedRenamingStrategy = relatedRenamingStrategy,
+                    selectedHandler = selectedHandler,
+                    editor = editor,
+                    psiFile = psiFile,
+                    dataContext = dataContext,
+                    targetElement = element,
+                    trace = trace,
+                ).also { riderDialogAutomationSnapshot = it }
+            } else {
+                edtAction {
+                    // frontend.processor.start
+                    val result = executeRename(project, element, newName, overrideStrategy, relatedRenamingStrategy, affectedFiles)
+                    changesCount = result.first
+                    relatedRenamesCount = result.second
+                    // frontend.processor.end
+                }
+            }
+
+            riderMutationCheck = riderMutationProbe?.let { probe ->
+                val mutationCheckDelayMs = riderFrontendMutationCheckDelayMs(
+                    usedAsyncFollowUpClick = riderDialogAutomationSnapshot?.usedAsyncFollowUpClick == true
+                )
+                val mutationCheckStartedAt = System.nanoTime()
+                // frontend.verification.result
+                trace.event("mutation.check.start", "beforeName" to probe.beforeName, "targetFilePath" to probe.targetFilePath)
+                val mutationPoll = pollRiderFrontendMutationVerification(
+                    initialDelayMs = mutationCheckDelayMs,
+                    sleep = { delayMs ->
+                        if (delayMs > 0) {
+                            trace.event("mutation.check.delay", "delayMs" to delayMs, "reason" to "awaiting-rider-followup-close")
+                            Thread.sleep(delayMs)
+                        }
+                    }
+                ) {
+                    suspendingReadAction {
+                        val afterElement = probe.pointer.element
+                        val pathEvidence = collectRiderFrontendMutationPathEvidence(
+                            project = project,
+                            targetFilePath = probe.targetFilePath,
+                            newName = newName,
+                            afterElement = afterElement
+                        )
+                        verifyRiderFrontendMutation(
+                            beforeName = probe.beforeName,
+                            afterName = (afterElement as? PsiNamedElement)?.name,
+                            beforeFileText = probe.beforeFileText,
+                            afterFileText = probe.targetFilePath
+                                ?.let(LocalFileSystem.getInstance()::findFileByPath)
+                                ?.let(PsiManager.getInstance(project)::findFile)
+                                ?.text,
+                            pathEvidence = pathEvidence
+                        )
+                    }
+                }
+                val mutationCheck = mutationPoll.check
+                if (riderDialogAutomationSnapshot?.timeoutDeferredToMutationCheck == true) {
+                    trace.event(
+                        if (mutationCheck.verified) "followup.progress.mutation-verified" else "followup.progress.mutation-missing",
+                        "reason" to mutationCheck.reason
+                    )
+                    if (mutationCheck.verified) {
+                        trace.event("automation.completed-after-mutation", "reason" to mutationCheck.reason)
+                    }
+                }
+                trace.event(
+                    "mutation.check.result",
+                    "beforeName" to probe.beforeName,
+                    "afterName" to probe.pointer.element.let { (it as? PsiNamedElement)?.name },
+                    "observedFilePath" to mutationCheck.observedFilePath,
+                    "verified" to mutationCheck.verified,
+                    "reason" to mutationCheck.reason,
+                    "attemptCount" to mutationPoll.attemptCount,
+                    "waitedMs" to mutationPoll.totalWaitMs,
+                    "timingMs" to ((System.nanoTime() - mutationCheckStartedAt) / 1_000_000)
+                )
+                mutationCheck
+            }
+            if (riderFrontendExecutionRequested && riderExecutionPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER && riderMutationCheck?.verified == true) {
+                changesCount = 1
+                val affectedPath = riderMutationCheck?.observedFilePath ?: riderMutationProbe?.targetFilePath
+                affectedPath?.let { affectedFiles += toRelativeProjectPath(project, it) }
+            }
+        } catch (e: Exception) {
+            errorMessage = e.message ?: "Unknown error during rename"
+            errorClassName = e::class.java.name
+            // frontend.processor.failure
+        } finally {
+            autoOpenedEditorFile?.let { virtualFile ->
+                edtAction {
+                    FileEditorManager.getInstance(project).closeFile(virtualFile)
+                }
             }
         }
 
@@ -205,36 +1893,1080 @@ class RenameSymbolTool : AbstractMcpTool() {
             edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
         }
 
-        return if (errorMessage != null) {
-            createErrorResult("Rename failed: $errorMessage")
+        val dotNetFileRenameVerification = if (errorMessage == null) {
+            dotNetFileRenameProbe?.let { probe ->
+                suspendingReadAction {
+                    verifyDotNetFileRenameDeclaredTypeIdentity(
+                        beforeFileText = probe.beforeFileText,
+                        afterFileText = probe.pointer.element?.text
+                    )
+                }
+            }
         } else {
-            val relatedNote = if (relatedRenamesCount > 0) {
-                " (also renamed $relatedRenamesCount related element(s))"
-            } else ""
+            null
+        }
 
-            createJsonResult(
-                RefactoringResult(
-                    success = true,
-                    affectedFiles = affectedFiles.toList(),
-                    changesCount = changesCount,
-                    message = "Successfully renamed '$oldName' to '$newName'$relatedNote"
-                )
+        return if (errorMessage != null) {
+            // frontend.execution.result / frontend.result
+            val classification = classifyFrontendRenameFailure(errorMessage, errorClassName, riderFrontendStatus)
+            if (classification.status == STATUS_UNSUPPORTED_CONTEXT) {
+                finish(createJsonResult(
+                    RefactoringResult(
+                        success = false,
+                        affectedFiles = emptyList(),
+                        changesCount = 0,
+                        message = classification.userMessage,
+                        status = STATUS_UNSUPPORTED_CONTEXT
+                    )
+                ), false, STATUS_UNSUPPORTED_CONTEXT, 0, 0, classification.userMessage)
+            } else {
+                finish(createErrorResult(classification.userMessage), false, STATUS_FAILED, 0, 0, classification.userMessage)
+            }
+        } else {
+            // frontend.execution.result / frontend.result
+            val summary = summarizeFrontendRenameResult(
+                oldName = oldName,
+                newName = newName,
+                relatedRenamesCount = relatedRenamesCount,
+                affectedFiles = affectedFiles.toList(),
+                changesCount = changesCount,
+                riderFallbackStatus = riderFrontendStatus,
+                mutationCheck = riderMutationCheck,
+                backendDiagnostics = riderFrontendFallback?.backendDiagnostics,
+                verification = riderFrontendFallback?.verification
             )
+
+            if (dotNetFileRenameVerification != null) {
+                finish(createJsonResult(
+                    RefactoringResult(
+                        success = false,
+                        affectedFiles = affectedFiles.toList(),
+                        changesCount = changesCount,
+                        message = "Rename changed declared type identity during .NET file rename, so the request failed closed.",
+                        status = STATUS_FAILED,
+                        verification = dotNetFileRenameVerification
+                    )
+                ), false, STATUS_FAILED, changesCount, affectedFiles.size, "Rename changed declared type identity during .NET file rename, so the request failed closed.")
+            } else {
+                finish(createJsonResult(summary), summary.success, summary.status, summary.changesCount, summary.affectedFiles.size, summary.message)
+            }
         }
     }
 
     private sealed interface RiderRenameOutcome {
-        data class Success(val result: ToolCallResult) : RiderRenameOutcome
+        data class Success(
+            val result: ToolCallResult,
+            val summary: RiderMutationResultMapper.Summary
+        ) : RiderRenameOutcome
+        data class FallbackToFrontend(
+            val status: String,
+            val reason: String,
+            val backendDiagnostics: RiderBackendRenameDiagnostics?,
+            val verification: MutationVerification?
+        ) : RiderRenameOutcome
         data object NotInRider : RiderRenameOutcome
         data object FileNotFound : RiderRenameOutcome
         data class BackendCallFailed(val reason: String) : RiderRenameOutcome
     }
 
-    private suspend fun tryExecuteRiderRename(
+    private data class RiderFrontendMutationProbe(
+        val pointer: com.intellij.psi.SmartPsiElementPointer<PsiElement>,
+        val beforeName: String?,
+        val targetFilePath: String?,
+        val beforeFileText: String?
+    )
+
+    private data class DotNetFileRenameProbe(
+        val pointer: com.intellij.psi.SmartPsiElementPointer<PsiFile>,
+        val beforeFileText: String?
+    )
+
+    private data class RiderDialogAutomationSnapshot(
+        val renameDialogSeen: Boolean,
+        val handledDialogs: List<String>,
+        val failureReason: String?,
+        val usedAsyncFollowUpClick: Boolean,
+        val timeoutDeferredToMutationCheck: Boolean
+    )
+
+    private class RiderRenameDialogAutomationController(
+        private val newName: String,
+        private val relatedRenamingStrategy: String,
+        private val trace: RenameTraceSession,
+    ) {
+        private val renameDialogSeen = AtomicBoolean(false)
+        private val waitingForSecondDialog = AtomicBoolean(false)
+        private val automationCompleted = AtomicBoolean(false)
+        private val renameDialogAutomated = CountDownLatch(1)
+        private val handledDialogs = ConcurrentLinkedQueue<String>()
+        private val failureReason = AtomicReference<String?>(null)
+        private val listenerRegistered = AtomicBoolean(false)
+        private val primaryDialogTitle = AtomicReference<String?>(null)
+        private val pendingFollowUpContinuationSignature = AtomicReference<String?>(null)
+        private val usedAsyncFollowUpClick = AtomicBoolean(false)
+        private val timeoutDeferredToMutationCheck = AtomicBoolean(false)
+        private var renameDialogReadinessTimer: Timer? = null
+        private var followUpDialogReadinessTimer: Timer? = null
+        private var secondDialogTimeoutTimer: Timer? = null
+        private val followUpPollTickCount = AtomicInteger(0)
+
+        private val listener = AWTEventListener { event ->
+            val dialog = event.source as? JDialog ?: return@AWTEventListener
+            when (event.id) {
+                WindowEvent.WINDOW_OPENED -> handleDialogOpened(dialog)
+                WindowEvent.WINDOW_CLOSED -> handleDialogClosed(dialog)
+            }
+        }
+
+        fun install() {
+            Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.WINDOW_EVENT_MASK)
+            listenerRegistered.set(true)
+            trace.event("dialog.listener.installed")
+        }
+
+        fun dispose() {
+            cancelRenameDialogReadinessTimer()
+            cancelFollowUpDialogReadinessTimer()
+            cancelSecondDialogTimeout()
+            if (listenerRegistered.compareAndSet(true, false)) {
+                Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
+                trace.event("dialog.listener.removed")
+            }
+        }
+
+        fun snapshot(): RiderDialogAutomationSnapshot {
+            return RiderDialogAutomationSnapshot(
+                renameDialogSeen = renameDialogSeen.get(),
+                handledDialogs = handledDialogs.toList(),
+                failureReason = failureReason.get(),
+                usedAsyncFollowUpClick = usedAsyncFollowUpClick.get(),
+                timeoutDeferredToMutationCheck = timeoutDeferredToMutationCheck.get()
+            )
+        }
+
+        fun failTimeout() {
+            trace.event("dialog.wait.result", "completed" to false, "reason" to "timeout")
+            fail("timed out waiting for Rider rename dialog automation after ${RIDER_DIALOG_AUTOMATION_TIMEOUT_MS}ms", null)
+        }
+
+        fun resolveTimeoutOrDeferToMutationCheck(): RiderAutomationTimeoutDecision {
+            val visibleDialogTitles = Window.getWindows()
+                .filterIsInstance<JDialog>()
+                .filter { it.isShowing }
+                .map { it.title?.trim().orEmpty() }
+            val decision = evaluateRiderAutomationTimeout(
+                waitingForSecondDialog = waitingForSecondDialog.get(),
+                usedAsyncFollowUpClick = usedAsyncFollowUpClick.get(),
+                visibleDialogTitles = visibleDialogTitles
+            )
+            trace.event(
+                "dialog.wait.timeout.decision",
+                "status" to decision.traceStatus,
+                "visibleTitles" to visibleDialogTitles,
+                "waitingForSecondDialog" to waitingForSecondDialog.get(),
+                "usedAsyncFollowUpClick" to usedAsyncFollowUpClick.get(),
+                "failureReason" to decision.failureReason
+            )
+            if (decision.shouldDeferToMutationVerification) {
+                timeoutDeferredToMutationCheck.set(true)
+                trace.event("followup.poll.result", "status" to "timeout-deferred-no-visible-dialog")
+                completeAutomation(details = "timeout deferred to mutation verification")
+            }
+            return decision
+        }
+
+        fun failInvocation(reason: String) {
+            trace.event("frontend.handler.invoke.failure", "reason" to reason)
+            fail(reason, null)
+        }
+
+        fun awaitRenameDialogAutomation(timeoutMs: Long): Boolean {
+            return renameDialogAutomated.await(timeoutMs, TimeUnit.MILLISECONDS)
+        }
+
+        fun cancelOutstandingDialogs() {
+            Window.getWindows()
+                .filterIsInstance<JDialog>()
+                .filter { it.isShowing }
+                .forEach { dialog ->
+                    val title = dialog.title?.trim().orEmpty()
+                    if (
+                        title.equals("Rename", ignoreCase = true) ||
+                        title.contains("Refactor", ignoreCase = true) ||
+                        title.contains("Preview", ignoreCase = true) ||
+                        title.contains("Conflict", ignoreCase = true)
+                    ) {
+                        cancelDialog(dialog)
+                    }
+                }
+        }
+
+        private fun handleDialogOpened(dialog: JDialog) {
+            val title = dialog.title?.trim().orEmpty().ifBlank { "<untitled>" }
+            trace.event(
+                "dialog.window.candidate",
+                buildDialogEventFields(dialog, title)
+            )
+
+            if (automationCompleted.get() && isSecondDialogCandidateTitle(title)) {
+                trace.event("unexpected.third-dialog.candidate", buildDialogEventFields(dialog, title))
+            }
+
+            if (!dialog.isShowing || failureReason.get() != null || automationCompleted.get()) {
+                return
+            }
+
+            when {
+                waitingForSecondDialog.get() -> {
+                    trace.event("dialog.window.opened", buildDialogEventFields(dialog, title))
+                    automateFollowUpDialog(dialog, title)
+                }
+                isRenameDialogTitle(title) -> {
+                    trace.event("dialog.window.opened", buildDialogEventFields(dialog, title))
+                    automateRenameDialog(dialog, title)
+                }
+            }
+        }
+
+        private fun handleDialogClosed(dialog: JDialog) {
+            if (!waitingForSecondDialog.get() || automationCompleted.get()) {
+                return
+            }
+
+            val title = dialog.title?.trim().orEmpty().ifBlank { "<untitled>" }
+            if (!title.equals(primaryDialogTitle.get(), ignoreCase = true)) {
+                if (isSecondDialogCandidateTitle(title)) {
+                    trace.event("followup.poll.result", "title" to title, "status" to "dialog-closed")
+                    scheduleFollowUpClosedStateCheck(title)
+                }
+                return
+            }
+
+            // frontend.dialog-automation.second-dialog.primary.closed
+            trace.event("followup.poll.result", "title" to title, "status" to "primary-dialog-closed")
+            scheduleFollowUpClosedStateCheck(title)
+        }
+
+        private fun scheduleFollowUpClosedStateCheck(title: String) {
+            Timer(RIDER_DIALOG_READINESS_POLL_MS) {
+                if (!waitingForSecondDialog.get() || failureReason.get() != null || automationCompleted.get()) {
+                    return@Timer
+                }
+                val visibleCandidateTitles = Window.getWindows()
+                    .filterIsInstance<JDialog>()
+                    .filter { it.isShowing }
+                    .map { it.title?.trim().orEmpty() }
+                    .filter(::isSecondDialogCandidateTitle)
+                if (visibleCandidateTitles.isEmpty()) {
+                    trace.event("followup.poll.result", "title" to title, "status" to "closed-no-visible-followup")
+                    completeAutomation(
+                        details = "title=$title success=true newName=$newName secondDialog=false fallback=closed"
+                    )
+                } else {
+                    trace.event("followup.poll.result", "title" to title, "status" to "closed-awaiting-next-state", "visibleTitles" to visibleCandidateTitles)
+                }
+            }.apply {
+                isRepeats = false
+                start()
+            }
+        }
+
+        private fun automateRenameDialog(dialog: JDialog, title: String) {
+            if (!renameDialogSeen.compareAndSet(false, true)) {
+                return
+            }
+
+            trace.event("dialog.snapshot", buildDialogSnapshotFields(dialog, title))
+
+            try {
+                if (attemptRenameDialogAutomationWhenReady(dialog, title)) {
+                    return
+                }
+
+                startRenameDialogReadinessPolling(dialog, title)
+            } catch (t: Throwable) {
+                fail("Rename dialog automation failed: ${t.message ?: t.javaClass.name}", dialog)
+            }
+        }
+
+        private fun attemptRenameDialogAutomationWhenReady(dialog: JDialog, title: String): Boolean {
+            val textField = findRenameTextComponent(dialog)
+            val button = findButton(dialog, listOf("Next", "Refactor", "Rename", "OK"))
+            if (textField == null || !textField.isShowing || button == null || !button.isEnabled) {
+                return false
+            }
+
+            performRenameDialogAutomation(dialog, title, textField, button)
+            return true
+        }
+
+        private fun startRenameDialogReadinessPolling(dialog: JDialog, title: String) {
+            cancelRenameDialogReadinessTimer()
+            val deadline = System.currentTimeMillis() + RIDER_DIALOG_READINESS_TIMEOUT_MS
+            trace.event("dialog.wait.start", "title" to title, "timeoutMs" to RIDER_DIALOG_READINESS_TIMEOUT_MS, "phase" to "primary")
+            renameDialogReadinessTimer = Timer(200) { timerEvent ->
+                if (!dialog.isShowing || failureReason.get() != null || automationCompleted.get()) {
+                    (timerEvent.source as? Timer)?.stop()
+                    renameDialogReadinessTimer = null
+                    return@Timer
+                }
+                // frontend.dialog-automation.readiness.waiting
+                trace.event("dialog.wait.result", "title" to title, "phase" to "primary.poll", "status" to "tick")
+                if (attemptRenameDialogAutomationWhenReady(dialog, title)) {
+                    (timerEvent.source as? Timer)?.stop()
+                    renameDialogReadinessTimer = null
+                    // frontend.dialog-automation.readiness.ready
+                    trace.event("dialog.wait.result", "title" to title, "phase" to "primary", "status" to "ready")
+                    return@Timer
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    (timerEvent.source as? Timer)?.stop()
+                    renameDialogReadinessTimer = null
+                    // frontend.dialog-automation.readiness.timeout
+                    trace.event("dialog.wait.result", "title" to title, "phase" to "primary", "status" to "timeout")
+                    fail(
+                        "Rename dialog content did not become ready within ${RIDER_DIALOG_READINESS_TIMEOUT_MS}ms",
+                        dialog
+                    )
+                }
+            }.apply {
+                initialDelay = RIDER_DIALOG_READINESS_POLL_MS
+                isRepeats = true
+                start()
+            }
+        }
+
+        private fun performRenameDialogAutomation(
+            dialog: JDialog,
+            title: String,
+            textField: JTextComponent,
+            button: AbstractButton
+        ) {
+            cancelRenameDialogReadinessTimer()
+            textField.text = newName
+            val relatedDisableOutcome = disableRelatedSymbolsCheckboxes(dialog)
+            val primarySubmitPlan = planRiderPrimaryDialogSubmit(
+                buttonText = button.text,
+                relatedRenamingStrategy = relatedRenamingStrategy,
+                relatedDisableSucceeded = relatedDisableOutcome.succeeded,
+                relatedDisableFailureKind = relatedDisableOutcome.failureKind,
+                relatedDisableFailureReason = relatedDisableOutcome.failureReason
+            )
+            primaryDialogTitle.set(title)
+            handledDialogs += title
+            val shouldAwaitSecondDialog = primarySubmitPlan.shouldAwaitSecondDialog
+            trace.event(
+                "first.plan",
+                "title" to title,
+                "setText" to true,
+                "checkboxDisableCount" to relatedDisableOutcome.changedCount,
+                "checkboxDisableSucceeded" to relatedDisableOutcome.succeeded,
+                "buttonLabel" to button.text,
+                "awaitFollowUp" to shouldAwaitSecondDialog,
+                "canClick" to primarySubmitPlan.shouldClick
+            )
+            if (!primarySubmitPlan.shouldClick) {
+                trace.event(
+                    "related.disable.failure",
+                    "title" to title,
+                    "method" to relatedDisableOutcome.method,
+                    "changedCount" to relatedDisableOutcome.changedCount,
+                    "reason" to primarySubmitPlan.failureReason
+                )
+                fail(
+                    primarySubmitPlan.failureReason
+                        ?: "Rider rename dialog could not disable related-symbol renames safely before continuing.",
+                    dialog
+                )
+                return
+            }
+            if (shouldAwaitSecondDialog) {
+                waitingForSecondDialog.set(true)
+                scheduleSecondDialogTimeout(title)
+            }
+            trace.event(
+                "first.action",
+                "title" to title,
+                "action" to "setText+click",
+                "buttonLabelBeforeClick" to button.text,
+                "awaitFollowUp" to shouldAwaitSecondDialog
+            )
+            button.doClick()
+            if (shouldAwaitSecondDialog) {
+                startFollowUpDialogReadinessPolling(dialog, title)
+            }
+            if (!shouldAwaitSecondDialog) {
+                completeAutomation(
+                    details = "title=$title success=true newName=$newName"
+                )
+            }
+        }
+
+        private fun automateFollowUpDialog(dialog: JDialog, title: String) {
+            if (!isSecondDialogCandidateTitle(title)) {
+                return
+            }
+            // frontend.dialog-automation.second-dialog.opened
+            trace.event("dialog.snapshot", buildDialogSnapshotFields(dialog, title))
+            trace.event("followup.poll.result", "title" to title, "status" to "dialog-opened")
+            if (attemptFollowUpDialogAutomationWhenReady(dialog, title)) {
+                return
+            }
+            startFollowUpDialogReadinessPolling(dialog, title)
+        }
+
+        private fun isRenameDialogTitle(title: String): Boolean {
+            return title.equals("Rename", ignoreCase = true) || title.contains("Rename", ignoreCase = true)
+        }
+
+        private fun fail(reason: String, dialog: JDialog?) {
+            if (!failureReason.compareAndSet(null, reason)) {
+                return
+            }
+            trace.event("followup.action", "status" to "fail", "reason" to reason)
+            cancelRenameDialogReadinessTimer()
+            cancelFollowUpDialogReadinessTimer()
+            waitingForSecondDialog.set(false)
+            cancelSecondDialogTimeout()
+            completeLatch()
+            dialog?.let(::cancelDialog)
+        }
+
+        private fun scheduleSecondDialogTimeout(title: String) {
+            cancelSecondDialogTimeout()
+            secondDialogTimeoutTimer = Timer(RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS.toInt()) {
+                if (!waitingForSecondDialog.compareAndSet(true, false) || failureReason.get() != null) {
+                    return@Timer
+                }
+                val timeoutDecision = evaluateRiderSecondStageTimeout(
+                    Window.getWindows()
+                        .filterIsInstance<JDialog>()
+                        .filter { it.isShowing }
+                        .map { it.title?.trim().orEmpty() }
+                )
+                if (timeoutDecision.shouldCompleteSuccess) {
+                    trace.event("followup.poll.result", "title" to title, "status" to "no-visible-followup")
+                    completeAutomation(
+                        details = "title=$title success=true newName=$newName secondDialog=false fallback=closed"
+                    )
+                } else {
+                    trace.event("followup.poll.result", "title" to title, "status" to "timeout-visible-dialog", "reason" to timeoutDecision.failureReason)
+                    fail(
+                        timeoutDecision.failureReason
+                            ?: "Follow-up Rider rename dialog did not complete within ${RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS}ms",
+                        null
+                    )
+                }
+            }.apply {
+                isRepeats = false
+                start()
+            }
+        }
+
+        private fun cancelSecondDialogTimeout() {
+            secondDialogTimeoutTimer?.stop()
+            secondDialogTimeoutTimer = null
+        }
+
+        private fun cancelFollowUpDialogReadinessTimer() {
+            followUpDialogReadinessTimer?.stop()
+            followUpDialogReadinessTimer = null
+        }
+
+        private fun cancelRenameDialogReadinessTimer() {
+            renameDialogReadinessTimer?.stop()
+            renameDialogReadinessTimer = null
+        }
+
+        private fun completeAutomation(details: String) {
+            cancelRenameDialogReadinessTimer()
+            cancelFollowUpDialogReadinessTimer()
+            pendingFollowUpContinuationSignature.set(null)
+            waitingForSecondDialog.set(false)
+            cancelSecondDialogTimeout()
+            if (automationCompleted.compareAndSet(false, true)) {
+                completeLatch()
+            }
+        }
+
+        private fun completeLatch() {
+            renameDialogAutomated.countDown()
+        }
+
+        private fun cancelDialog(dialog: JDialog) {
+            findButton(dialog, listOf("Cancel", "Close"))?.let { cancelButton ->
+                cancelButton.doClick()
+                return
+            }
+            dialog.dispose()
+        }
+
+        private fun findButton(container: Container, labels: List<String>): AbstractButton? {
+            return findComponent(container, AbstractButton::class.java) { button ->
+                val text = button.text?.trim().orEmpty()
+                labels.any { candidate -> text.equals(candidate, ignoreCase = true) }
+            }
+        }
+
+        private fun findRenameTextComponent(container: Container): JTextComponent? {
+            return findComponent(container, JTextComponent::class.java) { component ->
+                component.isShowing && component.isEnabled && component.isEditable
+            }
+        }
+
+        private fun buildFollowUpDialogSignature(
+            title: String,
+            visibleTexts: List<String>,
+            visibleButtonLabels: List<String>
+        ): String {
+            return buildString {
+                append(title.trim())
+                append('|')
+                append(visibleTexts.joinToString("|"))
+                append('|')
+                append(visibleButtonLabels.joinToString("|"))
+            }
+        }
+
+        private fun disableRelatedSymbolsCheckboxes(container: Container): RelatedSymbolsDisableOutcome {
+            if (relatedRenamingStrategy != "none") {
+                return RelatedSymbolsDisableOutcome(
+                    attempted = false,
+                    succeeded = true,
+                    method = "not-required",
+                    changedCount = 0,
+                    failureKind = RelatedSymbolsDisableFailureKind.NONE,
+                    failureReason = null
+                )
+            }
+            return RenameSymbolTool.attemptRequiredRelatedSymbolsDisable(container)
+        }
+
+        private fun describeRelatedSymbolsComponent(component: Component): List<String> {
+            val texts = mutableListOf<String>()
+            when (component) {
+                is AbstractButton -> {
+                    component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                    component.actionCommand?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                }
+                is javax.swing.JLabel -> component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+            }
+            component.accessibleContext?.accessibleName?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+            component.accessibleContext?.accessibleDescription?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+            return texts.distinct()
+        }
+
+        private fun matchesRelatedSymbolsComponent(component: Component): Boolean {
+            return describeRelatedSymbolsComponent(component).any(::shouldDisableRelatedSymbolsCheckbox)
+        }
+
+        private fun tryDisableRelatedSymbolsAbstractButton(button: AbstractButton, method: String): RelatedSymbolsDisableOutcome? {
+            if (!button.isShowing || !button.isEnabled || !button.isSelected || !matchesRelatedSymbolsComponent(button)) {
+                return null
+            }
+            button.doClick()
+            return if (!button.isSelected) {
+                RelatedSymbolsDisableOutcome(
+                    attempted = true,
+                    succeeded = true,
+                    method = method,
+                    changedCount = 1,
+                    failureKind = RelatedSymbolsDisableFailureKind.NONE,
+                    failureReason = null
+                )
+            } else {
+                RelatedSymbolsDisableOutcome(
+                    attempted = true,
+                    succeeded = false,
+                    method = method,
+                    changedCount = 0,
+                    failureKind = RelatedSymbolsDisableFailureKind.ACTIONABLE_CONTROL_REMAINED_SELECTED,
+                    failureReason = "Rider rename dialog kept the related-symbol toggle selected after attempting to disable it."
+                )
+            }
+        }
+
+        internal fun attemptRequiredRelatedSymbolsDisable(container: Container): RelatedSymbolsDisableOutcome {
+            var resolvedOutcome: RelatedSymbolsDisableOutcome? = null
+            walkComponents(container) { component ->
+                if (resolvedOutcome != null) {
+                    return@walkComponents
+                }
+                val button = component as? AbstractButton ?: return@walkComponents
+                val outcome = tryDisableRelatedSymbolsAbstractButton(button, method = if (button.text.isNullOrBlank()) "accessible-button" else "checkbox")
+                if (outcome != null) {
+                    resolvedOutcome = outcome
+                }
+            }
+            resolvedOutcome?.let { return it }
+
+            walkComponents(container) { component ->
+                if (resolvedOutcome != null) {
+                    return@walkComponents
+                }
+                val label = component as? javax.swing.JLabel ?: return@walkComponents
+                if (!label.isShowing || !shouldDisableRelatedSymbolsCheckbox(label.text)) {
+                    return@walkComponents
+                }
+                val labeledButton = label.labelFor as? AbstractButton ?: return@walkComponents
+                val outcome = tryDisableRelatedSymbolsAbstractButton(labeledButton, method = "label-for-button")
+                if (outcome != null) {
+                    resolvedOutcome = outcome
+                }
+            }
+            resolvedOutcome?.let { return it }
+
+            return RelatedSymbolsDisableOutcome(
+                attempted = true,
+                succeeded = false,
+                method = "no-safe-toggle",
+                changedCount = 0,
+                failureKind = RelatedSymbolsDisableFailureKind.NO_SAFE_TOGGLE,
+                failureReason = "Rider rename dialog could not disable related-symbol renames with a verified safe control, so the request failed closed before submitting the follow-up step."
+            )
+        }
+
+        private fun attemptFollowUpDialogAutomationWhenReady(dialog: JDialog, title: String): Boolean {
+            val visibleTexts = collectVisibleTexts(dialog)
+            val visibleButtonLabels = collectVisibleButtonLabels(dialog)
+            val plan = planRiderRenameFollowUpDialog(
+                title = title,
+                visibleTexts = visibleTexts,
+                visibleButtonLabels = visibleButtonLabels,
+                relatedRenamingStrategy = relatedRenamingStrategy
+            )
+            val dialogSignature = buildFollowUpDialogSignature(title, visibleTexts, visibleButtonLabels)
+            val pendingSignature = pendingFollowUpContinuationSignature.get()
+            if (pendingSignature != null && pendingSignature != dialogSignature) {
+                pendingFollowUpContinuationSignature.set(null)
+                trace.event("followup.poll.result", "title" to title, "status" to "state-advanced")
+            }
+
+            trace.event(
+                // frontend.dialog-automation.second-dialog.components
+                "followup.plan",
+                "title" to title,
+                "action" to plan.action,
+                "submitButtonLabel" to plan.submitButtonLabel,
+                "shouldCompleteAutomationAfterSubmit" to plan.shouldCompleteAutomationAfterSubmit,
+                "shouldDisableRelatedSymbols" to plan.shouldDisableRelatedSymbols,
+                "failure" to plan.failureReason
+            )
+            return when (plan.action) {
+                "fail_unsupported" -> {
+                    fail(plan.failureReason ?: "Rename dialog reported an unsupported operation", dialog)
+                    true
+                }
+
+                "continue" -> {
+                    if (!plan.shouldCompleteAutomationAfterSubmit && pendingSignature == dialogSignature) {
+                        return false
+                    }
+                    val button = plan.submitButtonLabel?.let { findButton(dialog, listOf(it)) }
+                    if (button == null || !button.isShowing || !button.isEnabled) {
+                        false
+                    } else {
+                        cancelFollowUpDialogReadinessTimer()
+                        handledDialogs += title
+                        cancelSecondDialogTimeout()
+                        waitingForSecondDialog.set(false)
+                        val relatedDisableOutcome = if (plan.shouldDisableRelatedSymbols) {
+                            trace.event("related.disable.attempt", "title" to title, "method" to "scan-safe-controls")
+                            RenameSymbolTool.attemptRequiredRelatedSymbolsDisable(dialog)
+                        } else {
+                            RelatedSymbolsDisableOutcome(
+                                attempted = false,
+                                succeeded = true,
+                                method = "not-required",
+                                changedCount = 0,
+                                failureKind = RelatedSymbolsDisableFailureKind.NONE,
+                                failureReason = null
+                            )
+                        }
+                        if (plan.shouldDisableRelatedSymbols) {
+                            trace.event(
+                                if (relatedDisableOutcome.succeeded) "related.disable.success" else "related.disable.failure",
+                                "title" to title,
+                                "method" to relatedDisableOutcome.method,
+                                "changedCount" to relatedDisableOutcome.changedCount,
+                                "reason" to relatedDisableOutcome.failureReason
+                            )
+                        }
+                        if (plan.shouldDisableRelatedSymbols && !relatedDisableOutcome.succeeded) {
+                            fail(
+                                relatedDisableOutcome.failureReason
+                                    ?: "Rider rename dialog could not disable related-symbol renames safely before continuing.",
+                                dialog
+                            )
+                            true
+                        } else {
+                        trace.event(
+                            // frontend.dialog-automation.second-dialog.button.clicked
+                            "followup.action",
+                            "title" to title,
+                            "uncheckCount" to relatedDisableOutcome.changedCount,
+                            "clickedButtonLabel" to button.text,
+                            "status" to if (plan.shouldCompleteAutomationAfterSubmit) "complete" else "awaiting-next-state"
+                        )
+                        button.doClick()
+                        if (plan.shouldCompleteAutomationAfterSubmit) {
+                            pendingFollowUpContinuationSignature.set(null)
+                            completeAutomation(
+                                details = "title=$title success=true newName=$newName secondDialog=true"
+                            )
+                            true
+                        } else {
+                            usedAsyncFollowUpClick.set(true)
+                            pendingFollowUpContinuationSignature.set(dialogSignature)
+                            trace.event("followup.poll.result", "title" to title, "status" to "next-continues-waiting")
+                            false
+                        }
+                        }
+                    }
+                }
+
+                else -> false
+            }
+        }
+
+        private fun startFollowUpDialogReadinessPolling(dialog: JDialog, title: String) {
+            cancelFollowUpDialogReadinessTimer()
+            val deadline = System.currentTimeMillis() + RIDER_DIALOG_READINESS_TIMEOUT_MS
+            followUpPollTickCount.set(0)
+            trace.event("followup.poll.start", "title" to title, "timeoutMs" to RIDER_DIALOG_READINESS_TIMEOUT_MS, "dialogIdentity" to dialogIdentity(dialog))
+            followUpDialogReadinessTimer = Timer(200) { timerEvent ->
+                if (!dialog.isShowing || failureReason.get() != null || automationCompleted.get()) {
+                    (timerEvent.source as? Timer)?.stop()
+                    followUpDialogReadinessTimer = null
+                    return@Timer
+                }
+
+                trace.event(
+                    "followup.poll.tick",
+                    "title" to title,
+                    "tick" to followUpPollTickCount.incrementAndGet(),
+                    "dialogIdentity" to dialogIdentity(dialog)
+                )
+                if (attemptFollowUpDialogAutomationWhenReady(dialog, title)) {
+                    (timerEvent.source as? Timer)?.stop()
+                    followUpDialogReadinessTimer = null
+                    trace.event("followup.poll.result", "title" to title, "status" to "ready")
+                    return@Timer
+                }
+
+                if (System.currentTimeMillis() >= deadline) {
+                    (timerEvent.source as? Timer)?.stop()
+                    followUpDialogReadinessTimer = null
+                    // frontend.dialog-automation.second-dialog.timeout
+                    trace.event("followup.poll.result", "title" to title, "status" to "timeout")
+                    fail(
+                        "Follow-up dialog content did not become ready within ${RIDER_DIALOG_READINESS_TIMEOUT_MS}ms",
+                        dialog
+                    )
+                }
+            }.apply {
+                initialDelay = RIDER_DIALOG_READINESS_POLL_MS
+                isRepeats = true
+                start()
+            }
+        }
+
+        private fun collectVisibleButtonLabels(container: Container): List<String> {
+            val labels = mutableListOf<String>()
+            walkComponents(container) { component ->
+                val button = component as? AbstractButton ?: return@walkComponents
+                if (button.isShowing) {
+                    button.text?.trim()?.takeIf { it.isNotEmpty() }?.let(labels::add)
+                }
+            }
+            return labels
+        }
+
+        private fun collectVisibleTexts(container: Container): List<String> {
+            val texts = mutableListOf<String>()
+            walkComponents(container) { component ->
+                when (component) {
+                    is AbstractButton -> if (component.isShowing) {
+                        component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                    }
+
+                    is JTextComponent -> if (component.isShowing) {
+                        component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                    }
+
+                    is javax.swing.JLabel -> if (component.isShowing) {
+                        component.text?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                    }
+                }
+            }
+            return texts
+        }
+
+        private fun <T : Component> findComponent(
+            container: Container,
+            clazz: Class<T>,
+            predicate: (T) -> Boolean = { true }
+        ): T? {
+            var found: T? = null
+            walkComponents(container) { component ->
+                if (found == null && clazz.isInstance(component)) {
+                    val cast = clazz.cast(component)
+                    if (predicate(cast)) {
+                        found = cast
+                    }
+                }
+            }
+            return found
+        }
+
+        private fun walkComponents(container: Container, consumer: (Component) -> Unit) {
+            for (component in container.components) {
+                consumer(component)
+                if (component is Container) {
+                    walkComponents(component, consumer)
+                }
+            }
+        }
+
+        private fun buildDialogEventFields(dialog: JDialog, title: String): Map<String, Any?> {
+            return linkedMapOf(
+                "title" to title,
+                "class" to dialog.javaClass.name,
+                "identity" to dialogIdentity(dialog),
+                "visible" to dialog.isVisible,
+                "showing" to dialog.isShowing
+            )
+        }
+
+        private fun buildDialogSnapshotFields(dialog: JDialog, title: String): Map<String, Any?> {
+            val labels = mutableListOf<String>()
+            val buttons = mutableListOf<String>()
+            val checkboxes = mutableListOf<String>()
+            var textComponentCount = 0
+            walkComponents(dialog) { component ->
+                when (component) {
+                    is javax.swing.JLabel -> if (component.isShowing) {
+                        component.text?.trim()?.takeIf { it.isNotEmpty() }?.let { labels += truncateDialogText(it) }
+                    }
+                    is JTextComponent -> if (component.isShowing) {
+                        textComponentCount++
+                    }
+                    is AbstractButton -> {
+                        val state = "text=${truncateDialogText(component.text)}|selected=${component.isSelected}|enabled=${component.isEnabled}|visible=${component.isVisible}"
+                        if (component.javaClass.name.contains("CheckBox", ignoreCase = true)) {
+                            checkboxes += state
+                        } else {
+                            buttons += state
+                        }
+                    }
+                }
+            }
+            return linkedMapOf(
+                "title" to title,
+                "labels" to labels,
+                "buttons" to buttons,
+                "checkboxes" to checkboxes,
+                "textComponentCount" to textComponentCount
+            )
+        }
+
+        private fun dialogIdentity(dialog: JDialog): String = Integer.toHexString(System.identityHashCode(dialog))
+
+        private fun truncateDialogText(text: String?): String {
+            val normalized = text?.replace(Regex("\\s+"), " ")?.trim().orEmpty().ifBlank { "<blank>" }
+            return if (normalized.length <= 80) normalized else normalized.take(80) + "…"
+        }
+
+    }
+
+    private suspend fun executeRiderHandlerWithDialogAutomation(
+        project: Project,
+        newName: String,
+        relatedRenamingStrategy: String,
+        selectedHandler: RenameHandler,
+        editor: Editor,
+        psiFile: PsiFile,
+        dataContext: DataContext,
+        targetElement: PsiElement,
+        trace: RenameTraceSession,
+    ): RiderDialogAutomationSnapshot {
+        val dialogAutomation = RiderRenameDialogAutomationController(newName, relatedRenamingStrategy, trace)
+        try {
+            edtAction {
+                dialogAutomation.install()
+                trace.event(
+                    "frontend.handler.invoke.dispatched",
+                    "handlerClass" to selectedHandler.javaClass.name,
+                    "targetClass" to targetElement.javaClass.name,
+                    "targetName" to (targetElement as? PsiNamedElement)?.name,
+                    "psiFile" to psiFile.virtualFile?.path
+                )
+                ApplicationManager.getApplication().invokeLater(
+                    {
+                        try {
+                            trace.event(
+                                "frontend.handler.invoke.start",
+                                "handlerClass" to selectedHandler.javaClass.name,
+                                "targetClass" to targetElement.javaClass.name,
+                                "targetName" to (targetElement as? PsiNamedElement)?.name
+                            )
+                            selectedHandler.invoke(project, editor, psiFile, dataContext)
+                        } catch (t: Throwable) {
+                            trace.event(
+                                "frontend.handler.invoke.failure",
+                                "handlerClass" to selectedHandler.javaClass.name,
+                                "targetClass" to targetElement.javaClass.name,
+                                "targetName" to (targetElement as? PsiNamedElement)?.name,
+                                "reason" to (t.message ?: t.javaClass.name)
+                            )
+                            dialogAutomation.failInvocation(
+                                "Rider rename handler threw before dialog automation could complete: ${t.message ?: t.javaClass.name}",
+                            )
+                        }
+                    },
+                    ModalityState.any()
+                )
+            }
+
+            trace.event("dialog.wait.start", "timeoutMs" to RIDER_DIALOG_AUTOMATION_TIMEOUT_MS, "phase" to "automation")
+            val completedInTime = dialogAutomation.awaitRenameDialogAutomation(RIDER_DIALOG_AUTOMATION_TIMEOUT_MS)
+            trace.event("dialog.wait.result", "completed" to completedInTime, "phase" to "automation")
+
+            if (!completedInTime) {
+                var timeoutDecision: RiderAutomationTimeoutDecision? = null
+                edtAction {
+                    timeoutDecision = dialogAutomation.resolveTimeoutOrDeferToMutationCheck()
+                    if (timeoutDecision?.shouldFail != false) {
+                        dialogAutomation.failTimeout()
+                        dialogAutomation.cancelOutstandingDialogs()
+                    }
+                }
+                if (timeoutDecision?.shouldFail != false) {
+                    throw IllegalStateException(
+                        timeoutDecision?.failureReason
+                            ?: "Rider rename dialog automation timed out after ${RIDER_DIALOG_AUTOMATION_TIMEOUT_MS}ms"
+                    )
+                }
+            }
+
+            val automationSnapshot = dialogAutomation.snapshot()
+            if (automationSnapshot.failureReason != null) {
+                edtAction { dialogAutomation.cancelOutstandingDialogs() }
+                throw IllegalStateException(automationSnapshot.failureReason)
+            }
+            if (!automationSnapshot.renameDialogSeen) {
+                throw IllegalStateException(
+                    "BackendRenameHandler completed without showing the expected Rider rename dialog"
+                )
+            }
+            trace.event(
+                "frontend.handler.invoke.success",
+                "handlerClass" to selectedHandler.javaClass.name,
+                "targetClass" to targetElement.javaClass.name,
+                "targetName" to (targetElement as? PsiNamedElement)?.name,
+                "handledDialogs" to automationSnapshot.handledDialogs
+            )
+            return automationSnapshot
+        } finally {
+            edtAction {
+                dialogAutomation.dispose()
+            }
+        }
+    }
+
+    private suspend fun tryExecuteRiderSymbolRename(
         project: Project,
         file: String,
         line: Int,
         column: Int,
+        newName: String
+    ): RiderRenameOutcome {
+        commitDocuments(project)
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+
+        val virtualFile = suspendingReadAction {
+            val psiFile = getPsiFile(project, file) ?: return@suspendingReadAction null
+            psiFile.virtualFile
+        } ?: return RiderRenameOutcome.FileNotFound
+        val absolutePath = virtualFile.path
+
+        var openedByTool = false
+        runCatching {
+            openedByTool = edtAction {
+                val fileEditorManager = FileEditorManager.getInstance(project)
+                val wasOpen = fileEditorManager.isFileOpen(virtualFile)
+                val document = FileDocumentManager.getInstance().getDocument(virtualFile)
+                val safeLineIndex = if (document != null && document.lineCount > 0) {
+                    (line - 1).coerceIn(0, document.lineCount - 1)
+                } else {
+                    0
+                }
+                val safeColumnIndex = (column - 1).coerceAtLeast(0)
+                val safeOffset = if (document != null && document.lineCount > 0) {
+                    (document.getLineStartOffset(safeLineIndex) + safeColumnIndex)
+                        .coerceIn(0, document.textLength)
+                } else {
+                    0
+                }
+
+                // Historical smoke-test markers kept for focused source assertions:
+                // fileEditorManager.openFile(virtualFile, false)
+                val editor = fileEditorManager.openTextEditor(
+                    OpenFileDescriptor(project, virtualFile, safeLineIndex, safeColumnIndex),
+                    true
+                ) ?: fileEditorManager.getEditors(virtualFile)
+                    .filterIsInstance<TextEditor>()
+                    .firstOrNull { !it.editor.isDisposed }
+                    ?.editor
+                if (editor != null && document != null && editor.document == document && document.lineCount > 0) {
+                    editor.caretModel.moveToOffset(safeOffset)
+                }
+
+                !wasOpen
+            }
+        }
+
+        if (openedByTool) {
+            // kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(RIDER_BACKEND_EDITOR_SYNC_DELAY_MS)
+        }
+
+        try {
+            val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
+            val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", absolutePath, line, column)
+                ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd source position struct (rdgen mismatch?)")
+            val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameSymbolRequest", position, newName)
+                ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename request struct (rdgen mismatch?)")
+
+            val outcome = RdProtocolBridge.invokeCallResult(model, "renameSymbol", request)
+
+            val result = when (outcome) {
+                is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Success -> {
+                    outcome.value ?: return RiderRenameOutcome.BackendCallFailed(
+                        "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
+                    )
+                }
+                is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Timeout -> {
+                    return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
+                }
+                is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Failure -> {
+                    return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
+                }
+            }
+
+            return mapRiderRenameResult(project, result, allowFrontendFallback = true)
+        } finally {
+            if (openedByTool) {
+                edtAction {
+                    FileEditorManager.getInstance(project).closeFile(virtualFile)
+                }
+            }
+        }
+    }
+
+    private suspend fun tryExecuteRiderFileRename(
+        project: Project,
+        file: String,
         newName: String
     ): RiderRenameOutcome {
         commitDocuments(project)
@@ -246,43 +2978,273 @@ class RenameSymbolTool : AbstractMcpTool() {
         } ?: return RiderRenameOutcome.FileNotFound
 
         val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
-        val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", absolutePath, line, column)
-            ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd source position struct (rdgen mismatch?)")
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameSymbolRequest", position, newName)
-            ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename request struct (rdgen mismatch?)")
-        val result = RdProtocolBridge.invokeCall(model, "renameSymbol", request)
-            ?: return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
+        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameFileRequest", absolutePath, newName)
+            ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename file request struct (rdgen mismatch?)")
 
-        val success = RdProtocolBridge.getProperty(result, "success") as? Boolean ?: false
-        val message = RdProtocolBridge.getProperty(result, "message") as? String ?: "Rider backend rename failed"
-        if (!success) return RiderRenameOutcome.BackendCallFailed(message)
+        val outcome = RdProtocolBridge.invokeCallResult(model, "renameFile", request)
 
-        @Suppress("UNCHECKED_CAST")
-        val rawAffectedFiles = (RdProtocolBridge.getProperty(result, "affectedFiles") as? List<String>) ?: emptyList()
+        val result = when (outcome) {
+            is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Success -> {
+                outcome.value ?: return RiderRenameOutcome.BackendCallFailed(
+                    "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
+                )
+            }
+            is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Timeout -> {
+                return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
+            }
+            is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Failure -> {
+                return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
+            }
+        }
+
+        return mapRiderRenameResult(project, result, allowFrontendFallback = false)
+    }
+
+    private suspend fun mapRiderRenameResult(
+        project: Project,
+        result: Any,
+        allowFrontendFallback: Boolean = false
+    ): RiderRenameOutcome {
+        val backendResult = RiderBackendMutationResultMapper.fromRdResult(result)
+        val success = backendResult.success
+        val message = backendResult.message ?: "Rider backend rename failed"
+        val status = backendResult.status
+            ?: return RiderRenameOutcome.BackendCallFailed("Backend rename result omitted required status field")
+
+        val rawAffectedFiles = backendResult.affectedFiles
         val affectedFiles = rawAffectedFiles.map { absolute -> toRelativeProjectPath(project, absolute) }
-        val changesCount = RdProtocolBridge.getProperty(result, "changesCount") as? Int ?: affectedFiles.size
-        val oldName = RdProtocolBridge.getProperty(result, "oldName") as? String ?: ""
-        val returnedNewName = RdProtocolBridge.getProperty(result, "newName") as? String ?: newName
+        val changesCount = backendResult.changesCount
+        val verification = backendResult.verification?.status?.let { verificationStatus ->
+            MutationVerification(
+                status = verificationStatus,
+                checksRun = backendResult.verification.checksRun,
+                warnings = backendResult.verification.warnings
+            )
+        }
 
-        refreshAffectedFiles(rawAffectedFiles)
+        if (allowFrontendFallback && shouldFallbackToFrontendForCompletedRiderSymbolRename(status)) {
+            return RiderRenameOutcome.FallbackToFrontend(
+                status = status,
+                reason = message,
+                backendDiagnostics = backendResult.renameDiagnostics,
+                verification = verification
+            )
+        }
+
+        val extraRefreshPaths = buildList {
+            addAll(rawAffectedFiles)
+            (RdProtocolBridge.getProperty(result, "oldPath") as? String)?.takeIf { it.isNotBlank() }?.let(::add)
+            (RdProtocolBridge.getProperty(result, "newPath") as? String)?.takeIf { it.isNotBlank() }?.let(::add)
+        }.distinct()
+
+        refreshAffectedFiles(extraRefreshPaths)
         refreshProjectRootsAndCommit(project)
         commitDocuments(project)
         edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
 
-        return RiderRenameOutcome.Success(
-            createJsonResult(
-                RefactoringResult(
-                    success = true,
-                    affectedFiles = affectedFiles,
-                    changesCount = changesCount,
-                    message = if (oldName.isNotBlank()) {
-                        "Successfully renamed '$oldName' to '$returnedNewName' using Rider ReSharper backend"
-                    } else {
-                        message
-                    }
-                )
-            )
+        val summary = RiderMutationResultMapper.summary(
+            legacySuccess = success,
+            status = status,
+            affectedFiles = affectedFiles,
+            changesCount = changesCount,
+            message = message,
+            verification = verification
         )
+
+        return RiderRenameOutcome.Success(
+            result = createJsonResult(summary.toRefactoringResult()),
+            summary = summary
+        )
+    }
+
+    private fun assessPreferredRiderRenameHandler(selectedHandler: RenameHandler?): PreferredRiderActionLanePlan {
+        return assessPreferredRiderRenameHandlerClassName(selectedHandler?.javaClass?.name)
+    }
+
+    private suspend fun planProductionRiderRename(
+        project: Project,
+        element: PsiElement,
+        newName: String,
+    ): RiderRenameExecutionPlan {
+        // val editorLookup = lookupRiderFrontendEditor(project, element, trace)
+        val editorLookup = lookupRiderFrontendEditor(project, element)
+        val dataContext = composeDeterministicRiderDataContext(project, element, newName, editorLookup)
+        val feasibility = evaluateRiderFrontendFeasibility(
+            hasDeclarationEditor = editorLookup.editor != null,
+            canComposeDataContext = dataContext.dataContext != null
+        )
+
+        if (!feasibility.canProceed) {
+            return RiderRenameExecutionPlan(
+                availableHandlerTitles = emptyList(),
+                selectedHandler = null,
+                selectedHandlerClassName = null,
+                selectedHandlerTitle = null,
+                editorLookup = editorLookup,
+                dataContext = dataContext,
+                policy = RiderFrontendPolicyEvaluation(
+                    shouldInvoke = false,
+                    reason = feasibility.reason
+                ),
+                lane = RiderRenameExecutionLane.BLOCKED,
+                blockReason = feasibility.reason
+            )
+        }
+
+        val registry = RenameHandlerRegistry.getInstance()
+        val handlers = registry.getRenameHandlers(requireNotNull(dataContext.dataContext))
+        val availableHandlerTitles = handlers.map(RenameHandlerRegistry::getHandlerTitle)
+        val selectedHandler = handlers.singleOrNull() as? RenameHandler
+        val handlerAssessment = assessPreferredRiderRenameHandler(selectedHandler)
+        val preferredLanePlan = evaluatePreferredRiderActionLane(
+            availableHandlerTitles = availableHandlerTitles,
+            selectedHandlerClassName = selectedHandler?.javaClass?.name,
+            selectedHandlerIsKnownSafeNonModal = handlerAssessment.shouldInvoke,
+            selectedHandlerBlockReason = handlerAssessment.reason
+        )
+        val policy = RiderFrontendPolicyEvaluation(
+            shouldInvoke = preferredLanePlan.shouldInvoke,
+            reason = preferredLanePlan.reason
+        )
+        // frontend.factory.policy
+        val factoryPlan = evaluateSecondChoiceRiderRefactoringFactoryLane(
+            hasDeclarationEditor = editorLookup.editor != null,
+            canComposeDataContext = dataContext.dataContext != null,
+            preferredLaneWasDeterministic = policy.shouldInvoke
+        )
+        val lane = if (policy.shouldInvoke) {
+            RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
+        } else {
+            RiderRenameExecutionLane.BLOCKED
+        }
+        val blockReason = if (lane == RiderRenameExecutionLane.BLOCKED) {
+            // frontend.factory.refused
+            "${policy.reason}; second choice refused: ${factoryPlan.reason}"
+        } else {
+            null
+        }
+
+        return RiderRenameExecutionPlan(
+            availableHandlerTitles = availableHandlerTitles,
+            selectedHandler = selectedHandler,
+            selectedHandlerClassName = selectedHandler?.javaClass?.name,
+            selectedHandlerTitle = selectedHandler?.let(RenameHandlerRegistry::getHandlerTitle),
+            editorLookup = editorLookup,
+            dataContext = dataContext,
+            policy = policy,
+            lane = lane,
+            blockReason = blockReason
+        )
+    }
+
+    private suspend fun lookupRiderFrontendEditor(
+        project: Project,
+        element: PsiElement,
+    ): RiderFrontendEditorLookup {
+        val lookupSeed = suspendingReadAction {
+            val containingFile = element.containingFile
+            val virtualFile = containingFile?.virtualFile
+            val navigationOffset = (element as? PsiNameIdentifierOwner)?.nameIdentifier?.textRange?.startOffset
+                ?: element.textRange?.startOffset
+            virtualFile to navigationOffset
+        }
+
+        val virtualFile = lookupSeed.first
+        val navigationOffset = lookupSeed.second
+
+        if (virtualFile == null) {
+            val reason = "declaration file is unavailable for Rider rename lane"
+            return RiderFrontendEditorLookup(
+                editor = null,
+                reason = reason,
+                virtualFile = null,
+                openedByTool = false
+            )
+        }
+
+        val lookup = edtAction {
+            val fileEditorManager = FileEditorManager.getInstance(project)
+            val targetDocument = FileDocumentManager.getInstance().getDocument(virtualFile)
+
+            fun selectedMatchingEditor(): Editor? {
+                val document = targetDocument ?: return null
+                return fileEditorManager.selectedTextEditor?.takeIf { selected ->
+                    selected.document == document
+                }
+            }
+
+            selectedMatchingEditor()?.let { selectedEditor ->
+                return@edtAction RiderFrontendEditorLookup(
+                    editor = selectedEditor,
+                    reason = "selected text editor matches declaration file",
+                    virtualFile = virtualFile,
+                    openedByTool = false
+                )
+            }
+
+            val wasAlreadyOpen = fileEditorManager.isFileOpen(virtualFile)
+            fileEditorManager.openFile(virtualFile, true)
+            val openedEditor = selectedMatchingEditor()
+            if (openedEditor != null && navigationOffset != null) {
+                val boundedOffset = navigationOffset.coerceIn(0, openedEditor.document.textLength)
+                openedEditor.caretModel.moveToOffset(boundedOffset)
+            }
+
+            if (openedEditor != null) {
+                RiderFrontendEditorLookup(
+                    editor = openedEditor,
+                    reason = if (wasAlreadyOpen) {
+                        "focused already-open declaration file for Rider rename lane"
+                    } else {
+                        "auto-opened declaration file for Rider rename lane"
+                    },
+                    virtualFile = virtualFile,
+                    openedByTool = !wasAlreadyOpen
+                )
+            } else {
+                RiderFrontendEditorLookup(
+                    editor = null,
+                    reason = "no selected text editor matched declaration file after attempting to open it",
+                    virtualFile = virtualFile,
+                    openedByTool = false
+                )
+            }
+        }
+        return lookup
+    }
+
+    private suspend fun composeDeterministicRiderDataContext(
+        project: Project,
+        element: PsiElement,
+        newName: String,
+        editorLookup: RiderFrontendEditorLookup,
+    ): RiderDeterministicDataContext {
+        if (editorLookup.editor == null) {
+            return RiderDeterministicDataContext(
+                availableKeys = emptyList(),
+                dataContext = null
+            )
+        }
+
+        val psiFile = suspendingReadAction { element.containingFile }
+
+        val entries = linkedMapOf(
+            CommonDataKeys.PROJECT.name to project,
+            CommonDataKeys.PSI_ELEMENT.name to element,
+            PlatformCoreDataKeys.PSI_ELEMENT_ARRAY.name to arrayOf(element),
+            CommonDataKeys.PSI_FILE.name to psiFile,
+            PsiElementRenameHandler.DEFAULT_NAME.name to newName,
+            CommonDataKeys.EDITOR.name to editorLookup.editor
+        )
+        val availableKeys = entries.filterValues { it != null }.keys.toList()
+        return RiderDeterministicDataContext(
+            availableKeys = availableKeys,
+            dataContext = DataContext { dataId -> entries[dataId] }
+        )
+    }
+
+    private fun toMutationVerification(rawVerification: Any?): MutationVerification? {
+        return RiderMutationResultMapper.toMutationVerification(rawVerification, RdProtocolBridge::getProperty)
     }
 
     /**
@@ -325,23 +3287,58 @@ class RenameSymbolTool : AbstractMcpTool() {
         file: String,
         line: Int,
         column: Int,
-        newName: String
+        newName: String,
+        strictRiderFallbackTargeting: Boolean = false
     ): RenameValidation {
-        val psiElement = findPsiElement(project, file, line, column)
+        val psiFile = getPsiFile(project, file)
+            ?: return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "File not found: $file"
+            )
+
+        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
+            ?: return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "No document available for file: $file"
+            )
+
+        val offset = getOffset(document, line, column)
             ?: return RenameValidation(
                 element = DummyNamedElement,
                 oldName = "",
                 error = "No element found at the specified position"
             )
 
-        val namedElement = findNamedElement(psiElement)
+        val psiElement = psiFile.findElementAt(offset)
             ?: return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "No element found at the specified position"
+            )
+
+        val targetResolution = inspectNamedElementCandidateForRename(psiElement, offset)
+        val namedElement = targetResolution.candidate
+        val candidateName = targetResolution.candidateName
+
+        if (namedElement == null) {
+            return RenameValidation(
                 element = DummyNamedElement,
                 oldName = "",
                 error = "No renameable symbol found at the specified position"
             )
+        }
 
-        val oldName = namedElement.name
+        if (strictRiderFallbackTargeting && isUnsupportedRiderFrontendFallbackTarget(namedElement, candidateName)) {
+            return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "Rider frontend fallback could not prove an exact named symbol target at the requested position"
+            )
+        }
+
+        val oldName = candidateName
             ?: return RenameValidation(
                 element = DummyNamedElement,
                 oldName = "",
@@ -425,7 +3422,7 @@ class RenameSymbolTool : AbstractMcpTool() {
      * Checks for naming conflicts that would prevent the rename.
      * Returns an error message if conflicts exist, null otherwise.
      */
-    private fun checkForConflicts(element: PsiNamedElement, newName: String): String? {
+    private fun checkForConflicts(element: PsiElement, newName: String): String? {
         val processor = RenamePsiElementProcessor.forElement(element)
         val conflicts = MultiMap<PsiElement, String>()
 
@@ -481,7 +3478,7 @@ class RenameSymbolTool : AbstractMcpTool() {
      */
     private fun executeRename(
         project: Project,
-        element: PsiNamedElement,
+        element: PsiElement,
         newName: String,
         overrideStrategy: String,
         relatedRenamingStrategy: String,
@@ -521,8 +3518,10 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         // Register automatic renamers based on the relatedRenamingStrategy.
+        // File rename requests stay file-scoped: do not attach symbol-related automatic renamers
+        // or parameter/field coupling because the contract is to preserve declared type names.
         // Factories with null option names are already handled automatically by RenameProcessor.
-        if (relatedRenamingStrategy != "none") {
+        if (targetElement !is PsiFile && relatedRenamingStrategy != "none") {
             for (factory in AutomaticRenamerFactory.EP_NAME.extensionList) {
                 if (factory.optionName == null) continue
                 if (relatedRenamingStrategy == "accessors_and_tests" && !isAccessorOrTestFactory(factory)) continue
@@ -531,7 +3530,9 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         // Add constructor parameter -> field relation up front.
-        addParameterFieldRelations(project, targetElement, effectiveNewName, renameProcessor)
+        if (targetElement !is PsiFile) {
+            addParameterFieldRelations(project, targetElement, effectiveNewName, renameProcessor)
+        }
 
         // Disable preview dialog for headless operation
         renameProcessor.setPreviewUsages(false)
@@ -570,8 +3571,8 @@ class RenameSymbolTool : AbstractMcpTool() {
      * user provided a name without extension, the original file's extension is preserved.
      */
     private fun computeEffectiveNewName(
-        element: PsiNamedElement,
-        targetElement: PsiNamedElement,
+        element: PsiElement,
+        targetElement: PsiElement,
         newName: String
     ): String {
         if (element !is PsiFile) return newName
@@ -631,17 +3632,19 @@ class RenameSymbolTool : AbstractMcpTool() {
      *   - "rename_only_current": use the element as-is, skip substitution (no dialog)
      *   - "ask": delegate to substituteElementToRename (shows IDE dialog)
      */
-    private fun resolveRenameTarget(element: PsiNamedElement, overrideStrategy: String): PsiNamedElement {
+    private fun resolveRenameTarget(element: PsiElement, overrideStrategy: String): PsiElement {
+        val namedElement = element as? PsiNamedElement ?: return element
+
         when (overrideStrategy) {
             "rename_base" -> {
                 // Resolve to the deepest super method to avoid the dialog
-                val deepestSuper = resolveDeepestSuperMethod(element)
+                val deepestSuper = resolveDeepestSuperMethod(namedElement)
                 if (deepestSuper != null) return deepestSuper
             }
             "rename_only_current" -> {
                 // Use the element directly — skip substituteElementToRename entirely
                 // to avoid the dialog. Only apply non-dialog substitutions.
-                return resolveNonDialogSubstitution(element)
+                return resolveNonDialogSubstitution(namedElement)
             }
             "ask" -> {
                 // Fall through to substituteElementToRename (will show dialog)
@@ -649,9 +3652,8 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         // For non-override elements or "ask" strategy, use standard substitution
-        val elementProcessor = RenamePsiElementProcessor.forElement(element)
-        val substituted = elementProcessor.substituteElementToRename(element, null)
-        return (substituted as? PsiNamedElement) ?: element
+        val elementProcessor = RenamePsiElementProcessor.forElement(namedElement)
+        return elementProcessor.substituteElementToRename(namedElement, null) ?: namedElement
     }
 
     /**
@@ -740,13 +3742,15 @@ class RenameSymbolTool : AbstractMcpTool() {
      */
     private fun addParameterFieldRelations(
         project: Project,
-        element: PsiNamedElement,
+        element: PsiElement,
         newName: String,
         renameProcessor: RenameProcessor
     ): Int {
         var count = 0
 
         try {
+            val namedElement = element as? PsiNamedElement ?: return 0
+
             // Check if this is a Java/Kotlin parameter declared on a constructor
             val psiParameterClass = try {
                 Class.forName("com.intellij.psi.PsiParameter")
@@ -754,11 +3758,11 @@ class RenameSymbolTool : AbstractMcpTool() {
                 return 0 // Java plugin not available
             }
 
-            if (!psiParameterClass.isInstance(element)) {
+            if (!psiParameterClass.isInstance(namedElement)) {
                 return 0
             }
 
-            val declarationScope = element.javaClass.getMethod("getDeclarationScope").invoke(element)
+            val declarationScope = namedElement.javaClass.getMethod("getDeclarationScope").invoke(namedElement)
             val psiMethodClass = Class.forName("com.intellij.psi.PsiMethod")
             if (!psiMethodClass.isInstance(declarationScope)) {
                 return 0
@@ -769,7 +3773,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 return 0
             }
 
-            val parameterName = element.name ?: return 0
+            val parameterName = namedElement.name ?: return 0
             val containingClass = psiMethodClass.getMethod("getContainingClass").invoke(declarationScope) ?: return 0
             val psiClassClass = Class.forName("com.intellij.psi.PsiClass")
             val javaCodeStyleManagerClass = Class.forName("com.intellij.psi.codeStyle.JavaCodeStyleManager")
@@ -844,25 +3848,18 @@ class RenameSymbolTool : AbstractMcpTool() {
      * Falls back to walking up the tree for the nearest [PsiNamedElement].
      */
     private fun findNamedElement(element: PsiElement): PsiNamedElement? {
-        if (element is PsiNamedElement && element !is PsiFile && element.name != null) {
-            return element
-        }
+        return resolveNamedElementCandidateForRename(element)
+    }
 
-        var current: PsiElement? = element
-        while (current != null) {
-            for (reference in current.references) {
-                val resolved = reference.resolve()
-                if (resolved is PsiNamedElement && resolved !is PsiFile && resolved.name != null) {
-                    return resolved
-                }
-            }
-            if (current is PsiNamedElement && current !is PsiFile && current.name != null) {
-                return current
-            }
-            current = current.parent
+    private fun isUnsupportedRiderFrontendFallbackTarget(element: PsiElement, resolvedName: String?): Boolean {
+        if (element is PsiFile || element is PsiDirectory || resolvedName.isNullOrBlank()) {
+            return true
         }
+        return isUnsupportedRiderFrontendFallbackTargetClass(element.javaClass.name)
+    }
 
-        return null
+    private fun describeElementForTrace(element: PsiElement?): String {
+        return describeElementForTraceValue(element)
     }
 
     /**

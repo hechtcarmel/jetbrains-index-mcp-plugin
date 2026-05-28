@@ -24,6 +24,7 @@ data class UsageLocation(
 data class FindUsagesResult(
     val usages: List<UsageLocation>,
     val totalCount: Int,
+    val message: String? = null,
     val truncated: Boolean = false,
     val nextCursor: String? = null,
     val hasMore: Boolean = false,
@@ -41,7 +42,10 @@ data class DefinitionResult(
     val column: Int,
     val preview: String,
     val symbolName: String,
-    val astPath: List<String>
+    val astPath: List<String>,
+    val message: String? = null,
+    val locationKind: String? = null,
+    val locationDisplayName: String? = null
 )
 
 // ide_read_file output
@@ -78,7 +82,8 @@ data class TypeElement(
 @Serializable
 data class CallHierarchyResult(
     val element: CallElement,
-    val calls: List<CallElement>
+    val calls: List<CallElement>,
+    val message: String? = null
 )
 
 @Serializable
@@ -174,13 +179,22 @@ data class TestSummary(
     val runConfigName: String?
 )
 
+@Serializable
+data class MutationVerification(
+    val status: String,
+    val checksRun: List<String> = emptyList(),
+    val warnings: List<String> = emptyList()
+)
+
 // Refactoring result
 @Serializable
 data class RefactoringResult(
     val success: Boolean,
     val affectedFiles: List<String>,
     val changesCount: Int,
-    val message: String
+    val message: String,
+    val status: String? = null,
+    val verification: MutationVerification? = null
 )
 
 

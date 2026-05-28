@@ -532,7 +532,13 @@ class ToolModelsUnitTest : TestCase() {
             success = true,
             affectedFiles = listOf("src/Main.kt", "src/Service.kt", "test/MainTest.kt"),
             changesCount = 5,
-            message = "Renamed 'foo' to 'bar' in 3 files"
+            message = "Renamed 'foo' to 'bar' in 3 files",
+            status = "success",
+            verification = MutationVerification(
+                status = "success",
+                checksRun = listOf("declaration_renamed", "references_updated"),
+                warnings = emptyList()
+            )
         )
 
         val serialized = json.encodeToString(result)
@@ -542,6 +548,11 @@ class ToolModelsUnitTest : TestCase() {
         assertEquals(3, deserialized.affectedFiles.size)
         assertEquals(5, deserialized.changesCount)
         assertTrue(deserialized.message.contains("Renamed"))
+        assertEquals("success", deserialized.status)
+        assertNotNull(deserialized.verification)
+        assertEquals("success", deserialized.verification?.status)
+        assertEquals(listOf("declaration_renamed", "references_updated"), deserialized.verification?.checksRun)
+        assertTrue(deserialized.verification?.warnings?.isEmpty() == true)
     }
 
     fun testRefactoringResultFailure() {
@@ -558,6 +569,37 @@ class ToolModelsUnitTest : TestCase() {
         assertFalse(deserialized.success)
         assertTrue(deserialized.affectedFiles.isEmpty())
         assertEquals(0, deserialized.changesCount)
+        assertNull(deserialized.status)
+        assertNull(deserialized.verification)
+    }
+
+    fun testRefactoringResultLegacyPayloadRemainsCompatible() {
+        val legacyJson =
+            """{"success":true,"affectedFiles":["src/Main.kt"],"changesCount":1,"message":"Legacy rename result"}"""
+
+        val deserialized = json.decodeFromString<RefactoringResult>(legacyJson)
+
+        assertTrue(deserialized.success)
+        assertEquals(listOf("src/Main.kt"), deserialized.affectedFiles)
+        assertEquals(1, deserialized.changesCount)
+        assertEquals("Legacy rename result", deserialized.message)
+        assertNull(deserialized.status)
+        assertNull(deserialized.verification)
+    }
+
+    fun testMutationVerificationSerialization() {
+        val verification = MutationVerification(
+            status = "verification_limited",
+            checksRun = listOf("rename_applied", "usage_scan"),
+            warnings = listOf("Closed-file diagnostics are supplementary only")
+        )
+
+        val serialized = json.encodeToString(verification)
+        val deserialized = json.decodeFromString<MutationVerification>(serialized)
+
+        assertEquals("verification_limited", deserialized.status)
+        assertEquals(listOf("rename_applied", "usage_scan"), deserialized.checksRun)
+        assertEquals(listOf("Closed-file diagnostics are supplementary only"), deserialized.warnings)
     }
 
     // IndexStatusResult tests

@@ -1,11 +1,13 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderEnvironment
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
 import com.intellij.psi.SmartPointerManager
+import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,6 +33,11 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         val path = Path.of(projectBasePath, relativePath)
         Files.createDirectories(path.parent)
         Files.writeString(path, content)
+        val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)
+            ?: error("Failed to refresh $relativePath into LocalFileSystem")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+        PsiManager.getInstance(project).findFile(virtualFile)
+            ?: error("Failed to create PSI for $relativePath")
         return path
     }
 
@@ -53,6 +60,29 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
 
         assertTrue("Unsupported PHP semantic moves should fail fast", result.isError)
         assertTrue(textResult(result).contains("semantic PHP move blocked for test"))
+    }
+
+    fun testMoveFileToolFailsClosedWhenSourceFileCannotBeResolved() = runBlocking {
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "missing/DoesNotExist.cs")
+            put("destination", "missing/Elsewhere")
+        })
+
+        assertTrue("Missing source file should fail closed", result.isError)
+        assertTrue(textResult(result).contains("Source file not found: missing/DoesNotExist.cs"))
+    }
+
+    fun testMoveFileToolFailsClosedWhenDestinationCannotBeCreated() = runBlocking {
+        writeProjectFile("src/Example.cs", "namespace Demo; public sealed class Example {}")
+        writeProjectFile("blocked.txt", "blocked")
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "src/Example.cs")
+            put("destination", "blocked.txt/child")
+        })
+
+        assertTrue("Invalid destination should fail closed", result.isError)
+        assertTrue(textResult(result).contains("Invalid destination 'blocked.txt/child'"))
     }
 
     fun testMoveFileToolReportsPhpSemanticBackendWhenSelected() = runBlocking {
@@ -130,11 +160,7 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         val resultJson = json.parseToJsonElement(textResult(result)).jsonObject
         val message = resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
         assertTrue(message.contains("C# namespace updated"))
-        if (RiderEnvironment.isAvailable) {
-            assertTrue(message.contains("cross-file using/import updates depend on Rider frontend support"))
-        } else {
-            assertFalse(message.contains("cross-file using/import updates depend on Rider frontend support"))
-        }
+        assertFalse(message.contains("cross-file using/import updates depend on Rider frontend support"))
         assertFalse("Source file should be moved away", Files.exists(sourceFile))
         val movedFile = Path.of(requireNotNull(project.basePath), "Clipthrough/Services/SampleThing.cs")
         assertTrue("Moved file should exist in target directory", Files.exists(movedFile))

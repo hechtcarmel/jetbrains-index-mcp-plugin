@@ -1,0 +1,67 @@
+{
+  "project": "MutationWorkspace.csproj",
+  "cases": {
+    "localRename": {
+      "file": "Renames/RenameTargets.cs",
+      "kind": "local",
+      "line": 9,
+      "column": 13,
+      "whitespaceBeforeColumn": 12,
+      "symbol": "total",
+      "newName": "grandTotal"
+    },
+    "parameterRename": {
+      "file": "Renames/RenameTargets.cs",
+      "kind": "parameter",
+      "line": 7,
+      "column": 33,
+      "whitespaceBeforeColumn": 32,
+      "symbol": "increment",
+      "newName": "step"
+    },
+    "memberRename": {
+      "file": "Renames/RenameTargets.cs",
+      "kind": "member",
+      "line": 5,
+      "column": 17,
+      "nonNameTokenColumn": 13,
+      "symbol": "_counter",
+      "newName": "_runningTotal"
+    },
+    "typeRename": {
+      "file": "Renames/TypeRenameTarget.cs",
+      "kind": "type",
+      "line": 3,
+      "column": 21,
+      "nonNameTokenColumn": 15,
+      "symbol": "TypeRenameTarget",
+      "newName": "RenamedTypeTarget"
+    },
+    "fileRename": {
+      "file": "FileRename/FileRenameCandidate.cs",
+      "newName": "RenamedFileOnly.cs",
+      "preserveTypeName": "FileRenamePayload",
+      "prohibitedTypeRename": "RenamedFileOnly",
+      "consumerSentinel": "nameof(FileRenamePayload)"
+    },
+    "semanticMove": {
+      "file": "Moves/Source/MoveTarget.cs",
+      "destination": "Moves/SmokeMove",
+      "expectedNamespaceAfterMove": "ModelDescriptions.SmokeMove",
+      "duplicatedNamespaceAfterMove": "ModelDescriptions.SmokeMove.SmokeMove",
+      "referenceSentinel": "MoveTarget"
+    },
+    "safeDeleteBlocked": {
+      "file": "SafeDelete/BlockedDeletionTarget.cs",
+      "line": 3,
+      "column": 21,
+      "symbol": "BlockedDeletionTarget"
+    },
+    "safeDeleteAllowed": {
+      "file": "SafeDelete/AllowedDeletionTarget.cs",
+      "line": 3,
+      "column": 21,
+      "symbol": "AllowedDeletionTarget"
+    }
+  }
+}

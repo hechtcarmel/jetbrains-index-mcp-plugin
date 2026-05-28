@@ -44,67 +44,92 @@ namespace JetBrains.Rider.Model.IndexMcp
     //public fields
     [NotNull] public IRdEndpoint<Unit, RdBackendStatusResult> GetBackendStatus => _GetBackendStatus;
     [NotNull] public IRdEndpoint<RdFindTypesRequest, RdFindTypesResult> FindTypes => _FindTypes;
+    [NotNull] public IRdEndpoint<RdFindSymbolsRequest, RdFindSymbolsResult> FindSymbols => _FindSymbols;
     [NotNull] public IRdEndpoint<RdFindDefinitionRequest, RdDefinitionResult> FindDefinition => _FindDefinition;
     [NotNull] public IRdEndpoint<RdFindReferencesRequest, RdFindReferencesResult> FindReferences => _FindReferences;
     [NotNull] public IRdEndpoint<RdResolveSymbolRequest, RdSymbolInfo> ResolveSymbol => _ResolveSymbol;
+    [NotNull] public IRdEndpoint<RdResolveSymbolIndexedRequest, RdResolveSymbolIndexedResult> ResolveSymbolIndexed => _ResolveSymbolIndexed;
     [NotNull] public IRdEndpoint<RdTypeHierarchyRequest, RdTypeHierarchyResult> GetTypeHierarchy => _GetTypeHierarchy;
     [NotNull] public IRdEndpoint<RdImplementationsRequest, RdImplementationsResult> FindImplementations => _FindImplementations;
     [NotNull] public IRdEndpoint<RdCallHierarchyRequest, RdCallHierarchyResult> GetCallHierarchy => _GetCallHierarchy;
     [NotNull] public IRdEndpoint<RdSuperMethodsRequest, RdSuperMethodsResult> FindSuperMethods => _FindSuperMethods;
     [NotNull] public IRdEndpoint<RdFileStructureRequest, RdFileStructureResult> GetFileStructure => _GetFileStructure;
     [NotNull] public IRdEndpoint<RdRenameSymbolRequest, RdRenameSymbolResult> RenameSymbol => _RenameSymbol;
+    [NotNull] public IRdEndpoint<RdRenameFileRequest, RdRenameFileResult> RenameFile => _RenameFile;
+    [NotNull] public IRdEndpoint<RdMoveFileRequest, RdMoveFileResult> MoveFile => _MoveFile;
+    [NotNull] public IRdEndpoint<RdSafeDeleteRequest, RdSafeDeleteResult> SafeDelete => _SafeDelete;
     
     //private fields
     [NotNull] private readonly RdCall<Unit, RdBackendStatusResult> _GetBackendStatus;
     [NotNull] private readonly RdCall<RdFindTypesRequest, RdFindTypesResult> _FindTypes;
+    [NotNull] private readonly RdCall<RdFindSymbolsRequest, RdFindSymbolsResult> _FindSymbols;
     [NotNull] private readonly RdCall<RdFindDefinitionRequest, RdDefinitionResult> _FindDefinition;
     [NotNull] private readonly RdCall<RdFindReferencesRequest, RdFindReferencesResult> _FindReferences;
     [NotNull] private readonly RdCall<RdResolveSymbolRequest, RdSymbolInfo> _ResolveSymbol;
+    [NotNull] private readonly RdCall<RdResolveSymbolIndexedRequest, RdResolveSymbolIndexedResult> _ResolveSymbolIndexed;
     [NotNull] private readonly RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult> _GetTypeHierarchy;
     [NotNull] private readonly RdCall<RdImplementationsRequest, RdImplementationsResult> _FindImplementations;
     [NotNull] private readonly RdCall<RdCallHierarchyRequest, RdCallHierarchyResult> _GetCallHierarchy;
     [NotNull] private readonly RdCall<RdSuperMethodsRequest, RdSuperMethodsResult> _FindSuperMethods;
     [NotNull] private readonly RdCall<RdFileStructureRequest, RdFileStructureResult> _GetFileStructure;
     [NotNull] private readonly RdCall<RdRenameSymbolRequest, RdRenameSymbolResult> _RenameSymbol;
+    [NotNull] private readonly RdCall<RdRenameFileRequest, RdRenameFileResult> _RenameFile;
+    [NotNull] private readonly RdCall<RdMoveFileRequest, RdMoveFileResult> _MoveFile;
+    [NotNull] private readonly RdCall<RdSafeDeleteRequest, RdSafeDeleteResult> _SafeDelete;
     
     //primary constructor
     private IndexMcpModel(
       [NotNull] RdCall<Unit, RdBackendStatusResult> getBackendStatus,
       [NotNull] RdCall<RdFindTypesRequest, RdFindTypesResult> findTypes,
+      [NotNull] RdCall<RdFindSymbolsRequest, RdFindSymbolsResult> findSymbols,
       [NotNull] RdCall<RdFindDefinitionRequest, RdDefinitionResult> findDefinition,
       [NotNull] RdCall<RdFindReferencesRequest, RdFindReferencesResult> findReferences,
       [NotNull] RdCall<RdResolveSymbolRequest, RdSymbolInfo> resolveSymbol,
+      [NotNull] RdCall<RdResolveSymbolIndexedRequest, RdResolveSymbolIndexedResult> resolveSymbolIndexed,
       [NotNull] RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult> getTypeHierarchy,
       [NotNull] RdCall<RdImplementationsRequest, RdImplementationsResult> findImplementations,
       [NotNull] RdCall<RdCallHierarchyRequest, RdCallHierarchyResult> getCallHierarchy,
       [NotNull] RdCall<RdSuperMethodsRequest, RdSuperMethodsResult> findSuperMethods,
       [NotNull] RdCall<RdFileStructureRequest, RdFileStructureResult> getFileStructure,
-      [NotNull] RdCall<RdRenameSymbolRequest, RdRenameSymbolResult> renameSymbol
+      [NotNull] RdCall<RdRenameSymbolRequest, RdRenameSymbolResult> renameSymbol,
+      [NotNull] RdCall<RdRenameFileRequest, RdRenameFileResult> renameFile,
+      [NotNull] RdCall<RdMoveFileRequest, RdMoveFileResult> moveFile,
+      [NotNull] RdCall<RdSafeDeleteRequest, RdSafeDeleteResult> safeDelete
     )
     {
       if (getBackendStatus == null) throw new ArgumentNullException("getBackendStatus");
       if (findTypes == null) throw new ArgumentNullException("findTypes");
+      if (findSymbols == null) throw new ArgumentNullException("findSymbols");
       if (findDefinition == null) throw new ArgumentNullException("findDefinition");
       if (findReferences == null) throw new ArgumentNullException("findReferences");
       if (resolveSymbol == null) throw new ArgumentNullException("resolveSymbol");
+      if (resolveSymbolIndexed == null) throw new ArgumentNullException("resolveSymbolIndexed");
       if (getTypeHierarchy == null) throw new ArgumentNullException("getTypeHierarchy");
       if (findImplementations == null) throw new ArgumentNullException("findImplementations");
       if (getCallHierarchy == null) throw new ArgumentNullException("getCallHierarchy");
       if (findSuperMethods == null) throw new ArgumentNullException("findSuperMethods");
       if (getFileStructure == null) throw new ArgumentNullException("getFileStructure");
       if (renameSymbol == null) throw new ArgumentNullException("renameSymbol");
+      if (renameFile == null) throw new ArgumentNullException("renameFile");
+      if (moveFile == null) throw new ArgumentNullException("moveFile");
+      if (safeDelete == null) throw new ArgumentNullException("safeDelete");
       
       _GetBackendStatus = getBackendStatus;
       _FindTypes = findTypes;
+      _FindSymbols = findSymbols;
       _FindDefinition = findDefinition;
       _FindReferences = findReferences;
       _ResolveSymbol = resolveSymbol;
+      _ResolveSymbolIndexed = resolveSymbolIndexed;
       _GetTypeHierarchy = getTypeHierarchy;
       _FindImplementations = findImplementations;
       _GetCallHierarchy = getCallHierarchy;
       _FindSuperMethods = findSuperMethods;
       _GetFileStructure = getFileStructure;
       _RenameSymbol = renameSymbol;
+      _RenameFile = renameFile;
+      _MoveFile = moveFile;
+      _SafeDelete = safeDelete;
       _FindDefinition.ValueCanBeNull = true;
       _ResolveSymbol.ValueCanBeNull = true;
       _GetTypeHierarchy.ValueCanBeNull = true;
@@ -113,32 +138,45 @@ namespace JetBrains.Rider.Model.IndexMcp
       _FindSuperMethods.ValueCanBeNull = true;
       _GetFileStructure.ValueCanBeNull = true;
       _RenameSymbol.ValueCanBeNull = true;
+      _RenameFile.ValueCanBeNull = true;
+      _MoveFile.ValueCanBeNull = true;
+      _SafeDelete.ValueCanBeNull = true;
       BindableChildren.Add(new KeyValuePair<string, object>("getBackendStatus", _GetBackendStatus));
       BindableChildren.Add(new KeyValuePair<string, object>("findTypes", _FindTypes));
+      BindableChildren.Add(new KeyValuePair<string, object>("findSymbols", _FindSymbols));
       BindableChildren.Add(new KeyValuePair<string, object>("findDefinition", _FindDefinition));
       BindableChildren.Add(new KeyValuePair<string, object>("findReferences", _FindReferences));
       BindableChildren.Add(new KeyValuePair<string, object>("resolveSymbol", _ResolveSymbol));
+      BindableChildren.Add(new KeyValuePair<string, object>("resolveSymbolIndexed", _ResolveSymbolIndexed));
       BindableChildren.Add(new KeyValuePair<string, object>("getTypeHierarchy", _GetTypeHierarchy));
       BindableChildren.Add(new KeyValuePair<string, object>("findImplementations", _FindImplementations));
       BindableChildren.Add(new KeyValuePair<string, object>("getCallHierarchy", _GetCallHierarchy));
       BindableChildren.Add(new KeyValuePair<string, object>("findSuperMethods", _FindSuperMethods));
       BindableChildren.Add(new KeyValuePair<string, object>("getFileStructure", _GetFileStructure));
       BindableChildren.Add(new KeyValuePair<string, object>("renameSymbol", _RenameSymbol));
+      BindableChildren.Add(new KeyValuePair<string, object>("renameFile", _RenameFile));
+      BindableChildren.Add(new KeyValuePair<string, object>("moveFile", _MoveFile));
+      BindableChildren.Add(new KeyValuePair<string, object>("safeDelete", _SafeDelete));
     }
     //secondary constructor
     internal IndexMcpModel (
     ) : this (
       new RdCall<Unit, RdBackendStatusResult>(JetBrains.Rd.Impl.Serializers.ReadVoid, JetBrains.Rd.Impl.Serializers.WriteVoid, RdBackendStatusResult.Read, RdBackendStatusResult.Write),
       new RdCall<RdFindTypesRequest, RdFindTypesResult>(RdFindTypesRequest.Read, RdFindTypesRequest.Write, RdFindTypesResult.Read, RdFindTypesResult.Write),
+      new RdCall<RdFindSymbolsRequest, RdFindSymbolsResult>(RdFindSymbolsRequest.Read, RdFindSymbolsRequest.Write, RdFindSymbolsResult.Read, RdFindSymbolsResult.Write),
       new RdCall<RdFindDefinitionRequest, RdDefinitionResult>(RdFindDefinitionRequest.Read, RdFindDefinitionRequest.Write, ReadRdDefinitionResultNullable, WriteRdDefinitionResultNullable),
       new RdCall<RdFindReferencesRequest, RdFindReferencesResult>(RdFindReferencesRequest.Read, RdFindReferencesRequest.Write, RdFindReferencesResult.Read, RdFindReferencesResult.Write),
       new RdCall<RdResolveSymbolRequest, RdSymbolInfo>(RdResolveSymbolRequest.Read, RdResolveSymbolRequest.Write, ReadRdSymbolInfoNullable, WriteRdSymbolInfoNullable),
+      new RdCall<RdResolveSymbolIndexedRequest, RdResolveSymbolIndexedResult>(RdResolveSymbolIndexedRequest.Read, RdResolveSymbolIndexedRequest.Write, RdResolveSymbolIndexedResult.Read, RdResolveSymbolIndexedResult.Write),
       new RdCall<RdTypeHierarchyRequest, RdTypeHierarchyResult>(RdTypeHierarchyRequest.Read, RdTypeHierarchyRequest.Write, ReadRdTypeHierarchyResultNullable, WriteRdTypeHierarchyResultNullable),
       new RdCall<RdImplementationsRequest, RdImplementationsResult>(RdImplementationsRequest.Read, RdImplementationsRequest.Write, ReadRdImplementationsResultNullable, WriteRdImplementationsResultNullable),
       new RdCall<RdCallHierarchyRequest, RdCallHierarchyResult>(RdCallHierarchyRequest.Read, RdCallHierarchyRequest.Write, ReadRdCallHierarchyResultNullable, WriteRdCallHierarchyResultNullable),
       new RdCall<RdSuperMethodsRequest, RdSuperMethodsResult>(RdSuperMethodsRequest.Read, RdSuperMethodsRequest.Write, ReadRdSuperMethodsResultNullable, WriteRdSuperMethodsResultNullable),
       new RdCall<RdFileStructureRequest, RdFileStructureResult>(RdFileStructureRequest.Read, RdFileStructureRequest.Write, ReadRdFileStructureResultNullable, WriteRdFileStructureResultNullable),
-      new RdCall<RdRenameSymbolRequest, RdRenameSymbolResult>(RdRenameSymbolRequest.Read, RdRenameSymbolRequest.Write, ReadRdRenameSymbolResultNullable, WriteRdRenameSymbolResultNullable)
+      new RdCall<RdRenameSymbolRequest, RdRenameSymbolResult>(RdRenameSymbolRequest.Read, RdRenameSymbolRequest.Write, ReadRdRenameSymbolResultNullable, WriteRdRenameSymbolResultNullable),
+      new RdCall<RdRenameFileRequest, RdRenameFileResult>(RdRenameFileRequest.Read, RdRenameFileRequest.Write, ReadRdRenameFileResultNullable, WriteRdRenameFileResultNullable),
+      new RdCall<RdMoveFileRequest, RdMoveFileResult>(RdMoveFileRequest.Read, RdMoveFileRequest.Write, ReadRdMoveFileResultNullable, WriteRdMoveFileResultNullable),
+      new RdCall<RdSafeDeleteRequest, RdSafeDeleteResult>(RdSafeDeleteRequest.Read, RdSafeDeleteRequest.Write, ReadRdSafeDeleteResultNullable, WriteRdSafeDeleteResultNullable)
     ) {}
     //deconstruct trait
     //statics
@@ -151,6 +189,9 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static CtxReadDelegate<RdSuperMethodsResult> ReadRdSuperMethodsResultNullable = RdSuperMethodsResult.Read.NullableClass();
     public static CtxReadDelegate<RdFileStructureResult> ReadRdFileStructureResultNullable = RdFileStructureResult.Read.NullableClass();
     public static CtxReadDelegate<RdRenameSymbolResult> ReadRdRenameSymbolResultNullable = RdRenameSymbolResult.Read.NullableClass();
+    public static CtxReadDelegate<RdRenameFileResult> ReadRdRenameFileResultNullable = RdRenameFileResult.Read.NullableClass();
+    public static CtxReadDelegate<RdMoveFileResult> ReadRdMoveFileResultNullable = RdMoveFileResult.Read.NullableClass();
+    public static CtxReadDelegate<RdSafeDeleteResult> ReadRdSafeDeleteResultNullable = RdSafeDeleteResult.Read.NullableClass();
     
     public static  CtxWriteDelegate<RdDefinitionResult> WriteRdDefinitionResultNullable = RdDefinitionResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdSymbolInfo> WriteRdSymbolInfoNullable = RdSymbolInfo.Write.NullableClass();
@@ -160,8 +201,11 @@ namespace JetBrains.Rider.Model.IndexMcp
     public static  CtxWriteDelegate<RdSuperMethodsResult> WriteRdSuperMethodsResultNullable = RdSuperMethodsResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdFileStructureResult> WriteRdFileStructureResultNullable = RdFileStructureResult.Write.NullableClass();
     public static  CtxWriteDelegate<RdRenameSymbolResult> WriteRdRenameSymbolResultNullable = RdRenameSymbolResult.Write.NullableClass();
+    public static  CtxWriteDelegate<RdRenameFileResult> WriteRdRenameFileResultNullable = RdRenameFileResult.Write.NullableClass();
+    public static  CtxWriteDelegate<RdMoveFileResult> WriteRdMoveFileResultNullable = RdMoveFileResult.Write.NullableClass();
+    public static  CtxWriteDelegate<RdSafeDeleteResult> WriteRdSafeDeleteResultNullable = RdSafeDeleteResult.Write.NullableClass();
     
-    protected override long SerializationHash => -6211285361720734218L;
+    protected override long SerializationHash => -5717211913063562566L;
     
     protected override Action<ISerializers> Register => RegisterDeclaredTypesSerializers;
     public static void RegisterDeclaredTypesSerializers(ISerializers serializers)
@@ -184,15 +228,20 @@ namespace JetBrains.Rider.Model.IndexMcp
       using (printer.IndentCookie()) {
         printer.Print("getBackendStatus = "); _GetBackendStatus.PrintEx(printer); printer.Println();
         printer.Print("findTypes = "); _FindTypes.PrintEx(printer); printer.Println();
+        printer.Print("findSymbols = "); _FindSymbols.PrintEx(printer); printer.Println();
         printer.Print("findDefinition = "); _FindDefinition.PrintEx(printer); printer.Println();
         printer.Print("findReferences = "); _FindReferences.PrintEx(printer); printer.Println();
         printer.Print("resolveSymbol = "); _ResolveSymbol.PrintEx(printer); printer.Println();
+        printer.Print("resolveSymbolIndexed = "); _ResolveSymbolIndexed.PrintEx(printer); printer.Println();
         printer.Print("getTypeHierarchy = "); _GetTypeHierarchy.PrintEx(printer); printer.Println();
         printer.Print("findImplementations = "); _FindImplementations.PrintEx(printer); printer.Println();
         printer.Print("getCallHierarchy = "); _GetCallHierarchy.PrintEx(printer); printer.Println();
         printer.Print("findSuperMethods = "); _FindSuperMethods.PrintEx(printer); printer.Println();
         printer.Print("getFileStructure = "); _GetFileStructure.PrintEx(printer); printer.Println();
         printer.Print("renameSymbol = "); _RenameSymbol.PrintEx(printer); printer.Println();
+        printer.Print("renameFile = "); _RenameFile.PrintEx(printer); printer.Println();
+        printer.Print("moveFile = "); _MoveFile.PrintEx(printer); printer.Println();
+        printer.Print("safeDelete = "); _SafeDelete.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -324,7 +373,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:139</p>
+  /// <p>Generated from: IndexMcpModel.kt:165</p>
   /// </summary>
   public sealed class RdCallHierarchyRequest : IPrintable, IEquatable<RdCallHierarchyRequest>
   {
@@ -334,6 +383,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     [NotNull] public string Direction {get; private set;}
     public int Depth {get; private set;}
     [NotNull] public string Scope {get; private set;}
+    public int Limit {get; private set;}
     
     //private fields
     //primary constructor
@@ -341,7 +391,8 @@ namespace JetBrains.Rider.Model.IndexMcp
       [NotNull] RdSemanticTarget target,
       [NotNull] string direction,
       int depth,
-      [NotNull] string scope
+      [NotNull] string scope,
+      int limit
     )
     {
       if (target == null) throw new ArgumentNullException("target");
@@ -352,15 +403,17 @@ namespace JetBrains.Rider.Model.IndexMcp
       Direction = direction;
       Depth = depth;
       Scope = scope;
+      Limit = limit;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct([NotNull] out RdSemanticTarget target, [NotNull] out string direction, out int depth, [NotNull] out string scope)
+    public void Deconstruct([NotNull] out RdSemanticTarget target, [NotNull] out string direction, out int depth, [NotNull] out string scope, out int limit)
     {
       target = Target;
       direction = Direction;
       depth = Depth;
       scope = Scope;
+      limit = Limit;
     }
     //statics
     
@@ -370,7 +423,8 @@ namespace JetBrains.Rider.Model.IndexMcp
       var direction = reader.ReadString();
       var depth = reader.ReadInt();
       var scope = reader.ReadString();
-      var _result = new RdCallHierarchyRequest(target, direction, depth, scope);
+      var limit = reader.ReadInt();
+      var _result = new RdCallHierarchyRequest(target, direction, depth, scope, limit);
       return _result;
     };
     
@@ -380,6 +434,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       writer.Write(value.Direction);
       writer.Write(value.Depth);
       writer.Write(value.Scope);
+      writer.Write(value.Limit);
     };
     
     //constants
@@ -398,7 +453,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return Equals(Target, other.Target) && Direction == other.Direction && Depth == other.Depth && Scope == other.Scope;
+      return Equals(Target, other.Target) && Direction == other.Direction && Depth == other.Depth && Scope == other.Scope && Limit == other.Limit;
     }
     //hash code trait
     public override int GetHashCode()
@@ -409,6 +464,7 @@ namespace JetBrains.Rider.Model.IndexMcp
         hash = hash * 31 + Direction.GetHashCode();
         hash = hash * 31 + Depth.GetHashCode();
         hash = hash * 31 + Scope.GetHashCode();
+        hash = hash * 31 + Limit.GetHashCode();
         return hash;
       }
     }
@@ -421,6 +477,7 @@ namespace JetBrains.Rider.Model.IndexMcp
         printer.Print("direction = "); Direction.PrintEx(printer); printer.Println();
         printer.Print("depth = "); Depth.PrintEx(printer); printer.Println();
         printer.Print("scope = "); Scope.PrintEx(printer); printer.Println();
+        printer.Print("limit = "); Limit.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -435,7 +492,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:146</p>
+  /// <p>Generated from: IndexMcpModel.kt:173</p>
   /// </summary>
   public sealed class RdCallHierarchyResult : IPrintable, IEquatable<RdCallHierarchyResult>
   {
@@ -443,12 +500,14 @@ namespace JetBrains.Rider.Model.IndexMcp
     //public fields
     [NotNull] public RdSymbolInfo Root {get; private set;}
     [NotNull] public List<RdSymbolInfo> Calls {get; private set;}
+    [CanBeNull] public string Message {get; private set;}
     
     //private fields
     //primary constructor
     public RdCallHierarchyResult(
       [NotNull] RdSymbolInfo root,
-      [NotNull] List<RdSymbolInfo> calls
+      [NotNull] List<RdSymbolInfo> calls,
+      [CanBeNull] string message
     )
     {
       if (root == null) throw new ArgumentNullException("root");
@@ -456,13 +515,15 @@ namespace JetBrains.Rider.Model.IndexMcp
       
       Root = root;
       Calls = calls;
+      Message = message;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct([NotNull] out RdSymbolInfo root, [NotNull] out List<RdSymbolInfo> calls)
+    public void Deconstruct([NotNull] out RdSymbolInfo root, [NotNull] out List<RdSymbolInfo> calls, [CanBeNull] out string message)
     {
       root = Root;
       calls = Calls;
+      message = Message;
     }
     //statics
     
@@ -470,7 +531,8 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       var root = RdSymbolInfo.Read(ctx, reader);
       var calls = ReadRdSymbolInfoList(ctx, reader);
-      var _result = new RdCallHierarchyResult(root, calls);
+      var message = ReadStringNullable(ctx, reader);
+      var _result = new RdCallHierarchyResult(root, calls, message);
       return _result;
     };
     public static CtxReadDelegate<List<RdSymbolInfo>> ReadRdSymbolInfoList = RdSymbolInfo.Read.List();
@@ -479,8 +541,11 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       RdSymbolInfo.Write(ctx, writer, value.Root);
       WriteRdSymbolInfoList(ctx, writer, value.Calls);
+      WriteStringNullable(ctx, writer, value.Message);
     };
     public static  CtxWriteDelegate<List<RdSymbolInfo>> WriteRdSymbolInfoList = RdSymbolInfo.Write.List();
+    public static CtxReadDelegate<string> ReadStringNullable = JetBrains.Rd.Impl.Serializers.ReadString.NullableClass();
+    public static  CtxWriteDelegate<string> WriteStringNullable = JetBrains.Rd.Impl.Serializers.WriteString.NullableClass();
     
     //constants
     
@@ -498,7 +563,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return Equals(Root, other.Root) && Calls.SequenceEqual(other.Calls);
+      return Equals(Root, other.Root) && Calls.SequenceEqual(other.Calls) && Message == other.Message;
     }
     //hash code trait
     public override int GetHashCode()
@@ -507,6 +572,7 @@ namespace JetBrains.Rider.Model.IndexMcp
         var hash = 0;
         hash = hash * 31 + Root.GetHashCode();
         hash = hash * 31 + Calls.ContentHashCode();
+        hash = hash * 31 + (Message != null ? Message.GetHashCode() : 0);
         return hash;
       }
     }
@@ -517,6 +583,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       using (printer.IndentCookie()) {
         printer.Print("root = "); Root.PrintEx(printer); printer.Println();
         printer.Print("calls = "); Calls.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -531,7 +598,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:82</p>
+  /// <p>Generated from: IndexMcpModel.kt:94</p>
   /// </summary>
   public sealed class RdDefinitionResult : IPrintable, IEquatable<RdDefinitionResult>
   {
@@ -540,30 +607,39 @@ namespace JetBrains.Rider.Model.IndexMcp
     [NotNull] public RdSymbolInfo Definition {get; private set;}
     [NotNull] public string Preview {get; private set;}
     [NotNull] public List<string> AstPath {get; private set;}
+    [NotNull] public string LocationKind {get; private set;}
+    [CanBeNull] public string LocationDisplayName {get; private set;}
     
     //private fields
     //primary constructor
     public RdDefinitionResult(
       [NotNull] RdSymbolInfo definition,
       [NotNull] string preview,
-      [NotNull] List<string> astPath
+      [NotNull] List<string> astPath,
+      [NotNull] string locationKind,
+      [CanBeNull] string locationDisplayName
     )
     {
       if (definition == null) throw new ArgumentNullException("definition");
       if (preview == null) throw new ArgumentNullException("preview");
       if (astPath == null) throw new ArgumentNullException("astPath");
+      if (locationKind == null) throw new ArgumentNullException("locationKind");
       
       Definition = definition;
       Preview = preview;
       AstPath = astPath;
+      LocationKind = locationKind;
+      LocationDisplayName = locationDisplayName;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct([NotNull] out RdSymbolInfo definition, [NotNull] out string preview, [NotNull] out List<string> astPath)
+    public void Deconstruct([NotNull] out RdSymbolInfo definition, [NotNull] out string preview, [NotNull] out List<string> astPath, [NotNull] out string locationKind, [CanBeNull] out string locationDisplayName)
     {
       definition = Definition;
       preview = Preview;
       astPath = AstPath;
+      locationKind = LocationKind;
+      locationDisplayName = LocationDisplayName;
     }
     //statics
     
@@ -572,18 +648,24 @@ namespace JetBrains.Rider.Model.IndexMcp
       var definition = RdSymbolInfo.Read(ctx, reader);
       var preview = reader.ReadString();
       var astPath = ReadStringList(ctx, reader);
-      var _result = new RdDefinitionResult(definition, preview, astPath);
+      var locationKind = reader.ReadString();
+      var locationDisplayName = ReadStringNullable(ctx, reader);
+      var _result = new RdDefinitionResult(definition, preview, astPath, locationKind, locationDisplayName);
       return _result;
     };
     public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    public static CtxReadDelegate<string> ReadStringNullable = JetBrains.Rd.Impl.Serializers.ReadString.NullableClass();
     
     public static CtxWriteDelegate<RdDefinitionResult> Write = (ctx, writer, value) => 
     {
       RdSymbolInfo.Write(ctx, writer, value.Definition);
       writer.Write(value.Preview);
       WriteStringList(ctx, writer, value.AstPath);
+      writer.Write(value.LocationKind);
+      WriteStringNullable(ctx, writer, value.LocationDisplayName);
     };
     public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    public static  CtxWriteDelegate<string> WriteStringNullable = JetBrains.Rd.Impl.Serializers.WriteString.NullableClass();
     
     //constants
     
@@ -601,7 +683,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return Equals(Definition, other.Definition) && Preview == other.Preview && AstPath.SequenceEqual(other.AstPath);
+      return Equals(Definition, other.Definition) && Preview == other.Preview && AstPath.SequenceEqual(other.AstPath) && LocationKind == other.LocationKind && Equals(LocationDisplayName, other.LocationDisplayName);
     }
     //hash code trait
     public override int GetHashCode()
@@ -611,6 +693,8 @@ namespace JetBrains.Rider.Model.IndexMcp
         hash = hash * 31 + Definition.GetHashCode();
         hash = hash * 31 + Preview.GetHashCode();
         hash = hash * 31 + AstPath.ContentHashCode();
+        hash = hash * 31 + LocationKind.GetHashCode();
+        hash = hash * 31 + (LocationDisplayName != null ? LocationDisplayName.GetHashCode() : 0);
         return hash;
       }
     }
@@ -622,6 +706,8 @@ namespace JetBrains.Rider.Model.IndexMcp
         printer.Print("definition = "); Definition.PrintEx(printer); printer.Println();
         printer.Print("preview = "); Preview.PrintEx(printer); printer.Println();
         printer.Print("astPath = "); AstPath.PrintEx(printer); printer.Println();
+        printer.Print("locationKind = "); LocationKind.PrintEx(printer); printer.Println();
+        printer.Print("locationDisplayName = "); LocationDisplayName.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -636,7 +722,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:172</p>
+  /// <p>Generated from: IndexMcpModel.kt:199</p>
   /// </summary>
   public sealed class RdFileStructureRequest : IPrintable, IEquatable<RdFileStructureRequest>
   {
@@ -721,7 +807,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:187</p>
+  /// <p>Generated from: IndexMcpModel.kt:214</p>
   /// </summary>
   public sealed class RdFileStructureResult : IPrintable, IEquatable<RdFileStructureResult>
   {
@@ -808,7 +894,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:76</p>
+  /// <p>Generated from: IndexMcpModel.kt:88</p>
   /// </summary>
   public sealed class RdFindDefinitionRequest : IPrintable, IEquatable<RdFindDefinitionRequest>
   {
@@ -909,7 +995,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:97</p>
+  /// <p>Generated from: IndexMcpModel.kt:111</p>
   /// </summary>
   public sealed class RdFindReferencesRequest : IPrintable, IEquatable<RdFindReferencesRequest>
   {
@@ -1011,7 +1097,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:103</p>
+  /// <p>Generated from: IndexMcpModel.kt:117</p>
   /// </summary>
   public sealed class RdFindReferencesResult : IPrintable, IEquatable<RdFindReferencesResult>
   {
@@ -1019,25 +1105,29 @@ namespace JetBrains.Rider.Model.IndexMcp
     //public fields
     [NotNull] public List<RdReferenceInfo> References {get; private set;}
     public int TotalCount {get; private set;}
+    [CanBeNull] public string Message {get; private set;}
     
     //private fields
     //primary constructor
     public RdFindReferencesResult(
       [NotNull] List<RdReferenceInfo> references,
-      int totalCount
+      int totalCount,
+      [CanBeNull] string message
     )
     {
       if (references == null) throw new ArgumentNullException("references");
       
       References = references;
       TotalCount = totalCount;
+      Message = message;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct([NotNull] out List<RdReferenceInfo> references, out int totalCount)
+    public void Deconstruct([NotNull] out List<RdReferenceInfo> references, out int totalCount, [CanBeNull] out string message)
     {
       references = References;
       totalCount = TotalCount;
+      message = Message;
     }
     //statics
     
@@ -1045,7 +1135,8 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       var references = ReadRdReferenceInfoList(ctx, reader);
       var totalCount = reader.ReadInt();
-      var _result = new RdFindReferencesResult(references, totalCount);
+      var message = ReadStringNullable(ctx, reader);
+      var _result = new RdFindReferencesResult(references, totalCount, message);
       return _result;
     };
     public static CtxReadDelegate<List<RdReferenceInfo>> ReadRdReferenceInfoList = RdReferenceInfo.Read.List();
@@ -1054,8 +1145,11 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       WriteRdReferenceInfoList(ctx, writer, value.References);
       writer.Write(value.TotalCount);
+      WriteStringNullable(ctx, writer, value.Message);
     };
     public static  CtxWriteDelegate<List<RdReferenceInfo>> WriteRdReferenceInfoList = RdReferenceInfo.Write.List();
+    public static CtxReadDelegate<string> ReadStringNullable = JetBrains.Rd.Impl.Serializers.ReadString.NullableClass();
+    public static  CtxWriteDelegate<string> WriteStringNullable = JetBrains.Rd.Impl.Serializers.WriteString.NullableClass();
     
     //constants
     
@@ -1073,7 +1167,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return References.SequenceEqual(other.References) && TotalCount == other.TotalCount;
+      return References.SequenceEqual(other.References) && TotalCount == other.TotalCount && Message == other.Message;
     }
     //hash code trait
     public override int GetHashCode()
@@ -1082,6 +1176,7 @@ namespace JetBrains.Rider.Model.IndexMcp
         var hash = 0;
         hash = hash * 31 + References.ContentHashCode();
         hash = hash * 31 + TotalCount.GetHashCode();
+        hash = hash * 31 + (Message != null ? Message.GetHashCode() : 0);
         return hash;
       }
     }
@@ -1091,6 +1186,213 @@ namespace JetBrains.Rider.Model.IndexMcp
       printer.Println("RdFindReferencesResult (");
       using (printer.IndentCookie()) {
         printer.Print("references = "); References.PrintEx(printer); printer.Println();
+        printer.Print("totalCount = "); TotalCount.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:76</p>
+  /// </summary>
+  public sealed class RdFindSymbolsRequest : IPrintable, IEquatable<RdFindSymbolsRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public string Query {get; private set;}
+    [NotNull] public string Scope {get; private set;}
+    [NotNull] public string Language {get; private set;}
+    public int Limit {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindSymbolsRequest(
+      [NotNull] string query,
+      [NotNull] string scope,
+      [NotNull] string language,
+      int limit
+    )
+    {
+      if (query == null) throw new ArgumentNullException("query");
+      if (scope == null) throw new ArgumentNullException("scope");
+      if (language == null) throw new ArgumentNullException("language");
+      
+      Query = query;
+      Scope = scope;
+      Language = language;
+      Limit = limit;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string query, [NotNull] out string scope, [NotNull] out string language, out int limit)
+    {
+      query = Query;
+      scope = Scope;
+      language = Language;
+      limit = Limit;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindSymbolsRequest> Read = (ctx, reader) => 
+    {
+      var query = reader.ReadString();
+      var scope = reader.ReadString();
+      var language = reader.ReadString();
+      var limit = reader.ReadInt();
+      var _result = new RdFindSymbolsRequest(query, scope, language, limit);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdFindSymbolsRequest> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Query);
+      writer.Write(value.Scope);
+      writer.Write(value.Language);
+      writer.Write(value.Limit);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindSymbolsRequest) obj);
+    }
+    public bool Equals(RdFindSymbolsRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Query == other.Query && Scope == other.Scope && Language == other.Language && Limit == other.Limit;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Query.GetHashCode();
+        hash = hash * 31 + Scope.GetHashCode();
+        hash = hash * 31 + Language.GetHashCode();
+        hash = hash * 31 + Limit.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindSymbolsRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("query = "); Query.PrintEx(printer); printer.Println();
+        printer.Print("scope = "); Scope.PrintEx(printer); printer.Println();
+        printer.Print("language = "); Language.PrintEx(printer); printer.Println();
+        printer.Print("limit = "); Limit.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:83</p>
+  /// </summary>
+  public sealed class RdFindSymbolsResult : IPrintable, IEquatable<RdFindSymbolsResult>
+  {
+    //fields
+    //public fields
+    [NotNull] public List<RdSymbolInfo> Symbols {get; private set;}
+    public int TotalCount {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdFindSymbolsResult(
+      [NotNull] List<RdSymbolInfo> symbols,
+      int totalCount
+    )
+    {
+      if (symbols == null) throw new ArgumentNullException("symbols");
+      
+      Symbols = symbols;
+      TotalCount = totalCount;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out List<RdSymbolInfo> symbols, out int totalCount)
+    {
+      symbols = Symbols;
+      totalCount = TotalCount;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdFindSymbolsResult> Read = (ctx, reader) => 
+    {
+      var symbols = ReadRdSymbolInfoList(ctx, reader);
+      var totalCount = reader.ReadInt();
+      var _result = new RdFindSymbolsResult(symbols, totalCount);
+      return _result;
+    };
+    public static CtxReadDelegate<List<RdSymbolInfo>> ReadRdSymbolInfoList = RdSymbolInfo.Read.List();
+    
+    public static CtxWriteDelegate<RdFindSymbolsResult> Write = (ctx, writer, value) => 
+    {
+      WriteRdSymbolInfoList(ctx, writer, value.Symbols);
+      writer.Write(value.TotalCount);
+    };
+    public static  CtxWriteDelegate<List<RdSymbolInfo>> WriteRdSymbolInfoList = RdSymbolInfo.Write.List();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdFindSymbolsResult) obj);
+    }
+    public bool Equals(RdFindSymbolsResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Symbols.SequenceEqual(other.Symbols) && TotalCount == other.TotalCount;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Symbols.ContentHashCode();
+        hash = hash * 31 + TotalCount.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdFindSymbolsResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("symbols = "); Symbols.PrintEx(printer); printer.Println();
         printer.Print("totalCount = "); TotalCount.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
@@ -1322,7 +1624,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:178</p>
+  /// <p>Generated from: IndexMcpModel.kt:205</p>
   /// </summary>
   public sealed class RdFlatStructureNode : IPrintable, IEquatable<RdFlatStructureNode>
   {
@@ -1453,7 +1755,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:128</p>
+  /// <p>Generated from: IndexMcpModel.kt:153</p>
   /// </summary>
   public sealed class RdImplementationsRequest : IPrintable, IEquatable<RdImplementationsRequest>
   {
@@ -1461,12 +1763,14 @@ namespace JetBrains.Rider.Model.IndexMcp
     //public fields
     [NotNull] public RdSourcePosition Position {get; private set;}
     [NotNull] public string Scope {get; private set;}
+    public int Limit {get; private set;}
     
     //private fields
     //primary constructor
     public RdImplementationsRequest(
       [NotNull] RdSourcePosition position,
-      [NotNull] string scope
+      [NotNull] string scope,
+      int limit
     )
     {
       if (position == null) throw new ArgumentNullException("position");
@@ -1474,13 +1778,15 @@ namespace JetBrains.Rider.Model.IndexMcp
       
       Position = position;
       Scope = scope;
+      Limit = limit;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct([NotNull] out RdSourcePosition position, [NotNull] out string scope)
+    public void Deconstruct([NotNull] out RdSourcePosition position, [NotNull] out string scope, out int limit)
     {
       position = Position;
       scope = Scope;
+      limit = Limit;
     }
     //statics
     
@@ -1488,7 +1794,8 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       var position = RdSourcePosition.Read(ctx, reader);
       var scope = reader.ReadString();
-      var _result = new RdImplementationsRequest(position, scope);
+      var limit = reader.ReadInt();
+      var _result = new RdImplementationsRequest(position, scope, limit);
       return _result;
     };
     
@@ -1496,6 +1803,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       RdSourcePosition.Write(ctx, writer, value.Position);
       writer.Write(value.Scope);
+      writer.Write(value.Limit);
     };
     
     //constants
@@ -1514,7 +1822,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return Equals(Position, other.Position) && Scope == other.Scope;
+      return Equals(Position, other.Position) && Scope == other.Scope && Limit == other.Limit;
     }
     //hash code trait
     public override int GetHashCode()
@@ -1523,6 +1831,7 @@ namespace JetBrains.Rider.Model.IndexMcp
         var hash = 0;
         hash = hash * 31 + Position.GetHashCode();
         hash = hash * 31 + Scope.GetHashCode();
+        hash = hash * 31 + Limit.GetHashCode();
         return hash;
       }
     }
@@ -1533,6 +1842,7 @@ namespace JetBrains.Rider.Model.IndexMcp
       using (printer.IndentCookie()) {
         printer.Print("position = "); Position.PrintEx(printer); printer.Println();
         printer.Print("scope = "); Scope.PrintEx(printer); printer.Println();
+        printer.Print("limit = "); Limit.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -1547,7 +1857,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:133</p>
+  /// <p>Generated from: IndexMcpModel.kt:159</p>
   /// </summary>
   public sealed class RdImplementationsResult : IPrintable, IEquatable<RdImplementationsResult>
   {
@@ -1634,7 +1944,355 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:88</p>
+  /// <p>Generated from: IndexMcpModel.kt:258</p>
+  /// </summary>
+  public sealed class RdMoveFileRequest : IPrintable, IEquatable<RdMoveFileRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public string FilePath {get; private set;}
+    [NotNull] public string DestinationDirectory {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdMoveFileRequest(
+      [NotNull] string filePath,
+      [NotNull] string destinationDirectory
+    )
+    {
+      if (filePath == null) throw new ArgumentNullException("filePath");
+      if (destinationDirectory == null) throw new ArgumentNullException("destinationDirectory");
+      
+      FilePath = filePath;
+      DestinationDirectory = destinationDirectory;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string filePath, [NotNull] out string destinationDirectory)
+    {
+      filePath = FilePath;
+      destinationDirectory = DestinationDirectory;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdMoveFileRequest> Read = (ctx, reader) => 
+    {
+      var filePath = reader.ReadString();
+      var destinationDirectory = reader.ReadString();
+      var _result = new RdMoveFileRequest(filePath, destinationDirectory);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdMoveFileRequest> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.FilePath);
+      writer.Write(value.DestinationDirectory);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdMoveFileRequest) obj);
+    }
+    public bool Equals(RdMoveFileRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return FilePath == other.FilePath && DestinationDirectory == other.DestinationDirectory;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + FilePath.GetHashCode();
+        hash = hash * 31 + DestinationDirectory.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdMoveFileRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("filePath = "); FilePath.PrintEx(printer); printer.Println();
+        printer.Print("destinationDirectory = "); DestinationDirectory.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:263</p>
+  /// </summary>
+  public sealed class RdMoveFileResult : IPrintable, IEquatable<RdMoveFileResult>
+  {
+    //fields
+    //public fields
+    public bool Success {get; private set;}
+    [NotNull] public string OldPath {get; private set;}
+    [NotNull] public string NewPath {get; private set;}
+    [NotNull] public List<string> AffectedFiles {get; private set;}
+    public int ChangesCount {get; private set;}
+    [NotNull] public string Message {get; private set;}
+    [NotNull] public string Status {get; private set;}
+    [CanBeNull] public RdMutationVerification Verification {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdMoveFileResult(
+      bool success,
+      [NotNull] string oldPath,
+      [NotNull] string newPath,
+      [NotNull] List<string> affectedFiles,
+      int changesCount,
+      [NotNull] string message,
+      [NotNull] string status,
+      [CanBeNull] RdMutationVerification verification
+    )
+    {
+      if (oldPath == null) throw new ArgumentNullException("oldPath");
+      if (newPath == null) throw new ArgumentNullException("newPath");
+      if (affectedFiles == null) throw new ArgumentNullException("affectedFiles");
+      if (message == null) throw new ArgumentNullException("message");
+      if (status == null) throw new ArgumentNullException("status");
+      
+      Success = success;
+      OldPath = oldPath;
+      NewPath = newPath;
+      AffectedFiles = affectedFiles;
+      ChangesCount = changesCount;
+      Message = message;
+      Status = status;
+      Verification = verification;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct(out bool success, [NotNull] out string oldPath, [NotNull] out string newPath, [NotNull] out List<string> affectedFiles, out int changesCount, [NotNull] out string message, [NotNull] out string status, [CanBeNull] out RdMutationVerification verification)
+    {
+      success = Success;
+      oldPath = OldPath;
+      newPath = NewPath;
+      affectedFiles = AffectedFiles;
+      changesCount = ChangesCount;
+      message = Message;
+      status = Status;
+      verification = Verification;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdMoveFileResult> Read = (ctx, reader) => 
+    {
+      var success = reader.ReadBool();
+      var oldPath = reader.ReadString();
+      var newPath = reader.ReadString();
+      var affectedFiles = ReadStringList(ctx, reader);
+      var changesCount = reader.ReadInt();
+      var message = reader.ReadString();
+      var status = reader.ReadString();
+      var verification = ReadRdMutationVerificationNullable(ctx, reader);
+      var _result = new RdMoveFileResult(success, oldPath, newPath, affectedFiles, changesCount, message, status, verification);
+      return _result;
+    };
+    public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    public static CtxReadDelegate<RdMutationVerification> ReadRdMutationVerificationNullable = RdMutationVerification.Read.NullableClass();
+    
+    public static CtxWriteDelegate<RdMoveFileResult> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Success);
+      writer.Write(value.OldPath);
+      writer.Write(value.NewPath);
+      WriteStringList(ctx, writer, value.AffectedFiles);
+      writer.Write(value.ChangesCount);
+      writer.Write(value.Message);
+      writer.Write(value.Status);
+      WriteRdMutationVerificationNullable(ctx, writer, value.Verification);
+    };
+    public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    public static  CtxWriteDelegate<RdMutationVerification> WriteRdMutationVerificationNullable = RdMutationVerification.Write.NullableClass();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdMoveFileResult) obj);
+    }
+    public bool Equals(RdMoveFileResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Success == other.Success && OldPath == other.OldPath && NewPath == other.NewPath && AffectedFiles.SequenceEqual(other.AffectedFiles) && ChangesCount == other.ChangesCount && Message == other.Message && Status == other.Status && Equals(Verification, other.Verification);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Success.GetHashCode();
+        hash = hash * 31 + OldPath.GetHashCode();
+        hash = hash * 31 + NewPath.GetHashCode();
+        hash = hash * 31 + AffectedFiles.ContentHashCode();
+        hash = hash * 31 + ChangesCount.GetHashCode();
+        hash = hash * 31 + Message.GetHashCode();
+        hash = hash * 31 + Status.GetHashCode();
+        hash = hash * 31 + (Verification != null ? Verification.GetHashCode() : 0);
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdMoveFileResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("success = "); Success.PrintEx(printer); printer.Println();
+        printer.Print("oldPath = "); OldPath.PrintEx(printer); printer.Println();
+        printer.Print("newPath = "); NewPath.PrintEx(printer); printer.Println();
+        printer.Print("affectedFiles = "); AffectedFiles.PrintEx(printer); printer.Println();
+        printer.Print("changesCount = "); ChangesCount.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+        printer.Print("status = "); Status.PrintEx(printer); printer.Println();
+        printer.Print("verification = "); Verification.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:225</p>
+  /// </summary>
+  public sealed class RdMutationVerification : IPrintable, IEquatable<RdMutationVerification>
+  {
+    //fields
+    //public fields
+    [NotNull] public string Status {get; private set;}
+    [NotNull] public List<string> ChecksRun {get; private set;}
+    [NotNull] public List<string> Warnings {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdMutationVerification(
+      [NotNull] string status,
+      [NotNull] List<string> checksRun,
+      [NotNull] List<string> warnings
+    )
+    {
+      if (status == null) throw new ArgumentNullException("status");
+      if (checksRun == null) throw new ArgumentNullException("checksRun");
+      if (warnings == null) throw new ArgumentNullException("warnings");
+      
+      Status = status;
+      ChecksRun = checksRun;
+      Warnings = warnings;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string status, [NotNull] out List<string> checksRun, [NotNull] out List<string> warnings)
+    {
+      status = Status;
+      checksRun = ChecksRun;
+      warnings = Warnings;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdMutationVerification> Read = (ctx, reader) => 
+    {
+      var status = reader.ReadString();
+      var checksRun = ReadStringList(ctx, reader);
+      var warnings = ReadStringList(ctx, reader);
+      var _result = new RdMutationVerification(status, checksRun, warnings);
+      return _result;
+    };
+    public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    
+    public static CtxWriteDelegate<RdMutationVerification> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Status);
+      WriteStringList(ctx, writer, value.ChecksRun);
+      WriteStringList(ctx, writer, value.Warnings);
+    };
+    public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdMutationVerification) obj);
+    }
+    public bool Equals(RdMutationVerification other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Status == other.Status && ChecksRun.SequenceEqual(other.ChecksRun) && Warnings.SequenceEqual(other.Warnings);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Status.GetHashCode();
+        hash = hash * 31 + ChecksRun.ContentHashCode();
+        hash = hash * 31 + Warnings.ContentHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdMutationVerification (");
+      using (printer.IndentCookie()) {
+        printer.Print("status = "); Status.PrintEx(printer); printer.Println();
+        printer.Print("checksRun = "); ChecksRun.PrintEx(printer); printer.Println();
+        printer.Print("warnings = "); Warnings.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:102</p>
   /// </summary>
   public sealed class RdReferenceInfo : IPrintable, IEquatable<RdReferenceInfo>
   {
@@ -1764,7 +2422,250 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:193</p>
+  /// <p>Generated from: IndexMcpModel.kt:242</p>
+  /// </summary>
+  public sealed class RdRenameFileRequest : IPrintable, IEquatable<RdRenameFileRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public string FilePath {get; private set;}
+    [NotNull] public string NewName {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdRenameFileRequest(
+      [NotNull] string filePath,
+      [NotNull] string newName
+    )
+    {
+      if (filePath == null) throw new ArgumentNullException("filePath");
+      if (newName == null) throw new ArgumentNullException("newName");
+      
+      FilePath = filePath;
+      NewName = newName;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string filePath, [NotNull] out string newName)
+    {
+      filePath = FilePath;
+      newName = NewName;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdRenameFileRequest> Read = (ctx, reader) => 
+    {
+      var filePath = reader.ReadString();
+      var newName = reader.ReadString();
+      var _result = new RdRenameFileRequest(filePath, newName);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdRenameFileRequest> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.FilePath);
+      writer.Write(value.NewName);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdRenameFileRequest) obj);
+    }
+    public bool Equals(RdRenameFileRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return FilePath == other.FilePath && NewName == other.NewName;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + FilePath.GetHashCode();
+        hash = hash * 31 + NewName.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdRenameFileRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("filePath = "); FilePath.PrintEx(printer); printer.Println();
+        printer.Print("newName = "); NewName.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:247</p>
+  /// </summary>
+  public sealed class RdRenameFileResult : IPrintable, IEquatable<RdRenameFileResult>
+  {
+    //fields
+    //public fields
+    public bool Success {get; private set;}
+    [NotNull] public string OldPath {get; private set;}
+    [NotNull] public string NewPath {get; private set;}
+    [NotNull] public List<string> AffectedFiles {get; private set;}
+    public int ChangesCount {get; private set;}
+    [NotNull] public string Message {get; private set;}
+    [NotNull] public string Status {get; private set;}
+    [CanBeNull] public RdMutationVerification Verification {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdRenameFileResult(
+      bool success,
+      [NotNull] string oldPath,
+      [NotNull] string newPath,
+      [NotNull] List<string> affectedFiles,
+      int changesCount,
+      [NotNull] string message,
+      [NotNull] string status,
+      [CanBeNull] RdMutationVerification verification
+    )
+    {
+      if (oldPath == null) throw new ArgumentNullException("oldPath");
+      if (newPath == null) throw new ArgumentNullException("newPath");
+      if (affectedFiles == null) throw new ArgumentNullException("affectedFiles");
+      if (message == null) throw new ArgumentNullException("message");
+      if (status == null) throw new ArgumentNullException("status");
+      
+      Success = success;
+      OldPath = oldPath;
+      NewPath = newPath;
+      AffectedFiles = affectedFiles;
+      ChangesCount = changesCount;
+      Message = message;
+      Status = status;
+      Verification = verification;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct(out bool success, [NotNull] out string oldPath, [NotNull] out string newPath, [NotNull] out List<string> affectedFiles, out int changesCount, [NotNull] out string message, [NotNull] out string status, [CanBeNull] out RdMutationVerification verification)
+    {
+      success = Success;
+      oldPath = OldPath;
+      newPath = NewPath;
+      affectedFiles = AffectedFiles;
+      changesCount = ChangesCount;
+      message = Message;
+      status = Status;
+      verification = Verification;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdRenameFileResult> Read = (ctx, reader) => 
+    {
+      var success = reader.ReadBool();
+      var oldPath = reader.ReadString();
+      var newPath = reader.ReadString();
+      var affectedFiles = ReadStringList(ctx, reader);
+      var changesCount = reader.ReadInt();
+      var message = reader.ReadString();
+      var status = reader.ReadString();
+      var verification = ReadRdMutationVerificationNullable(ctx, reader);
+      var _result = new RdRenameFileResult(success, oldPath, newPath, affectedFiles, changesCount, message, status, verification);
+      return _result;
+    };
+    public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    public static CtxReadDelegate<RdMutationVerification> ReadRdMutationVerificationNullable = RdMutationVerification.Read.NullableClass();
+    
+    public static CtxWriteDelegate<RdRenameFileResult> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Success);
+      writer.Write(value.OldPath);
+      writer.Write(value.NewPath);
+      WriteStringList(ctx, writer, value.AffectedFiles);
+      writer.Write(value.ChangesCount);
+      writer.Write(value.Message);
+      writer.Write(value.Status);
+      WriteRdMutationVerificationNullable(ctx, writer, value.Verification);
+    };
+    public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    public static  CtxWriteDelegate<RdMutationVerification> WriteRdMutationVerificationNullable = RdMutationVerification.Write.NullableClass();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdRenameFileResult) obj);
+    }
+    public bool Equals(RdRenameFileResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Success == other.Success && OldPath == other.OldPath && NewPath == other.NewPath && AffectedFiles.SequenceEqual(other.AffectedFiles) && ChangesCount == other.ChangesCount && Message == other.Message && Status == other.Status && Equals(Verification, other.Verification);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Success.GetHashCode();
+        hash = hash * 31 + OldPath.GetHashCode();
+        hash = hash * 31 + NewPath.GetHashCode();
+        hash = hash * 31 + AffectedFiles.ContentHashCode();
+        hash = hash * 31 + ChangesCount.GetHashCode();
+        hash = hash * 31 + Message.GetHashCode();
+        hash = hash * 31 + Status.GetHashCode();
+        hash = hash * 31 + (Verification != null ? Verification.GetHashCode() : 0);
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdRenameFileResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("success = "); Success.PrintEx(printer); printer.Println();
+        printer.Print("oldPath = "); OldPath.PrintEx(printer); printer.Println();
+        printer.Print("newPath = "); NewPath.PrintEx(printer); printer.Println();
+        printer.Print("affectedFiles = "); AffectedFiles.PrintEx(printer); printer.Println();
+        printer.Print("changesCount = "); ChangesCount.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+        printer.Print("status = "); Status.PrintEx(printer); printer.Println();
+        printer.Print("verification = "); Verification.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:220</p>
   /// </summary>
   public sealed class RdRenameSymbolRequest : IPrintable, IEquatable<RdRenameSymbolRequest>
   {
@@ -1858,7 +2759,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:198</p>
+  /// <p>Generated from: IndexMcpModel.kt:231</p>
   /// </summary>
   public sealed class RdRenameSymbolResult : IPrintable, IEquatable<RdRenameSymbolResult>
   {
@@ -1870,6 +2771,8 @@ namespace JetBrains.Rider.Model.IndexMcp
     [NotNull] public List<string> AffectedFiles {get; private set;}
     public int ChangesCount {get; private set;}
     [NotNull] public string Message {get; private set;}
+    [NotNull] public string Status {get; private set;}
+    [CanBeNull] public RdMutationVerification Verification {get; private set;}
     
     //private fields
     //primary constructor
@@ -1879,13 +2782,16 @@ namespace JetBrains.Rider.Model.IndexMcp
       [NotNull] string newName,
       [NotNull] List<string> affectedFiles,
       int changesCount,
-      [NotNull] string message
+      [NotNull] string message,
+      [NotNull] string status,
+      [CanBeNull] RdMutationVerification verification
     )
     {
       if (oldName == null) throw new ArgumentNullException("oldName");
       if (newName == null) throw new ArgumentNullException("newName");
       if (affectedFiles == null) throw new ArgumentNullException("affectedFiles");
       if (message == null) throw new ArgumentNullException("message");
+      if (status == null) throw new ArgumentNullException("status");
       
       Success = success;
       OldName = oldName;
@@ -1893,10 +2799,12 @@ namespace JetBrains.Rider.Model.IndexMcp
       AffectedFiles = affectedFiles;
       ChangesCount = changesCount;
       Message = message;
+      Status = status;
+      Verification = verification;
     }
     //secondary constructor
     //deconstruct trait
-    public void Deconstruct(out bool success, [NotNull] out string oldName, [NotNull] out string newName, [NotNull] out List<string> affectedFiles, out int changesCount, [NotNull] out string message)
+    public void Deconstruct(out bool success, [NotNull] out string oldName, [NotNull] out string newName, [NotNull] out List<string> affectedFiles, out int changesCount, [NotNull] out string message, [NotNull] out string status, [CanBeNull] out RdMutationVerification verification)
     {
       success = Success;
       oldName = OldName;
@@ -1904,6 +2812,8 @@ namespace JetBrains.Rider.Model.IndexMcp
       affectedFiles = AffectedFiles;
       changesCount = ChangesCount;
       message = Message;
+      status = Status;
+      verification = Verification;
     }
     //statics
     
@@ -1915,10 +2825,13 @@ namespace JetBrains.Rider.Model.IndexMcp
       var affectedFiles = ReadStringList(ctx, reader);
       var changesCount = reader.ReadInt();
       var message = reader.ReadString();
-      var _result = new RdRenameSymbolResult(success, oldName, newName, affectedFiles, changesCount, message);
+      var status = reader.ReadString();
+      var verification = ReadRdMutationVerificationNullable(ctx, reader);
+      var _result = new RdRenameSymbolResult(success, oldName, newName, affectedFiles, changesCount, message, status, verification);
       return _result;
     };
     public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    public static CtxReadDelegate<RdMutationVerification> ReadRdMutationVerificationNullable = RdMutationVerification.Read.NullableClass();
     
     public static CtxWriteDelegate<RdRenameSymbolResult> Write = (ctx, writer, value) => 
     {
@@ -1928,8 +2841,11 @@ namespace JetBrains.Rider.Model.IndexMcp
       WriteStringList(ctx, writer, value.AffectedFiles);
       writer.Write(value.ChangesCount);
       writer.Write(value.Message);
+      writer.Write(value.Status);
+      WriteRdMutationVerificationNullable(ctx, writer, value.Verification);
     };
     public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    public static  CtxWriteDelegate<RdMutationVerification> WriteRdMutationVerificationNullable = RdMutationVerification.Write.NullableClass();
     
     //constants
     
@@ -1947,7 +2863,7 @@ namespace JetBrains.Rider.Model.IndexMcp
     {
       if (ReferenceEquals(null, other)) return false;
       if (ReferenceEquals(this, other)) return true;
-      return Success == other.Success && OldName == other.OldName && NewName == other.NewName && AffectedFiles.SequenceEqual(other.AffectedFiles) && ChangesCount == other.ChangesCount && Message == other.Message;
+      return Success == other.Success && OldName == other.OldName && NewName == other.NewName && AffectedFiles.SequenceEqual(other.AffectedFiles) && ChangesCount == other.ChangesCount && Message == other.Message && Status == other.Status && Equals(Verification, other.Verification);
     }
     //hash code trait
     public override int GetHashCode()
@@ -1960,6 +2876,8 @@ namespace JetBrains.Rider.Model.IndexMcp
         hash = hash * 31 + AffectedFiles.ContentHashCode();
         hash = hash * 31 + ChangesCount.GetHashCode();
         hash = hash * 31 + Message.GetHashCode();
+        hash = hash * 31 + Status.GetHashCode();
+        hash = hash * 31 + (Verification != null ? Verification.GetHashCode() : 0);
         return hash;
       }
     }
@@ -1974,6 +2892,8 @@ namespace JetBrains.Rider.Model.IndexMcp
         printer.Print("affectedFiles = "); AffectedFiles.PrintEx(printer); printer.Println();
         printer.Print("changesCount = "); ChangesCount.PrintEx(printer); printer.Println();
         printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+        printer.Print("status = "); Status.PrintEx(printer); printer.Println();
+        printer.Print("verification = "); Verification.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -1988,7 +2908,206 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:108</p>
+  /// <p>Generated from: IndexMcpModel.kt:127</p>
+  /// </summary>
+  public sealed class RdResolveSymbolIndexedRequest : IPrintable, IEquatable<RdResolveSymbolIndexedRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public string Language {get; private set;}
+    [NotNull] public string Symbol {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdResolveSymbolIndexedRequest(
+      [NotNull] string language,
+      [NotNull] string symbol
+    )
+    {
+      if (language == null) throw new ArgumentNullException("language");
+      if (symbol == null) throw new ArgumentNullException("symbol");
+      
+      Language = language;
+      Symbol = symbol;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string language, [NotNull] out string symbol)
+    {
+      language = Language;
+      symbol = Symbol;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdResolveSymbolIndexedRequest> Read = (ctx, reader) => 
+    {
+      var language = reader.ReadString();
+      var symbol = reader.ReadString();
+      var _result = new RdResolveSymbolIndexedRequest(language, symbol);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdResolveSymbolIndexedRequest> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Language);
+      writer.Write(value.Symbol);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdResolveSymbolIndexedRequest) obj);
+    }
+    public bool Equals(RdResolveSymbolIndexedRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Language == other.Language && Symbol == other.Symbol;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Language.GetHashCode();
+        hash = hash * 31 + Symbol.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdResolveSymbolIndexedRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("language = "); Language.PrintEx(printer); printer.Println();
+        printer.Print("symbol = "); Symbol.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:132</p>
+  /// </summary>
+  public sealed class RdResolveSymbolIndexedResult : IPrintable, IEquatable<RdResolveSymbolIndexedResult>
+  {
+    //fields
+    //public fields
+    [NotNull] public string Status {get; private set;}
+    [CanBeNull] public string Message {get; private set;}
+    [CanBeNull] public RdSymbolInfo SymbolInfo {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdResolveSymbolIndexedResult(
+      [NotNull] string status,
+      [CanBeNull] string message,
+      [CanBeNull] RdSymbolInfo symbolInfo
+    )
+    {
+      if (status == null) throw new ArgumentNullException("status");
+      
+      Status = status;
+      Message = message;
+      SymbolInfo = symbolInfo;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string status, [CanBeNull] out string message, [CanBeNull] out RdSymbolInfo symbolInfo)
+    {
+      status = Status;
+      message = Message;
+      symbolInfo = SymbolInfo;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdResolveSymbolIndexedResult> Read = (ctx, reader) => 
+    {
+      var status = reader.ReadString();
+      var message = ReadStringNullable(ctx, reader);
+      var symbolInfo = ReadRdSymbolInfoNullable(ctx, reader);
+      var _result = new RdResolveSymbolIndexedResult(status, message, symbolInfo);
+      return _result;
+    };
+    public static CtxReadDelegate<string> ReadStringNullable = JetBrains.Rd.Impl.Serializers.ReadString.NullableClass();
+    public static CtxReadDelegate<RdSymbolInfo> ReadRdSymbolInfoNullable = RdSymbolInfo.Read.NullableClass();
+    
+    public static CtxWriteDelegate<RdResolveSymbolIndexedResult> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Status);
+      WriteStringNullable(ctx, writer, value.Message);
+      WriteRdSymbolInfoNullable(ctx, writer, value.SymbolInfo);
+    };
+    public static  CtxWriteDelegate<string> WriteStringNullable = JetBrains.Rd.Impl.Serializers.WriteString.NullableClass();
+    public static  CtxWriteDelegate<RdSymbolInfo> WriteRdSymbolInfoNullable = RdSymbolInfo.Write.NullableClass();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdResolveSymbolIndexedResult) obj);
+    }
+    public bool Equals(RdResolveSymbolIndexedResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Status == other.Status && Equals(Message, other.Message) && Equals(SymbolInfo, other.SymbolInfo);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Status.GetHashCode();
+        hash = hash * 31 + (Message != null ? Message.GetHashCode() : 0);
+        hash = hash * 31 + (SymbolInfo != null ? SymbolInfo.GetHashCode() : 0);
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdResolveSymbolIndexedResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("status = "); Status.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+        printer.Print("symbolInfo = "); SymbolInfo.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:122</p>
   /// </summary>
   public sealed class RdResolveSymbolRequest : IPrintable, IEquatable<RdResolveSymbolRequest>
   {
@@ -2068,6 +3187,369 @@ namespace JetBrains.Rider.Model.IndexMcp
       using (printer.IndentCookie()) {
         printer.Print("language = "); Language.PrintEx(printer); printer.Println();
         printer.Print("symbol = "); Symbol.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:280</p>
+  /// </summary>
+  public sealed class RdSafeDeleteBlockedUsage : IPrintable, IEquatable<RdSafeDeleteBlockedUsage>
+  {
+    //fields
+    //public fields
+    [NotNull] public string FilePath {get; private set;}
+    public int Line {get; private set;}
+    public int Column {get; private set;}
+    [NotNull] public string Context {get; private set;}
+    [NotNull] public string Kind {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdSafeDeleteBlockedUsage(
+      [NotNull] string filePath,
+      int line,
+      int column,
+      [NotNull] string context,
+      [NotNull] string kind
+    )
+    {
+      if (filePath == null) throw new ArgumentNullException("filePath");
+      if (context == null) throw new ArgumentNullException("context");
+      if (kind == null) throw new ArgumentNullException("kind");
+      
+      FilePath = filePath;
+      Line = line;
+      Column = column;
+      Context = context;
+      Kind = kind;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out string filePath, out int line, out int column, [NotNull] out string context, [NotNull] out string kind)
+    {
+      filePath = FilePath;
+      line = Line;
+      column = Column;
+      context = Context;
+      kind = Kind;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdSafeDeleteBlockedUsage> Read = (ctx, reader) => 
+    {
+      var filePath = reader.ReadString();
+      var line = reader.ReadInt();
+      var column = reader.ReadInt();
+      var context = reader.ReadString();
+      var kind = reader.ReadString();
+      var _result = new RdSafeDeleteBlockedUsage(filePath, line, column, context, kind);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdSafeDeleteBlockedUsage> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.FilePath);
+      writer.Write(value.Line);
+      writer.Write(value.Column);
+      writer.Write(value.Context);
+      writer.Write(value.Kind);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdSafeDeleteBlockedUsage) obj);
+    }
+    public bool Equals(RdSafeDeleteBlockedUsage other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return FilePath == other.FilePath && Line == other.Line && Column == other.Column && Context == other.Context && Kind == other.Kind;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + FilePath.GetHashCode();
+        hash = hash * 31 + Line.GetHashCode();
+        hash = hash * 31 + Column.GetHashCode();
+        hash = hash * 31 + Context.GetHashCode();
+        hash = hash * 31 + Kind.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdSafeDeleteBlockedUsage (");
+      using (printer.IndentCookie()) {
+        printer.Print("filePath = "); FilePath.PrintEx(printer); printer.Println();
+        printer.Print("line = "); Line.PrintEx(printer); printer.Println();
+        printer.Print("column = "); Column.PrintEx(printer); printer.Println();
+        printer.Print("context = "); Context.PrintEx(printer); printer.Println();
+        printer.Print("kind = "); Kind.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:274</p>
+  /// </summary>
+  public sealed class RdSafeDeleteRequest : IPrintable, IEquatable<RdSafeDeleteRequest>
+  {
+    //fields
+    //public fields
+    [NotNull] public RdSemanticTarget Target {get; private set;}
+    [NotNull] public string TargetType {get; private set;}
+    public bool Force {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdSafeDeleteRequest(
+      [NotNull] RdSemanticTarget target,
+      [NotNull] string targetType,
+      bool force
+    )
+    {
+      if (target == null) throw new ArgumentNullException("target");
+      if (targetType == null) throw new ArgumentNullException("targetType");
+      
+      Target = target;
+      TargetType = targetType;
+      Force = force;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct([NotNull] out RdSemanticTarget target, [NotNull] out string targetType, out bool force)
+    {
+      target = Target;
+      targetType = TargetType;
+      force = Force;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdSafeDeleteRequest> Read = (ctx, reader) => 
+    {
+      var target = RdSemanticTarget.Read(ctx, reader);
+      var targetType = reader.ReadString();
+      var force = reader.ReadBool();
+      var _result = new RdSafeDeleteRequest(target, targetType, force);
+      return _result;
+    };
+    
+    public static CtxWriteDelegate<RdSafeDeleteRequest> Write = (ctx, writer, value) => 
+    {
+      RdSemanticTarget.Write(ctx, writer, value.Target);
+      writer.Write(value.TargetType);
+      writer.Write(value.Force);
+    };
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdSafeDeleteRequest) obj);
+    }
+    public bool Equals(RdSafeDeleteRequest other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Equals(Target, other.Target) && TargetType == other.TargetType && Force == other.Force;
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Target.GetHashCode();
+        hash = hash * 31 + TargetType.GetHashCode();
+        hash = hash * 31 + Force.GetHashCode();
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdSafeDeleteRequest (");
+      using (printer.IndentCookie()) {
+        printer.Print("target = "); Target.PrintEx(printer); printer.Println();
+        printer.Print("targetType = "); TargetType.PrintEx(printer); printer.Println();
+        printer.Print("force = "); Force.PrintEx(printer); printer.Println();
+      }
+      printer.Print(")");
+    }
+    //toString
+    public override string ToString()
+    {
+      var printer = new SingleLinePrettyPrinter();
+      Print(printer);
+      return printer.ToString();
+    }
+  }
+  
+  
+  /// <summary>
+  /// <p>Generated from: IndexMcpModel.kt:288</p>
+  /// </summary>
+  public sealed class RdSafeDeleteResult : IPrintable, IEquatable<RdSafeDeleteResult>
+  {
+    //fields
+    //public fields
+    public bool Success {get; private set;}
+    [NotNull] public List<string> AffectedFiles {get; private set;}
+    public int ChangesCount {get; private set;}
+    [NotNull] public string Message {get; private set;}
+    [NotNull] public string Status {get; private set;}
+    [NotNull] public List<RdSafeDeleteBlockedUsage> BlockedUsages {get; private set;}
+    [CanBeNull] public RdMutationVerification Verification {get; private set;}
+    
+    //private fields
+    //primary constructor
+    public RdSafeDeleteResult(
+      bool success,
+      [NotNull] List<string> affectedFiles,
+      int changesCount,
+      [NotNull] string message,
+      [NotNull] string status,
+      [NotNull] List<RdSafeDeleteBlockedUsage> blockedUsages,
+      [CanBeNull] RdMutationVerification verification
+    )
+    {
+      if (affectedFiles == null) throw new ArgumentNullException("affectedFiles");
+      if (message == null) throw new ArgumentNullException("message");
+      if (status == null) throw new ArgumentNullException("status");
+      if (blockedUsages == null) throw new ArgumentNullException("blockedUsages");
+      
+      Success = success;
+      AffectedFiles = affectedFiles;
+      ChangesCount = changesCount;
+      Message = message;
+      Status = status;
+      BlockedUsages = blockedUsages;
+      Verification = verification;
+    }
+    //secondary constructor
+    //deconstruct trait
+    public void Deconstruct(out bool success, [NotNull] out List<string> affectedFiles, out int changesCount, [NotNull] out string message, [NotNull] out string status, [NotNull] out List<RdSafeDeleteBlockedUsage> blockedUsages, [CanBeNull] out RdMutationVerification verification)
+    {
+      success = Success;
+      affectedFiles = AffectedFiles;
+      changesCount = ChangesCount;
+      message = Message;
+      status = Status;
+      blockedUsages = BlockedUsages;
+      verification = Verification;
+    }
+    //statics
+    
+    public static CtxReadDelegate<RdSafeDeleteResult> Read = (ctx, reader) => 
+    {
+      var success = reader.ReadBool();
+      var affectedFiles = ReadStringList(ctx, reader);
+      var changesCount = reader.ReadInt();
+      var message = reader.ReadString();
+      var status = reader.ReadString();
+      var blockedUsages = ReadRdSafeDeleteBlockedUsageList(ctx, reader);
+      var verification = ReadRdMutationVerificationNullable(ctx, reader);
+      var _result = new RdSafeDeleteResult(success, affectedFiles, changesCount, message, status, blockedUsages, verification);
+      return _result;
+    };
+    public static CtxReadDelegate<List<string>> ReadStringList = JetBrains.Rd.Impl.Serializers.ReadString.List();
+    public static CtxReadDelegate<List<RdSafeDeleteBlockedUsage>> ReadRdSafeDeleteBlockedUsageList = RdSafeDeleteBlockedUsage.Read.List();
+    public static CtxReadDelegate<RdMutationVerification> ReadRdMutationVerificationNullable = RdMutationVerification.Read.NullableClass();
+    
+    public static CtxWriteDelegate<RdSafeDeleteResult> Write = (ctx, writer, value) => 
+    {
+      writer.Write(value.Success);
+      WriteStringList(ctx, writer, value.AffectedFiles);
+      writer.Write(value.ChangesCount);
+      writer.Write(value.Message);
+      writer.Write(value.Status);
+      WriteRdSafeDeleteBlockedUsageList(ctx, writer, value.BlockedUsages);
+      WriteRdMutationVerificationNullable(ctx, writer, value.Verification);
+    };
+    public static  CtxWriteDelegate<List<string>> WriteStringList = JetBrains.Rd.Impl.Serializers.WriteString.List();
+    public static  CtxWriteDelegate<List<RdSafeDeleteBlockedUsage>> WriteRdSafeDeleteBlockedUsageList = RdSafeDeleteBlockedUsage.Write.List();
+    public static  CtxWriteDelegate<RdMutationVerification> WriteRdMutationVerificationNullable = RdMutationVerification.Write.NullableClass();
+    
+    //constants
+    
+    //custom body
+    //methods
+    //equals trait
+    public override bool Equals(object obj)
+    {
+      if (ReferenceEquals(null, obj)) return false;
+      if (ReferenceEquals(this, obj)) return true;
+      if (obj.GetType() != GetType()) return false;
+      return Equals((RdSafeDeleteResult) obj);
+    }
+    public bool Equals(RdSafeDeleteResult other)
+    {
+      if (ReferenceEquals(null, other)) return false;
+      if (ReferenceEquals(this, other)) return true;
+      return Success == other.Success && AffectedFiles.SequenceEqual(other.AffectedFiles) && ChangesCount == other.ChangesCount && Message == other.Message && Status == other.Status && BlockedUsages.SequenceEqual(other.BlockedUsages) && Equals(Verification, other.Verification);
+    }
+    //hash code trait
+    public override int GetHashCode()
+    {
+      unchecked {
+        var hash = 0;
+        hash = hash * 31 + Success.GetHashCode();
+        hash = hash * 31 + AffectedFiles.ContentHashCode();
+        hash = hash * 31 + ChangesCount.GetHashCode();
+        hash = hash * 31 + Message.GetHashCode();
+        hash = hash * 31 + Status.GetHashCode();
+        hash = hash * 31 + BlockedUsages.ContentHashCode();
+        hash = hash * 31 + (Verification != null ? Verification.GetHashCode() : 0);
+        return hash;
+      }
+    }
+    //pretty print
+    public void Print(PrettyPrinter printer)
+    {
+      printer.Println("RdSafeDeleteResult (");
+      using (printer.IndentCookie()) {
+        printer.Print("success = "); Success.PrintEx(printer); printer.Println();
+        printer.Print("affectedFiles = "); AffectedFiles.PrintEx(printer); printer.Println();
+        printer.Print("changesCount = "); ChangesCount.PrintEx(printer); printer.Println();
+        printer.Print("message = "); Message.PrintEx(printer); printer.Println();
+        printer.Print("status = "); Status.PrintEx(printer); printer.Println();
+        printer.Print("blockedUsages = "); BlockedUsages.PrintEx(printer); printer.Println();
+        printer.Print("verification = "); Verification.PrintEx(printer); printer.Println();
       }
       printer.Print(")");
     }
@@ -2302,7 +3784,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:157</p>
+  /// <p>Generated from: IndexMcpModel.kt:184</p>
   /// </summary>
   public sealed class RdSuperMethodInfo : IPrintable, IEquatable<RdSuperMethodInfo>
   {
@@ -2421,7 +3903,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:153</p>
+  /// <p>Generated from: IndexMcpModel.kt:180</p>
   /// </summary>
   public sealed class RdSuperMethodsRequest : IPrintable, IEquatable<RdSuperMethodsRequest>
   {
@@ -2506,7 +3988,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:165</p>
+  /// <p>Generated from: IndexMcpModel.kt:192</p>
   /// </summary>
   public sealed class RdSuperMethodsResult : IPrintable, IEquatable<RdSuperMethodsResult>
   {
@@ -2761,7 +4243,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:115</p>
+  /// <p>Generated from: IndexMcpModel.kt:140</p>
   /// </summary>
   public sealed class RdTypeHierarchyRequest : IPrintable, IEquatable<RdTypeHierarchyRequest>
   {
@@ -2855,7 +4337,7 @@ namespace JetBrains.Rider.Model.IndexMcp
   
   
   /// <summary>
-  /// <p>Generated from: IndexMcpModel.kt:120</p>
+  /// <p>Generated from: IndexMcpModel.kt:145</p>
   /// </summary>
   public sealed class RdTypeHierarchyResult : IPrintable, IEquatable<RdTypeHierarchyResult>
   {

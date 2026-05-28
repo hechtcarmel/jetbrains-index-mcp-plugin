@@ -6,6 +6,7 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiField
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.testFramework.PsiTestUtil
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.util.jar.JarEntry
@@ -261,5 +262,25 @@ class PsiUtilsTest : BasePlatformTestCase() {
 
         val resolvedByUrl = PsiUtils.resolveVirtualFileAnywhere(project, "jar://${jarFile.absolutePath}!/$entryPath")
         assertNull("JAR URL not in project libraries should be blocked", resolvedByUrl)
+    }
+
+    fun testResolveVirtualFileAnywhere_ResolvesRelativeFileFromModuleContentRoot() {
+        val contentRootPath = Files.createTempDirectory("jetbrains-index-mcp-content-root")
+        val filePath = contentRootPath.resolve("ReadMe.java")
+        Files.writeString(filePath, "class ReadMe {}")
+        val contentRoot = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(contentRootPath)
+            ?: error("Failed to refresh content root")
+        PsiTestUtil.addContentRoot(module, contentRoot)
+        val created = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(filePath)
+            ?: error("Failed to refresh ReadMe.java")
+
+        val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "ReadMe.java")
+
+        assertNotNull(
+            "Relative file should resolve from module content roots; " +
+                "created=${created.path}, roots=${ProjectUtils.getModuleContentRoots(project)}",
+            resolved
+        )
+        assertEquals("ReadMe.java", resolved?.name)
     }
 }

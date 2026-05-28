@@ -403,8 +403,8 @@ These activate based on available language plugins (Java, Python, JavaScript/Typ
 - `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
 - `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, C#/F# in Rider, Markdown) (disabled by default)
 
-**Java/Kotlin-Only Refactoring Tools:**
-- `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
+**Conditional Refactoring Tools:**
+- `ide_refactor_safe_delete` - Safely delete element (requires Java plugin or Rider backend)
 
 **Kotlin Conversion Tools:**
 - `ide_convert_java_to_kotlin` - Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Supports full file conversion with automatic formatting and import optimization. Handles classes, interfaces, methods, generics, Java 8+ features (lambdas, streams). Returns list of created .kt files and conversion warnings. Requires both Java and Kotlin plugins. (disabled by default)
@@ -438,7 +438,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 1. `LanguageHandlerRegistry.registerHandlers()` - Registers handlers for available language plugins
 2. `ToolRegistry.registerUniversalTools()` - Registers universal tools including `ide_refactor_rename`, `ide_sync_files`
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
-4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` if Java plugin available
+4. `ToolRegistry.registerSafeDeleteTool()` - Registers `ide_refactor_safe_delete` if Java plugin or Rider backend is available
 
 **Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
 

@@ -13,7 +13,7 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | `language` | string | Language of the symbol (e.g., `"Java"`). Required when using `symbol`. |
 | `symbol` | string | Fully qualified symbol reference. Format: `com.example.ClassName`, `com.example.ClassName#memberName`. |
 
-**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. The two groups are **mutually exclusive**. Currently supported for Java only. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. A complete position target (`file` + positive `line` + positive `column`) takes precedence; otherwise a complete symbol target is used. Blank strings and non-positive `line`/`column` values are treated as absent. Currently supported for Java, plus Rider-backed C#/F# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
 
 ## Response Format
 
@@ -28,7 +28,7 @@ Parse the `text` field as JSON for structured data.
 ### ide_find_references
 Find all usages of a symbol (semantic, not text search).
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -50,7 +50,7 @@ Find all usages of a symbol (semantic, not text search).
 ### ide_find_definition
 Go to where a symbol is defined.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -115,7 +115,7 @@ Search for exact words using IDE's pre-built word index. O(1) lookups, not file 
 ### ide_find_implementations
 Find implementations of interfaces, abstract classes, or abstract methods.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -130,7 +130,8 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ implementations: [{name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#/F# (not Go).
+**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 ### ide_find_symbol (disabled by default)
 Search for any code symbol (classes, methods, fields, functions) by name.
@@ -152,7 +153,7 @@ Search for any code symbol (classes, methods, fields, functions) by name.
 ### ide_find_super_methods
 Find parent methods that a given method overrides or implements.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -164,7 +165,8 @@ Find parent methods that a given method overrides or implements.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ method: {name, class, file, line}, hierarchy: [{name, class, file, line, isInterface}], totalCount }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP (NOT Go, Rust).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rider-backed C#/F# (NOT Go, Rust).
+**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 ### ide_type_hierarchy
 Get complete type inheritance hierarchy (supertypes and subtypes).
@@ -180,12 +182,13 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 
 **Provide either** `className` **or** `file`+`line`+`column`.
 **Returns**: `{ element: {name, file, kind, language, supertypes?}, supertypes: [{name, file, kind, language, supertypes?}], subtypes: [{name, file, kind, language, supertypes?}] }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#/F#.
+**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 ### ide_call_hierarchy
 Build call tree showing who calls a method or what a method calls.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target selection:** complete `file`+positive `line`+positive `column` first; otherwise `language`+`symbol`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -201,6 +204,9 @@ Build call tree showing who calls a method or what a method calls.
 
 **Returns**: `{ element: {name, file, line, column, language}, calls: [{name, file, line, column, language, children: [...]}] }`
 
+**Languages**: Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Rider-backed C#/F#.
+**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+
 ### ide_file_structure (disabled by default)
 Get hierarchical file structure like IDE's Structure panel.
 
@@ -210,7 +216,8 @@ Get hierarchical file structure like IDE's Structure panel.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
-**Languages**: Java, Kotlin, Python, JS/TS, Markdown.
+**Languages**: Java, Kotlin, Python, JS/TS, Markdown, Rider-backed C#/F#.
+**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
 
 ### ide_read_file (disabled by default)
 Read file content by path or qualified name, including library/jar sources.
@@ -250,10 +257,12 @@ Analyze a file for errors, warnings, and available quick fixes/intentions.
 
 ## Refactoring Tools
 
+Rider-backed C# refactoring/formatting flows can depend on the live Rider UI: `ide_refactor_rename` and `ide_move_file` may use native dialog automation, while `ide_optimize_imports` and `ide_reformat_code` use editor-tab plus IDE-action flows. These paths fail closed when the required Rider window, dialog, or editor context is unavailable; Rider safe delete uses the ReSharper backend when available.
+
 ### ide_refactor_rename
 Rename a symbol and update ALL references (semantic rename, not find-replace). Works across ALL languages.
 
-**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+**Target:** `file`+`line`+`column` for symbol rename, or `file` without line/column for file rename
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -282,7 +291,7 @@ Move a file to a new directory. Applies language-aware reference, import, and pa
 **Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
 **Supports IDE undo** (Ctrl+Z).
 
-### ide_refactor_safe_delete (Java/Kotlin only)
+### ide_refactor_safe_delete (Java/Kotlin, plus Rider .NET via ReSharper backend)
 Delete a symbol or file, checking for usages first.
 
 | Parameter | Type | Required | Description |
@@ -296,10 +305,12 @@ Delete a symbol or file, checking for usages first.
 
 **Returns (success)**: `{ success, affectedFiles, changesCount, message }`
 **Returns (blocked)**: `{ canDelete: false, elementName, usageCount, blockingUsages: [...], message }`
-**Only available in**: IntelliJ IDEA, Android Studio (requires Java plugin).
+**Only available in**: IDEs with the Java plugin for Java/Kotlin targets, or Rider with the ReSharper backend for .NET targets.
 
 ### ide_reformat_code (disabled by default)
 Reformat code per project style (.editorconfig, IDE settings). Equivalent to Ctrl+Alt+L / Cmd+Opt+L.
+
+**Rider note:** Rider-backed .NET formatting uses an editor tab plus IDE action flow. Partial line-range formatting is not supported for Rider .NET.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

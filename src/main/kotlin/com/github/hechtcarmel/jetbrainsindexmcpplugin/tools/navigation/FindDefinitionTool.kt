@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
@@ -24,6 +25,7 @@ class FindDefinitionTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_MAX_PREVIEW_LINES = 50
         private const val MAX_ALLOWED_PREVIEW_LINES = 500
+        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode definition requires the Rider backend-native path and is unsupported when that backend is unavailable."
     }
 
     override val name = ToolNames.FIND_DEFINITION
@@ -33,9 +35,9 @@ class FindDefinitionTool : AbstractMcpTool() {
 
         Returns: file path, line/column of definition, code preview, and symbol name.
 
-        Target (mutually exclusive):
-        - file + line + column: position-based lookup
-        - language + symbol: fully qualified symbol reference (currently supported for Java only)
+        Target selection:
+        - Complete file + positive line + positive column: position-based lookup, preferred when present because it is more precise
+        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported when the requested language has a SymbolReferenceHandler, including Rider C#/F#). Blank strings and non-positive line/column values count as absent.
 
         Example: {"file": "src/Main.java", "line": 15, "column": 10}
         Example: {"language": "Java", "symbol": "com.example.MyClass#processData(String)"}
@@ -54,22 +56,30 @@ class FindDefinitionTool : AbstractMcpTool() {
         val fullElementPreview = arguments[ParamNames.FULL_ELEMENT_PREVIEW]?.jsonPrimitive?.content?.toBoolean() ?: false
         val maxPreviewLines = (arguments[ParamNames.MAX_PREVIEW_LINES]?.jsonPrimitive?.int ?: DEFAULT_MAX_PREVIEW_LINES)
             .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
+        val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
+        val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
+            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            optionalStringArg(arguments, ParamNames.SYMBOL) != null
 
         requireSmartMode(project)
 
         val riderDefinition = RiderBackendSemanticService.findDefinition(
             project = project,
-            file = arguments[ParamNames.FILE]?.jsonPrimitive?.content,
-            line = arguments[ParamNames.LINE]?.jsonPrimitive?.content?.toIntOrNull(),
-            column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.content?.toIntOrNull(),
-            language = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content,
-            symbol = arguments[ParamNames.SYMBOL]?.jsonPrimitive?.content,
+            file = optionalStringArg(arguments, ParamNames.FILE),
+            line = optionalPositionIntArg(arguments, ParamNames.LINE),
+            column = optionalPositionIntArg(arguments, ParamNames.COLUMN),
+            language = normalizedRequestedLanguage,
+            symbol = optionalStringArg(arguments, ParamNames.SYMBOL),
             fullElementPreview = fullElementPreview,
             maxPreviewLines = maxPreviewLines
         )
         if (riderDefinition.handled) {
             return riderDefinition.value?.let { createJsonResult(it) }
                 ?: createErrorResult("Rider ReSharper backend could not resolve the C#/F# definition target")
+        }
+        if (isRiderSymbolMode) {
+            return createErrorResult(RIDER_SYMBOL_MODE_UNSUPPORTED)
         }
 
         return suspendingReadAction {
