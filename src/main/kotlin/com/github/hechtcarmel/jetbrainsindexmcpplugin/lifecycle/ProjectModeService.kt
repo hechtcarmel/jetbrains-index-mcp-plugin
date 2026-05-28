@@ -373,6 +373,8 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
         }
     }
 
+    fun isInPendingClose(path: String): Boolean = pendingClose.contains(normalizePath(path))
+
     /** Called by ProjectLifecycleListener when a project is closed externally (not by us). */
     fun onProjectClosedExternally(path: String, name: String) {
         val normalized = normalizePath(path)

@@ -305,6 +305,66 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
         )
     }
 
+    // ── pendingClose set (event-driven flush replaces alarm reschedule) ──────
+
+    fun testFloorBlockedProjectAddedToPendingClose() {
+        // When the floor blocks a close, the project must enter pendingClose so
+        // the next flush can close it without a repeated alarm.
+        service.enroll(project)
+        service.transition(project, ProjectMode.DORMANT)
+        service.transition(project, ProjectMode.CLOSED)
+
+        val path = project.basePath ?: ""
+        assertTrue(
+            "floor-blocked project must be in pendingClose",
+            service.isInPendingClose(path)
+        )
+        // And NOT in closedProjectPaths — that would make wasClosedByUs true
+        assertFalse(service.wasClosedByUs(path))
+    }
+
+    fun testFlushPendingClosesDoesNothingAtFloor() {
+        // With exactly one managed open project (= floor), flush must not close it.
+        service.enroll(project)
+        service.transition(project, ProjectMode.DORMANT)
+        service.transition(project, ProjectMode.CLOSED)  // blocked → pendingClose
+
+        service.flushPendingCloses()  // still at floor — must stay
+
+        assertEquals(
+            "flushPendingCloses must not close below the floor",
+            ProjectMode.DORMANT,
+            service.getMode(project)
+        )
+        assertFalse(service.wasClosedByUs(project.basePath ?: ""))
+    }
+
+    fun testOnProjectClosedExternallyRemovesFromPendingAndMarksClosed() {
+        // If a user manually closes a window that was in pendingClose, the service
+        // must mark it as closed (so future auto-open works) and clear the entry.
+        service.enroll(project)
+        val path = project.basePath ?: ""
+        service.transition(project, ProjectMode.DORMANT)
+        service.transition(project, ProjectMode.CLOSED)  // blocked → pendingClose
+        assertTrue("precondition: must be in pendingClose", service.isInPendingClose(path))
+
+        service.onProjectClosedExternally(path, project.name)
+
+        assertFalse("pendingClose must be cleared after external close", service.isInPendingClose(path))
+        assertTrue("project must be marked as closed by us", service.wasClosedByUs(path))
+    }
+
+    fun testHealthCheckRunsWithoutException() {
+        // healthCheck must not throw even with no managed projects.
+        service.healthCheck("test")
+    }
+
+    fun testHealthCheckWithEnrolledProjectProducesOkResult() {
+        service.enroll(project)
+        // Must complete cleanly with a managed project in background mode.
+        service.healthCheck("test_enrolled")
+    }
+
     // ── State machine transitions ─────────────────────────────────────────────
 
     fun testTransitionActiveChangesMode() {
