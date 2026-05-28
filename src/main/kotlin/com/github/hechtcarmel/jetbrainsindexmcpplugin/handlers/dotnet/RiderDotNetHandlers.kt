@@ -995,36 +995,61 @@ private fun createPositionTarget(project: Project, element: PsiElement): Any? {
     return createPositionTarget(filePath, line, column)
 }
 
+private data class SymbolBaseData(
+    val name: String,
+    val qualifiedName: String?,
+    val rawFilePath: String?,
+    val line: Int?,
+    val column: Int?,
+    val kind: String?,
+    val signature: String?,
+)
+
+private fun rdSymbolToBaseData(symbol: Any): SymbolBaseData = SymbolBaseData(
+    name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
+    qualifiedName = RdProtocolBridge.getProperty(symbol, "qualifiedName") as? String,
+    rawFilePath = RdProtocolBridge.getProperty(symbol, "filePath") as? String,
+    line = RdProtocolBridge.getProperty(symbol, "line") as? Int,
+    column = RdProtocolBridge.getProperty(symbol, "column") as? Int,
+    kind = RdProtocolBridge.getProperty(symbol, "kind") as? String,
+    signature = RdProtocolBridge.getProperty(symbol, "signature") as? String,
+)
+
 private fun rdSymbolToTypeElementData(project: Project, symbol: Any, language: String): TypeElementData {
+    val base = rdSymbolToBaseData(symbol)
     return TypeElementData(
-        name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
-        qualifiedName = RdProtocolBridge.getProperty(symbol, "qualifiedName") as? String,
-        file = (RdProtocolBridge.getProperty(symbol, "filePath") as? String)?.let { displayPath(project, it) },
-        line = RdProtocolBridge.getProperty(symbol, "line") as? Int,
-        kind = RdProtocolBridge.getProperty(symbol, "kind") as? String ?: "UNKNOWN",
+        name = base.name,
+        qualifiedName = base.qualifiedName,
+        file = base.rawFilePath?.let { displayPath(project, it) },
+        line = base.line,
+        kind = base.kind ?: "UNKNOWN",
         language = language
     )
 }
 
 private fun rdSymbolToImplementationData(project: Project, symbol: Any, language: String): ImplementationData? {
-    val rawPath = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null
+    val base = rdSymbolToBaseData(symbol)
+    val rawPath = base.rawFilePath ?: return null
+    val line = base.line ?: return null
     return ImplementationData(
-        name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
+        name = base.name,
         file = displayPath(project, rawPath),
-        line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: return null,
-        column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 1,
-        kind = (RdProtocolBridge.getProperty(symbol, "kind") as? String ?: "unknown").lowercase(),
+        line = line,
+        column = base.column ?: 1,
+        kind = (base.kind ?: "unknown").lowercase(),
         language = language
     )
 }
 
 private fun rdSymbolToCallElementData(project: Project, symbol: Any, language: String): CallElementData? {
-    val rawPath = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null
+    val base = rdSymbolToBaseData(symbol)
+    val rawPath = base.rawFilePath ?: return null
+    val line = base.line ?: return null
     return CallElementData(
-        name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
+        name = base.name,
         file = displayPath(project, rawPath),
-        line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: return null,
-        column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 1,
+        line = line,
+        column = base.column ?: 1,
         language = language
     )
 }
@@ -1777,34 +1802,39 @@ abstract class RiderSuperMethodsHandler(
 
         fun usableName(value: String?): String =
             value?.takeUnless { it.isBlank() } ?: "unknown"
-        val methodName = usableName(RdProtocolBridge.getProperty(method, "name") as? String)
+
+        val methodBase = rdSymbolToBaseData(method)
+        val methodName = usableName(methodBase.name.takeUnless { it.isBlank() })
+        val methodFile = methodBase.rawFilePath?.let { displayPath(project, it) }
+            ?.takeUnless { it.isEmpty() } ?: return null
+        val methodLine = methodBase.line ?: return null
 
         return SuperMethodsData(
             method = MethodData(
                 name = methodName,
-                signature = (RdProtocolBridge.getProperty(method, "signature") as? String)
+                signature = methodBase.signature
                     ?.takeUnless { it.isBlank() || it.equals("unknown", ignoreCase = true) } ?: methodName,
-                containingClass = (RdProtocolBridge.getProperty(method, "qualifiedName") as? String)
+                containingClass = methodBase.qualifiedName
                     ?.substringBeforeLast('.', "unknown") ?: "unknown",
-                file = displayPath(project, RdProtocolBridge.getProperty(method, "filePath") as? String)
-                    .takeUnless { it.isEmpty() } ?: return null,
-                line = RdProtocolBridge.getProperty(method, "line") as? Int ?: return null,
-                column = RdProtocolBridge.getProperty(method, "column") as? Int ?: 1,
+                file = methodFile,
+                line = methodLine,
+                column = methodBase.column ?: 1,
                 language = displayLanguage
             ),
             hierarchy = hierarchy.map { superInfo ->
                 val symbol = RdProtocolBridge.getProperty(superInfo, "symbol")
-                val superName = usableName(symbol?.let { RdProtocolBridge.getProperty(it, "name") as? String })
+                val symbolBase = symbol?.let { rdSymbolToBaseData(it) }
+                val superName = usableName(symbolBase?.name?.takeUnless { it.isBlank() })
                 SuperMethodData(
                     name = superName,
-                    signature = (symbol?.let { RdProtocolBridge.getProperty(it, "signature") as? String })
+                    signature = symbolBase?.signature
                         ?.takeUnless { it.isBlank() || it.equals("unknown", ignoreCase = true) } ?: superName,
                     containingClass = RdProtocolBridge.getProperty(superInfo, "containingTypeName") as? String ?: "",
                     containingClassKind = RdProtocolBridge.getProperty(superInfo, "containingTypeKind") as? String ?: "CLASS",
-                    file = symbol?.let { displayPath(project, RdProtocolBridge.getProperty(it, "filePath") as? String) }
+                    file = symbolBase?.rawFilePath?.let { displayPath(project, it) }
                         ?.takeUnless { it.isEmpty() },
-                    line = symbol?.let { RdProtocolBridge.getProperty(it, "line") as? Int },
-                    column = symbol?.let { RdProtocolBridge.getProperty(it, "column") as? Int },
+                    line = symbolBase?.line,
+                    column = symbolBase?.column,
                     isInterface = RdProtocolBridge.getProperty(superInfo, "isInterface") as? Boolean ?: false,
                     depth = RdProtocolBridge.getProperty(superInfo, "depth") as? Int ?: 0,
                     language = displayLanguage

@@ -476,20 +476,12 @@ public class IndexMcpBackendHost
         var preAcquiredTextControl = TryAcquireTextControlBeforeWriteLock(request);
         OuterLifetime outerLifetime = lt;
         RdRenameSymbolResult? result = null;
-        return ExecuteWriteLockedRename(outerLifetime, () => { result = ExecuteRenameSymbol(request, preAcquiredTextControl); })
-            .ContinueWith<RdRenameSymbolResult?>(task =>
-            {
-                if (!task.IsFaulted)
-                    return result;
-
-                var exception = task.Exception?.GetBaseException();
-                return MutationVerificationService
-                    .Blocked(
-                        exception == null
-                            ? "ReSharper backend rename failed while acquiring/executing the write lock."
-                            : $"ReSharper backend rename failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}")
-                    .ToRenameSymbolResult("", request.NewName);
-            });
+        return ExecuteWriteLockedMutation(
+            outerLifetime,
+            work: () => { result = ExecuteRenameSymbol(request, preAcquiredTextControl); },
+            getResult: () => result,
+            operationName: "rename",
+            toBlockedResult: blocked => blocked.ToRenameSymbolResult("", request.NewName));
     }
 
     // ── Read Lock Helper ─────────────────────────────────────────────────────
@@ -569,6 +561,36 @@ public class IndexMcpBackendHost
 
         throw new MissingMethodException(
             "No compatible Rider/ReSharper write-lock API was found for headless symbol rename.");
+    }
+
+    /// <summary>
+    /// Run a mutation under the ReSharper write lock and convert any fault into a Blocked
+    /// outcome shaped for the calling endpoint. The three mutation endpoints (rename symbol,
+    /// rename file, safe delete) previously duplicated this 12-line ContinueWith / Blocked
+    /// pattern; this helper centralises the message wording and outcome mapping.
+    /// </summary>
+    /// <param name="operationName">Wording inserted into the blocked message (e.g. "rename",
+    /// "file rename", "safe delete"). Used in: "ReSharper backend {operationName} failed
+    /// while acquiring/executing the write lock".</param>
+    private Task<TResult?> ExecuteWriteLockedMutation<TResult>(
+        OuterLifetime outerLifetime,
+        Action work,
+        Func<TResult?> getResult,
+        string operationName,
+        Func<VerifiedMutationOutcome, TResult?> toBlockedResult)
+    {
+        return ExecuteWriteLockedRename(outerLifetime, work)
+            .ContinueWith<TResult?>(task =>
+            {
+                if (!task.IsFaulted)
+                    return getResult();
+
+                var exception = task.Exception?.GetBaseException();
+                var blockedMessage = exception == null
+                    ? $"ReSharper backend {operationName} failed while acquiring/executing the write lock."
+                    : $"ReSharper backend {operationName} failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}";
+                return toBlockedResult(MutationVerificationService.Blocked(blockedMessage));
+            });
     }
 
     private RdRenameSymbolResult ExecuteRenameSymbol(
@@ -779,20 +801,12 @@ public class IndexMcpBackendHost
         }
 
         RdRenameFileResult? result = null;
-        return ExecuteWriteLockedRename(outerLifetime, () => { result = ExecuteRenameFile(renamePlan); })
-            .ContinueWith<RdRenameFileResult?>(task =>
-            {
-                if (!task.IsFaulted)
-                    return result;
-
-                var exception = task.Exception?.GetBaseException();
-                return MutationVerificationService
-                    .Blocked(
-                        exception == null
-                            ? "ReSharper backend file rename failed while acquiring/executing the write lock."
-                            : $"ReSharper backend file rename failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}")
-                    .ToRenameFileResult(oldPath, newPath);
-            });
+        return ExecuteWriteLockedMutation(
+            outerLifetime,
+            work: () => { result = ExecuteRenameFile(renamePlan); },
+            getResult: () => result,
+            operationName: "file rename",
+            toBlockedResult: blocked => blocked.ToRenameFileResult(oldPath, newPath));
     }
 
     private Task<RdMoveFileResult?> HandleMoveFile(Lifetime lt, RdMoveFileRequest request)
@@ -950,7 +964,9 @@ public class IndexMcpBackendHost
         }
 
         RdSafeDeleteResult? result = null;
-        return ExecuteWriteLockedRename(outerLifetime, () =>
+        return ExecuteWriteLockedMutation(
+            outerLifetime,
+            work: () =>
             {
                 result = string.Equals(request.TargetType, "file", StringComparison.OrdinalIgnoreCase)
                     ? SafeDeleteMutationExecutor.ExecuteFileSafeDelete(targetFilePath, request.Force)
@@ -960,20 +976,10 @@ public class IndexMcpBackendHost
                         request.Target.Column.Value,
                         request.Target.Symbol ?? string.Empty,
                         request.Force);
-            })
-            .ContinueWith<RdSafeDeleteResult?>(task =>
-            {
-                if (!task.IsFaulted)
-                    return result;
-
-                var exception = task.Exception?.GetBaseException();
-                return MutationVerificationService
-                    .Blocked(
-                        exception == null
-                            ? "ReSharper backend safe delete failed while acquiring/executing the write lock."
-                            : $"ReSharper backend safe delete failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}")
-                    .ToSafeDeleteResult();
-            });
+            },
+            getResult: () => result,
+            operationName: "safe delete",
+            toBlockedResult: blocked => blocked.ToSafeDeleteResult());
     }
 
     private RdRenameSymbolResult ToRenameBlockedResult(ExactTargetResolution resolution, string newName)
@@ -2187,37 +2193,17 @@ public class IndexMcpBackendHost
     private List<IDeclaredElement> ResolveContainerCandidates(string language, string containerQualifiedName)
     {
         var normalizedContainer = NormalizeQualifiedName(containerQualifiedName);
-        return ResolveContainerCandidatesCore(
-            language,
+        return FilterAndOrderContainerCandidates(
+            EnumerateContainerCandidatesAcrossScopes(normalizedContainer, language),
             normalizedContainer,
-            () => EnumerateContainerCandidatesAcrossScopes(normalizedContainer, language));
-    }
-
-    private static List<IDeclaredElement> ResolveContainerCandidatesCore(
-        string language,
-        string normalizedContainer,
-        Func<IEnumerable<IDeclaredElement>> primaryLookup)
-    {
-        return ResolveContainerCandidatesCoreDetailed(language, normalizedContainer, primaryLookup).Matches;
-    }
-
-    private static ContainerCandidateResolution ResolveContainerCandidatesCoreDetailed(
-        string language,
-        string normalizedContainer,
-        Func<IEnumerable<IDeclaredElement>> primaryLookup,
-        string primaryOrigin = "primary_lookup")
-    {
-        return new ContainerCandidateResolution(
-            FilterAndOrderContainerCandidates(primaryLookup(), normalizedContainer, language),
-            primaryOrigin);
+            language);
     }
 
     /// <summary>
     /// Walk all candidate symbol scopes — project modules first, then library scopes —
     /// in priority order, returning every container that matches <paramref name="normalizedContainer"/>
-    /// in either qualified or short-name form. Shared by <see cref="ResolveSymbolIndexed"/>
-    /// and <see cref="ResolveSymbolIndexedForFindReferences"/> to keep their lookup behaviour
-    /// in sync.
+    /// in either qualified or short-name form. Shared between the find_definition and
+    /// find_references resolvers (the latter delegates to <see cref="ResolveSymbolIndexed"/>).
     /// </summary>
     private IEnumerable<IDeclaredElement> EnumerateContainerCandidatesAcrossScopes(
         string normalizedContainer,
@@ -2248,71 +2234,16 @@ public class IndexMcpBackendHost
         if (!parseResult.IsSuccess)
             return FindReferencesTargetResolution.FromResolution(parseResult.ToResolution(), "parse");
 
-        var parsed = parseResult.Symbol!;
-        var normalizedContainer = NormalizeQualifiedName(parsed.ContainerQualifiedName);
-        var containers = ResolveContainerCandidatesCoreDetailed(
-            parsed.Language,
-            normalizedContainer,
-            () => EnumerateContainerCandidatesAcrossScopes(normalizedContainer, parsed.Language));
-
-        // Fallback for unresolved dotted bare symbols ("Class.Property", "Class.Method"):
-        // the original parse treated the whole string as a type FQN. Re-parse splitting on
-        // the last dot and resolve as a member of the LHS type.
-        if (containers.Matches.Count == 0
-            && parsed.MemberName == null
-            && TrySplitDottedSymbolAsMember(parsed.ContainerQualifiedName, out var splitContainer, out var splitMember))
-        {
-            var altResolution = ResolveSymbolIndexed(parsed.Language,
-                splitContainer + "#" + splitMember);
-            if (altResolution.TryGetElement() != null)
-                return FindReferencesTargetResolution.FromResolution(altResolution, "dotted_member_split");
-        }
-
-        if (containers.Matches.Count == 0)
-        {
-            return FindReferencesTargetResolution.Failure(
-                "unresolved_symbol",
-                $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'.",
-                containers.Origin);
-        }
-
-        if (parsed.MemberName == null)
-        {
-            return FindReferencesTargetResolution.FromResolution(
-                ResolveSingleMatch(
-                    containers.Matches,
-                    $"Multiple Rider declarations match container '{parsed.ContainerQualifiedName}'.",
-                    $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'."),
-                containers.Origin);
-        }
-
-        var supportedContainers = containers.Matches
-            .OfType<ITypeElement>()
-            .ToList();
-
-        if (supportedContainers.Count == 0)
-        {
-            return FindReferencesTargetResolution.Failure(
-                "unsupported_target",
-                $"Container '{parsed.ContainerQualifiedName}' does not support member lookup.",
-                containers.Origin);
-        }
-
-        var members = supportedContainers
-            .SelectMany(container => ResolveMemberCandidates(container, parsed))
-            .Distinct()
-            .OrderBy(BestDeclarationRank)
-            .ThenBy(GetQualifiedName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(GetMemberSignatureSortKey, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(GetDeclarationPath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
+        // The find-references resolver used to duplicate the entire flow in
+        // ResolveSymbolIndexed (container lookup + member matching + ordering + single-match
+        // selection + dotted-split fallback) just to wrap the outcome in a different result
+        // type. Both surfaces share the same lookup semantics now, so wrap the canonical
+        // resolver instead. We lose the "dotted_member_split" origin label on success
+        // (acceptable: that label was only surfaced in success-path diagnostic text, not in
+        // any contract-bearing field).
         return FindReferencesTargetResolution.FromResolution(
-            ResolveSingleMatch(
-                members,
-                $"Multiple Rider declarations match symbol '{symbol}'.",
-                $"No Rider declaration matches symbol '{symbol}'."),
-            containers.Origin);
+            ResolveSymbolIndexed(language, symbol),
+            "primary_lookup");
     }
 
 
@@ -3652,16 +3583,6 @@ public class IndexMcpBackendHost
         string? language,
         string symbol,
         string scope,
-        IndexedSymbolResolution resolution)
-    {
-        ArgumentNullException.ThrowIfNull(resolution);
-        return FormatFindReferencesUnresolvedTargetMessage(language, symbol, scope, resolution.Status, resolution.Message, "primary_lookup");
-    }
-
-    private static string FormatFindReferencesUnresolvedTargetMessage(
-        string? language,
-        string symbol,
-        string scope,
         string status,
         string? message,
         string origin)
@@ -3764,11 +3685,6 @@ public class IndexMcpBackendHost
             IReadOnlyList<string> availableMethodSignatures, string message)
             => new(false, selectedMethodSignature, requiresTextControl, availableMethodSignatures, message);
     }
-
-
-    private sealed record ContainerCandidateResolution(
-        List<IDeclaredElement> Matches,
-        string Origin);
 
 
     private sealed class FindReferencesTargetResolution

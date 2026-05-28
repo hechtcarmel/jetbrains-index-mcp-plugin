@@ -12,6 +12,7 @@
 
 ### Changed
 - **`scripts/rider-live-smoke.ps1` regression pins flipped to success assertions.** The four pins (bare-class `find_definition`, dotted `Class.Prop` `find_definition`, `find_references` `RdFault` leak, rename `affectedFiles` underreport) now assert the fixed behavior. The script will fail red if any of the four regresses again.
+- **Rider backend dedup (no behaviour change).** Four audit items consolidated to remove ~120 lines of duplication: (1) `ResolveSymbolIndexedForFindReferences` now delegates to `ResolveSymbolIndexed` and only wraps the outcome — the find-references path used to re-implement the entire container + member + dotted-split resolution flow byte-for-byte; the dead `ContainerCandidateResolution` record and the `ResolveContainerCandidatesCoreDetailed` indirection were removed alongside. (2) The three `rdSymbolToXData` converters in `RiderDotNetHandlers.kt` plus the inline super-methods builder now share a `rdSymbolToBaseData(symbol)` helper instead of repeating seven `RdProtocolBridge.getProperty` reads each. (3) The single-use 4-param `FormatFindReferencesUnresolvedTargetMessage(IndexedSymbolResolution)` wrapper was inlined and removed. (4) The duplicated `.ContinueWith` write-lock fault-to-Blocked pattern in `HandleRenameSymbol`, `HandleRenameFile`, and `HandleSafeDelete` was extracted into `ExecuteWriteLockedMutation<TResult>`. Tests still 83/83 green.
 
 ## [4.20.0] - 2026-05-28
 
