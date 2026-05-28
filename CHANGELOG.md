@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- **`ide_find_references` symbol mode no longer leaks `RdFault` stack traces with backend source paths when the target cannot be resolved.** `IndexMcpBackendHost.HandleFindReferences` now returns a graceful `RdFindReferencesResult(empty, 0, message)` for unresolved targets instead of throwing across the rd-protocol boundary. The Kotlin handler surfaces that message as a sanitized tool error via a new `sanitizeBackendDiagnostic` helper, which also wraps `RdCallOutcome.Failure` so any future leak is scrubbed (stack frames, `:line N` markers, and absolute backend file paths collapsed to `<backend>`).
+- **`ide_find_definition` and `ide_find_references` symbol mode now resolve bare class names like `MainWindowViewModel`.** `ResolveContainerCandidatesFromScope` previously only walked `GetElementsByQualifiedName`; for single-segment inputs it now also walks `ISymbolScope.GetAllShortNames` + `GetElementsByShortName` via the new `ResolveContainerCandidatesFromScopeWithFallback` helper (mirrors the short-name path already used by `ide_find_class`). `MatchesContainerCandidate` accepts short-name equality when the request has no `.`, so a namespaced FQN candidate matches an unqualified request without weakening explicit FQN constraints.
+- **`ide_find_definition` and `ide_find_references` symbol mode now accept the dotted `Class.Property` and `Class.Method` forms.** When the primary resolution returns zero candidates, both resolvers re-attempt with the input split on its last `.` (via `TrySplitDottedSymbolAsMember`) and resolve the right-hand side as a member of the left-hand container — making `Clipthrough.ViewModels.MainWindowViewModel.IsBusy` succeed without requiring the `#` separator.
+- **`ide_refactor_rename` now reports every file actually touched on disk, not just the pre-rename declaration set.** `ExecuteRenameSymbol` re-snapshots `GetPotentiallyAffectedFiles(element)` after `TryExecuteDrivenRename` succeeds and unions the result into the existing `affectedFiles` list. Picks up partial-class siblings, AXAML code-behind pairs, and tests that the rename refactoring discovers during execution but that weren't reachable from the bound element pre-rename. Best-effort and bounded by try/catch.
+
+### Changed
+- **`scripts/rider-live-smoke.ps1` regression pins flipped to success assertions.** The four pins (bare-class `find_definition`, dotted `Class.Prop` `find_definition`, `find_references` `RdFault` leak, rename `affectedFiles` underreport) now assert the fixed behavior. The script will fail red if any of the four regresses again.
+
+## [4.20.0] - 2026-05-28
+
 ### Breaking
 - **F# support removed from the Rider backend.** All F# code paths (`F#`/`FSHARP` language aliases, `.fs`/`.fsi`/`.fsx` extension handling, F# rename/move/find-references/find-implementations/call-hierarchy/type-hierarchy/super-methods routing) have been deleted from both the .NET backend (`IndexMcpBackendHost`) and the Kotlin Rider handlers. Clients sending `language: "F#"` or `language: "FSHARP"` will now receive an explicit unsupported-language error instead of silently producing low-quality results. C# remains fully supported. F# may return as a separate roadmap item once Rider's F# semantics provide the reliability tier this plugin requires.
 

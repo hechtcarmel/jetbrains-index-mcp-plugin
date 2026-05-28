@@ -336,11 +336,34 @@ internal fun RdCallOutcome.Timeout.toUserMessage(operation: String): String =
     "Rider backend timed out while $operation after ${timeoutSeconds}s (rd call '$callName')."
 
 internal fun RdCallOutcome.Failure.toUserMessage(operation: String): String {
-    val detail = cause.message?.takeIf { it.isNotBlank() } ?: cause.toString()
+    val rawDetail = cause.message?.takeIf { it.isNotBlank() } ?: cause.toString()
+    val detail = sanitizeBackendDiagnostic(rawDetail)
     if (detail.contains("requires warmed ReSharper usage caches", ignoreCase = false)) {
         return detail
     }
     return "Rider backend failed while $operation (rd call '$callName'): $detail"
+}
+
+/**
+ * Strip backend-internal noise (stack frames, absolute backend source paths, `at NS.Method(...)`
+ * lines) from a diagnostic message before surfacing it to the MCP client. Keeps the first line,
+ * which is typically the human-readable cause, and removes any trailing technical noise.
+ *
+ * Defense in depth: even when the backend converts an unresolved-target into a graceful
+ * `message` field (the v4.20.0+ contract), any unexpected exception that escapes through
+ * `RdFault.cause.message` would otherwise leak `IndexMcpBackendHost.cs:line N` style frames.
+ */
+internal fun sanitizeBackendDiagnostic(detail: String): String {
+    val firstLine = detail.lineSequence().firstOrNull()?.trim().orEmpty()
+    if (firstLine.isEmpty()) return detail.trim()
+
+    // Remove inline " at NS.Method(...)" segments and trailing ":line N" markers.
+    val cleaned = firstLine
+        .replace(Regex("""\s+at\s+[\w.<>+`]+\([^)]*\)(\s+in\s+[^:]+:line\s+\d+)?"""), "")
+        .replace(Regex(""":line\s+\d+"""), "")
+        .replace(Regex("""(?:[A-Za-z]:\\|/)[^\s:]*[\\/][\w.+-]+\.(?:cs|kt|java)(?::\d+)?"""), "<backend>")
+        .trim()
+    return if (cleaned.isEmpty()) firstLine else cleaned
 }
 
 internal class RiderBackendTimeoutException(
@@ -632,6 +655,9 @@ object RiderBackendSemanticService {
         @Suppress("UNCHECKED_CAST")
         val references = (RdProtocolBridge.getProperty(result, "references") as? List<Any>) ?: emptyList()
         val message = RdProtocolBridge.getProperty(result, "message") as? String
+        if (references.isEmpty() && !message.isNullOrBlank()) {
+            return RiderBackendResponse(handled = true, errorMessage = sanitizeBackendDiagnostic(message))
+        }
         val orderedDistinctReferences = references.map { reference ->
             UsageLocation(
                 file = displayPath(project, RdProtocolBridge.getProperty(reference, "filePath") as? String),

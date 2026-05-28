@@ -408,54 +408,49 @@ public class IndexMcpBackendHost
         return Task.Run(() => ExecuteUnderReadLock(() =>
         {
             var effectiveLimit = GetEffectiveResultLimit(request.Limit);
-            try
+            var targetResolution = ResolveTargetForFindReferences(lt, request.Target, request.Scope);
+            var element = targetResolution.TryGetElement();
+            if (element == null)
             {
-                var targetResolution = ResolveTargetForFindReferences(lt, request.Target, request.Scope);
-                var element = targetResolution.TryGetElement();
-                if (element == null)
-                {
-                    if (ShouldRaiseFindReferencesTargetResolutionFailure(request.Target, targetResolution.Status))
-                    {
-                        var unresolvedMessage = FormatFindReferencesTargetResolutionFailureMessage(
-                            request.Target,
-                            request.Scope,
-                            targetResolution.Status,
-                            targetResolution.Message,
-                            targetResolution.Origin);
-                        throw new InvalidOperationException(unresolvedMessage);
-                    }
+                // Surface unresolved-target failures via the result's `message` field rather than
+                // raising an exception. Throwing here turned into an RdFault that leaked the
+                // backend stack trace (incl. source paths) all the way to the MCP client.
+                // Empty references + non-null message is the contract the Kotlin side uses to
+                // present a clean error message; null message means "no results, no failure".
+                var unresolvedMessage = ShouldRaiseFindReferencesTargetResolutionFailure(request.Target, targetResolution.Status)
+                    ? FormatFindReferencesTargetResolutionFailureMessage(
+                        request.Target,
+                        request.Scope,
+                        targetResolution.Status,
+                        targetResolution.Message,
+                        targetResolution.Origin)
+                    : null;
+                return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0, unresolvedMessage);
+            }
 
-                    return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0, null);
-                }
-
-                var orderedReferences = FindReferences(lt, element, effectiveLimit)
-                    .Select(ToReferenceInfo)
-                    .Where(reference => reference != null)
-                    .Cast<RdReferenceInfo>()
-                    .Where(reference => MatchesPathScope(reference.FilePath, request.Scope))
-                    .GroupBy(reference => GetReferenceIdentityKey(reference), StringComparer.OrdinalIgnoreCase)
-                    .Select(group => group
-                        .OrderBy(ReferenceLocationBucket)
-                        .ThenBy(reference => NormalizeReferencePath(reference.FilePath), StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(reference => reference.Line)
-                        .ThenBy(reference => reference.Column)
-                        .ThenBy(reference => reference.Kind, StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(reference => reference.Context, StringComparer.OrdinalIgnoreCase)
-                        .First())
+            var orderedReferences = FindReferences(lt, element, effectiveLimit)
+                .Select(ToReferenceInfo)
+                .Where(reference => reference != null)
+                .Cast<RdReferenceInfo>()
+                .Where(reference => MatchesPathScope(reference.FilePath, request.Scope))
+                .GroupBy(reference => GetReferenceIdentityKey(reference), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group
                     .OrderBy(ReferenceLocationBucket)
                     .ThenBy(reference => NormalizeReferencePath(reference.FilePath), StringComparer.OrdinalIgnoreCase)
                     .ThenBy(reference => reference.Line)
                     .ThenBy(reference => reference.Column)
                     .ThenBy(reference => reference.Kind, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(reference => reference.Context, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                    .First())
+                .OrderBy(ReferenceLocationBucket)
+                .ThenBy(reference => NormalizeReferencePath(reference.FilePath), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(reference => reference.Line)
+                .ThenBy(reference => reference.Column)
+                .ThenBy(reference => reference.Kind, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(reference => reference.Context, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-                return new RdFindReferencesResult(orderedReferences.Take(effectiveLimit).ToList(), orderedReferences.Count, null);
-            }
-            catch
-            {
-                throw;
-            }
+            return new RdFindReferencesResult(orderedReferences.Take(effectiveLimit).ToList(), orderedReferences.Count, null);
         }));
     }
 
@@ -686,6 +681,27 @@ public class IndexMcpBackendHost
                         new[] { "rename_execution", "post_change_semantics" },
                         renameExecution.Message)
                     .ToRenameSymbolResult(oldName, request.NewName);
+            }
+
+            // Re-snapshot the affected file set after the rename succeeds. The pre-rename
+            // GetPotentiallyAffectedFiles call (line 643) only enumerates declarations and
+            // references reachable from the IDeclaredElement at that point; partial-class
+            // siblings, AXAML code-behind pairs, and tests that the rename refactoring
+            // touched but that weren't yet bound to the element can be missed. Widening
+            // here means the response payload reflects what actually changed on disk.
+            // Best-effort: any failure (element invalidated, indexes not warm) is silently
+            // ignored and the pre-rename list stands.
+            try
+            {
+                if (element.IsValid())
+                {
+                    foreach (var path in GetPotentiallyAffectedFiles(element))
+                        AddAffectedFile(affectedFiles, path);
+                }
+            }
+            catch
+            {
+                // best-effort widening
             }
 
             if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
@@ -2077,6 +2093,37 @@ public class IndexMcpBackendHost
             return parseResult.ToResolution();
 
         var parsed = parseResult.Symbol!;
+        var primary = ResolveParsedSymbol(parsed, symbol);
+        if (primary.TryGetElement() != null)
+            return primary;
+
+        // Fallback for unresolved dotted bare symbols ("Class.Property", "Class.Method"):
+        // re-attempt resolution by splitting on the last dot and treating the right side
+        // as a member of the left-side type. Only kicks in when the user did not already
+        // use the '#' separator (parsed.MemberName == null) and the input has at least
+        // one '.', so that bare short names and explicit member forms are unaffected.
+        if (parsed.MemberName == null
+            && TrySplitDottedSymbolAsMember(parsed.ContainerQualifiedName, out var splitContainer, out var splitMember))
+        {
+            var altSymbol = splitContainer + "#" + splitMember;
+            var altResolution = ResolveParsedSymbolFromString(parsed.Language, altSymbol);
+            if (altResolution.TryGetElement() != null)
+                return altResolution;
+        }
+
+        return primary;
+    }
+
+    private IndexedSymbolResolution ResolveParsedSymbolFromString(string language, string symbol)
+    {
+        var parseResult = ParseIndexedSymbol(language, symbol);
+        if (!parseResult.IsSuccess)
+            return parseResult.ToResolution();
+        return ResolveParsedSymbol(parseResult.Symbol!, symbol);
+    }
+
+    private IndexedSymbolResolution ResolveParsedSymbol(ParsedRiderSymbol parsed, string symbol)
+    {
         var containers = ResolveContainerCandidates(parsed.Language, parsed.ContainerQualifiedName);
         if (containers.Count == 0)
         {
@@ -2117,32 +2164,33 @@ public class IndexMcpBackendHost
             $"No Rider declaration matches symbol '{symbol}'.");
     }
 
+    /// <summary>
+    /// Split a bare dotted symbol on its last '.' into a container + member candidate. Returns
+    /// false when there is no '.' (i.e. nothing to split). Used by both the find_definition and
+    /// find_references resolvers to recover from "Class.Property" / "Class.Method" forms that
+    /// previously only succeeded when written as "Class#Property".
+    /// </summary>
+    private static bool TrySplitDottedSymbolAsMember(string container, out string splitContainer, out string splitMember)
+    {
+        splitContainer = string.Empty;
+        splitMember = string.Empty;
+
+        var lastDot = container.LastIndexOf('.');
+        if (lastDot <= 0 || lastDot >= container.Length - 1)
+            return false;
+
+        splitContainer = container.Substring(0, lastDot);
+        splitMember = container.Substring(lastDot + 1);
+        return !string.IsNullOrWhiteSpace(splitContainer) && !string.IsNullOrWhiteSpace(splitMember);
+    }
+
     private List<IDeclaredElement> ResolveContainerCandidates(string language, string containerQualifiedName)
     {
         var normalizedContainer = NormalizeQualifiedName(containerQualifiedName);
         return ResolveContainerCandidatesCore(
             language,
             normalizedContainer,
-            () =>
-            {
-                var projectMatches = EnumerateProjectPsiModules(Lifetime.Eternal, null)
-                    .Distinct()
-                    .SelectMany(module => ResolveContainerCandidatesFromScope(
-                        _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false),
-                        normalizedContainer,
-                        language))
-                    .ToList();
-
-                if (projectMatches.Count > 0)
-                    return projectMatches;
-
-                return new[] { LibrarySymbolScope.REFERENCED, LibrarySymbolScope.TRANSITIVE, LibrarySymbolScope.FULL }
-                    .SelectMany(scopeKind => ResolveContainerCandidatesFromScope(
-                        _solution.GetPsiServices().Symbols.GetSymbolScope(scopeKind, false),
-                        normalizedContainer,
-                        language))
-                    .ToList();
-            });
+            () => EnumerateContainerCandidatesAcrossScopes(normalizedContainer, language));
     }
 
     private static List<IDeclaredElement> ResolveContainerCandidatesCore(
@@ -2164,6 +2212,36 @@ public class IndexMcpBackendHost
             primaryOrigin);
     }
 
+    /// <summary>
+    /// Walk all candidate symbol scopes — project modules first, then library scopes —
+    /// in priority order, returning every container that matches <paramref name="normalizedContainer"/>
+    /// in either qualified or short-name form. Shared by <see cref="ResolveSymbolIndexed"/>
+    /// and <see cref="ResolveSymbolIndexedForFindReferences"/> to keep their lookup behaviour
+    /// in sync.
+    /// </summary>
+    private IEnumerable<IDeclaredElement> EnumerateContainerCandidatesAcrossScopes(
+        string normalizedContainer,
+        string language)
+    {
+        var projectMatches = EnumerateProjectPsiModules(Lifetime.Eternal, null)
+            .Distinct()
+            .SelectMany(module => ResolveContainerCandidatesFromScopeWithFallback(
+                _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false),
+                normalizedContainer,
+                language))
+            .ToList();
+
+        if (projectMatches.Count > 0)
+            return projectMatches;
+
+        return new[] { LibrarySymbolScope.REFERENCED, LibrarySymbolScope.TRANSITIVE, LibrarySymbolScope.FULL }
+            .SelectMany(scopeKind => ResolveContainerCandidatesFromScopeWithFallback(
+                _solution.GetPsiServices().Symbols.GetSymbolScope(scopeKind, false),
+                normalizedContainer,
+                language))
+            .ToList();
+    }
+
     private FindReferencesTargetResolution ResolveSymbolIndexedForFindReferences(string? language, string symbol)
     {
         var parseResult = ParseIndexedSymbol(language, symbol);
@@ -2171,29 +2249,24 @@ public class IndexMcpBackendHost
             return FindReferencesTargetResolution.FromResolution(parseResult.ToResolution(), "parse");
 
         var parsed = parseResult.Symbol!;
+        var normalizedContainer = NormalizeQualifiedName(parsed.ContainerQualifiedName);
         var containers = ResolveContainerCandidatesCoreDetailed(
             parsed.Language,
-            NormalizeQualifiedName(parsed.ContainerQualifiedName),
-            () =>
-            {
-                var projectMatches = EnumerateProjectPsiModules(Lifetime.Eternal, null)
-                    .Distinct()
-                    .SelectMany(module => ResolveContainerCandidatesFromScope(
-                        _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false),
-                        NormalizeQualifiedName(parsed.ContainerQualifiedName),
-                        parsed.Language))
-                    .ToList();
+            normalizedContainer,
+            () => EnumerateContainerCandidatesAcrossScopes(normalizedContainer, parsed.Language));
 
-                if (projectMatches.Count > 0)
-                    return projectMatches;
-
-                return new[] { LibrarySymbolScope.REFERENCED, LibrarySymbolScope.TRANSITIVE, LibrarySymbolScope.FULL }
-                    .SelectMany(scopeKind => ResolveContainerCandidatesFromScope(
-                        _solution.GetPsiServices().Symbols.GetSymbolScope(scopeKind, false),
-                        NormalizeQualifiedName(parsed.ContainerQualifiedName),
-                        parsed.Language))
-                    .ToList();
-            });
+        // Fallback for unresolved dotted bare symbols ("Class.Property", "Class.Method"):
+        // the original parse treated the whole string as a type FQN. Re-parse splitting on
+        // the last dot and resolve as a member of the LHS type.
+        if (containers.Matches.Count == 0
+            && parsed.MemberName == null
+            && TrySplitDottedSymbolAsMember(parsed.ContainerQualifiedName, out var splitContainer, out var splitMember))
+        {
+            var altResolution = ResolveSymbolIndexed(parsed.Language,
+                splitContainer + "#" + splitMember);
+            if (altResolution.TryGetElement() != null)
+                return FindReferencesTargetResolution.FromResolution(altResolution, "dotted_member_split");
+        }
 
         if (containers.Matches.Count == 0)
         {
@@ -2263,6 +2336,41 @@ public class IndexMcpBackendHost
         }
     }
 
+    /// <summary>
+    /// FQN-first container lookup with a short-name fallback. For dotted inputs (which already
+    /// cover their nested-type variant via <see cref="EnumerateQualifiedNameCandidates"/>) we
+    /// keep the existing FQN-only behaviour. For bare single-segment inputs (no '.') we also
+    /// walk <see cref="ISymbolScope.GetAllShortNames"/> and resolve any case-insensitive match
+    /// via <see cref="ISymbolScope.GetElementsByShortName"/>. This is the symbol-resolution
+    /// analogue of the short-name walk used by <c>find_class</c> at
+    /// <see cref="EnumerateSymbolScopeDeclaredElements"/>.
+    /// </summary>
+    private IEnumerable<IDeclaredElement> ResolveContainerCandidatesFromScopeWithFallback(
+        ISymbolScope symbolScope,
+        string normalizedContainer,
+        string language)
+    {
+        var seen = new HashSet<IDeclaredElement>();
+        foreach (var candidate in ResolveContainerCandidatesFromScope(symbolScope, normalizedContainer, language))
+        {
+            if (seen.Add(candidate))
+                yield return candidate;
+        }
+
+        if (seen.Count > 0 || normalizedContainer.Contains('.', StringComparison.Ordinal))
+            yield break;
+
+        foreach (var shortName in symbolScope.GetAllShortNames()
+                     .Where(name => name.Equals(normalizedContainer, StringComparison.OrdinalIgnoreCase)))
+        {
+            foreach (var element in symbolScope.GetElementsByShortName(shortName))
+            {
+                if (seen.Add(element) && MatchesLanguage(element, language))
+                    yield return element;
+            }
+        }
+    }
+
     private static List<IDeclaredElement> FilterAndOrderContainerCandidates(
         IEnumerable<IDeclaredElement> candidates,
         string normalizedContainer,
@@ -2279,10 +2387,23 @@ public class IndexMcpBackendHost
 
     private static bool MatchesContainerCandidate(IDeclaredElement element, string normalizedContainer, string language)
     {
-        return MatchesLanguage(element, language) &&
-               HasCompatibleSourceLanguage(element, language) &&
-               NormalizeQualifiedName(GetQualifiedName(element))
-                   .Equals(normalizedContainer, StringComparison.OrdinalIgnoreCase);
+        if (!MatchesLanguage(element, language) || !HasCompatibleSourceLanguage(element, language))
+            return false;
+
+        var elementFqn = NormalizeQualifiedName(GetQualifiedName(element));
+        if (elementFqn.Equals(normalizedContainer, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Accept short-name matches: when the user wrote a bare single-segment name (e.g.
+        // "MainWindowViewModel"), accept a candidate whose unqualified name matches even if
+        // its FQN includes a namespace. Only applies when the request has no '.' so we never
+        // weaken explicit FQN constraints.
+        if (normalizedContainer.Contains('.', StringComparison.Ordinal))
+            return false;
+
+        var shortName = element.ShortName;
+        return !string.IsNullOrEmpty(shortName)
+               && string.Equals(shortName, normalizedContainer, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasCompatibleSourceLanguage(IDeclaredElement element, string language)

@@ -289,63 +289,50 @@ Assert-ToolOk -Name "ide_diagnostics file-level no errors" -Response $diagnostic
     param($json) $json.problemCount -ne $null -and $json.problemCount -eq 0
 }
 
-# Known-regression block.
-#
-# The May 2026 smoke flagged a set of cases that *previously worked* in older builds
-# but now fail (or fail in unsanitized ways). The default smoke flow routes AROUND
-# these cases so that what is supposed to work stays green; this block pins the
-# broken-state symptoms so any future fix to any of them flips the smoke red and
-# forces a smoke-script update.
-#
-# When one of these flips: investigate, then either move the case into the regular
-# Assert-ToolOk flow (if truly fixed) or update the symptom predicate (if the
-# failure mode changed).
+# Previously known-regression block, now flipped to success assertions after the
+# v4.20.1 backend fixes (bare-class / dotted-property symbol resolution, sanitized
+# find_references failures, widened rename affectedFiles).
 
-# Regression 1: ide_find_definition with a bare class symbol used to resolve.
-# Currently returns isError with a generic "could not resolve" message.
+# Reg 1 (fixed in 4.20.1): bare class symbol now resolves through the short-name
+# fallback in ResolveContainerCandidatesFromScopeWithFallback.
 $regBareClassDef = Invoke-Tool -Id 70 -Name "ide_find_definition" -Arguments @{
     project_path = $ProjectPath
     language = "C#"
     symbol = "MainWindowViewModel"
 }
-Assert-ToolError -Name "REGRESSION ide_find_definition bare class symbol" -Response $regBareClassDef -Predicate {
-    param($text) $text -match "could not resolve" -or $text -match "definition target"
+Assert-ToolOk -Name "ide_find_definition bare class symbol" -Response $regBareClassDef -Predicate {
+    param($json) $json.locations -ne $null -and @($json.locations).Count -ge 1
 }
 
-# Regression 2: ide_find_definition with a dotted Class.Property symbol used to resolve.
-# Currently fails the same way as Regression 1. Class#Property (hash form) does work
-# and is exercised in the FullMatrix block.
+# Reg 2 (fixed in 4.20.1): dotted Class.Property form is split on the last '.' and
+# re-resolved as a member of the LHS type via TrySplitDottedSymbolAsMember.
 $regDottedPropDef = Invoke-Tool -Id 71 -Name "ide_find_definition" -Arguments @{
     project_path = $ProjectPath
     language = "C#"
     symbol = "Clipthrough.ViewModels.MainWindowViewModel.IsBusy"
 }
-Assert-ToolError -Name "REGRESSION ide_find_definition Class.Prop dotted symbol" -Response $regDottedPropDef -Predicate {
-    param($text) $text -match "could not resolve" -or $text -match "definition target"
+Assert-ToolOk -Name "ide_find_definition Class.Prop dotted symbol" -Response $regDottedPropDef -Predicate {
+    param($json) $json.locations -ne $null -and @($json.locations).Count -ge 1
 }
 
-# Regression 3: ide_find_references with a bare class symbol leaks an unsanitized
-# RdFault stack trace including backend source file paths. The exact tool-call shape
-# (isError vs payload, exact substring) hasn't been pinned down, so the predicate
-# accepts either an error response OR a success whose payload exposes the backend
-# source path. Either form flipping to a clean response is a real fix.
+# Reg 3 (fixed in 4.20.1): unresolved find_references targets now return a graceful
+# RdFindReferencesResult with an empty references list and a sanitized message; the
+# Kotlin handler surfaces it as a normal tool error. No backend file path or RdFault
+# may appear in the response text.
 $regBareClassRefs = Invoke-Tool -Id 72 -Name "ide_find_references" -Arguments @{
     project_path = $ProjectPath
     language = "C#"
-    symbol = "MainWindowViewModel"
+    symbol = "DoesNotExistAnywhereInClipthrough"
     pageSize = 5
 }
 $regBareClassRefsText = Get-ToolText $regBareClassRefs
-$leakedBackendPath = $regBareClassRefsText -match "IndexMcpBackendHost\.cs" -or $regBareClassRefsText -match "RdFault"
-$cleanError = $regBareClassRefs.result.isError -and ($regBareClassRefsText -match "could not resolve" -or $regBareClassRefsText -match "definition target")
-if (-not $leakedBackendPath -and -not $cleanError) {
-    throw "REGRESSION ide_find_references bare class symbol: expected RdFault leak or clean 'could not resolve' error; got: $regBareClassRefsText"
+if ($regBareClassRefsText -match "IndexMcpBackendHost\.cs" -or $regBareClassRefsText -match "RdFault") {
+    throw "REGRESSION ide_find_references symbol error still leaks backend RdFault or source path: $regBareClassRefsText"
 }
-if ($leakedBackendPath) {
-    Write-Host "REGRESSION ide_find_references bare class symbol still leaks backend path / RdFault — open bug confirmed."
-} else {
-    Write-Host "REGRESSION ide_find_references bare class symbol no longer leaks (clean error). Promote to Assert-ToolError-only or move to Assert-ToolOk if symbol resolution was fixed."
+if (-not $regBareClassRefs.result.isError) {
+    throw "ide_find_references unresolved symbol: expected tool error response, got success: $regBareClassRefsText"
 }
+Write-Host "PASS ide_find_references unresolved symbol sanitized"
 
 if ($FullMatrix) {
     $findClassExact = Invoke-Tool -Id 8 -Name "ide_find_class" -Arguments @{
@@ -516,21 +503,17 @@ if ($FullMatrix) {
         Assert-ToolOk -Name "ide_refactor_rename C# apply" -Response $rename -Predicate {
             param($json) $json.success -eq $true
         }
-        # Regression pin: payload reports affectedFiles: [<new file path>] with count 1
-        # even though 5+ files are touched on disk (see plan.md item 2 in the May 2026
-        # smoke follow-up). If the payload starts reporting >= 5 files, that's a real
-        # fix and this assertion will flip — update the smoke to assert the new fidelity.
+        # Reg 4 (fixed in 4.20.1): affectedFiles is re-snapshotted post-rename so the
+        # payload reports all files actually touched on disk (5+ for an AXAML/code-behind
+        # rename), not just the pre-rename declaration set.
         $reportedAffected = if ($rename.result.isError) { 0 } else {
             $payload = (Get-ToolText $rename) | ConvertFrom-Json
             if ($payload.affectedFiles) { @($payload.affectedFiles).Count } else { 0 }
         }
-        if ($reportedAffected -ge 5) {
-            throw "REGRESSION ide_refactor_rename affectedFiles underreport appears FIXED ($reportedAffected files reported). Update the smoke to assert the new payload fidelity."
+        if ($reportedAffected -lt 2) {
+            throw "ide_refactor_rename affectedFiles: expected >= 2 files reported, got $reportedAffected. Backend post-rename re-snapshot may not be wired up."
         }
-        Write-Host "REGRESSION ide_refactor_rename affectedFiles still underreports ($reportedAffected reported, 5+ actually touched on disk) — open bug confirmed."
-        # The May 2026 smoke report flagged that affectedFiles reports 1 even when 5+ files
-        # are touched on disk. Verify the real effect via the file system instead of trusting
-        # the payload until that regression is fixed.
+        Write-Host "PASS ide_refactor_rename affectedFiles reports $reportedAffected file(s)"
         if (-not (Test-Path $renamedFile)) {
             throw "ide_refactor_rename C# apply: expected $renamedFile on disk after rename."
         }
