@@ -1,6 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeProductInfo
+import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.util.messages.Topic
 
 object McpConstants {
@@ -50,7 +53,41 @@ object McpConstants {
      * Legacy constant for backwards compatibility.
      */
     const val SERVER_NAME = "jetbrains-index-mcp"
-    const val SERVER_VERSION = "4.18.0"
+
+    /**
+     * Plugin id declared in META-INF/plugin.xml. Kept in sync with the `<id>` element so
+     * [getServerVersion] can look the plugin up at runtime.
+     */
+    const val PLUGIN_ID = "com.github.hechtcarmel.jetbrainsindexmcpplugin"
+
+    /**
+     * Compile-time fallback used only when the plugin descriptor cannot be resolved
+     * (e.g. inside unit tests that don't load the manifest). Update alongside
+     * `pluginVersion` in `gradle.properties`.
+     */
+    const val SERVER_VERSION_FALLBACK = "4.20.0"
+
+    /**
+     * Resolve the plugin's reported version from the live plugin descriptor at runtime
+     * so it always tracks `pluginVersion` from gradle.properties — eliminating the
+     * drift bug where this constant lagged behind every release.
+     */
+    @JvmStatic
+    fun getServerVersion(): String {
+        return try {
+            PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.version
+                ?: SERVER_VERSION_FALLBACK
+        } catch (t: Throwable) {
+            thisLogger().warn("Failed to read plugin descriptor for $PLUGIN_ID; using fallback version", t)
+            SERVER_VERSION_FALLBACK
+        }
+    }
+
+    @Deprecated(
+        "Use getServerVersion() so the version matches the loaded plugin descriptor.",
+        ReplaceWith("McpConstants.getServerVersion()"),
+    )
+    const val SERVER_VERSION = SERVER_VERSION_FALLBACK
     const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and Markdown file structure. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
 
     /**

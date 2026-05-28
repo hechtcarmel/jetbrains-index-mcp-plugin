@@ -10,7 +10,8 @@ param(
     [int] $InitialDelaySeconds = 30,
     [int] $StartupWaitSeconds = 60,
     [switch] $FullMatrix,
-    [switch] $TestRename
+    [switch] $TestRename,
+    [string] $ExpectedVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -137,6 +138,19 @@ function Assert-ToolError {
     Write-Host "PASS $Name"
 }
 
+function Get-ExpectedPluginVersion {
+    # Read pluginVersion from gradle.properties next to this script (../gradle.properties).
+    # Lets the smoke catch SERVER_VERSION drift like the 4.18.0 / 4.20.0 mismatch from May 2026.
+    $repoRoot = Split-Path -Parent $PSScriptRoot
+    $gradleProps = Join-Path $repoRoot "gradle.properties"
+    if (-not (Test-Path $gradleProps)) {
+        return $null
+    }
+    $line = Select-String -Path $gradleProps -Pattern '^\s*pluginVersion\s*=\s*(.+?)\s*$' | Select-Object -First 1
+    if (-not $line) { return $null }
+    return $line.Matches[0].Groups[1].Value
+}
+
 if (-not (Test-Path $PluginZip)) { throw "Plugin ZIP not found: $PluginZip" }
 if (-not (Test-Path $RiderExe)) { throw "Rider executable not found: $RiderExe" }
 if (-not (Test-Path $SolutionPath)) { throw "Solution not found: $SolutionPath" }
@@ -150,7 +164,18 @@ Start-Process -FilePath $RiderExe -ArgumentList @($SolutionPath)
 Start-Sleep -Seconds $InitialDelaySeconds
 
 $initialize = Wait-McpInitialize
-Write-Host "MCP version $($initialize.result.serverInfo.version)"
+$reportedVersion = $initialize.result.serverInfo.version
+Write-Host "MCP version $reportedVersion"
+
+$expectedVersion = if ($ExpectedVersion) { $ExpectedVersion } else { Get-ExpectedPluginVersion }
+if ($expectedVersion) {
+    if ($reportedVersion -ne $expectedVersion) {
+        throw "MCP version mismatch: server reported '$reportedVersion' but expected '$expectedVersion'. Either the install pipeline loaded a stale build or McpConstants.getServerVersion() / SERVER_VERSION_FALLBACK is out of sync with gradle.properties:pluginVersion."
+    }
+    Write-Host "PASS version matches expected $expectedVersion"
+} else {
+    Write-Warning "Expected plugin version could not be determined (no -ExpectedVersion and no readable gradle.properties); skipping version assertion."
+}
 
 $indexStatus = Invoke-Tool -Id 2 -Name "ide_index_status" -Arguments @{ project_path = $ProjectPath }
 Assert-ToolOk -Name "ide_index_status" -Response $indexStatus -Predicate {
@@ -209,6 +234,59 @@ $callHierarchy = Invoke-Tool -Id 7 -Name "ide_call_hierarchy" -Arguments @{
 }
 Assert-ToolOk -Name "ide_call_hierarchy callers C#" -Response $callHierarchy -Predicate {
     param($json) $json.calls.Count -gt 0
+}
+
+# Universal, non-mutating tools that should be in every smoke run regardless of -FullMatrix.
+# These were absent from the May 2026 smoke and caused gaps to surface only via manual
+# integration testing.
+
+$syncFiles = Invoke-Tool -Id 50 -Name "ide_sync_files" -Arguments @{
+    project_path = $ProjectPath
+}
+Assert-ToolOk -Name "ide_sync_files whole project" -Response $syncFiles -Predicate {
+    param($json) $json.syncedAll -eq $true
+}
+
+$findFile = Invoke-Tool -Id 51 -Name "ide_find_file" -Arguments @{
+    project_path = $ProjectPath
+    query = "MainWindow.axaml.cs"
+    pageSize = 5
+}
+Assert-ToolOk -Name "ide_find_file basic" -Response $findFile -Predicate {
+    param($json) ($json.files | Where-Object { $_.name -eq "MainWindow.axaml.cs" }).Count -gt 0
+}
+
+$searchTextPage1 = Invoke-Tool -Id 52 -Name "ide_search_text" -Arguments @{
+    project_path = $ProjectPath
+    query = "MainWindow"
+    pageSize = 5
+}
+Assert-ToolOk -Name "ide_search_text page 1" -Response $searchTextPage1 -Predicate {
+    param($json) $json.matches.Count -gt 0 -and $json.totalCount -gt 0
+}
+
+$searchTextPage1Json = (Get-ToolText $searchTextPage1) | ConvertFrom-Json
+if ($searchTextPage1Json.nextCursor) {
+    $searchTextPage2 = Invoke-Tool -Id 53 -Name "ide_search_text" -Arguments @{
+        project_path = $ProjectPath
+        cursor = $searchTextPage1Json.nextCursor
+    }
+    # The May 2026 report flagged page 2 returning stale:true without edits as a quirk.
+    # Assert stale stays false here so any regression to a false-positive stale flag fails fast.
+    Assert-ToolOk -Name "ide_search_text page 2 via cursor" -Response $searchTextPage2 -Predicate {
+        param($json) $json.matches.Count -gt 0 -and -not $json.stale
+    }
+} else {
+    Write-Host "SKIP ide_search_text page 2: only one page of results."
+}
+
+$diagnostics = Invoke-Tool -Id 54 -Name "ide_diagnostics" -Arguments @{
+    project_path = $ProjectPath
+    file = "Clipthrough/Views/MainWindow.axaml.cs"
+    severity = "errors"
+}
+Assert-ToolOk -Name "ide_diagnostics file-level no errors" -Response $diagnostics -Predicate {
+    param($json) $json.problemCount -ne $null -and $json.problemCount -eq 0
 }
 
 if ($FullMatrix) {
@@ -344,6 +422,26 @@ if ($FullMatrix) {
         ($json.hierarchy | Where-Object {
             $_.name -eq "Initialize" -and $_.containingClass -eq "Avalonia.Application"
         }).Count -gt 0
+    }
+
+    $findFileWildcard = Invoke-Tool -Id 60 -Name "ide_find_file" -Arguments @{
+        project_path = $ProjectPath
+        query = "*ViewModel.cs"
+        pageSize = 10
+    }
+    Assert-ToolOk -Name "ide_find_file wildcard" -Response $findFileWildcard -Predicate {
+        param($json) ($json.files | Where-Object { $_.name -eq "MainWindowViewModel.cs" }).Count -gt 0
+    }
+
+    $callHierarchySymbol = Invoke-Tool -Id 61 -Name "ide_call_hierarchy" -Arguments @{
+        project_path = $ProjectPath
+        language = "C#"
+        symbol = "Clipthrough.Views.MainWindow#TryConnectClipListScrollViewer"
+        direction = "callers"
+        maxDepth = 2
+    }
+    Assert-ToolOk -Name "ide_call_hierarchy symbol C#" -Response $callHierarchySymbol -Predicate {
+        param($json) $json.calls -ne $null
     }
 
     if ($TestRename) {
