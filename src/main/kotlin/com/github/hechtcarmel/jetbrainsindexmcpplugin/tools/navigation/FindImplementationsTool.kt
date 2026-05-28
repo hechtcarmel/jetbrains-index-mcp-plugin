@@ -30,7 +30,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for finding implementations of interfaces, abstract classes, or methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -39,7 +39,7 @@ class FindImplementationsTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_PAGE_SIZE = 100
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
-        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode implementations require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions."
+        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C# symbol-mode implementations require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions."
     }
 
     override val name = "ide_find_implementations"
@@ -47,9 +47,9 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val description = """
         Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#.
 
-        Rider note: C#/F# results use Rider's frontend navigation bridge to the ReSharper backend.
+        Rider note: C# results use Rider's frontend navigation bridge to the ReSharper backend.
 
         Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
 
@@ -83,7 +83,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val requestedSymbol = optionalStringArg(arguments, ParamNames.SYMBOL)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#") &&
             requestedSymbol != null
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments)

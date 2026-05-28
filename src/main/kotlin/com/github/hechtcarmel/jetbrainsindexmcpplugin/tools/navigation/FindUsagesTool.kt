@@ -40,7 +40,7 @@ class FindUsagesTool : AbstractMcpTool() {
         private val LOG = logger<FindUsagesTool>()
         private const val DEFAULT_MAX_RESULTS = 100
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
-        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode references require the Rider backend-native path and are unsupported when that backend is unavailable."
+        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C# symbol-mode references require the Rider backend-native path and are unsupported when that backend is unavailable."
 
         internal fun searchInfrastructureErrorMessage(error: Throwable): String {
             val detail = error.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
@@ -58,11 +58,11 @@ class FindUsagesTool : AbstractMcpTool() {
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
 
-        Rider note: C#/F# reference lookups use the ReSharper backend. Position targets must resolve to a Rider source file; dependency-backed/source-less locations should use language+symbol when available. Scope filtering hides source-less/library-only declarations unless project_and_libraries is explicitly requested. Rider rows are deduplicated deterministically before truncation/pagination so over-limit results stay explainable.
+        Rider note: C# reference lookups use the ReSharper backend. Position targets must resolve to a Rider source file; dependency-backed/source-less locations should use language+symbol when available. Scope filtering hides source-less/library-only declarations unless project_and_libraries is explicitly requested. Rider rows are deduplicated deterministically before truncation/pagination so over-limit results stay explainable.
 
         Target selection:
         - Complete file + positive line + positive column: position-based lookup, preferred when present because it is more precise (necessary for fresh search, ignored when cursor is provided)
-        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided). Blank strings and non-positive line/column values count as absent. Note: Rider F# module/type-only symbol-mode searches in project_files use a bounded, cache-aware search to stay agent-friendly; cold IDE caches can still make the first search expensive, while position/member targets remain the preferred option for more deterministic latency.
+        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided). Blank strings and non-positive line/column values count as absent.
         - cursor: pagination cursor from a previous response
 
         Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
@@ -116,7 +116,7 @@ class FindUsagesTool : AbstractMcpTool() {
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
         val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#") &&
             optionalStringArg(arguments, ParamNames.SYMBOL) != null
         requireSmartMode(project)
 

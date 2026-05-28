@@ -22,7 +22,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Tool for retrieving type hierarchies across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -30,16 +30,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     companion object {
         private val LOG = logger<TypeHierarchyTool>()
-        private val DEFAULT_RIDER_CLASSNAME_LANGUAGES = listOf("C#", "F#")
+        private val DEFAULT_RIDER_CLASSNAME_LANGUAGES = listOf("C#")
 
-        /**
-         * Keep the default C# -> F# fallback for backward compatibility.
-         * We intentionally do NOT infer F# from naming heuristics here: F# type names can look identical
-         * to C#/.NET qualified names, so guessing would risk skipping valid C# lookups.
-         */
         internal fun riderClassNameCandidateLanguages(requestedLanguage: String?): List<String> = when {
             requestedLanguage.equals("C#", ignoreCase = true) -> listOf("C#")
-            requestedLanguage.equals("F#", ignoreCase = true) -> listOf("F#")
             requestedLanguage == null -> DEFAULT_RIDER_CLASSNAME_LANGUAGES
             else -> emptyList()
         }
@@ -56,10 +50,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#.
 
         Rust note: className parameter not supported for Rust; use file + line + column instead.
-        Rider note: C#/F# hierarchy uses Rider's frontend navigation bridge to the ReSharper backend; subtype/supertype detail depends on the current Rider build.
+        Rider note: C# hierarchy uses Rider's frontend navigation bridge to the ReSharper backend; subtype/supertype detail depends on the current Rider build.
 
         Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
@@ -74,7 +68,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
-        .stringProperty(ParamNames.LANGUAGE, "Optional Rider className hint. Use 'C#' or 'F#' to force a single Rider lookup; when omitted, Rider className lookup preserves the legacy C# then F# fallback order.")
+        .stringProperty(ParamNames.LANGUAGE, "Optional Rider className hint. Use 'C#' to force a Rider C# lookup; other values produce no Rider results.")
         .scopeProperty("Search scope. Default: project_files.")
         .build()
 

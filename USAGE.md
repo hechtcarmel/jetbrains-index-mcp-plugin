@@ -29,7 +29,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_move_file` | Move file to new directory with IDE-aware move semantics | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
 
-### Rider C# and F# support
+### Rider C# support
 
 Rider-backed C# requests use the ReSharper backend for supported search and mutation paths, including `ide_find_symbol`, `ide_refactor_rename`, `ide_move_file`, and `ide_refactor_safe_delete`.
 
@@ -38,8 +38,6 @@ Rider C# refactoring/formatting flows are UI-driven when the backend cannot prov
 Mutation results use the canonical external rename statuses so bounded behavior stays visible: `success`, `no_op`, `needs_active_editor`, `conflict`, `unsupported_context`, and `failed`. Legacy verification terms may still appear in metadata or trace payloads, but not as terminal statuses.
 
 Rider C# rename is bounded, not fully autonomous: it can require an active editor, can stop for conflicts that would otherwise open a dialog, and can fail closed with the canonical external statuses above rather than claiming success.
-
-Rider-backed F# support is currently beta/unstable and not production-ready because Rider exposes fewer language/refactoring guarantees there than it does for C#. Treat F# mutation results as best-effort and expect broader limitation coverage or unsupported-context responses until the Rider language surface matures.
 
 Where Rider/ReSharper cannot prove a relationship semantically, the tool returns the bounded outcome instead of inferring support. This is especially important for ASP.NET convention-routing relationships and other platform-visible-only cases.
 
@@ -61,7 +59,6 @@ Legacy verification terms such as `verification_limited` and `verification_faile
 - Use the repository's deterministic fixture tests as the primary proof path.
 - Keep examples path-agnostic; do not hardcode local checkout paths into usage guidance.
 - Record bounded limitations instead of inflating unsupported Rider behavior into success.
-- Prefer C# for production mutation workflows; treat F# as beta and not production-ready until Rider exposes stronger parity.
 
 ### Extended Tools (Language-Aware)
 
@@ -69,11 +66,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, C#/F# in Rider |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown, C#/F# in Rider |
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C# in Rider |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C# in Rider |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, C# in Rider |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, C# in Rider |
+| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown, C# in Rider |
 
 ### Java-Specific Refactoring Tools
 
@@ -147,7 +144,7 @@ Some tools support identifying the target element by fully qualified symbol refe
 
 **Target selection:** A complete position target (`file` + positive `line` + positive `column`) takes precedence because it is more precise. If no complete position target is present, the tool uses a complete symbol target (`language` + `symbol`). Blank strings and non-positive `line`/`column` values are treated as absent for this selection, so clients may send default `""`/`0` values without causing a dual-mode error.
 
-**Supported languages:** Java, plus Rider-backed C#/F# for tools whose current IDE/runtime exposes the shared semantic symbol lane. Unsupported languages return an explicit error listing the currently supported symbol-reference languages for the active IDE session.
+**Supported languages:** Java, plus Rider-backed C# for tools whose current IDE/runtime exposes the shared semantic symbol lane. Unsupported languages return an explicit error listing the currently supported symbol-reference languages for the active IDE session.
 
 **Tools that support symbol references:** `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`.
 
@@ -161,7 +158,7 @@ These tools work in all JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, etc
 
 Finds all references to a symbol across the entire project using IntelliJ's semantic index.
 
-**Rider note:** Rider-backed C#/F# results are deduplicated deterministically before truncation/pagination. Source-unavailable/library-only placeholders are kept stable and sort after concrete source locations so over-limit responses remain explainable.
+**Rider note:** Rider-backed C# results are deduplicated deterministically before truncation/pagination. Source-unavailable/library-only placeholders are kept stable and sort after concrete source locations so over-limit responses remain explainable.
 
 **Use when:**
 - Locating where a method, class, variable, or field is called or accessed
@@ -264,7 +261,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 
 Finds the definition/declaration location of a symbol at a given source location.
 
-**Rider note:** Rider-backed C#/F# symbol-mode definitions can resolve to `locationKind` values `source`, `metadata`, `decompiled`, or `sourceUnavailable`. Non-source outcomes include a `message` and `locationDisplayName` so callers can distinguish "resolved but not source-backed" from a hard failure.
+**Rider note:** Rider-backed C# symbol-mode definitions can resolve to `locationKind` values `source`, `metadata`, `decompiled`, or `sourceUnavailable`. Non-source outcomes include a `message` and `locationDisplayName` so callers can distinguish "resolved but not source-backed" from a hard failure.
 
 **Use when:**
 - Understanding where a method, class, variable, or field is declared
@@ -1393,7 +1390,7 @@ Retrieves the complete type hierarchy for a class or interface.
 
 Analyzes method call relationships to find callers or callees.
 
-**Rider note:** Rider-backed C#/F# caller results are ordered deterministically before truncation. When a framework-routed endpoint has no static callers, the tool returns an empty `calls` list with an explanatory `message`; this is a framework-routed static-analysis limitation, not automatic backend failure.
+**Rider note:** Rider-backed C# caller results are ordered deterministically before truncation. When a framework-routed endpoint has no static callers, the tool returns an empty `calls` list with an explanatory `message`; this is a framework-routed static-analysis limitation, not automatic backend failure.
 
 **Use when:**
 - Tracing execution flow
@@ -1487,8 +1484,7 @@ Analyzes method call relationships to find callers or callees.
 
 Finds all concrete implementations of an interface, abstract class, or abstract method.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#/F# in Rider (not Go — Go uses implicit interfaces).
-**Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C# in Rider (not Go — Go uses implicit interfaces).
 
 **Use when:**
 - Locating classes that implement an interface
@@ -1578,8 +1574,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 
 Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rider-backed C#/F# in Rider (not Go or Rust — they use composition/traits instead of classical inheritance).
-**Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rider-backed C# in Rider (not Go or Rust — they use composition/traits instead of classical inheritance).
 
 **Use when:**
 - Finding which interface method an implementation overrides
@@ -1692,8 +1687,7 @@ Get the hierarchical structure of a source file, similar to the IDE's Structure 
 
 **Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Rider-backed C#/F# in Rider.
-**Rider note:** C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Rider-backed C# in Rider.
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
 **Use when:**

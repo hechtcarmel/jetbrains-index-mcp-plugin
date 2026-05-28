@@ -410,14 +410,6 @@ if ($FullMatrix) {
     } else {
         Write-Host "SKIP ide_refactor_rename C# apply: pass -TestRename only for disposable project copies."
     }
-
-    $fsharpFiles = Get-ChildItem -Path $ProjectPath -Recurse -Include *.fs,*.fsi,*.fsx -File -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($fsharpFiles) {
-        Write-Host "INFO F# fixture found at $($fsharpFiles.FullName); add a concrete F# semantic assertion for this solution."
-    } else {
-        Write-Host "SKIP F# semantic matrix: no F# fixture files found under $ProjectPath"
-    }
 }
 
 Write-Host "All Rider live smoke checks passed."

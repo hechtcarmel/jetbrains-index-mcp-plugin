@@ -2,6 +2,19 @@
 
 # IDE Index MCP Server Changelog
 
+## [Unreleased]
+
+### Breaking
+- **F# support removed from the Rider backend.** All F# code paths (`F#`/`FSHARP` language aliases, `.fs`/`.fsi`/`.fsx` extension handling, F# rename/move/find-references/find-implementations/call-hierarchy/type-hierarchy/super-methods routing) have been deleted from both the .NET backend (`IndexMcpBackendHost`) and the Kotlin Rider handlers. Clients sending `language: "F#"` or `language: "FSHARP"` will now receive an explicit unsupported-language error instead of silently producing low-quality results. C# remains fully supported. F# may return as a separate roadmap item once Rider's F# semantics provide the reliability tier this plugin requires.
+
+### Fixed
+- **`HandleFindTypes` no longer throws an NRE when ranking library/metadata symbols.** The "is test path" sort key at `IndexMcpBackendHost.cs:148` now coalesces null declaration paths to an empty string (matching the sibling site at line ~197). The `IsTestPath` helper itself was tightened to short-circuit on null/whitespace input so future callers cannot reintroduce the regression.
+- **`ide_find_implementations` now returns overriding members for method targets, not implementing classes.** When the cursor resolves to an `IOverridableMember` (method/property/event), the backend enumerates `OverridableMemberExtensions.GetAllSuperMembers()` across each inheritor and returns the overriding members. Type-target requests continue to return implementing classes through the existing `Finder.FindInheritors` flow.
+- **`ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, and `ide_find_super_methods` now return project-relative `displayPath` instead of raw absolute backend `filePath`.** The four affected converters in `RiderDotNetHandlers.kt` (`rdSymbolToTypeElementData`, `rdSymbolToImplementationData`, `rdSymbolToCallElementData`, and the super-methods DTO build site) now thread `project` through and apply `displayPath` so output matches the convention already established by `findDefinition` and `findReferences`.
+
+### Changed
+- **All read endpoints on the Rider backend host now acquire a ReSharper read lock.** `HandleFindTypes`, `HandleFindSymbols`, `HandleFindDefinition`, `HandleFindReferences`, `HandleResolveSymbol`, `HandleResolveSymbolIndexed`, `HandleGetTypeHierarchy`, `HandleFindImplementations`, `HandleGetCallHierarchy`, `HandleFindSuperMethods`, and `HandleGetFileStructure` now wrap their work in `ExecuteUnderReadLock`. Removes a class of "PSI invalidated mid-search" races that previously could surface as silent empty results or sporadic backend exceptions when concurrent rename/save activity raced with a read.
+
 ## [4.19.2] - 2026-05-28
 
 ### Changed

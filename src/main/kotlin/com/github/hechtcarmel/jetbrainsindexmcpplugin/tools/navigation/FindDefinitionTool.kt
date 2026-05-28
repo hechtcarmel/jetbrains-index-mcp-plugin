@@ -25,13 +25,15 @@ class FindDefinitionTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_MAX_PREVIEW_LINES = 50
         private const val MAX_ALLOWED_PREVIEW_LINES = 500
-        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode definition requires the Rider backend-native path and is unsupported when that backend is unavailable."
+        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C# symbol-mode definition requires the Rider backend-native path and is unsupported when that backend is unavailable."
     }
 
     override val name = ToolNames.FIND_DEFINITION
 
     override val description = """
         Navigate to where a symbol is defined (Go to Definition). Use when you see a symbol reference and need to find its declaration—works for classes, methods, variables, imports.
+
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, C#.
 
         Returns: file path, line/column of definition, code preview, and symbol name.
 
@@ -60,7 +62,7 @@ class FindDefinitionTool : AbstractMcpTool() {
         val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
         val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#") &&
             optionalStringArg(arguments, ParamNames.SYMBOL) != null
 
         requireSmartMode(project)
@@ -77,7 +79,7 @@ class FindDefinitionTool : AbstractMcpTool() {
         )
         if (riderDefinition.handled) {
             return riderDefinition.value?.let { createJsonResult(it) }
-                ?: createErrorResult("Rider ReSharper backend could not resolve the C#/F# definition target")
+                ?: createErrorResult("Rider ReSharper backend could not resolve the C# definition target")
         }
         if (isRiderSymbolMode) {
             return createErrorResult(RIDER_SYMBOL_MODE_UNSUPPORTED)

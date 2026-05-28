@@ -13,7 +13,7 @@ Complete parameter reference for all IDE MCP tools. All tools use JSON-RPC via M
 | `language` | string | Language of the symbol (e.g., `"Java"`, `"PHP"`). Required when using `symbol`. |
 | `symbol` | string | Fully qualified symbol reference. Java format: `com.example.ClassName`, `com.example.ClassName#memberName`. PHP format: `\\App\\Service\\UserService`, `\\App\\Service\\UserService::method()`, `\\App\\Service\\UserService::CONSTANT`, `\\App\\Service\\UserService::$property`, `\\App\\Service\\StatusEnum::ACTIVE`. PHP properties require the `$property` form; plain `::name` resolves enum cases (on enum types), constants, or methods. |
 
-**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. A complete position target (`file` + positive `line` + positive `column`) takes precedence; otherwise a complete symbol target is used. Blank strings and non-positive `line`/`column` values are treated as absent. Supported languages: Java, PHP, plus Rider-backed C#/F# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
+**Symbol reference:** Some tools accept `language` + `symbol` as an alternative to `file` + `line` + `column`. A complete position target (`file` + positive `line` + positive `column`) takes precedence; otherwise a complete symbol target is used. Blank strings and non-positive `line`/`column` values are treated as absent. Supported languages: Java, PHP, plus Rider-backed C# in the navigation tools that expose the shared semantic lane. Unsupported languages are rejected explicitly; use `file` + `line` + `column` for other languages.
 
 ## Response Format
 
@@ -132,8 +132,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ implementations: [{name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#/F# (not Go).
-**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C# (not Go).
 
 ### ide_find_symbol (disabled by default)
 Search for any code symbol (classes, methods, fields, functions) by name.
@@ -167,8 +166,7 @@ Find parent methods that a given method overrides or implements.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ method: {name, class, file, line}, hierarchy: [{name, class, file, line, isInterface}], totalCount }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rider-backed C#/F# (NOT Go, Rust).
-**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rider-backed C# (NOT Go, Rust).
 
 ### ide_type_hierarchy
 Get complete type inheritance hierarchy (supertypes and subtypes).
@@ -184,8 +182,7 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 
 **Provide either** `className` **or** `file`+`line`+`column`.
 **Returns**: `{ element: {name, file, kind, language, supertypes?}, supertypes: [{name, file, kind, language, supertypes?}], subtypes: [{name, file, kind, language, supertypes?}] }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#/F#.
-**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Rider-backed C#.
 
 ### ide_call_hierarchy
 Build call tree showing who calls a method or what a method calls.
@@ -206,8 +203,7 @@ Build call tree showing who calls a method or what a method calls.
 
 **Returns**: `{ element: {name, file, line, column, language}, calls: [{name, file, line, column, language, children: [...]}] }`
 
-**Languages**: Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Rider-backed C#/F#.
-**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages**: Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Rider-backed C#.
 
 ### ide_file_structure (disabled by default)
 Get hierarchical file structure like IDE's Structure panel.
@@ -218,8 +214,7 @@ Get hierarchical file structure like IDE's Structure panel.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown, Rider-backed C#/F#.
-**Rider note**: C# is the production-ready Rider lane; F# is beta/unstable and not recommended for production use.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown, Rider-backed C#.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 

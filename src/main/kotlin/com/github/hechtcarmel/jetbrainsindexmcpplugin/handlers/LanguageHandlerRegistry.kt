@@ -282,7 +282,7 @@ object LanguageHandlerRegistry {
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php.PhpHandlers", "PHP"),
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.rust.RustHandlers", "Rust"),
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.markdown.MarkdownHandlers", "Markdown"),
-        // Rider protocol-based handlers. C#/F# semantics require generated rd stubs + backend protocol.
+        // Rider protocol-based handlers. C# semantics require generated rd stubs + backend protocol.
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderDotNetHandlers", ".NET (Rider Protocol)"),
     )
 

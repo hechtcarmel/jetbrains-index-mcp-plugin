@@ -16,7 +16,7 @@ import com.intellij.psi.search.GlobalSearchScope
  * Supports:
  * - **PHP**: Uses `PhpIndex.getClassesByFQN()`, `getInterfacesByFQN()`, and `getTraitsByFQN()` via reflection
  * - **Java/Kotlin**: Uses `JavaPsiFacade.findClass()` with fallback to filename-based search
- * - **C#/F# in Rider**: Uses Rider's frontend file/symbol navigation bridge without compile-time Rider dependencies
+ * - **C# in Rider**: Uses Rider's frontend file/symbol navigation bridge without compile-time Rider dependencies
  *
  * All language-specific classes are accessed via reflection to avoid compile-time dependencies
  * on optional language plugins.
@@ -58,11 +58,11 @@ object ClassResolver {
     }
 
     /**
-     * Finds C# and F# type-like named elements in Rider.
+     * Finds C# type-like named elements in Rider.
      *
-     * Rider's semantic C#/F# PSI lives in the ReSharper backend, so this uses frontend files and
+     * Rider's semantic C# PSI lives in the ReSharper backend, so this uses frontend files and
      * navigation metadata only. It first checks common type-name-based filenames, then scans all
-     * project C#/F# files as a fallback for partial classes and F# modules whose filename differs
+     * project C# files as a fallback for partial classes whose filename differs
      * from the type name.
      *
      * @return The first matching frontend named element, or null if no matching type-like element is found.
@@ -71,7 +71,7 @@ object ClassResolver {
         val simpleName = qualifiedName.substringAfterLast('.').substringAfterLast('+')
         val scope = GlobalSearchScope.projectScope(project)
         val psiManager = PsiManager.getInstance(project)
-        val candidateFileNames = listOf("$simpleName.cs", "$simpleName.fs", "$simpleName.fsi", "$simpleName.fsx")
+        val candidateFileNames = listOf("$simpleName.cs")
 
         for (fileName in candidateFileNames) {
             val files = FilenameIndex.getVirtualFilesByName(fileName, scope)
@@ -81,13 +81,10 @@ object ClassResolver {
             }
         }
 
-        // Necessary fallback for partial classes and F# modules whose filename differs from the
+        // Necessary fallback for partial classes whose filename differs from the
         // type name. The filename fast path above handles the common case, so this full .NET file
         // scan is only used when indexed filename lookup cannot find a matching declaration.
-        val allDotNetFiles = FilenameIndex.getAllFilesByExt(project, "cs", scope) +
-            FilenameIndex.getAllFilesByExt(project, "fs", scope) +
-            FilenameIndex.getAllFilesByExt(project, "fsi", scope) +
-            FilenameIndex.getAllFilesByExt(project, "fsx", scope)
+        val allDotNetFiles = FilenameIndex.getAllFilesByExt(project, "cs", scope)
         for (virtualFile in allDotNetFiles) {
             val psiFile = psiManager.findFile(virtualFile) ?: continue
             findNamedElementInFile(psiFile, simpleName, qualifiedName)?.let { return it }

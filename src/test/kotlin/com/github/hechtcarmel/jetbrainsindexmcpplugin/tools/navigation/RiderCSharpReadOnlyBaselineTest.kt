@@ -144,7 +144,7 @@ class RiderCSharpReadOnlyBaselineTest : BasePlatformTestCase() {
             assertTrue(implementations.isError)
             assertContains(
                 renderText(implementations),
-                "Rider C#/F# symbol-mode implementations require backend-native symbol resolution"
+                "Rider C# symbol-mode implementations require backend-native symbol resolution"
             )
 
             val callHierarchy = CallHierarchyTool().execute(project, buildJsonObject {
@@ -162,7 +162,7 @@ class RiderCSharpReadOnlyBaselineTest : BasePlatformTestCase() {
             assertTrue(superMethods.isError)
             assertContains(
                 renderText(superMethods),
-                "Rider C#/F# symbol-mode super methods require backend-native symbol resolution"
+                "Rider C# symbol-mode super methods require backend-native symbol resolution"
             )
         } finally {
             unmockkObject(RiderBackendSemanticService)

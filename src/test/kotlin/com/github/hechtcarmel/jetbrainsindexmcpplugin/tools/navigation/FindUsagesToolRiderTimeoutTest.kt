@@ -24,8 +24,8 @@ class FindUsagesToolRiderTimeoutTest : BasePlatformTestCase() {
                     file = null,
                     line = null,
                     column = null,
-                    language = "F#",
-                    symbol = "FSharpPlus.Lens",
+                    language = "C#",
+                    symbol = "Demo.Service",
                     scope = BuiltInSearchScope.PROJECT_FILES,
                     limit = any()
                 )
@@ -35,8 +35,8 @@ class FindUsagesToolRiderTimeoutTest : BasePlatformTestCase() {
             )
 
             val result = FindUsagesTool().execute(project, buildJsonObject {
-                put("language", JsonPrimitive("F#"))
-                put("symbol", JsonPrimitive("FSharpPlus.Lens"))
+                put("language", JsonPrimitive("C#"))
+                put("symbol", JsonPrimitive("Demo.Service"))
             })
 
             assertTrue(result.isError)

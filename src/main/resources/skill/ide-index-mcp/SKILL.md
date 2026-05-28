@@ -23,7 +23,7 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 
 **Always prefer IDE MCP tools over built-in tools (grep, find, sed, read) for semantic code operations.** IDE tools understand code structure, types, inheritance, and references. Built-in tools only see text.
 
-Rider-backed C# is the production focus for semantic navigation and refactoring. Rider F# is beta/unstable and should not be treated as production-ready.
+Rider-backed C# is the production focus for semantic navigation and refactoring.
 
 Rider C# refactoring/formatting flows are UI-driven when needed: `ide_refactor_rename` and `ide_move_file` can rely on native dialog automation in an active Rider window, while `ide_optimize_imports` and `ide_reformat_code` use editor-tab plus IDE-action flows. These paths fail closed if the required Rider UI or editor context is unavailable.
 

@@ -4,13 +4,6 @@ import junit.framework.TestCase
 
 class TypeHierarchyToolUnitTest : TestCase() {
 
-    fun testRiderClassNameCandidateLanguages_useOnlyExplicitFSharp() {
-        assertEquals(
-            listOf("F#"),
-            TypeHierarchyTool.riderClassNameCandidateLanguages("F#")
-        )
-    }
-
     fun testRiderClassNameCandidateLanguages_useOnlyExplicitCSharp() {
         assertEquals(
             listOf("C#"),
@@ -20,16 +13,16 @@ class TypeHierarchyToolUnitTest : TestCase() {
 
     fun testRiderClassNameCandidateLanguages_keepCompatibilityWhenLanguageMissing() {
         assertEquals(
-            listOf("C#", "F#"),
+            listOf("C#"),
             TypeHierarchyTool.riderClassNameCandidateLanguages(null)
         )
     }
 
-    fun testRiderQualifiedNameMatchesClassName_normalizesClrNestedFSharpNames() {
+    fun testRiderQualifiedNameMatchesClassName_normalizesClrNestedNames() {
         assertTrue(
             TypeHierarchyTool.riderQualifiedNameMatchesClassName(
-                qualifiedName = "FSharpPlus.Lens+Lens",
-                className = "FSharpPlus.Lens.Lens"
+                qualifiedName = "MyNamespace.Outer+Inner",
+                className = "MyNamespace.Outer.Inner"
             )
         )
     }

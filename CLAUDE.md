@@ -56,7 +56,7 @@ src/
 │   │   │   ├── go/GoHandlers.kt        # Go handlers (reflection)
 │   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
 │   │   │   ├── rust/RustHandlers.kt    # Rust handlers (reflection)
-│   │   │   └── dotnet/RiderDotNetHandlers.kt # Rider C#/F# handlers (rd-protocol bridge to ReSharper backend)
+│   │   │   └── dotnet/RiderDotNetHandlers.kt # Rider C# handlers (rd-protocol bridge to ReSharper backend)
 │   │   ├── server/                     # MCP server infrastructure
 │   │   │   ├── McpServerService.kt     # App-level service managing server lifecycle
 │   │   │   ├── JsonRpcHandler.kt       # JSON-RPC 2.0 request routing
@@ -397,11 +397,11 @@ Tools are organized by IDE availability.
 **Extended Navigation Tools (Language-Aware):**
 
 These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Markdown):
-- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider)
-- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C#/F# in Rider). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, C#/F# in Rider — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, C#/F# in Rider — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, C#/F# in Rider, Markdown) (disabled by default)
+- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C# in Rider)
+- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C# in Rider). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, C# in Rider — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, C# in Rider — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, C# in Rider, Markdown) (disabled by default)
 
 **Conditional Refactoring Tools:**
 - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin or Rider backend)
@@ -425,7 +425,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
-- `handlers/dotnet/RiderDotNetHandlers.kt` - Rider C#/F# handlers that issue rd-protocol RPCs to the in-process ReSharper backend (`src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpBackendHost.cs`). The backend executes against the ReSharper PSI/caches in the same process as Rider; the Kotlin side only orchestrates and adapts protocol DTOs to the universal `LanguageHandler` interfaces.
+- `handlers/dotnet/RiderDotNetHandlers.kt` - Rider C# handlers that issue rd-protocol RPCs to the in-process ReSharper backend (`src/dotnet/ReSharperPlugin.IndexMcp/IndexMcpBackendHost.cs`). The backend executes against the ReSharper PSI/caches in the same process as Rider; the Kotlin side only orchestrates and adapts protocol DTOs to the universal `LanguageHandler` interfaces.
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup

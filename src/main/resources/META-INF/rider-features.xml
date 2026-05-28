@@ -1,5 +1,5 @@
 <idea-plugin>
-    <!-- Rider-specific extensions for C#/F# support via ReSharper backend protocol -->
+    <!-- Rider-specific extensions for C# support via ReSharper backend protocol -->
     <extensions defaultExtensionNs="com.intellij">
         <rd.solutionExtListener
             endpoint="IDE Frontend"

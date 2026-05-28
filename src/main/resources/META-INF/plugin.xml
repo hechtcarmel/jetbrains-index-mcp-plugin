@@ -92,7 +92,7 @@ for detailed documentation and examples.</p>
     <!-- Platform dependency (required) -->
     <depends>com.intellij.modules.platform</depends>
 
-    <!-- Optional Rider support (C#/F# via ReSharper backend protocol) -->
+    <!-- Optional Rider support (C# via ReSharper backend protocol) -->
     <depends optional="true" config-file="rider-features.xml">com.intellij.modules.rider</depends>
 
     <!-- Optional Java support -->

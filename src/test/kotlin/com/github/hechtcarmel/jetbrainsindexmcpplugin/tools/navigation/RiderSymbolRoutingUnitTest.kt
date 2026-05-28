@@ -263,17 +263,17 @@ class RiderSymbolRoutingUnitTest : TestCase() {
         val expectations = listOf(
             Triple(
                 "FindImplementationsTool.kt",
-                "Rider C#/F# symbol-mode implementations require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions.",
+                "Rider C# symbol-mode implementations require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions.",
                 null
             ),
             Triple(
                 "CallHierarchyTool.kt",
-                "Rider C#/F# symbol-mode call hierarchy requires the Rider backend-native path and is unsupported when that backend cannot resolve a callable semantic target.",
+                "Rider C# symbol-mode call hierarchy requires the Rider backend-native path and is unsupported when that backend cannot resolve a callable semantic target.",
                 "RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED"
             ),
             Triple(
                 "FindSuperMethodsTool.kt",
-                "Rider C#/F# symbol-mode super methods require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions.",
+                "Rider C# symbol-mode super methods require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions.",
                 null
             )
         )
@@ -290,9 +290,9 @@ class RiderSymbolRoutingUnitTest : TestCase() {
     fun testRiderDefinitionAndReferencesUnsupportedMessagesStayDeterministic() {
         val expectations = listOf(
             "FindDefinitionTool.kt" to
-                "Rider C#/F# symbol-mode definition requires the Rider backend-native path and is unsupported when that backend is unavailable.",
+                "Rider C# symbol-mode definition requires the Rider backend-native path and is unsupported when that backend is unavailable.",
             "FindUsagesTool.kt" to
-                "Rider C#/F# symbol-mode references require the Rider backend-native path and are unsupported when that backend is unavailable."
+                "Rider C# symbol-mode references require the Rider backend-native path and are unsupported when that backend is unavailable."
         )
 
         expectations.forEach { (fileName, message) ->
@@ -316,8 +316,8 @@ class RiderSymbolRoutingUnitTest : TestCase() {
             source.contains("resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true)")
         )
         assertTrue(
-            "CallHierarchyTool description should mention SymbolReferenceHandler support",
-            CallHierarchyTool().description.contains("SymbolReferenceHandler")
+            "CallHierarchyTool description should mention C# (the supported Rider language)",
+            CallHierarchyTool().description.contains("C#")
         )
     }
 
@@ -333,8 +333,8 @@ class RiderSymbolRoutingUnitTest : TestCase() {
             source.contains("resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true)")
         )
         assertTrue(
-            "FindImplementationsTool description should mention SymbolReferenceHandler support",
-            FindImplementationsTool().description.contains("SymbolReferenceHandler")
+            "FindImplementationsTool description should mention C# (the supported Rider language)",
+            FindImplementationsTool().description.contains("C#")
         )
     }
 
@@ -350,8 +350,8 @@ class RiderSymbolRoutingUnitTest : TestCase() {
             source.contains("resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true)")
         )
         assertTrue(
-            "FindSuperMethodsTool description should mention SymbolReferenceHandler support",
-            FindSuperMethodsTool().description.contains("SymbolReferenceHandler")
+            "FindSuperMethodsTool description should mention C# (the supported Rider language)",
+            FindSuperMethodsTool().description.contains("C#")
         )
     }
 
@@ -414,12 +414,8 @@ class RiderSymbolRoutingUnitTest : TestCase() {
                 description.contains("currently supported for Java only")
             )
             assertTrue(
-                "Descriptions should explain shared symbol-handler based support",
-                description.contains("SymbolReferenceHandler")
-            )
-            assertTrue(
-                "Descriptions should mention Rider C#/F# symbol-mode support",
-                description.contains("Rider C#/F#")
+                "Descriptions should mention C# (the only Rider language supported)",
+                description.contains("C#")
             )
         }
     }
@@ -443,19 +439,16 @@ class RiderSymbolRoutingUnitTest : TestCase() {
         val explicitUnsupportedIndex = source.indexOf(explicitUnsupportedMarker)
 
         val hasBackendNativeRouting = backendIndex >= 0 && (fallbackIndex < 0 || backendIndex < fallbackIndex)
-        val hasExplicitUnsupportedException = explicitUnsupportedIndex >= 0 && source.contains("Rider C#/F#")
+        val hasExplicitUnsupportedException = explicitUnsupportedIndex >= 0 && source.contains("Rider C#")
 
         assertTrue(
-            "$toolName should either route Rider C#/F# symbol-mode through RiderBackendSemanticService.resolveSymbolToPosition before generic PSI fallback, or name an explicit Rider symbol-mode unsupported exception",
+            "$toolName should either route Rider C# symbol-mode through RiderBackendSemanticService.resolveSymbolToPosition before generic PSI fallback, or name an explicit Rider symbol-mode unsupported exception",
             hasBackendNativeRouting || hasExplicitUnsupportedException
         )
     }
 
     private fun assertContainsForRiderLanguages(description: String, label: String) {
-        assertContains(description, "SymbolReferenceHandler", "$label should mention SymbolReferenceHandler support")
-        assertContains(description, "Rider C#/F#", "$label should mention Rider C#/F# support")
-        assertContains(description, "C#", "$label should mention C# explicitly")
-        assertContains(description, "F#", "$label should mention F# explicitly")
+        assertContains(description, "C#", "$label should mention C#")
     }
 
     private fun assertContains(source: String, needle: String, message: String) {

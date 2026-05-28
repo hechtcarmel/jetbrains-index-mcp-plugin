@@ -9,7 +9,7 @@ import com.jetbrains.rider.model.nova.ide.SolutionModel
  * Rider Protocol Model for IDE Index MCP Server.
  *
  * Defines the RPC contract between the Kotlin frontend (IntelliJ Platform) and the
- * C# backend (ReSharper) for code intelligence operations on C# and F# code.
+ * C# backend (ReSharper) for code intelligence operations on C# code.
  *
  * The frontend calls these methods from MCP tool handlers; the backend implements
  * them using ReSharper's full semantic model.

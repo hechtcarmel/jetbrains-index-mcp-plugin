@@ -49,7 +49,7 @@ namespace ReSharperPlugin.IndexMcp;
 /// Main backend host for the IDE Index MCP Server protocol.
 ///
 /// Handles all code intelligence RPC calls from the Kotlin frontend by using
-/// ReSharper's full semantic model for C# and F# code.
+/// ReSharper's full semantic model for C# code.
 /// </summary>
 [SolutionComponent(Instantiation.ContainerAsyncPrimaryThread)]
 public class IndexMcpBackendHost
@@ -59,18 +59,8 @@ public class IndexMcpBackendHost
     private readonly RenameRefactoringService _renameRefactoringService;
     private const string BackendVersion = "4.18.0";
     private const int MaxResults = 200;
-    private const int BoundedFindReferencesBatchSize = 1;
-    private const int BoundedFindReferencesInteractiveBudgetMs = 10_000;
     private const int TextControlPollTimeoutMs = 10_000;
     private const int TextControlPollIntervalMs = 250;
-    private const string FSharpPluginZoneTypeName =
-        "JetBrains.ReSharper.Plugins.FSharp.IFSharpPluginZone, JetBrains.ReSharper.Plugins.FSharp.Common";
-    private const string FSharpPresentationLanguageTypeName =
-        "JetBrains.ReSharper.Plugins.FSharp.Psi.FSharpLanguage";
-    private static readonly Lazy<FSharpCapabilityAvailability> ourFSharpCapability =
-        new(() => DetectFSharpCapability());
-    private static readonly Lazy<object?> ourFSharpPresentationLanguage =
-        new(TryResolveFSharpPresentationLanguage);
     private static readonly Lazy<MethodInfo?> ourGetPresentableNameMethod =
         new(() => typeof(IType).GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .FirstOrDefault(method => method.Name == nameof(IType.GetPresentableName) &&
@@ -120,7 +110,7 @@ public class IndexMcpBackendHost
 
     private Task<RdFindTypesResult> HandleFindTypes(Lifetime lt, RdFindTypesRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock(() =>
         {
             var plan = BuildFindTypesSearchPlan(request.Language, request.Scope, request.MatchMode, request.Query);
 
@@ -154,15 +144,15 @@ public class IndexMcpBackendHost
                 .ToList();
 
             return new RdFindTypesResult(results.Take(Math.Min(request.Limit, MaxResults)).ToList(), results.Count);
-        });
+        }));
     }
 
     private Task<RdFindSymbolsResult> HandleFindSymbols(Lifetime lt, RdFindSymbolsRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock(() =>
         {
             var normalizedLanguage = NormalizeLanguage(request.Language);
-            if (normalizedLanguage is not ("C#" or "F#"))
+            if (normalizedLanguage != "C#")
                 return new RdFindSymbolsResult(new List<RdSymbolInfo>(), 0);
 
             var allowedProjectFileExtensions = GetProjectFileExtensions(normalizedLanguage);
@@ -177,7 +167,7 @@ public class IndexMcpBackendHost
                 request.Scope,
                 request.Language,
                 GetEffectiveResultLimit(request.Limit));
-        });
+        }));
     }
 
     private static RdFindSymbolsResult BuildFindSymbolsResult(
@@ -194,7 +184,7 @@ public class IndexMcpBackendHost
             .Where(element => MatchesScope(element, scope, includeUnknownProjectCandidates: true))
             .OrderBy(element => MatchRank(element.ShortName, query, "substring"))
             .ThenBy(BestDeclarationRank)
-            .ThenBy(element => IsTestPath(GetDeclarationPath(element) ?? string.Empty) ? 1 : 0)
+            .ThenBy(element => IsTestPath(GetDeclarationPath(element)) ? 1 : 0)
             .ThenBy(GetQualifiedName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(GetMemberSignatureSortKey, StringComparer.OrdinalIgnoreCase)
             .ThenBy(GetDeclarationPath, StringComparer.OrdinalIgnoreCase)
@@ -241,24 +231,9 @@ public class IndexMcpBackendHost
         string scope,
         ParsedRiderSymbol parsedSymbol)
     {
-        var normalizedLanguage = NormalizeLanguage(parsedSymbol.Language);
-        var isProjectFilesScope = scope.Equals("project_files", StringComparison.OrdinalIgnoreCase);
-        var useProjectQualifiedTypeLookup = normalizedLanguage == "F#" &&
-                                            isProjectFilesScope &&
-                                            parsedSymbol.MemberName == null &&
-                                            parsedSymbol.ContainerQualifiedName.Contains('.', StringComparison.Ordinal);
-        var useBoundedProjectFileSearch = useProjectQualifiedTypeLookup;
-        var rejectUnboundedReferenceSearch = false;
-
-        return new FindReferencesResolutionPlan(
-            allowedProjectFileExtensions: useBoundedProjectFileSearch ? GetProjectFileExtensions(normalizedLanguage) : null,
-            useProjectQualifiedTypeLookup: useProjectQualifiedTypeLookup,
-            useBoundedProjectFileSearch: useBoundedProjectFileSearch,
-            allowLibraryFallback: !useProjectQualifiedTypeLookup,
-            rejectUnboundedReferenceSearch: rejectUnboundedReferenceSearch,
-            targetKind: "symbol",
-            isFSharpPositionTarget: false,
-            isFSharpSymbolTarget: normalizedLanguage == "F#");
+        _ = scope;
+        _ = parsedSymbol;
+        return new FindReferencesResolutionPlan(targetKind: "symbol");
     }
 
     private static FindReferencesResolutionPlan BuildFindReferencesResolutionPlan(
@@ -266,113 +241,23 @@ public class IndexMcpBackendHost
         string scope,
         ParsedRiderSymbol? parsedSymbol)
     {
-        var isPositionTarget = !string.IsNullOrWhiteSpace(target.FilePath) &&
-                               target.Line.HasValue &&
-                               target.Column.HasValue;
-        if (isPositionTarget)
+        _ = scope;
+        if (!string.IsNullOrWhiteSpace(target.FilePath) &&
+            target.Line.HasValue &&
+            target.Column.HasValue)
         {
-            var normalizedLanguage = InferFindReferencesTargetLanguage(target);
-            var isFSharpPositionTarget = normalizedLanguage == "F#";
-            var isProjectFilesScope = scope.Equals("project_files", StringComparison.OrdinalIgnoreCase);
-            var useBoundedProjectFileSearch = isFSharpPositionTarget && isProjectFilesScope;
-
-            return new FindReferencesResolutionPlan(
-                allowedProjectFileExtensions: useBoundedProjectFileSearch
-                    ? GetProjectFileExtensions(normalizedLanguage)
-                    : null,
-                useProjectQualifiedTypeLookup: false,
-                useBoundedProjectFileSearch: useBoundedProjectFileSearch,
-                allowLibraryFallback: !useBoundedProjectFileSearch,
-                rejectUnboundedReferenceSearch: false,
-                targetKind: "position",
-                isFSharpPositionTarget: isFSharpPositionTarget,
-                isFSharpSymbolTarget: false);
+            return new FindReferencesResolutionPlan(targetKind: "position");
         }
 
         if (!string.IsNullOrWhiteSpace(target.Language) &&
             !string.IsNullOrWhiteSpace(target.Symbol))
         {
-            if (parsedSymbol != null)
-                return BuildFindReferencesResolutionPlan(scope, parsedSymbol);
-
-            return new FindReferencesResolutionPlan(
-                allowedProjectFileExtensions: null,
-                useProjectQualifiedTypeLookup: false,
-                useBoundedProjectFileSearch: false,
-                allowLibraryFallback: true,
-                rejectUnboundedReferenceSearch: false,
-                targetKind: "symbol",
-                isFSharpPositionTarget: false,
-                isFSharpSymbolTarget: NormalizeLanguage(target.Language) == "F#");
+            return parsedSymbol != null
+                ? BuildFindReferencesResolutionPlan(scope, parsedSymbol)
+                : new FindReferencesResolutionPlan(targetKind: "symbol");
         }
 
-        return new FindReferencesResolutionPlan(
-            allowedProjectFileExtensions: null,
-            useProjectQualifiedTypeLookup: false,
-            useBoundedProjectFileSearch: false,
-            allowLibraryFallback: true,
-            rejectUnboundedReferenceSearch: false,
-            targetKind: "unsupported",
-            isFSharpPositionTarget: false,
-            isFSharpSymbolTarget: false);
-    }
-
-    private static FSharpCapabilityAvailability DetectFSharpCapability(Func<string, Type?>? typeResolver = null)
-    {
-        typeResolver ??= static typeName => Type.GetType(typeName, throwOnError: false);
-
-        if (typeResolver(FSharpPluginZoneTypeName) == null)
-        {
-            return FSharpCapabilityAvailability.Unavailable(
-                "unsupported_language_capability",
-                $"F# find_references is unavailable because the Rider F# plugin APIs are not loaded ({FSharpPluginZoneTypeName}).");
-        }
-
-        return FSharpCapabilityAvailability.Available();
-    }
-
-    private static FindReferencesTargetResolution? ResolveFindReferencesCapabilityFailure(
-        RdSemanticTarget target,
-        Func<string, Type?>? typeResolver = null)
-    {
-        if (!IsFSharpFindReferencesTarget(target))
-            return null;
-
-        var capability = typeResolver == null ? ourFSharpCapability.Value : DetectFSharpCapability(typeResolver);
-        return capability.IsAvailable
-            ? null
-            : FindReferencesTargetResolution.Failure(
-                capability.FailureStatus!,
-                capability.FailureMessage,
-                "fsharp_capability");
-    }
-
-    private static void EnsureFindReferencesSearchIsSupported(
-        FindReferencesResolutionPlan plan,
-        ParsedRiderSymbol parsedSymbol,
-        string scope)
-    {
-        _ = parsedSymbol;
-        _ = scope;
-
-        if (!plan.RejectUnboundedReferenceSearch)
-            return;
-
-        throw new InvalidOperationException(
-            "Rider find_references rejected an unbounded search plan. This indicates a backend plan regression; position/member targets remain the safest low-latency option.");
-    }
-
-    private static void EnsureFindReferencesIndexedTargetIsSupported(
-        string? language,
-        string symbol,
-        string scope)
-    {
-        var parseResult = ParseIndexedSymbol(language, symbol);
-        if (!parseResult.IsSuccess || parseResult.Symbol == null)
-            return;
-
-        var plan = BuildFindReferencesResolutionPlan(scope, parseResult.Symbol);
-        EnsureFindReferencesSearchIsSupported(plan, parseResult.Symbol, scope);
+        return new FindReferencesResolutionPlan(targetKind: "unsupported");
     }
 
     private static IEnumerable<RdSymbolInfo> EnumerateStandardDotNetTypeSymbols(
@@ -382,11 +267,7 @@ public class IndexMcpBackendHost
         string? language)
     {
         if (scope != "project_and_libraries") yield break;
-        if (!string.IsNullOrWhiteSpace(language) &&
-            !language.Equals("C#", StringComparison.OrdinalIgnoreCase) &&
-            !language.Equals("CSharp", StringComparison.OrdinalIgnoreCase) &&
-            !language.Equals("F#", StringComparison.OrdinalIgnoreCase) &&
-            !language.Equals("FSharp", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(language) && NormalizeLanguage(language) != "C#")
             yield break;
 
         foreach (var type in StandardDotNetTypes)
@@ -438,18 +319,6 @@ public class IndexMcpBackendHost
             ("IReadOnlyList", "System.Collections.Generic.IReadOnlyList", "INTERFACE"),
             ("IDictionary", "System.Collections.Generic.IDictionary", "INTERFACE"),
             ("IReadOnlyDictionary", "System.Collections.Generic.IReadOnlyDictionary", "INTERFACE")
-        };
-
-    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> ClrPredefinedLookupNames =
-        new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["System.String"] = new[] { "System.String" },
-            ["System.Collections.IEnumerable"] = new[] { "System.Collections.IEnumerable" },
-            ["System.Collections.Generic.IEnumerable"] = new[]
-            {
-                "System.Collections.Generic.IEnumerable",
-                "System.Collections.Generic.IEnumerable`1"
-            }
         };
 
     private IEnumerable<ITypeElement> EnumerateIndexedTypeElements(Lifetime lt, string query, string matchMode)
@@ -513,10 +382,10 @@ public class IndexMcpBackendHost
 
     private Task<RdDefinitionResult?> HandleFindDefinition(Lifetime lt, RdFindDefinitionRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdDefinitionResult?>(() =>
         {
             var element = ResolveTarget(request.Target);
-            if (element == null) return (RdDefinitionResult?)null;
+            if (element == null) return null;
 
             var navigationElement = PickPreferredDeclaration(element);
             var location = BuildDefinitionLocation(element, navigationElement);
@@ -525,39 +394,22 @@ public class IndexMcpBackendHost
             var preview = navigationElement != null
                 ? BuildPreview(navigationElement, request.FullElementPreview, request.MaxPreviewLines)
                 : string.Empty;
-            return (RdDefinitionResult?)new RdDefinitionResult(
+            return new RdDefinitionResult(
                 ToSymbolInfo(element),
                 preview,
                 navigationElement != null ? BuildAstPath(navigationElement) : new List<string>(),
                 locationKind,
                 locationDisplayName);
-        });
+        }));
     }
 
     private Task<RdFindReferencesResult> HandleFindReferences(Lifetime lt, RdFindReferencesRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock(() =>
         {
             var effectiveLimit = GetEffectiveResultLimit(request.Limit);
-            FindReferencesResolutionPlan? plan = null;
-
             try
             {
-                ParsedRiderSymbol? parsedSymbol = null;
-                if (!string.IsNullOrWhiteSpace(request.Target.Language) &&
-                    !string.IsNullOrWhiteSpace(request.Target.Symbol))
-                {
-                    var parseResult = ParseIndexedSymbol(request.Target.Language, request.Target.Symbol);
-                    if (parseResult.IsSuccess && parseResult.Symbol != null)
-                        parsedSymbol = parseResult.Symbol;
-
-                    EnsureFindReferencesIndexedTargetIsSupported(
-                        request.Target.Language,
-                        request.Target.Symbol,
-                        request.Scope);
-                }
-
-                plan = BuildFindReferencesResolutionPlan(request.Target, request.Scope, parsedSymbol);
                 var targetResolution = ResolveTargetForFindReferences(lt, request.Target, request.Scope);
                 var element = targetResolution.TryGetElement();
                 if (element == null)
@@ -576,9 +428,7 @@ public class IndexMcpBackendHost
                     return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0, null);
                 }
 
-                var orderedReferences = (plan?.UseBoundedProjectFileSearch == true
-                        ? FindReferencesBounded(lt, element, plan.AllowedProjectFileExtensions, effectiveLimit)
-                        : FindReferences(lt, element, effectiveLimit))
+                var orderedReferences = FindReferences(lt, element, effectiveLimit)
                     .Select(ToReferenceInfo)
                     .Where(reference => reference != null)
                     .Cast<RdReferenceInfo>()
@@ -606,21 +456,21 @@ public class IndexMcpBackendHost
             {
                 throw;
             }
-        });
+        }));
     }
 
     private Task<RdSymbolInfo?> HandleResolveSymbol(Lifetime lt, RdResolveSymbolRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdSymbolInfo?>(() =>
         {
             var element = ResolveSymbol(request.Language, request.Symbol);
             return element == null ? null : ToSymbolInfo(element);
-        });
+        }));
     }
 
     private Task<RdResolveSymbolIndexedResult> HandleResolveSymbolIndexed(Lifetime lt, RdResolveSymbolIndexedRequest request)
     {
-        return Task.Run(() => ResolveSymbolIndexed(request.Language, request.Symbol).ToRdResult());
+        return Task.Run(() => ExecuteUnderReadLock(() => ResolveSymbolIndexed(request.Language, request.Symbol).ToRdResult()));
     }
 
     // ── Rename Symbol ───────────────────────────────────────────────────────
@@ -645,6 +495,23 @@ public class IndexMcpBackendHost
                             : $"ReSharper backend rename failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}")
                     .ToRenameSymbolResult("", request.NewName);
             });
+    }
+
+    // ── Read Lock Helper ─────────────────────────────────────────────────────
+    //
+    // ReSharper requires a read lock when traversing PSI / running searches off the EDT.
+    // Without it, indexer-backed reads (FindInheritors, ReferencesSearch, type/symbol lookup,
+    // etc.) can race with model changes and either throw or return inconsistent data.
+    //
+    // All HandleX read endpoints route their bodies through ExecuteUnderReadLock to acquire
+    // the cookie on the background Task.Run thread. Mutation endpoints continue to use
+    // ExecuteWriteLockedRename, which acquires the write lock instead.
+    private static T ExecuteUnderReadLock<T>(Func<T> action)
+    {
+        using (ReadLockCookie.Create())
+        {
+            return action();
+        }
     }
 
     private Task ExecuteWriteLockedRename(OuterLifetime outerLifetime, Action action)
@@ -1663,7 +1530,7 @@ public class IndexMcpBackendHost
     private Task<RdTypeHierarchyResult?> HandleGetTypeHierarchy(
         Lifetime lt, RdTypeHierarchyRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdTypeHierarchyResult?>(() =>
         {
             var typeElement = ResolveTypeElementAt(request.Position);
             if (typeElement == null) return null;
@@ -1695,11 +1562,11 @@ public class IndexMcpBackendHost
                 searchDomain,
                 NoOpProgressIndicator.Instance);
 
-            return (RdTypeHierarchyResult?)new RdTypeHierarchyResult(
+            return new RdTypeHierarchyResult(
                 ToSymbolInfo(typeElement),
                 supertypes,
                 subtypes);
-        });
+        }));
     }
 
     // ── Find Implementations ────────────────────────────────────────────────
@@ -1707,48 +1574,90 @@ public class IndexMcpBackendHost
     private Task<RdImplementationsResult?> HandleFindImplementations(
         Lifetime lt, RdImplementationsRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdImplementationsResult?>(() =>
         {
             var effectiveLimit = GetEffectiveResultLimit(request.Limit);
             var element = ResolveDeclaredElementAt(request.Position);
             if (element == null) return null;
 
-            var typeElement = element as ITypeElement
-                ?? (element as ITypeMember)?.ContainingType;
-            if (typeElement == null) return null;
+            return element switch
+            {
+                ITypeElement typeElement => FindTypeImplementations(typeElement, effectiveLimit),
+                IOverridableMember overridable => FindMemberImplementations(overridable, effectiveLimit),
+                _ => null
+            };
+        }));
+    }
 
-            var implementations = new List<RdSymbolInfo>();
-            var searchDomain = _solution.GetPsiServices().SearchDomainFactory
-                .CreateSearchDomain(_solution, false);
+    private RdImplementationsResult FindTypeImplementations(ITypeElement typeElement, int effectiveLimit)
+    {
+        var implementations = new List<RdSymbolInfo>();
+        var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+            .CreateSearchDomain(_solution, false);
 
-            var declaredType = TypeFactory.CreateType(typeElement);
-            _solution.GetPsiServices().Finder.FindInheritors(
-                declaredType,
-                declaredInheritor =>
+        var declaredType = TypeFactory.CreateType(typeElement);
+        _solution.GetPsiServices().Finder.FindInheritors(
+            declaredType,
+            declaredInheritor =>
+            {
+                var implType = declaredInheritor.GetTypeElement();
+                if (implType is IClass cls && !cls.IsAbstract)
+                    implementations.Add(ToSymbolInfo(implType));
+                else if (implType is IStruct)
+                    implementations.Add(ToSymbolInfo(implType));
+                return FindExecution.Continue;
+            },
+            searchDomain,
+            NoOpProgressIndicator.Instance);
+
+        return BuildImplementationsResult(implementations, effectiveLimit);
+    }
+
+    private RdImplementationsResult FindMemberImplementations(IOverridableMember target, int effectiveLimit)
+    {
+        var containingType = target.GetContainingType();
+        if (containingType == null)
+            return new RdImplementationsResult(new List<RdSymbolInfo>());
+
+        var implementations = new List<RdSymbolInfo>();
+        var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+            .CreateSearchDomain(_solution, false);
+        var declaredType = TypeFactory.CreateType(containingType);
+
+        _solution.GetPsiServices().Finder.FindInheritors(
+            declaredType,
+            declaredInheritor =>
+            {
+                var implType = declaredInheritor.GetTypeElement();
+                if (implType == null) return FindExecution.Continue;
+                foreach (var member in implType.GetMembers())
                 {
-                    var implType = declaredInheritor.GetTypeElement();
-                    if (implType is IClass cls && !cls.IsAbstract)
-                        implementations.Add(ToSymbolInfo(implType));
-                    else if (implType is IStruct)
-                        implementations.Add(ToSymbolInfo(implType));
-                    return FindExecution.Continue;
-                },
-                searchDomain,
-                NoOpProgressIndicator.Instance);
+                    if (member is IOverridableMember overridable && overridable.OverridesOrImplements(target))
+                        implementations.Add(ToSymbolInfo(member));
+                }
+                return FindExecution.Continue;
+            },
+            searchDomain,
+            NoOpProgressIndicator.Instance);
 
-            var orderedImplementations = implementations
-                .GroupBy(symbol => $"{symbol.QualifiedName}:{symbol.FilePath}:{symbol.Line}:{symbol.Column}")
-                .Select(group => group.First())
-                .OrderBy(symbol => symbol.QualifiedName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(symbol => symbol.Signature ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(symbol => symbol.FilePath ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(symbol => symbol.Line ?? int.MaxValue)
-                .ThenBy(symbol => symbol.Column ?? int.MaxValue)
-                .Take(effectiveLimit)
-                .ToList();
+        return BuildImplementationsResult(implementations, effectiveLimit);
+    }
 
-            return (RdImplementationsResult?)new RdImplementationsResult(orderedImplementations);
-        });
+    private static RdImplementationsResult BuildImplementationsResult(
+        IEnumerable<RdSymbolInfo> implementations, int effectiveLimit)
+    {
+        var orderedImplementations = implementations
+            .GroupBy(symbol => $"{symbol.QualifiedName}:{symbol.FilePath}:{symbol.Line}:{symbol.Column}")
+            .Select(group => group.First())
+            .OrderBy(symbol => symbol.QualifiedName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(symbol => symbol.Signature ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(symbol => symbol.FilePath ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(symbol => symbol.Line ?? int.MaxValue)
+            .ThenBy(symbol => symbol.Column ?? int.MaxValue)
+            .Take(effectiveLimit)
+            .ToList();
+
+        return new RdImplementationsResult(orderedImplementations);
     }
 
     // ── Call Hierarchy ──────────────────────────────────────────────────────
@@ -1756,10 +1665,9 @@ public class IndexMcpBackendHost
     private Task<RdCallHierarchyResult?> HandleGetCallHierarchy(
         Lifetime lt, RdCallHierarchyRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdCallHierarchyResult?>(() =>
         {
-            var resolutionPlan = BuildCallHierarchyResolutionPlan(request.Target);
-            var callableTarget = ResolveCallHierarchyTarget(request.Target, resolutionPlan);
+            var callableTarget = ResolveCallHierarchyTarget(request.Target);
             if (callableTarget == null) return null;
 
             var effectiveLimit = GetEffectiveResultLimit(request.Limit);
@@ -1824,8 +1732,8 @@ public class IndexMcpBackendHost
                 .ToList();
             var message = BuildCallHierarchyMessage(request.Direction, orderedCalls.Count);
 
-            return (RdCallHierarchyResult?)new RdCallHierarchyResult(root, orderedCalls, message);
-        });
+            return new RdCallHierarchyResult(root, orderedCalls, message);
+        }));
     }
 
     // ── Super Methods ───────────────────────────────────────────────────────
@@ -1833,7 +1741,7 @@ public class IndexMcpBackendHost
     private Task<RdSuperMethodsResult?> HandleFindSuperMethods(
         Lifetime lt, RdSuperMethodsRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdSuperMethodsResult?>(() =>
         {
             var element = ResolveDeclaredElementAt(request.Position);
             if (element is not IOverridableMember overridable) return null;
@@ -1857,8 +1765,8 @@ public class IndexMcpBackendHost
                     depth: depth));
             }
 
-            return (RdSuperMethodsResult?)new RdSuperMethodsResult(methodInfo, hierarchy);
-        });
+            return new RdSuperMethodsResult(methodInfo, hierarchy);
+        }));
     }
 
     // ── File Structure ──────────────────────────────────────────────────────
@@ -1866,15 +1774,15 @@ public class IndexMcpBackendHost
     private Task<RdFileStructureResult?> HandleGetFileStructure(
         Lifetime lt, RdFileStructureRequest request)
     {
-        return Task.Run(() =>
+        return Task.Run(() => ExecuteUnderReadLock<RdFileStructureResult?>(() =>
         {
             var psiFile = GetPsiFileForPath(request.FilePath);
             if (psiFile == null) return null;
 
             var nodes = new List<RdFlatStructureNode>();
             CollectStructureNodes(psiFile, nodes, 0);
-            return (RdFileStructureResult?)new RdFileStructureResult(nodes);
-        });
+            return new RdFileStructureResult(nodes);
+        }));
     }
 
     // ── Private Helpers ─────────────────────────────────────────────────────
@@ -1905,17 +1813,10 @@ public class IndexMcpBackendHost
         RdSemanticTarget target,
         string scope)
     {
-        var capabilityFailure = ResolveFindReferencesCapabilityFailure(target);
-        if (capabilityFailure != null)
-            return capabilityFailure;
-
         if (!string.IsNullOrWhiteSpace(target.FilePath) &&
             target.Line.HasValue &&
             target.Column.HasValue)
         {
-            if (IsFSharpFindReferencesTarget(target))
-                return ResolveFSharpPositionTargetForFindReferences(target);
-
             var resolvedElement = ResolveDeclaredElementAt(new RdSourcePosition(
                 target.FilePath,
                 target.Line.Value,
@@ -1940,45 +1841,7 @@ public class IndexMcpBackendHost
             "unsupported");
     }
 
-    private FindReferencesTargetResolution ResolveFSharpPositionTargetForFindReferences(RdSemanticTarget target)
-    {
-        var position = new RdSourcePosition(target.FilePath!, target.Line!.Value, target.Column!.Value);
-        var safeCandidates = ResolveSafeFSharpPositionCandidates(position);
-        var fallbackElement = ResolveDeclaredElementAt(position);
-        return ClassifyFSharpPositionTargetResolution(target, safeCandidates, fallbackElement);
-    }
 
-    private static FindReferencesTargetResolution ClassifyFSharpPositionTargetResolution(
-        RdSemanticTarget target,
-        IReadOnlyList<IDeclaredElement> safeCandidates,
-        IDeclaredElement? fallbackElement)
-    {
-        var targetLabel = $"{target.FilePath}:{target.Line}:{target.Column}";
-
-        if (safeCandidates.Count == 1)
-            return FindReferencesTargetResolution.Success(safeCandidates[0], "fsharp_position_safe");
-
-        if (safeCandidates.Count > 1)
-        {
-            return FindReferencesTargetResolution.Failure(
-                "ambiguous_match",
-                $"F# position target '{targetLabel}' matched multiple safe semantic targets. Use a more specific declaration/member token.",
-                "fsharp_position_safe");
-        }
-
-        if (fallbackElement != null)
-        {
-            return FindReferencesTargetResolution.Failure(
-                "unsupported_target",
-                $"F# position target '{targetLabel}' resolved only via an unsafe fallback target '{fallbackElement.ShortName}'. Use the declaration/member token or a more specific position.",
-                "fsharp_position_safe");
-        }
-
-        return FindReferencesTargetResolution.Failure(
-            "unresolved_target",
-            $"No safe F# semantic target matches position '{targetLabel}'.",
-            "fsharp_position_safe");
-    }
 
     private static int GetEffectiveResultLimit(int requestedLimit)
     {
@@ -1988,32 +1851,8 @@ public class IndexMcpBackendHost
         return Math.Min(requestedLimit, MaxResults);
     }
 
-    private static CallHierarchyResolutionPlan BuildCallHierarchyResolutionPlan(RdSemanticTarget target)
+    private CallableTarget? ResolveCallHierarchyTarget(RdSemanticTarget target)
     {
-        var isPositionTarget = !string.IsNullOrWhiteSpace(target.FilePath) &&
-                               target.Line.HasValue &&
-                               target.Column.HasValue;
-        var fileExtension = Path.GetExtension(target.FilePath ?? string.Empty);
-        var isFSharpPositionTarget = isPositionTarget &&
-                                     FSharpProjectFileExtensions.Contains(fileExtension, StringComparer.OrdinalIgnoreCase);
-
-        return new CallHierarchyResolutionPlan(
-            isFSharpPositionTarget,
-            UseDeclarationOnlyFastPath: isFSharpPositionTarget);
-    }
-
-    private CallableTarget? ResolveCallHierarchyTarget(
-        RdSemanticTarget target,
-        CallHierarchyResolutionPlan resolutionPlan)
-    {
-        if (resolutionPlan.UseDeclarationOnlyFastPath)
-        {
-            return ResolveCallableDeclarationTargetAt(new RdSourcePosition(
-                target.FilePath!,
-                target.Line!.Value,
-                target.Column!.Value));
-        }
-
         if (!string.IsNullOrWhiteSpace(target.FilePath) &&
             target.Line.HasValue &&
             target.Column.HasValue)
@@ -2220,69 +2059,16 @@ public class IndexMcpBackendHost
         string symbol,
         string scope)
     {
-        EnsureFindReferencesIndexedTargetIsSupported(language, symbol, scope);
-
+        _ = lt;
+        _ = scope;
         var parseResult = ParseIndexedSymbol(language, symbol);
         if (!parseResult.IsSuccess)
-            return FindReferencesTargetResolution.FromResolution(
-                DecorateFSharpSymbolModeResolution(parseResult.ToResolution(), language, symbol),
-                "parse");
-
-        var parsed = parseResult.Symbol!;
-        var plan = BuildFindReferencesResolutionPlan(scope, parsed);
-        if (!plan.UseProjectQualifiedTypeLookup)
-            return ResolveSymbolIndexedForFindReferences(language, symbol);
-
-        var projectLookupStopwatch = Stopwatch.StartNew();
-        var projectCandidates = ResolveProjectQualifiedTypeCandidatesCoreDetailed(
-            parsed.Language,
-            parsed.ContainerQualifiedName,
-            () => EnumerateProjectQualifiedTypeElements(
-                lt,
-                parsed.ContainerQualifiedName,
-                plan.AllowedProjectFileExtensions),
-            () => ResolveClrPredefinedContainerCandidates(parsed.Language, NormalizeQualifiedName(parsed.ContainerQualifiedName)));
-        projectLookupStopwatch.Stop();
-
-        var resolution = ResolveSingleMatch(
-            OrderDeclaredElementsDeterministically(projectCandidates.Matches).ToList(),
-            $"Multiple Rider declarations match container '{parsed.ContainerQualifiedName}'.",
-            $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'.");
-        var decoratedResolution = DecorateFSharpSymbolModeResolution(resolution, parsed.Language, symbol);
-
-        if (decoratedResolution.TryGetElement() != null)
-            return FindReferencesTargetResolution.FromResolution(decoratedResolution, projectCandidates.Origin);
-
-        if (!plan.AllowLibraryFallback)
-            return FindReferencesTargetResolution.FromResolution(decoratedResolution, projectCandidates.Origin);
+            return FindReferencesTargetResolution.FromResolution(parseResult.ToResolution(), "parse");
 
         return ResolveSymbolIndexedForFindReferences(language, symbol);
     }
 
-    private static List<IDeclaredElement> ResolveProjectQualifiedTypeCandidatesCore(
-        string language,
-        string containerQualifiedName,
-        Func<IEnumerable<ITypeElement>> projectLookup,
-        Func<IEnumerable<IDeclaredElement>> clrFallbackLookup)
-    {
-        return ResolveProjectQualifiedTypeCandidatesCoreDetailed(language, containerQualifiedName, projectLookup, clrFallbackLookup).Matches;
-    }
 
-    private static ContainerCandidateResolution ResolveProjectQualifiedTypeCandidatesCoreDetailed(
-        string language,
-        string containerQualifiedName,
-        Func<IEnumerable<ITypeElement>> projectLookup,
-        Func<IEnumerable<IDeclaredElement>> clrFallbackLookup)
-    {
-        var normalizedContainer = NormalizeQualifiedName(containerQualifiedName);
-        return ResolveContainerCandidatesCoreDetailed(
-            language,
-            normalizedContainer,
-            () => projectLookup().Cast<IDeclaredElement>(),
-            clrFallbackLookup,
-            primaryOrigin: "project_qualified_primary",
-            fallbackOrigin: "project_qualified_clr_predefined_fallback");
-    }
 
     private IndexedSymbolResolution ResolveSymbolIndexed(string? language, string symbol)
     {
@@ -2356,44 +2142,33 @@ public class IndexMcpBackendHost
                         normalizedContainer,
                         language))
                     .ToList();
-            },
-            () => ResolveClrPredefinedContainerCandidates(language, normalizedContainer));
+            });
     }
 
     private static List<IDeclaredElement> ResolveContainerCandidatesCore(
         string language,
         string normalizedContainer,
-        Func<IEnumerable<IDeclaredElement>> primaryLookup,
-        Func<IEnumerable<IDeclaredElement>> clrFallbackLookup)
+        Func<IEnumerable<IDeclaredElement>> primaryLookup)
     {
-        return ResolveContainerCandidatesCoreDetailed(language, normalizedContainer, primaryLookup, clrFallbackLookup).Matches;
+        return ResolveContainerCandidatesCoreDetailed(language, normalizedContainer, primaryLookup).Matches;
     }
 
     private static ContainerCandidateResolution ResolveContainerCandidatesCoreDetailed(
         string language,
         string normalizedContainer,
         Func<IEnumerable<IDeclaredElement>> primaryLookup,
-        Func<IEnumerable<IDeclaredElement>> clrFallbackLookup,
-        string primaryOrigin = "primary_lookup",
-        string fallbackOrigin = "clr_predefined_fallback")
+        string primaryOrigin = "primary_lookup")
     {
-        var primaryMatches = FilterAndOrderContainerCandidates(primaryLookup(), normalizedContainer, language);
-        if (primaryMatches.Count > 0 || !ShouldUseClrPredefinedTypeFallback(language, normalizedContainer))
-            return new ContainerCandidateResolution(primaryMatches, primaryOrigin, false);
-
         return new ContainerCandidateResolution(
-            FilterAndOrderContainerCandidates(clrFallbackLookup(), normalizedContainer, language),
-            fallbackOrigin,
-            true);
+            FilterAndOrderContainerCandidates(primaryLookup(), normalizedContainer, language),
+            primaryOrigin);
     }
 
     private FindReferencesTargetResolution ResolveSymbolIndexedForFindReferences(string? language, string symbol)
     {
         var parseResult = ParseIndexedSymbol(language, symbol);
         if (!parseResult.IsSuccess)
-            return FindReferencesTargetResolution.FromResolution(
-                DecorateFSharpSymbolModeResolution(parseResult.ToResolution(), language, symbol),
-                "parse");
+            return FindReferencesTargetResolution.FromResolution(parseResult.ToResolution(), "parse");
 
         var parsed = parseResult.Symbol!;
         var containers = ResolveContainerCandidatesCoreDetailed(
@@ -2418,43 +2193,24 @@ public class IndexMcpBackendHost
                         NormalizeQualifiedName(parsed.ContainerQualifiedName),
                         parsed.Language))
                     .ToList();
-            },
-            () => ResolveClrPredefinedContainerCandidates(parsed.Language, NormalizeQualifiedName(parsed.ContainerQualifiedName)));
+            });
 
         if (containers.Matches.Count == 0)
         {
             return FindReferencesTargetResolution.Failure(
                 "unresolved_symbol",
-                AppendFSharpSymbolModeGuidance(
-                    parsed.Language,
-                    symbol,
-                    $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'.",
-                    "unresolved_symbol"),
+                $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'.",
                 containers.Origin);
         }
 
         if (parsed.MemberName == null)
         {
-            var usedClrPredefinedDisambiguation = TryResolveClrPredefinedCanonicalCandidate(
-                containers.Matches,
-                parsed.Language,
-                parsed.ContainerQualifiedName,
-                out _);
-
-            var resolution = ResolveSingleMatch(
-                containers.Matches,
-                $"Multiple Rider declarations match container '{parsed.ContainerQualifiedName}'.",
-                $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'.",
-                parsed.Language,
-                parsed.ContainerQualifiedName,
-                enableClrPredefinedDisambiguation: true);
-            var decoratedResolution = DecorateFSharpSymbolModeResolution(resolution, parsed.Language, symbol);
-
             return FindReferencesTargetResolution.FromResolution(
-                decoratedResolution,
-                usedClrPredefinedDisambiguation && decoratedResolution.TryGetElement() != null
-                    ? "clr_predefined_disambiguated"
-                    : containers.Origin);
+                ResolveSingleMatch(
+                    containers.Matches,
+                    $"Multiple Rider declarations match container '{parsed.ContainerQualifiedName}'.",
+                    $"No Rider declaration matches container '{parsed.ContainerQualifiedName}'."),
+                containers.Origin);
         }
 
         var supportedContainers = containers.Matches
@@ -2465,11 +2221,7 @@ public class IndexMcpBackendHost
         {
             return FindReferencesTargetResolution.Failure(
                 "unsupported_target",
-                AppendFSharpSymbolModeGuidance(
-                    parsed.Language,
-                    symbol,
-                    $"Container '{parsed.ContainerQualifiedName}' does not support member lookup.",
-                    "unsupported_target"),
+                $"Container '{parsed.ContainerQualifiedName}' does not support member lookup.",
                 containers.Origin);
         }
 
@@ -2483,122 +2235,18 @@ public class IndexMcpBackendHost
             .ToList();
 
         return FindReferencesTargetResolution.FromResolution(
-            DecorateFSharpSymbolModeResolution(
-                ResolveSingleMatch(
+            ResolveSingleMatch(
                 members,
                 $"Multiple Rider declarations match symbol '{symbol}'.",
                 $"No Rider declaration matches symbol '{symbol}'."),
-                parsed.Language,
-                symbol),
             containers.Origin);
     }
 
-    private static IndexedSymbolResolution DecorateFSharpSymbolModeResolution(
-        IndexedSymbolResolution resolution,
-        string? language,
-        string symbol)
-    {
-        ArgumentNullException.ThrowIfNull(resolution);
 
-        if (NormalizeLanguage(language) != "F#" || resolution.TryGetElement() != null)
-            return resolution;
 
-        var decoratedMessage = AppendFSharpSymbolModeGuidance(language, symbol, resolution.Message, resolution.Status);
-        if (string.Equals(decoratedMessage, resolution.Message, StringComparison.Ordinal))
-            return resolution;
 
-        return resolution.Status switch
-        {
-            "invalid_symbol" => IndexedSymbolResolution.Invalid(decoratedMessage),
-            "unresolved_symbol" => IndexedSymbolResolution.Unresolved(decoratedMessage),
-            "ambiguous_match" => IndexedSymbolResolution.Ambiguous(decoratedMessage),
-            "unsupported_target" => IndexedSymbolResolution.Unsupported(decoratedMessage),
-            _ => resolution
-        };
-    }
 
-    private static string? AppendFSharpSymbolModeGuidance(
-        string? language,
-        string symbol,
-        string? message,
-        string status)
-    {
-        if (NormalizeLanguage(language) != "F#" || !ShouldRecommendFSharpPositionLookup(status))
-            return message;
 
-        const string guidance = " F# language+symbol lookup remains best-effort and lossy; use file + line + column on the declaration/member token when safe resolution cannot be proven.";
-        if (string.IsNullOrWhiteSpace(message))
-            return $"Rider could not prove a safe F# semantic target for symbol '{symbol}'.{guidance}";
-
-        return message.Contains("file + line + column", StringComparison.OrdinalIgnoreCase)
-            ? message
-            : message + guidance;
-    }
-
-    private static bool ShouldRecommendFSharpPositionLookup(string status)
-    {
-        return status.Equals("invalid_symbol", StringComparison.OrdinalIgnoreCase) ||
-               status.Equals("unresolved_symbol", StringComparison.OrdinalIgnoreCase) ||
-               status.Equals("ambiguous_match", StringComparison.OrdinalIgnoreCase) ||
-               status.Equals("unsupported_target", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private List<IDeclaredElement> ResolveClrPredefinedContainerCandidates(string language, string normalizedContainer)
-    {
-        var lookupNames = EnumerateClrPredefinedLookupNames(normalizedContainer).ToList();
-        if (lookupNames.Count == 0)
-            return new List<IDeclaredElement>();
-
-        var seenModules = new HashSet<IPsiModule>();
-        var moduleMatches = EnumerateProjectPsiModules(Lifetime.Eternal, null)
-            .Where(module => seenModules.Add(module))
-            .SelectMany(module => ResolveClrPredefinedContainerCandidatesFromModule(module, normalizedContainer, lookupNames, language))
-            .ToList();
-
-        if (moduleMatches.Count > 0)
-            return moduleMatches;
-
-        return new[] { LibrarySymbolScope.REFERENCED, LibrarySymbolScope.TRANSITIVE, LibrarySymbolScope.FULL }
-            .SelectMany(scopeKind => ResolveClrPredefinedContainerCandidatesFromScope(
-                _solution.GetPsiServices().Symbols.GetSymbolScope(scopeKind, false),
-                normalizedContainer,
-                lookupNames,
-                language))
-            .ToList();
-    }
-
-    private IEnumerable<IDeclaredElement> ResolveClrPredefinedContainerCandidatesFromModule(
-        IPsiModule module,
-        string normalizedContainer,
-        IReadOnlyList<string> lookupNames,
-        string language)
-    {
-        var symbolScope = _solution.GetPsiServices().Symbols.GetSymbolScope(module, true, false);
-        foreach (var candidate in ResolveClrPredefinedContainerCandidatesFromScope(symbolScope, normalizedContainer, lookupNames, language))
-            yield return candidate;
-
-        foreach (var typeElement in EnumeratePredefinedTypeElements(module)
-                     .Where(element => MatchesContainerCandidate(element, normalizedContainer, language)))
-        {
-            yield return typeElement;
-        }
-    }
-
-    private static IEnumerable<IDeclaredElement> ResolveClrPredefinedContainerCandidatesFromScope(
-        ISymbolScope symbolScope,
-        string normalizedContainer,
-        IReadOnlyList<string> lookupNames,
-        string language)
-    {
-        foreach (var lookupName in lookupNames)
-        {
-            foreach (var typeElement in TryGetTypeElementsByClrName(symbolScope, lookupName)
-                         .Where(element => MatchesContainerCandidate(element, normalizedContainer, language)))
-            {
-                yield return typeElement;
-            }
-        }
-    }
 
     private IEnumerable<IDeclaredElement> ResolveContainerCandidatesFromScope(
         ISymbolScope symbolScope,
@@ -2654,62 +2302,9 @@ public class IndexMcpBackendHost
         return declarationPaths.All(path => MatchesLanguageForSourcePath(path, normalizedLanguage));
     }
 
-    private static bool ShouldUseClrPredefinedTypeFallback(string language, string normalizedContainer)
-    {
-        return NormalizeLanguage(language) == "F#" &&
-               EnumerateClrPredefinedLookupNames(normalizedContainer).Any();
-    }
 
-    private static IEnumerable<string> EnumerateClrPredefinedLookupNames(string normalizedContainer)
-    {
-        var normalized = NormalizeQualifiedName(normalizedContainer);
-        return ClrPredefinedLookupNames.TryGetValue(normalized, out var lookupNames)
-            ? lookupNames
-            : Array.Empty<string>();
-    }
 
-    private static IEnumerable<ITypeElement> TryGetTypeElementsByClrName(ISymbolScope symbolScope, string clrName)
-    {
-        var method = symbolScope.GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            .FirstOrDefault(candidate =>
-                candidate.Name == "GetTypeElementsByCLRName" &&
-                candidate.GetParameters().Length == 1);
-        if (method == null)
-            yield break;
 
-        var parameterType = method.GetParameters()[0].ParameterType;
-        var lookupArgument = TryCreateClrLookupArgument(parameterType, clrName);
-        if (lookupArgument == null)
-            yield break;
-
-        if (method.Invoke(symbolScope, new[] { lookupArgument }) is IEnumerable enumerable)
-        {
-            foreach (var typeElement in enumerable.OfType<ITypeElement>())
-                yield return typeElement;
-        }
-    }
-
-    private static object? TryCreateClrLookupArgument(Type parameterType, string clrName)
-    {
-        if (parameterType == typeof(string))
-            return clrName;
-
-        var constructor = parameterType.GetConstructor(new[] { typeof(string) });
-        if (constructor != null)
-            return constructor.Invoke(new object[] { clrName });
-
-        var parseMethod = parameterType.GetMethod(
-            "Parse",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            new[] { typeof(string) },
-            null);
-        if (parseMethod != null)
-            return parseMethod.Invoke(null, new object[] { clrName });
-
-        return null;
-    }
 
     private static IEnumerable<string> EnumerateQualifiedNameCandidates(string normalizedQualifiedName)
     {
@@ -2727,31 +2322,8 @@ public class IndexMcpBackendHost
         string ambiguousMessage,
         string unresolvedMessage)
     {
-        return ResolveSingleMatch(
-            candidates,
-            ambiguousMessage,
-            unresolvedMessage,
-            language: null,
-            requestedQualifiedName: null,
-            enableClrPredefinedDisambiguation: false);
-    }
-
-    private static IndexedSymbolResolution ResolveSingleMatch(
-        IReadOnlyList<IDeclaredElement> candidates,
-        string ambiguousMessage,
-        string unresolvedMessage,
-        string? language,
-        string? requestedQualifiedName,
-        bool enableClrPredefinedDisambiguation)
-    {
         if (candidates.Count == 0)
             return IndexedSymbolResolution.Unresolved(unresolvedMessage);
-
-        if (enableClrPredefinedDisambiguation &&
-            TryResolveClrPredefinedCanonicalCandidate(candidates, language, requestedQualifiedName, out var canonicalCandidate))
-        {
-            return IndexedSymbolResolution.Success(canonicalCandidate!);
-        }
 
         var preferredTypeCandidates = candidates
             .OfType<ITypeElement>()
@@ -2775,59 +2347,7 @@ public class IndexMcpBackendHost
         return IndexedSymbolResolution.Ambiguous(ambiguousMessage);
     }
 
-    private static bool TryResolveClrPredefinedCanonicalCandidate(
-        IReadOnlyList<IDeclaredElement> candidates,
-        string? language,
-        string? requestedQualifiedName,
-        out IDeclaredElement? candidate)
-    {
-        candidate = null;
 
-        if (NormalizeLanguage(language) != "F#" || string.IsNullOrWhiteSpace(requestedQualifiedName))
-            return false;
-
-        var normalizedRequested = NormalizeQualifiedName(requestedQualifiedName);
-        var requestedClrName = NormalizeClrQualifiedNamePreservingArity(requestedQualifiedName);
-        var clrLookupNames = EnumerateClrPredefinedLookupNames(normalizedRequested)
-            .Select(NormalizeClrQualifiedNamePreservingArity)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (clrLookupNames.Count == 0)
-            return false;
-
-        return TryPickSourceLessCanonicalTypeCandidate(candidates, new[] { requestedClrName }, out candidate) ||
-               TryPickSourceLessCanonicalTypeCandidate(candidates, clrLookupNames, out candidate);
-    }
-
-    private static bool TryPickSourceLessCanonicalTypeCandidate(
-        IReadOnlyList<IDeclaredElement> candidates,
-        IEnumerable<string> acceptedQualifiedNames,
-        out IDeclaredElement? candidate)
-    {
-        var acceptedNames = acceptedQualifiedNames
-            .Select(NormalizeClrQualifiedNamePreservingArity)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var relevantMatches = candidates
-            .OfType<ITypeElement>()
-            .Where(type => acceptedNames.Contains(NormalizeClrQualifiedNamePreservingArity(type.GetClrName().FullName)))
-            .ToList();
-
-        if (relevantMatches.Any(type => type.GetDeclarations().Any()))
-        {
-            candidate = null;
-            return false;
-        }
-
-        var canonicalMatches = OrderDeclaredElementsDeterministically(relevantMatches)
-            .ToList();
-
-        candidate = canonicalMatches.Count == 1
-            ? canonicalMatches[0]
-            : null;
-
-        return candidate != null;
-    }
 
     private static IEnumerable<IDeclaredElement> ResolveMemberCandidates(ITypeElement container, ParsedRiderSymbol parsed)
     {
@@ -2921,31 +2441,9 @@ public class IndexMcpBackendHost
         string? preferredLanguageName,
         Func<string, object?>? presentationLanguageResolver = null)
     {
-        return NormalizeLanguage(preferredLanguageName) == "F#"
-            ? TryResolveFSharpPresentationLanguage(presentationLanguageResolver) ?? CSharpLanguage.Instance!
-            : CSharpLanguage.Instance!;
-    }
-
-    private static object? TryResolveFSharpPresentationLanguage(Func<string, object?>? presentationLanguageResolver = null)
-    {
-        presentationLanguageResolver ??= ResolveFSharpPresentationLanguageByReflection;
-        return presentationLanguageResolver(FSharpPresentationLanguageTypeName);
-    }
-
-    private static object? ResolveFSharpPresentationLanguageByReflection(string typeName)
-    {
-        var languageType = Type.GetType(typeName, throwOnError: false);
-        if (languageType == null)
-        {
-            languageType = AppDomain.CurrentDomain
-                .GetAssemblies()
-                .Select(assembly => assembly.GetType(typeName, throwOnError: false))
-                .FirstOrDefault(type => type != null);
-        }
-
-        return languageType?
-            .GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)
-            ?.GetValue(null);
+        _ = preferredLanguageName;
+        _ = presentationLanguageResolver;
+        return CSharpLanguage.Instance!;
     }
 
     private static string? InvokePresentableTypeName(IType declaredType, object presentationLanguage)
@@ -2967,7 +2465,7 @@ public class IndexMcpBackendHost
         if (!IsSupportedRiderLanguage(language))
         {
             return IndexedSymbolParseResult.Unsupported(
-                $"Rider indexed symbol resolution supports only C# and F#, got '{language ?? "<null>"}'.");
+                $"Rider indexed symbol resolution supports only C#, got '{language ?? "<null>"}'.");
         }
 
         if (string.IsNullOrWhiteSpace(symbol))
@@ -3134,8 +2632,7 @@ public class IndexMcpBackendHost
 
     private static bool IsSupportedRiderLanguage(string? language)
     {
-        var normalizedLanguage = NormalizeLanguage(language);
-        return normalizedLanguage is "C#" or "F#";
+        return NormalizeLanguage(language) == "C#";
     }
 
     private static string GetContainerLeafName(string containerQualifiedName)
@@ -3244,10 +2741,7 @@ public class IndexMcpBackendHost
             ["decimal"] = "System.Decimal",
             ["char"] = "System.Char",
             ["string"] = "System.String",
-            ["object"] = "System.Object",
-            ["unit"] = "Microsoft.FSharp.Core.Unit",
-            ["nativeint"] = "System.IntPtr",
-            ["unativeint"] = "System.UIntPtr"
+            ["object"] = "System.Object"
         };
 
     private IEnumerable<IDeclaredElement> EnumerateDeclaredElements()
@@ -3259,12 +2753,6 @@ public class IndexMcpBackendHost
             foreach (var element in elements) yield return element;
         }
     }
-
-    private static readonly string[] FSharpProjectFileExtensions = [".fs", ".fsi", ".fsx"];
-
-    private sealed record CallHierarchyResolutionPlan(
-        bool IsFSharpPositionTarget,
-        bool UseDeclarationOnlyFastPath);
 
     private IEnumerable<ITypeElement> EnumerateDeclaredTypeElements(Lifetime lt, IReadOnlyList<string>? allowedProjectFileExtensions)
     {
@@ -3409,8 +2897,9 @@ public class IndexMcpBackendHost
 
     private static bool MatchesLanguage(IDeclaredElement element, string? language)
     {
+        if (string.IsNullOrWhiteSpace(language)) return true;
         var normalizedLanguage = NormalizeLanguage(language);
-        if (normalizedLanguage == null) return true;
+        if (normalizedLanguage == null) return false;
         var presentationLanguage = element.PresentationLanguage?.Name;
         if (presentationLanguage != null && presentationLanguage.Equals(normalizedLanguage, StringComparison.OrdinalIgnoreCase))
             return true;
@@ -3423,19 +2912,14 @@ public class IndexMcpBackendHost
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            // CLR/BCL/library declarations commonly resolve without a source file and may report
-            // a C#-centric presentation language even when the caller requested F#. Keep strict
+            // CLR/BCL/library declarations commonly resolve without a source file. Keep strict
             // file-extension filtering for source-backed declarations, but do not discard
-            // source-less library symbols for C#/F# indexed lookups.
-            return normalizedLanguage.Equals("C#", StringComparison.OrdinalIgnoreCase) ||
-                   normalizedLanguage.Equals("F#", StringComparison.OrdinalIgnoreCase);
+            // source-less library symbols for C# indexed lookups.
+            return normalizedLanguage.Equals("C#", StringComparison.OrdinalIgnoreCase);
         }
 
-        return normalizedLanguage.Equals("C#", StringComparison.OrdinalIgnoreCase) && filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
-               normalizedLanguage.Equals("F#", StringComparison.OrdinalIgnoreCase) && (
-                   filePath.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
-                   filePath.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase) ||
-                   filePath.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase));
+        return normalizedLanguage.Equals("C#", StringComparison.OrdinalIgnoreCase) &&
+               filePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? NormalizeLanguage(string? language)
@@ -3443,15 +2927,14 @@ public class IndexMcpBackendHost
         if (string.IsNullOrWhiteSpace(language))
             return null;
 
-        if (language.Equals("C#", StringComparison.OrdinalIgnoreCase) ||
-            language.Equals("CSharp", StringComparison.OrdinalIgnoreCase))
+        var normalized = language.Trim();
+        if (normalized.Equals("C#", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("CSharp", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("cs", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("C-Sharp", StringComparison.OrdinalIgnoreCase))
             return "C#";
 
-        if (language.Equals("F#", StringComparison.OrdinalIgnoreCase) ||
-            language.Equals("FSharp", StringComparison.OrdinalIgnoreCase))
-            return "F#";
-
-        return language;
+        return null;
     }
 
     private static string? InferFindReferencesTargetLanguage(RdSemanticTarget target)
@@ -3461,11 +2944,8 @@ public class IndexMcpBackendHost
             return normalizedLanguage;
 
         var fileExtension = Path.GetExtension(target.FilePath ?? string.Empty);
-        if (fileExtension.Equals(".cs", StringComparison.OrdinalIgnoreCase))
-            return "C#";
-
-        return FSharpProjectFileExtensions.Contains(fileExtension, StringComparer.OrdinalIgnoreCase)
-            ? "F#"
+        return fileExtension.Equals(".cs", StringComparison.OrdinalIgnoreCase)
+            ? "C#"
             : null;
     }
 
@@ -3474,7 +2954,6 @@ public class IndexMcpBackendHost
         return normalizedLanguage switch
         {
             "C#" => new[] { ".cs" },
-            "F#" => new[] { ".fs", ".fsi", ".fsx" },
             _ => null
         };
     }
@@ -3582,7 +3061,7 @@ public class IndexMcpBackendHost
     //     *.g.cs, *.g.i.cs (IsGeneratedFile is the authoritative
     //     signal; broad substring patterns avoided to prevent
     //     false positives on legitimate user folders)
-    //   - .cs / .fs / .fsi / .fsx hand-written file                 -> 0
+    //   - .cs hand-written file                                     -> 0
     //   - any other on-disk path (XAML-paired synthetic partial,
     //     non-source documents)                                     -> 1
     private static int DeclarationRank(IDeclaration? declaration)
@@ -3607,11 +3086,8 @@ public class IndexMcpBackendHost
                           path.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase);
         if (isGenerated) return 3;
 
-        var isCsOrFs = path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
-                       path.EndsWith(".fs", StringComparison.OrdinalIgnoreCase) ||
-                       path.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase) ||
-                       path.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase);
-        return isCsOrFs ? 0 : 1;
+        var isCs = path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+        return isCs ? 0 : 1;
     }
 
     private static int BestDeclarationRank(IDeclaredElement element) =>
@@ -3653,8 +3129,9 @@ public class IndexMcpBackendHost
 
     private readonly record struct DefinitionLocationInfo(string LocationKind, string? LocationDisplayName);
 
-    private static bool IsTestPath(string path)
+    private static bool IsTestPath(string? path)
     {
+        if (string.IsNullOrWhiteSpace(path)) return false;
         var normalized = path.Replace('\\', '/');
         return normalized.Contains(".Tests/", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("/Tests/", StringComparison.OrdinalIgnoreCase) ||
@@ -3751,46 +3228,7 @@ public class IndexMcpBackendHost
         return ResolveDeclaredElementAt(position, requireConsistentLocalDeclaration: false);
     }
 
-    private List<IDeclaredElement> ResolveSafeFSharpPositionCandidates(RdSourcePosition position)
-    {
-        var psiFile = GetPsiFileForPath(position.FilePath);
-        if (psiFile == null)
-            return new List<IDeclaredElement>();
 
-        var sourceFile = psiFile.GetSourceFile();
-        var document = sourceFile?.Document;
-        if (document == null)
-            return new List<IDeclaredElement>();
-
-        var line = Math.Max(0, position.Line - 1);
-        var col = Math.Max(0, position.Column - 1);
-        var offset = document.GetLineStartOffset((Int32<DocLine>)line) + col;
-
-        return CandidateOffsets(offset)
-            .SelectMany(candidateOffset => EnumerateSafeFSharpPositionCandidatesAtOffset(psiFile, candidateOffset))
-            .GroupBy(GetDeclaredElementIdentityKey)
-            .Select(group => group.First())
-            .OrderBy(BestDeclarationRank)
-            .ThenBy(GetQualifiedName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(GetMemberSignatureSortKey, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(GetDeclarationPath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private static IEnumerable<IDeclaredElement> EnumerateSafeFSharpPositionCandidatesAtOffset(IFile psiFile, int candidateOffset)
-    {
-        var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(candidateOffset), 1));
-        if (node == null)
-            yield break;
-
-        var directReferenceElement = TryResolveDirectReferenceElement(node);
-        if (directReferenceElement != null)
-            yield return directReferenceElement;
-
-        var declarationElement = TryResolveDeclarationNameElement(node);
-        if (declarationElement != null)
-            yield return declarationElement;
-    }
 
     private static IDeclaredElement? TryResolveDirectReferenceElement(ITreeNode node)
     {
@@ -3989,243 +3427,18 @@ public class IndexMcpBackendHost
         return FindReferences(lt, element, searchDomain, limit, searchMode: searchMode);
     }
 
-    private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferencesBounded(
-        Lifetime lt,
-        IDeclaredElement element,
-        IReadOnlyList<string>? allowedProjectFileExtensions,
-        int limit)
-    {
-        if (allowedProjectFileExtensions == null || allowedProjectFileExtensions.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "Bounded Rider find_references search requires explicit project file extensions.");
-        }
 
-        var enumerateStopwatch = Stopwatch.StartNew();
-        var sourceFiles = EnumerateProjectSourceFiles(lt, allowedProjectFileExtensions)
-            .ToList();
-        enumerateStopwatch.Stop();
 
-        var sourceFileBatches = BatchSourceFilesForBoundedFindReferences(sourceFiles, BoundedFindReferencesBatchSize);
 
-        var deadlineIndicator = CreateBoundedFindReferencesDeadlineProgressIndicator();
-        var references = new List<JetBrains.ReSharper.Psi.Resolve.IReference>();
-        var skippedDiagnostics = new List<BoundedFindReferencesSkipDiagnostic>();
-        for (var batchIndex = 0; batchIndex < sourceFileBatches.Count; batchIndex++)
-        {
-            EnsureLifetimeAlive(lt);
-            deadlineIndicator.ThrowIfExpired();
 
-            var limitRemaining = limit - references.Count;
-            if (limitRemaining <= 0)
-                break;
 
-            var batch = sourceFileBatches[batchIndex];
-            var batchLabel = batch.Count == 1 ? "file" : "batch";
-            var searchMode = batch.Count == 1 ? "bounded-file" : "bounded-batch";
-            var batchDescriptor = DescribeSourceFileBatch(batch);
-            var batchStopwatch = Stopwatch.StartNew();
 
-            var createDomainStopwatch = Stopwatch.StartNew();
-            ISearchDomain? searchDomain = null;
-            RunBoundedFindReferencesStage(deadlineIndicator, () =>
-            {
-                searchDomain = _solution.GetPsiServices().SearchDomainFactory
-                    .CreateSearchDomain(batch);
-            });
-            createDomainStopwatch.Stop();
 
-            List<JetBrains.ReSharper.Psi.Resolve.IReference>? batchReferences = null;
-            try
-            {
-                RunBoundedFindReferencesStage(deadlineIndicator, () =>
-                {
-                    batchReferences = FindReferences(lt, element, searchDomain!, limitRemaining, searchMode, deadlineIndicator);
-                });
-            }
-            catch (Exception ex)
-            {
-                batchStopwatch.Stop();
 
-                var classifiedException = ClassifyBoundedFindReferencesException(ex);
-                var skippedDiagnostic = new BoundedFindReferencesSkipDiagnostic(
-                    batchIndex + 1,
-                    sourceFileBatches.Count,
-                    batchDescriptor,
-                    classifiedException.Category,
-                    classifiedException.Exception.GetType().FullName ?? classifiedException.Exception.GetType().Name,
-                    classifiedException.Exception.Message,
-                    batchStopwatch.ElapsedMilliseconds,
-                    batchStopwatch.ElapsedMilliseconds,
-                    references.Count);
 
-                skippedDiagnostics.Add(skippedDiagnostic);
-                continue;
-            }
 
-            references.AddRange(batchReferences!);
-            batchStopwatch.Stop();
 
-            if (references.Count >= limit)
-                break;
-        }
 
-        return references;
-    }
-
-    private static ClassifiedBoundedFindReferencesException ClassifyBoundedFindReferencesException(Exception exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-
-        if (exception is OperationCanceledException operationCanceledException)
-            return new ClassifiedBoundedFindReferencesException("cancellation", operationCanceledException);
-
-        if (exception is AggregateException aggregateException)
-        {
-            var flattened = aggregateException.Flatten();
-            var cancellation = flattened.InnerExceptions.OfType<OperationCanceledException>().FirstOrDefault();
-            if (cancellation != null)
-                return new ClassifiedBoundedFindReferencesException("cancellation", cancellation);
-        }
-
-        return new ClassifiedBoundedFindReferencesException("exception", exception);
-    }
-
-    private static DeadlineProgressIndicator CreateBoundedFindReferencesDeadlineProgressIndicator()
-    {
-        return new DeadlineProgressIndicator(
-            DateTime.UtcNow.AddMilliseconds(BoundedFindReferencesInteractiveBudgetMs),
-            GetBoundedFindReferencesTimeoutMessage());
-    }
-
-    private static string GetBoundedFindReferencesTimeoutMessage()
-    {
-        return "Rider F# find_references requires warmed ReSharper usage caches; module/type-only project_files searches should retry after IDE warm-up or use a position/member target.";
-    }
-
-    private static void RethrowIfBoundedFindReferencesDeadlineExpired(Exception exception, DeadlineProgressIndicator progressIndicator)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        ArgumentNullException.ThrowIfNull(progressIndicator);
-
-        if (!progressIndicator.HasExpired)
-            return;
-
-        if (exception is TimeoutException timeoutException)
-            throw progressIndicator.Wrap(timeoutException);
-
-        if (exception is OperationCanceledException operationCanceledException)
-            throw progressIndicator.Wrap(operationCanceledException);
-
-        if (exception is AggregateException aggregateException)
-        {
-            var cancellation = aggregateException.Flatten().InnerExceptions.OfType<OperationCanceledException>().FirstOrDefault();
-            if (cancellation != null)
-                throw progressIndicator.Wrap(cancellation);
-        }
-    }
-
-    private static void RunBoundedFindReferencesStage(DeadlineProgressIndicator progressIndicator, Action action)
-    {
-        ArgumentNullException.ThrowIfNull(progressIndicator);
-        ArgumentNullException.ThrowIfNull(action);
-
-        try
-        {
-            action();
-        }
-        catch (Exception exception)
-        {
-            RethrowIfBoundedFindReferencesDeadlineExpired(exception, progressIndicator);
-            throw;
-        }
-    }
-
-    private static IReadOnlyList<IReadOnlyList<IPsiSourceFile>> BatchSourceFilesForBoundedFindReferences(
-        IEnumerable<IPsiSourceFile> sourceFiles,
-        int batchSize)
-    {
-        return BatchItemsForBoundedFindReferences(sourceFiles, GetSourceFileTracePath, batchSize);
-    }
-
-    private static IReadOnlyList<IReadOnlyList<string>> BatchSourceFilePathsForBoundedFindReferences(
-        IEnumerable<string> sourceFilePaths,
-        int batchSize)
-    {
-        return BatchItemsForBoundedFindReferences(sourceFilePaths, NormalizeBoundedReferenceBatchKey, batchSize);
-    }
-
-    private static IReadOnlyList<IReadOnlyList<T>> BatchItemsForBoundedFindReferences<T>(
-        IEnumerable<T> items,
-        Func<T, string> keySelector,
-        int batchSize)
-    {
-        ArgumentNullException.ThrowIfNull(items);
-        ArgumentNullException.ThrowIfNull(keySelector);
-        if (batchSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(batchSize), batchSize, "Batch size must be greater than zero.");
-
-        var orderedDistinctItems = items
-            .GroupBy(item => NormalizeBoundedReferenceBatchKey(keySelector(item)), StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
-            .ToList();
-
-        if (orderedDistinctItems.Count == 0)
-            return Array.Empty<IReadOnlyList<T>>();
-
-        var batches = new List<IReadOnlyList<T>>();
-        for (var index = 0; index < orderedDistinctItems.Count; index += batchSize)
-            batches.Add(orderedDistinctItems.Skip(index).Take(batchSize).ToList());
-
-        return batches;
-    }
-
-    private static string DescribeSourceFileBatch(IReadOnlyList<IPsiSourceFile> batch)
-    {
-        if (batch.Count == 0)
-            return "<empty>";
-
-        var normalizedPaths = batch
-            .Select(GetSourceFileTracePath)
-            .ToList();
-
-        return batch.Count == 1
-            ? normalizedPaths[0]
-            : $"{normalizedPaths.First()} .. {normalizedPaths.Last()}";
-    }
-
-    private static string GetSourceFileTracePath(IPsiSourceFile sourceFile)
-    {
-        return NormalizeBoundedReferenceBatchKey(sourceFile.GetLocation().FullPath);
-    }
-
-    private static string NormalizeBoundedReferenceBatchKey(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value)
-            ? "<unknown>"
-            : value.Trim();
-    }
-
-    private static string FormatSkippedFindReferencesDescriptors(IReadOnlyList<string> descriptors, int maxItems)
-    {
-        ArgumentNullException.ThrowIfNull(descriptors);
-        if (maxItems <= 0)
-            throw new ArgumentOutOfRangeException(nameof(maxItems), maxItems, "Max items must be greater than zero.");
-
-        var normalizedDescriptors = descriptors
-            .Select(NormalizeBoundedReferenceBatchKey)
-            .ToList();
-
-        if (normalizedDescriptors.Count == 0)
-            return "<none>";
-
-        if (normalizedDescriptors.Count <= maxItems)
-            return string.Join(", ", normalizedDescriptors);
-
-        return string.Join(", ", normalizedDescriptors.Take(maxItems)) +
-               $" (+{normalizedDescriptors.Count - maxItems} more)";
-    }
 
     private List<JetBrains.ReSharper.Psi.Resolve.IReference> FindReferences(
         Lifetime lt,
@@ -4362,23 +3575,6 @@ public class IndexMcpBackendHost
                $"scope={scope}, message={message ?? "<none>"}";
     }
 
-    private static string FormatBoundedFindReferencesSkipMessage(
-        string searchRoute,
-        IDeclaredElement element,
-        string category,
-        int index,
-        int total,
-        string descriptor,
-        string exceptionType,
-        string exceptionMessage,
-        long elapsedMilliseconds,
-        long stageElapsedMilliseconds,
-        int collectedCount)
-    {
-        return $"stage=find-bounded.skip, partial=true, searchRoute={searchRoute}, target={DescribeFindReferencesResolvedTarget(element, "resolved")}, " +
-               $"category={category}, index={index}, total={total}, descriptor={descriptor}, exception={exceptionType}: {exceptionMessage}, " +
-               $"elapsedMs={elapsedMilliseconds}, stageElapsedMs={stageElapsedMilliseconds}, collectedCount={collectedCount}";
-    }
 
     private static bool IsFindReferencesSymbolTarget(RdSemanticTarget target)
     {
@@ -4388,12 +3584,6 @@ public class IndexMcpBackendHost
     private static bool ShouldRaiseFindReferencesTargetResolutionFailure(RdSemanticTarget target, string status)
     {
         return IsFindReferencesSymbolTarget(target) ||
-               (IsFindReferencesPositionTarget(target) &&
-                IsFSharpFindReferencesTarget(target) &&
-                (status.Equals("unsupported_target", StringComparison.OrdinalIgnoreCase) ||
-                 status.Equals("ambiguous_match", StringComparison.OrdinalIgnoreCase) ||
-                 status.Equals("unresolved_target", StringComparison.OrdinalIgnoreCase))) ||
-               status.Equals("unsupported_language_capability", StringComparison.OrdinalIgnoreCase) ||
                status.Equals("unavailable_feature", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -4404,14 +3594,6 @@ public class IndexMcpBackendHost
                target.Column.HasValue;
     }
 
-    private static bool IsFSharpFindReferencesTarget(RdSemanticTarget target)
-    {
-        if (NormalizeLanguage(target.Language) == "F#")
-            return true;
-
-        var fileExtension = Path.GetExtension(target.FilePath ?? string.Empty);
-        return FSharpProjectFileExtensions.Contains(fileExtension, StringComparer.OrdinalIgnoreCase);
-    }
 
     private sealed class RenameExecutionAttempt
     {
@@ -4462,23 +3644,11 @@ public class IndexMcpBackendHost
             => new(false, selectedMethodSignature, requiresTextControl, availableMethodSignatures, message);
     }
 
-    private sealed record ClassifiedBoundedFindReferencesException(string Category, Exception Exception);
 
     private sealed record ContainerCandidateResolution(
         List<IDeclaredElement> Matches,
-        string Origin,
-        bool UsedClrPredefinedFallback);
+        string Origin);
 
-    private sealed record BoundedFindReferencesSkipDiagnostic(
-        int Index,
-        int Total,
-        string Descriptor,
-        string Category,
-        string ExceptionType,
-        string ExceptionMessage,
-        long ElapsedMilliseconds,
-        long StageElapsedMilliseconds,
-        int CollectedCount);
 
     private sealed class FindReferencesTargetResolution
     {
@@ -4868,53 +4038,12 @@ internal sealed class FindTypesSearchPlan
 
 internal sealed class FindReferencesResolutionPlan
 {
-    public FindReferencesResolutionPlan(
-        IReadOnlyList<string>? allowedProjectFileExtensions,
-        bool useProjectQualifiedTypeLookup,
-        bool useBoundedProjectFileSearch,
-        bool allowLibraryFallback,
-        bool rejectUnboundedReferenceSearch,
-        string targetKind,
-        bool isFSharpPositionTarget,
-        bool isFSharpSymbolTarget)
+    public FindReferencesResolutionPlan(string targetKind)
     {
-        AllowedProjectFileExtensions = allowedProjectFileExtensions;
-        UseProjectQualifiedTypeLookup = useProjectQualifiedTypeLookup;
-        UseBoundedProjectFileSearch = useBoundedProjectFileSearch;
-        AllowLibraryFallback = allowLibraryFallback;
-        RejectUnboundedReferenceSearch = rejectUnboundedReferenceSearch;
         TargetKind = targetKind;
-        IsFSharpPositionTarget = isFSharpPositionTarget;
-        IsFSharpSymbolTarget = isFSharpSymbolTarget;
     }
 
-    public IReadOnlyList<string>? AllowedProjectFileExtensions { get; }
-    public bool UseProjectQualifiedTypeLookup { get; }
-    public bool UseBoundedProjectFileSearch { get; }
-    public bool AllowLibraryFallback { get; }
-    public bool RejectUnboundedReferenceSearch { get; }
     public string TargetKind { get; }
-    public bool IsFSharpPositionTarget { get; }
-    public bool IsFSharpSymbolTarget { get; }
-}
-
-internal sealed class FSharpCapabilityAvailability
-{
-    private FSharpCapabilityAvailability(bool isAvailable, string? failureStatus, string? failureMessage)
-    {
-        IsAvailable = isAvailable;
-        FailureStatus = failureStatus;
-        FailureMessage = failureMessage;
-    }
-
-    public bool IsAvailable { get; }
-    public string? FailureStatus { get; }
-    public string? FailureMessage { get; }
-
-    public static FSharpCapabilityAvailability Available() => new(true, null, null);
-
-    public static FSharpCapabilityAvailability Unavailable(string status, string message) =>
-        new(false, status, message);
 }
 
 internal sealed class CallableTarget
@@ -5030,51 +4159,3 @@ internal sealed class NoOpProgressIndicator : IProgressIndicator
     public void Dispose() { }
 }
 
-internal sealed class DeadlineProgressIndicator : IProgressIndicator
-{
-    private bool _isCanceled;
-
-    public DeadlineProgressIndicator(DateTime deadlineUtc, string timeoutMessage)
-    {
-        DeadlineUtc = deadlineUtc;
-        TimeoutMessage = timeoutMessage;
-    }
-
-    public DateTime DeadlineUtc { get; }
-    public string TimeoutMessage { get; }
-    public bool HasExpired => DateTime.UtcNow >= DeadlineUtc;
-    public bool IsCanceled
-    {
-        get => _isCanceled || HasExpired;
-        set => _isCanceled = value;
-    }
-
-    public string? TaskName { get; set; }
-    public string? CurrentItemText { get; set; }
-
-    public void ThrowIfExpired()
-    {
-        if (HasExpired)
-            throw CreateTimeoutException();
-    }
-
-    public TimeoutException Wrap(Exception innerException)
-    {
-        return innerException is TimeoutException timeoutException &&
-               string.Equals(timeoutException.Message, TimeoutMessage, StringComparison.Ordinal)
-            ? timeoutException
-            : CreateTimeoutException(innerException);
-    }
-
-    public TimeoutException CreateTimeoutException(Exception? innerException = null)
-    {
-        return innerException == null
-            ? new TimeoutException(TimeoutMessage)
-            : new TimeoutException(TimeoutMessage, innerException);
-    }
-
-    public void Start(int totalWork) { }
-    public void Stop() { }
-    public void Advance(double work) { }
-    public void Dispose() { }
-}

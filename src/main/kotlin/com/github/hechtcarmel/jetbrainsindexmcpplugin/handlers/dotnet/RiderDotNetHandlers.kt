@@ -26,7 +26,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Rider protocol-based handlers for C# and F# code intelligence.
+ * Rider protocol-based handlers for C# code intelligence.
  *
  * These handlers delegate to the ReSharper backend via the rd protocol model,
  * providing full semantic analysis instead of the heuristic-based approach.
@@ -48,7 +48,7 @@ object RiderDotNetHandlers {
         if (!isRiderProtocolGenerated()) {
             LOG.warn(
                 "Rider Index MCP protocol stubs are not available. " +
-                    "Skipping C#/F# semantic handlers instead of falling back to frontend PSI heuristics."
+                    "Skipping C# semantic handlers instead of falling back to frontend PSI heuristics."
             )
             return
         }
@@ -61,15 +61,7 @@ object RiderDotNetHandlers {
         registry.registerSymbolReferenceHandler(RiderCSharpSymbolReferenceHandler())
         registry.registerStructureHandler(RiderCSharpStructureHandler())
 
-        // F# handlers
-        registry.registerTypeHierarchyHandler(RiderFSharpTypeHierarchyHandler())
-        registry.registerImplementationsHandler(RiderFSharpImplementationsHandler())
-        registry.registerCallHierarchyHandler(RiderFSharpCallHierarchyHandler())
-        registry.registerSuperMethodsHandler(RiderFSharpSuperMethodsHandler())
-        registry.registerSymbolReferenceHandler(RiderFSharpSymbolReferenceHandler())
-        registry.registerStructureHandler(RiderFSharpStructureHandler())
-
-        LOG.info("Registered Rider protocol-based .NET handlers for C# and F#")
+        LOG.info("Registered Rider protocol-based .NET handlers for C#")
     }
 
     private fun isRiderEnvironment(): Boolean = RiderEnvironment.isAvailable
@@ -473,12 +465,11 @@ object RiderBackendSemanticService {
     fun isRiderEnvironment(): Boolean = RiderEnvironment.isAvailable
 
     private fun canHandleLanguage(language: String?): Boolean =
-        language == null || isAcceptedLanguageAlias(language, CSHARP_LANGUAGE_IDS) ||
-            isAcceptedLanguageAlias(language, FSHARP_LANGUAGE_IDS)
+        language == null || isAcceptedLanguageAlias(language, CSHARP_LANGUAGE_IDS)
 
     fun isDotNetFile(file: String?): Boolean {
         val ext = file?.substringAfterLast('.', missingDelimiterValue = "")?.lowercase()
-        return ext in CSHARP_EXTENSIONS || ext in FSHARP_EXTENSIONS
+        return ext in CSHARP_EXTENSIONS
     }
 
     fun findTypes(
@@ -682,7 +673,7 @@ object RiderBackendSemanticService {
                 errorMessage = symbolTarget.thenUnsupportedCallHierarchy()
             )
         val displayLanguage = language?.trim()?.takeIf { it.isNotEmpty() } ?: "C#"
-        return invokeSemanticCallHierarchy(model, target, direction, depth, scope, symbolTarget, displayLanguage)
+        return invokeSemanticCallHierarchy(project, model, target, direction, depth, scope, symbolTarget, displayLanguage)
     }
 
     fun getTypeHierarchy(
@@ -698,14 +689,14 @@ object RiderBackendSemanticService {
         val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", backendFile, line, column)
             ?: return RiderBackendResponse(handled = true)
         val result = invokeTypeHierarchy(project, position, scope) ?: return RiderBackendResponse(handled = true)
-        return RiderBackendResponse(handled = true, value = rdTypeHierarchyToData(result, language))
+        return RiderBackendResponse(handled = true, value = rdTypeHierarchyToData(project, result, language))
     }
 
     /**
      * Resolve a (language, symbol) pair to a (file, line, column) position via the
      * Rider backend's symbol resolver, returning null if it couldn't be resolved or
      * if the backend is unavailable. Used by CallHierarchyTool to satisfy symbol-
-     * form requests for C#/F# without going through the Java-only
+     * form requests for C# without going through the Java-only
      * `LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName` path.
      */
     fun resolveSymbolToPosition(project: Project, language: String, symbol: String): Triple<String, Int, Int>? {
@@ -819,7 +810,7 @@ object RiderBackendSemanticService {
             .takeIf { it.isNotEmpty() }
             ?.joinToString(":")
             ?: "<unknown>"
-        return "Rider C#/F# position target '$targetLabel' could not be mapped to a Rider source file. " +
+        return "Rider C# position target '$targetLabel' could not be mapped to a Rider source file. " +
             "Dependency-backed or source-less positions should use a language+symbol target when available."
     }
 
@@ -842,7 +833,7 @@ object RiderBackendSemanticService {
         return RdProtocolBridge.invokeCall(model, "getTypeHierarchy", request)
     }
 
-    internal fun rdTypeHierarchyToData(result: Any, language: String): TypeHierarchyData? {
+    internal fun rdTypeHierarchyToData(project: Project, result: Any, language: String): TypeHierarchyData? {
         val elementInfo = RdProtocolBridge.getProperty(result, "element") ?: return null
         @Suppress("UNCHECKED_CAST")
         val supertypes = (RdProtocolBridge.getProperty(result, "supertypes") as? List<Any>) ?: emptyList()
@@ -850,9 +841,9 @@ object RiderBackendSemanticService {
         val subtypes = (RdProtocolBridge.getProperty(result, "subtypes") as? List<Any>) ?: emptyList()
 
         return TypeHierarchyData(
-            element = rdSymbolToTypeElementData(elementInfo, language),
-            supertypes = supertypes.map { rdSymbolToTypeElementData(it, language) },
-            subtypes = subtypes.map { rdSymbolToTypeElementData(it, language) }
+            element = rdSymbolToTypeElementData(project, elementInfo, language),
+            supertypes = supertypes.map { rdSymbolToTypeElementData(project, it, language) },
+            subtypes = subtypes.map { rdSymbolToTypeElementData(project, it, language) }
         )
     }
 
@@ -871,14 +862,6 @@ object RiderBackendSemanticService {
             language = RdProtocolBridge.getProperty(symbol, "language") as? String
         )
     }
-
-    private fun displayPath(project: Project, filePath: String?): String {
-        if (filePath.isNullOrBlank()) return ""
-        val normalized = filePath.replace('\\', File.separatorChar).replace('/', File.separatorChar)
-        val virtualFile = LocalFileSystem.getInstance().findFileByPath(normalized)
-        if (virtualFile != null) return ProjectUtils.getToolFilePath(project, virtualFile)
-        return normalized
-    }
 }
 
 private data class RiderSemanticTargetBuildResult(
@@ -887,7 +870,7 @@ private data class RiderSemanticTargetBuildResult(
 )
 
 internal const val RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED =
-    "Rider C#/F# symbol-mode call hierarchy requires the Rider backend-native path and is unsupported when that backend cannot resolve a callable semantic target."
+    "Rider C# symbol-mode call hierarchy requires the Rider backend-native path and is unsupported when that backend cannot resolve a callable semantic target."
 
 private fun Boolean.thenUnsupportedCallHierarchy(): String? =
     if (this) RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED else null
@@ -895,11 +878,8 @@ private fun Boolean.thenUnsupportedCallHierarchy(): String? =
 // ── Helper functions ────────────────────────────────────────────────────────
 
 private val CSHARP_EXTENSIONS = setOf("cs", "csx")
-private val FSHARP_EXTENSIONS = setOf("fs", "fsi", "fsx")
 internal const val CSHARP_CANONICAL_LANGUAGE_ID = "C#"
-internal const val FSHARP_CANONICAL_LANGUAGE_ID = "F#"
 private val CSHARP_LANGUAGE_IDS = setOf("C#", "CSHARP", "CSharp")
-private val FSHARP_LANGUAGE_IDS = setOf("F#", "FSHARP", "FSharp")
 internal const val IMPLEMENTATIONS_RESULT_LIMIT = PaginationService.DEFAULT_OVERCOLLECT
 internal const val CALL_HIERARCHY_RESULT_LIMIT = 20
 internal const val CALL_HIERARCHY_EXPANDED_CHILDREN_PER_NODE_LIMIT = 5
@@ -908,7 +888,6 @@ internal fun normalizeAcceptedRiderLanguageAlias(language: String?): String? =
     language?.takeIf { it.isNotBlank() }?.let {
         when {
             isAcceptedLanguageAlias(it, CSHARP_LANGUAGE_IDS) -> CSHARP_CANONICAL_LANGUAGE_ID
-            isAcceptedLanguageAlias(it, FSHARP_LANGUAGE_IDS) -> FSHARP_CANONICAL_LANGUAGE_ID
             else -> it
         }
     }
@@ -990,21 +969,22 @@ private fun createPositionTarget(project: Project, element: PsiElement): Any? {
     return createPositionTarget(filePath, line, column)
 }
 
-private fun rdSymbolToTypeElementData(symbol: Any, language: String): TypeElementData {
+private fun rdSymbolToTypeElementData(project: Project, symbol: Any, language: String): TypeElementData {
     return TypeElementData(
         name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
         qualifiedName = RdProtocolBridge.getProperty(symbol, "qualifiedName") as? String,
-        file = RdProtocolBridge.getProperty(symbol, "filePath") as? String,
+        file = (RdProtocolBridge.getProperty(symbol, "filePath") as? String)?.let { displayPath(project, it) },
         line = RdProtocolBridge.getProperty(symbol, "line") as? Int,
         kind = RdProtocolBridge.getProperty(symbol, "kind") as? String ?: "UNKNOWN",
         language = language
     )
 }
 
-private fun rdSymbolToImplementationData(symbol: Any, language: String): ImplementationData? {
+private fun rdSymbolToImplementationData(project: Project, symbol: Any, language: String): ImplementationData? {
+    val rawPath = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null
     return ImplementationData(
         name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
-        file = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null,
+        file = displayPath(project, rawPath),
         line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: return null,
         column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 1,
         kind = (RdProtocolBridge.getProperty(symbol, "kind") as? String ?: "unknown").lowercase(),
@@ -1012,17 +992,30 @@ private fun rdSymbolToImplementationData(symbol: Any, language: String): Impleme
     )
 }
 
-private fun rdSymbolToCallElementData(symbol: Any, language: String): CallElementData? {
+private fun rdSymbolToCallElementData(project: Project, symbol: Any, language: String): CallElementData? {
+    val rawPath = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null
     return CallElementData(
         name = RdProtocolBridge.getProperty(symbol, "name") as? String ?: "",
-        file = RdProtocolBridge.getProperty(symbol, "filePath") as? String ?: return null,
+        file = displayPath(project, rawPath),
         line = RdProtocolBridge.getProperty(symbol, "line") as? Int ?: return null,
         column = RdProtocolBridge.getProperty(symbol, "column") as? Int ?: 1,
         language = language
     )
 }
 
+private fun displayPath(project: Project, filePath: String?): String {
+    if (filePath.isNullOrBlank()) return ""
+    return try {
+        val normalized = filePath.replace('\\', File.separatorChar).replace('/', File.separatorChar)
+        val virtualFile = LocalFileSystem.getInstance().findFileByPath(normalized)
+        if (virtualFile != null) ProjectUtils.getToolFilePath(project, virtualFile) else filePath
+    } catch (_: Throwable) {
+        filePath
+    }
+}
+
 private fun invokeSemanticCallHierarchy(
+    project: Project,
     model: Any,
     target: Any,
     direction: String,
@@ -1060,7 +1053,7 @@ private fun invokeSemanticCallHierarchy(
     } ?: return RiderBackendResponse(handled = true)
 
     val root = RdProtocolBridge.getProperty(result, "root")
-        ?.let { rdSymbolToCallElementData(it, displayLanguage) }
+        ?.let { rdSymbolToCallElementData(project, it, displayLanguage) }
         ?: return RiderBackendResponse(
             handled = true,
             errorMessage = symbolTarget.thenUnsupportedCallHierarchy()
@@ -1069,7 +1062,7 @@ private fun invokeSemanticCallHierarchy(
     val calls = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
     val seen = mutableSetOf<String>()
     val expansionState = RiderCallHierarchyExpansionState()
-    val distinctCalls = calls.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+    val distinctCalls = calls.mapNotNull { rdSymbolToCallElementData(project, it, displayLanguage) }
         .sortedCallElements()
         .filter { seen.add(callHierarchyKey(it)) }
         .take(CALL_HIERARCHY_RESULT_LIMIT)
@@ -1080,7 +1073,7 @@ private fun invokeSemanticCallHierarchy(
                 expansionState.truncated = true
                 call.copy(children = emptyList())
             }
-            else -> expandSemanticCallHierarchy(model, call, direction, depth - 1, scope, seen, displayLanguage, expansionState)
+            else -> expandSemanticCallHierarchy(project, model, call, direction, depth - 1, scope, seen, displayLanguage, expansionState)
         }
     }
     val message = mergeCallHierarchyMessages(
@@ -1096,6 +1089,7 @@ private fun invokeSemanticCallHierarchy(
 }
 
 private fun expandSemanticCallHierarchy(
+    project: Project,
     model: Any,
     call: CallElementData,
     direction: String,
@@ -1124,7 +1118,7 @@ private fun expandSemanticCallHierarchy(
 
     @Suppress("UNCHECKED_CAST")
     val children = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
-    val orderedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+    val orderedChildren = children.mapNotNull { rdSymbolToCallElementData(project, it, displayLanguage) }
         .sortedCallElements()
         .filter { seen.add(callHierarchyKey(it)) }
         .take(CALL_HIERARCHY_RESULT_LIMIT)
@@ -1135,13 +1129,13 @@ private fun expandSemanticCallHierarchy(
                 boundedChildren.map { it.copy(children = emptyList()) }
             } else {
                 boundedChildren.map { child ->
-                    expandSemanticCallHierarchy(model, child, direction, remainingDepth - 1, scope, seen, displayLanguage, expansionState)
+                    expandSemanticCallHierarchy(project, model, child, direction, remainingDepth - 1, scope, seen, displayLanguage, expansionState)
                 }
             }
         }
         remainingDepth == 1 -> orderedChildren.map { it.copy(children = emptyList()) }
         else -> orderedChildren.map {
-            expandSemanticCallHierarchy(model, it, direction, remainingDepth - 1, scope, seen, displayLanguage, expansionState)
+            expandSemanticCallHierarchy(project, model, it, direction, remainingDepth - 1, scope, seen, displayLanguage, expansionState)
         }
     }
     return call.copy(children = convertedChildren)
@@ -1340,7 +1334,7 @@ abstract class RiderTypeHierarchyHandler(
         val position = createSourcePosition(project, element) ?: return null
         val result = RiderBackendSemanticService.run {
             val hierarchyResult = invokeTypeHierarchy(project, position, scope) ?: return null
-            rdTypeHierarchyToData(hierarchyResult, displayLanguage)
+            rdTypeHierarchyToData(project, hierarchyResult, displayLanguage)
         }
         return result
     }
@@ -1369,14 +1363,14 @@ abstract class RiderImplementationsHandler(
 
         @Suppress("UNCHECKED_CAST")
         val implementations = (RdProtocolBridge.getProperty(result, "implementations") as? List<Any>) ?: emptyList()
-        val directResults = implementations.mapNotNull { rdSymbolToImplementationData(it, displayLanguage) }
+        val directResults = implementations.mapNotNull { rdSymbolToImplementationData(project, it, displayLanguage) }
         if (directResults.isNotEmpty()) return directResults
 
         val hierarchyRequest = RdProtocolBridge.createStruct("$MODEL_PKG.RdTypeHierarchyRequest", position, scope.wireValue) ?: return directResults
         val hierarchyResult = RdProtocolBridge.invokeCall(model, "getTypeHierarchy", hierarchyRequest) ?: return directResults
         @Suppress("UNCHECKED_CAST")
         val subtypes = (RdProtocolBridge.getProperty(hierarchyResult, "subtypes") as? List<Any>) ?: emptyList()
-        val subtypeResults = subtypes.mapNotNull { rdSymbolToImplementationData(it, displayLanguage) }
+        val subtypeResults = subtypes.mapNotNull { rdSymbolToImplementationData(project, it, displayLanguage) }
         return subtypeResults
     }
 }
@@ -1418,7 +1412,7 @@ abstract class RiderCallHierarchyHandler(
         // wide call graphs trigger exponential backend round-trips (root cause of the
         // historical "deep call hierarchy is slow" symptom).
         val seen = mutableSetOf<String>()
-        val convertedCalls = calls.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+        val convertedCalls = calls.mapNotNull { rdSymbolToCallElementData(project, it, displayLanguage) }
             .filter { seen.add(callKey(it)) }
             .take(CALL_HIERARCHY_RESULT_LIMIT)
             .map { call ->
@@ -1429,7 +1423,7 @@ abstract class RiderCallHierarchyHandler(
             }
 
         return CallHierarchyData(
-            element = rdSymbolToCallElementData(root, displayLanguage) ?: return null,
+            element = rdSymbolToCallElementData(project, root, displayLanguage) ?: return null,
             calls = convertedCalls
         )
     }
@@ -1457,7 +1451,7 @@ abstract class RiderCallHierarchyHandler(
         val result = invokeCallHierarchy(model, request) ?: return call.copy(children = emptyList())
         @Suppress("UNCHECKED_CAST")
         val children = (RdProtocolBridge.getProperty(result, "calls") as? List<Any>) ?: emptyList()
-        val orderedChildren = children.mapNotNull { rdSymbolToCallElementData(it, displayLanguage) }
+        val orderedChildren = children.mapNotNull { rdSymbolToCallElementData(project, it, displayLanguage) }
             .filter { seen.add(callKey(it)) }
             .take(CALL_HIERARCHY_RESULT_LIMIT)
         val convertedChildren = when {
@@ -1522,7 +1516,6 @@ internal object RiderSymbolParser {
         "char" to "System.Char",
         "string" to "System.String",
         "object" to "System.Object",
-        "unit" to "Microsoft.FSharp.Core.Unit",
         "nativeint" to "System.IntPtr",
         "unativeint" to "System.UIntPtr"
     )
@@ -1637,13 +1630,9 @@ internal object RiderSymbolParser {
     private fun invalidFormat(symbol: String, languageName: String): Result<ParsedRiderSymbol> =
         ErrorMessages.invalidSymbolFormat(symbol, symbolExamples(languageName)).toArgumentFailure()
 
-    private fun symbolExamples(languageName: String): List<String> = when (languageName) {
-        "F#" -> listOf(
-            "'Namespace.Type'",
-            "'Namespace.Type#memberName'",
-            "'Namespace.Module#functionName(string)'"
-        )
-        else -> listOf(
+    private fun symbolExamples(languageName: String): List<String> {
+        @Suppress("UNUSED_PARAMETER") val unused = languageName
+        return listOf(
             "'Namespace.Type'",
             "'Namespace.Type#MemberName'",
             "'Namespace.Type#MethodName(string, int[])'"
@@ -1771,7 +1760,8 @@ abstract class RiderSuperMethodsHandler(
                     ?.takeUnless { it.isBlank() || it.equals("unknown", ignoreCase = true) } ?: methodName,
                 containingClass = (RdProtocolBridge.getProperty(method, "qualifiedName") as? String)
                     ?.substringBeforeLast('.', "unknown") ?: "unknown",
-                file = RdProtocolBridge.getProperty(method, "filePath") as? String ?: return null,
+                file = displayPath(project, RdProtocolBridge.getProperty(method, "filePath") as? String)
+                    .takeUnless { it.isEmpty() } ?: return null,
                 line = RdProtocolBridge.getProperty(method, "line") as? Int ?: return null,
                 column = RdProtocolBridge.getProperty(method, "column") as? Int ?: 1,
                 language = displayLanguage
@@ -1785,7 +1775,8 @@ abstract class RiderSuperMethodsHandler(
                         ?.takeUnless { it.isBlank() || it.equals("unknown", ignoreCase = true) } ?: superName,
                     containingClass = RdProtocolBridge.getProperty(superInfo, "containingTypeName") as? String ?: "",
                     containingClassKind = RdProtocolBridge.getProperty(superInfo, "containingTypeKind") as? String ?: "CLASS",
-                    file = symbol?.let { RdProtocolBridge.getProperty(it, "filePath") as? String },
+                    file = symbol?.let { displayPath(project, RdProtocolBridge.getProperty(it, "filePath") as? String) }
+                        ?.takeUnless { it.isEmpty() },
                     line = symbol?.let { RdProtocolBridge.getProperty(it, "line") as? Int },
                     column = symbol?.let { RdProtocolBridge.getProperty(it, "column") as? Int },
                     isInterface = RdProtocolBridge.getProperty(superInfo, "isInterface") as? Boolean ?: false,
@@ -1827,12 +1818,3 @@ class RiderCSharpCallHierarchyHandler : RiderCallHierarchyHandler("C#", "C#", CS
 class RiderCSharpSuperMethodsHandler : RiderSuperMethodsHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpSymbolReferenceHandler : BaseRiderSymbolReferenceHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
 class RiderCSharpStructureHandler : RiderStructureHandler("C#", "C#", CSHARP_EXTENSIONS, CSHARP_LANGUAGE_IDS)
-
-// ── Concrete F# Handlers ────────────────────────────────────────────────────
-
-class RiderFSharpTypeHierarchyHandler : RiderTypeHierarchyHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
-class RiderFSharpImplementationsHandler : RiderImplementationsHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
-class RiderFSharpCallHierarchyHandler : RiderCallHierarchyHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
-class RiderFSharpSuperMethodsHandler : RiderSuperMethodsHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
-class RiderFSharpSymbolReferenceHandler : BaseRiderSymbolReferenceHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)
-class RiderFSharpStructureHandler : RiderStructureHandler("F#", "F#", FSHARP_EXTENSIONS, FSHARP_LANGUAGE_IDS)

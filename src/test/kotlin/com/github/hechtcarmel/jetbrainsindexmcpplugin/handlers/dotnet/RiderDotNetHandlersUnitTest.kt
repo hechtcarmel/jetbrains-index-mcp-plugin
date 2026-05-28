@@ -34,11 +34,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertFalse("Should not be available outside Rider", handler.isAvailable())
     }
 
-    fun testRiderFSharpEnvironmentDetection_notInRider() {
-        val handler = RiderFSharpImplementationsHandler()
-        assertFalse("Should not be available outside Rider", handler.isAvailable())
-    }
-
     fun testLanguageIds() {
         assertEquals("C#", RiderCSharpTypeHierarchyHandler().languageId)
         assertEquals("C#", RiderCSharpImplementationsHandler().languageId)
@@ -46,13 +41,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals("C#", RiderCSharpSuperMethodsHandler().languageId)
         assertEquals("C#", RiderCSharpSymbolReferenceHandler().languageId)
         assertEquals("C#", RiderCSharpStructureHandler().languageId)
-
-        assertEquals("F#", RiderFSharpTypeHierarchyHandler().languageId)
-        assertEquals("F#", RiderFSharpImplementationsHandler().languageId)
-        assertEquals("F#", RiderFSharpCallHierarchyHandler().languageId)
-        assertEquals("F#", RiderFSharpSuperMethodsHandler().languageId)
-        assertEquals("F#", RiderFSharpSymbolReferenceHandler().languageId)
-        assertEquals("F#", RiderFSharpStructureHandler().languageId)
     }
 
     fun testAllHandlerTypesInstantiate() {
@@ -66,16 +54,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
             RiderCSharpStructureHandler()
         )
         assertEquals(6, csharpHandlers.size)
-
-        val fsharpHandlers = listOf(
-            RiderFSharpTypeHierarchyHandler(),
-            RiderFSharpImplementationsHandler(),
-            RiderFSharpCallHierarchyHandler(),
-            RiderFSharpSuperMethodsHandler(),
-            RiderFSharpSymbolReferenceHandler(),
-            RiderFSharpStructureHandler()
-        )
-        assertEquals(6, fsharpHandlers.size)
     }
 
     fun testRegistrationSkipsWhenNotInRider() {
@@ -105,7 +83,7 @@ class RiderDotNetHandlersUnitTest : TestCase() {
             registry.clear()
             RiderDotNetHandlers.register(registry)
 
-            assertEquals(listOf("C#", "F#"), registry.getSupportedLanguageNamesForSymbolReference().sorted())
+            assertEquals(listOf("C#"), registry.getSupportedLanguageNamesForSymbolReference().sorted())
         } finally {
             LanguageHandlerRegistry.clear()
             unmockkObject(RiderEnvironment)
@@ -120,16 +98,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertTrue(parsed.isConstructor)
         assertEquals(listOf("System.String", "List"), parsed.parameterTypes)
         assertEquals("Demo.Outer.Inner#.ctor(System.String,List)", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpParserSupportsModuleMemberSymbols() {
-        val parsed = RiderSymbolParser.parse("F#", "Demo.Module#run<int>(unit)").getOrThrow()
-
-        assertEquals("Demo.Module", parsed.containerQualifiedName)
-        assertEquals("run", parsed.memberName)
-        assertFalse(parsed.isConstructor)
-        assertEquals(listOf("Microsoft.FSharp.Core.Unit"), parsed.parameterTypes)
-        assertEquals("Demo.Module#run(Microsoft.FSharp.Core.Unit)", parsed.normalizedSymbol)
     }
 
     fun testParserRejectsMalformedRiderSymbols() {
@@ -391,7 +359,7 @@ class RiderDotNetHandlersUnitTest : TestCase() {
             val project = mockk<Project>()
             val semanticTarget = Any()
             val request = Any()
-            val failureMessage = "Rider F# find_references requires warmed ReSharper usage caches; module/type-only project_files searches should retry after IDE warm-up or use a position/member target."
+            val failureMessage = "Rider C# find_references requires warmed ReSharper usage caches; module/type-only project_files searches should retry after IDE warm-up or use a position/member target."
 
             every { RdProtocolBridge.getModel(project) } returns Any()
             every {
@@ -400,8 +368,8 @@ class RiderDotNetHandlersUnitTest : TestCase() {
                     null,
                     null,
                     null,
-                    "F#",
-                    "FSharpPlus.Lens"
+                    "C#",
+                    "Demo.Service"
                 )
             } returns semanticTarget
             every {
@@ -424,8 +392,8 @@ class RiderDotNetHandlersUnitTest : TestCase() {
                 file = null,
                 line = null,
                 column = null,
-                language = "F#",
-                symbol = "FSharpPlus.Lens",
+                language = "C#",
+                symbol = "Demo.Service",
                 scope = BuiltInSearchScope.PROJECT_FILES,
                 limit = 100
             )
@@ -1377,7 +1345,7 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         )
     }
 
-    // ── Regression Tests for Deterministic C#/F# Symbol Parsing ──────────────────
+    // ── Regression Tests for Deterministic C# Symbol Parsing ──────────────────
 
     fun testCSharpTypeOnlySymbol_RagasaWebServices_WhiteList() {
         // C# type-only symbol: RagasaWebServices.WhiteList
@@ -1404,58 +1372,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals("RagasaWebServices.SPRestData#getData(System.String,System.String,System.Net.Http.HttpClient)", parsed.normalizedSymbol)
     }
 
-    fun testFSharpInterfaceMemberSymbol_IProductService_GetAllProducts() {
-        // F# fully qualified interface member symbol
-        val parsed = RiderSymbolParser.parse("F#", "WebApplication1.Services.IProductService#GetAllProducts").getOrThrow()
-
-        assertEquals("WebApplication1.Services.IProductService", parsed.containerQualifiedName)
-        assertEquals("GetAllProducts", parsed.memberName)
-        assertFalse(parsed.isConstructor)
-        assertNull(parsed.parameterTypes)
-        assertEquals("WebApplication1.Services.IProductService#GetAllProducts", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpTypeOnlySymbol_IProduct() {
-        val parsed = RiderSymbolParser.parse("F#", "WebApplication1.Models.IProduct").getOrThrow()
-
-        assertEquals("WebApplication1.Models.IProduct", parsed.containerQualifiedName)
-        assertNull(parsed.memberName)
-        assertNull(parsed.parameterTypes)
-        assertFalse(parsed.isConstructor)
-        assertEquals("WebApplication1.Models.IProduct", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpConcreteMemberSymbol_ProductService_GetAllProducts() {
-        val parsed = RiderSymbolParser.parse("F#", "WebApplication1.Services.ProductService#GetAllProducts").getOrThrow()
-
-        assertEquals("WebApplication1.Services.ProductService", parsed.containerQualifiedName)
-        assertEquals("GetAllProducts", parsed.memberName)
-        assertNull(parsed.parameterTypes)
-        assertFalse(parsed.isConstructor)
-        assertEquals("WebApplication1.Services.ProductService#GetAllProducts", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpCallableMemberSymbol_ProductsController_Index() {
-        val parsed = RiderSymbolParser.parse("F#", "WebApplication1.Controllers.ProductsController#Index").getOrThrow()
-
-        assertEquals("WebApplication1.Controllers.ProductsController", parsed.containerQualifiedName)
-        assertEquals("Index", parsed.memberName)
-        assertNull(parsed.parameterTypes)
-        assertFalse(parsed.isConstructor)
-        assertEquals("WebApplication1.Controllers.ProductsController#Index", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpModuleFunctionSymbol_FullyQualifiedContainer() {
-        // F# module/function form with fully qualified container
-        val parsed = RiderSymbolParser.parse("F#", "MyNamespace.MyModule#myFunction(string)").getOrThrow()
-
-        assertEquals("MyNamespace.MyModule", parsed.containerQualifiedName)
-        assertEquals("myFunction", parsed.memberName)
-        assertFalse(parsed.isConstructor)
-        assertEquals(listOf("System.String"), parsed.parameterTypes)
-        assertEquals("MyNamespace.MyModule#myFunction(System.String)", parsed.normalizedSymbol)
-    }
-
     fun testCSharpConstructorSymbol_WithGenericContainer() {
         // C# constructor with generic container type
         val parsed = RiderSymbolParser.parse("C#", "Demo.Generic`1#.ctor(int)").getOrThrow()
@@ -1465,17 +1381,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertTrue(parsed.isConstructor)
         assertEquals(listOf("System.Int32"), parsed.parameterTypes)
         assertEquals("Demo.Generic#.ctor(System.Int32)", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpInterfaceMemberWithParameters() {
-        // F# interface member with parameters
-        val parsed = RiderSymbolParser.parse("F#", "MyApp.IService#Process(string,int)").getOrThrow()
-
-        assertEquals("MyApp.IService", parsed.containerQualifiedName)
-        assertEquals("Process", parsed.memberName)
-        assertFalse(parsed.isConstructor)
-        assertEquals(listOf("System.String", "System.Int32"), parsed.parameterTypes)
-        assertEquals("MyApp.IService#Process(System.String,System.Int32)", parsed.normalizedSymbol)
     }
 
     fun testCSharpNestedTypeSymbol() {
@@ -1489,17 +1394,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals("Outer.Inner.Nested", parsed.normalizedSymbol)
     }
 
-    fun testFSharpUnionCaseSymbol() {
-        // F# union case (type-only, no member)
-        val parsed = RiderSymbolParser.parse("F#", "MyNamespace.MyUnion").getOrThrow()
-
-        assertEquals("MyNamespace.MyUnion", parsed.containerQualifiedName)
-        assertNull(parsed.memberName)
-        assertNull(parsed.parameterTypes)
-        assertFalse(parsed.isConstructor)
-        assertEquals("MyNamespace.MyUnion", parsed.normalizedSymbol)
-    }
-
     fun testCSharpPropertySymbol() {
         // C# property symbol (no parameters)
         val parsed = RiderSymbolParser.parse("C#", "MyApp.MyClass#MyProperty").getOrThrow()
@@ -1509,17 +1403,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertFalse(parsed.isConstructor)
         assertNull(parsed.parameterTypes)
         assertEquals("MyApp.MyClass#MyProperty", parsed.normalizedSymbol)
-    }
-
-    fun testFSharpRecordFieldSymbol() {
-        // F# record field symbol (no parameters)
-        val parsed = RiderSymbolParser.parse("F#", "MyApp.MyRecord#field").getOrThrow()
-
-        assertEquals("MyApp.MyRecord", parsed.containerQualifiedName)
-        assertEquals("field", parsed.memberName)
-        assertFalse(parsed.isConstructor)
-        assertNull(parsed.parameterTypes)
-        assertEquals("MyApp.MyRecord#field", parsed.normalizedSymbol)
     }
 
     private data class TestFindTypesResult(val types: List<TestRdSymbol>)

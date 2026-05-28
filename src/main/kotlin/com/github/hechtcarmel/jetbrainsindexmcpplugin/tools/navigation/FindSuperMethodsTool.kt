@@ -19,14 +19,14 @@ import kotlinx.serialization.json.JsonObject
 /**
  * Tool for finding super methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, C#, F#
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, C#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
 class FindSuperMethodsTool : AbstractMcpTool() {
 
     companion object {
-        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C#/F# symbol-mode super methods require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions."
+        private const val RIDER_SYMBOL_MODE_UNSUPPORTED = "Rider C# symbol-mode super methods require backend-native symbol resolution and are unsupported for symbol requests the backend cannot map to source positions."
     }
 
     override val name = ToolNames.FIND_SUPER_METHODS
@@ -34,9 +34,9 @@ class FindSuperMethodsTool : AbstractMcpTool() {
     override val description = """
         Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, C#, F#.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, C#.
 
-        Rider note: C#/F# results use declaration supertypes exposed by Rider's frontend navigation bridge to the ReSharper backend; parent method locations may be unavailable.
+        Rider note: C# results use declaration supertypes exposed by Rider's frontend navigation bridge to the ReSharper backend; parent method locations may be unavailable.
 
         NOT supported for Rust: Rust uses trait implementations rather than classical inheritance, so there are no "super methods" in the traditional sense. Use ide_find_definition or ide_type_hierarchy instead.
 
@@ -63,7 +63,7 @@ class FindSuperMethodsTool : AbstractMcpTool() {
         val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val requestedSymbol = optionalStringArg(arguments, ParamNames.SYMBOL)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#") &&
             requestedSymbol != null
         requireSmartMode(project)
 

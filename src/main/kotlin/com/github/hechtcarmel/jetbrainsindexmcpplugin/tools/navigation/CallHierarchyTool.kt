@@ -25,7 +25,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Tool for analyzing method call relationships across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,10 +36,10 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val description = """
         Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#, F#.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#.
 
         Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
-        Rider note: C#/F# results use Rider's frontend navigation bridge to the ReSharper backend. Caller/callee scope separation between project_files and project_and_libraries is only guaranteed where backend APIs can enforce that distinction, and framework-routed endpoints can legitimately have empty static callers. For routed/reflection-driven entry points, an empty callers result is a static-analysis limitation and does not imply backend failure.
+        Rider note: C# results use Rider's frontend navigation bridge to the ReSharper backend. Caller/callee scope separation between project_files and project_and_libraries is only guaranteed where backend APIs can enforce that distinction, and framework-routed endpoints can legitimately have empty static callers. For routed/reflection-driven entry points, an empty callers result is a static-analysis limitation and does not imply backend failure.
 
         Returns: recursive tree with method signatures, file locations (line/column), and nested call relationships.
 
@@ -86,7 +86,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
         val requestedSymbol = optionalStringArg(arguments, ParamNames.SYMBOL)
         val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
-            normalizedRequestedLanguage in setOf("C#", "F#") &&
+            normalizedRequestedLanguage in setOf("C#") &&
             requestedSymbol != null
         val direction = arguments["direction"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: direction")
