@@ -108,6 +108,9 @@ class RenameSymbolTool : AbstractMcpTool() {
         private const val RIDER_DIALOG_READINESS_TIMEOUT_MS = 10_000L
         private const val RIDER_DIALOG_READINESS_POLL_MS = 200
         private const val RIDER_DIALOG_SECOND_STAGE_TIMEOUT_MS = 5_000L
+        private val EXCLUDED_SNAPSHOT_DIRS = setOf(
+            "bin", "obj", "out", "target", "node_modules", "build", "dist", ".gradle"
+        )
         private const val RIDER_MUTATION_VERIFICATION_TIMEOUT_MS = 2_000L
         private const val RIDER_MUTATION_VERIFICATION_INITIAL_POLL_MS = 50L
         private const val RIDER_MUTATION_VERIFICATION_MAX_POLL_MS = 400L
@@ -1775,7 +1778,13 @@ class RenameSymbolTool : AbstractMcpTool() {
         val autoOpenedEditorFile = riderPlan?.editorLookup?.takeIf { it.openedByTool }?.virtualFile
 
         try {
-            if (riderFrontendExecutionRequested && riderPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER) {
+            val highLevelHandlerLane = riderFrontendExecutionRequested && riderPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
+            val preRenameTimestamps: Map<String, Long> = if (highLevelHandlerLane) {
+                snapshotProjectFileTimestamps(project)
+            } else {
+                emptyMap()
+            }
+            if (highLevelHandlerLane) {
                 // frontend.action.end
                 val selectedHandler = requireNotNull(riderPlan.selectedHandler) {
                     "Preferred Rider rename lane was selected without a concrete handler"
@@ -1870,9 +1879,22 @@ class RenameSymbolTool : AbstractMcpTool() {
                 mutationCheck
             }
             if (riderFrontendExecutionRequested && riderExecutionPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER && riderMutationCheck?.verified == true) {
-                changesCount = 1
-                val affectedPath = riderMutationCheck?.observedFilePath ?: riderMutationProbe?.targetFilePath
-                affectedPath?.let { affectedFiles += toRelativeProjectPath(project, it) }
+                // Disk-level snapshot diff: the dialog-automation lane can mutate many files
+                // (AXAML/code-behind pairs, partial classes, callers) but the mutation probe
+                // only observes a single file. Without diffing, affectedFiles collapses to 1
+                // (Reg 4). Snapshot before + after and report every changed/added/removed path.
+                val postRenameTimestamps = snapshotProjectFileTimestamps(project)
+                val changedPaths = diffSnapshotTimestamps(preRenameTimestamps, postRenameTimestamps)
+                if (changedPaths.isNotEmpty()) {
+                    changesCount = changedPaths.size
+                    for (path in changedPaths) {
+                        affectedFiles += toRelativeProjectPath(project, path)
+                    }
+                } else {
+                    changesCount = 1
+                    val affectedPath = riderMutationCheck?.observedFilePath ?: riderMutationProbe?.targetFilePath
+                    affectedPath?.let { affectedFiles += toRelativeProjectPath(project, it) }
+                }
             }
         } catch (e: Exception) {
             errorMessage = e.message ?: "Unknown error during rename"
@@ -3276,6 +3298,91 @@ class RenameSymbolTool : AbstractMcpTool() {
         if (virtualFiles.isNotEmpty()) {
             VfsUtil.markDirtyAndRefresh(false, false, false, *virtualFiles.toTypedArray())
         }
+    }
+
+    /**
+     * Snapshots project files (path → last-modified timestamp in ms) for diffing
+     * after a rename that goes through the Rider HIGH_LEVEL_HANDLER dialog
+     * automation lane.
+     *
+     * The dialog-automation lane mutates many files (AXAML/code-behind pairs,
+     * partial classes, callers) but the in-process mutation probe only observes
+     * a single file. We walk the project root once before and once after the
+     * rename to discover every file the dialog touched.
+     *
+     * Filtered:
+     *  - hidden directories (`.git`, `.idea`, `.vs`, `.gradle`)
+     *  - build output (`bin`, `obj`, `out`, `target`, `node_modules`)
+     *
+     * Best-effort: any failure returns an empty map and callers fall back to
+     * the single-file probe observation.
+     */
+    private fun snapshotProjectFileTimestamps(project: Project): Map<String, Long> {
+        val basePath = project.basePath ?: return emptyMap()
+        val root = try {
+            java.nio.file.Paths.get(basePath)
+        } catch (_: Exception) {
+            return emptyMap()
+        }
+        if (!java.nio.file.Files.exists(root)) return emptyMap()
+        val snapshot = HashMap<String, Long>(2048)
+        try {
+            java.nio.file.Files.walkFileTree(root, object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                override fun preVisitDirectory(
+                    dir: java.nio.file.Path,
+                    attrs: java.nio.file.attribute.BasicFileAttributes
+                ): java.nio.file.FileVisitResult {
+                    val name = dir.fileName?.toString() ?: return java.nio.file.FileVisitResult.CONTINUE
+                    if (name in EXCLUDED_SNAPSHOT_DIRS || name.startsWith(".")) {
+                        return java.nio.file.FileVisitResult.SKIP_SUBTREE
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun visitFile(
+                    file: java.nio.file.Path,
+                    attrs: java.nio.file.attribute.BasicFileAttributes
+                ): java.nio.file.FileVisitResult {
+                    if (attrs.isRegularFile) {
+                        try {
+                            snapshot[file.toString()] = attrs.lastModifiedTime().toMillis()
+                        } catch (_: Exception) {
+                            // skip unreadable file
+                        }
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(
+                    file: java.nio.file.Path,
+                    exc: java.io.IOException
+                ): java.nio.file.FileVisitResult = java.nio.file.FileVisitResult.CONTINUE
+            })
+        } catch (e: Exception) {
+            LOG.debug("snapshotProjectFileTimestamps failed for $basePath: ${e.message}")
+        }
+        return snapshot
+    }
+
+    /**
+     * Returns absolute paths that were added, removed, or whose last-modified
+     * timestamp differs between [pre] and [post]. Ordering is undefined.
+     */
+    private fun diffSnapshotTimestamps(pre: Map<String, Long>, post: Map<String, Long>): List<String> {
+        if (pre.isEmpty() && post.isEmpty()) return emptyList()
+        val result = ArrayList<String>(8)
+        for ((path, postTs) in post) {
+            val preTs = pre[path]
+            if (preTs == null || preTs != postTs) {
+                result.add(path)
+            }
+        }
+        for (path in pre.keys) {
+            if (!post.containsKey(path)) {
+                result.add(path)
+            }
+        }
+        return result
     }
 
     /**

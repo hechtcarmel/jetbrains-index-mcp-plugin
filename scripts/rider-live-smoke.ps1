@@ -151,12 +151,49 @@ function Get-ExpectedPluginVersion {
     return $line.Matches[0].Groups[1].Value
 }
 
+function Reset-WorkspaceClean {
+    if (-not (Test-Path (Join-Path $ProjectPath ".git"))) {
+        Write-Host "Workspace at $ProjectPath is not a git repo; skipping pre-flight clean."
+        return
+    }
+    Push-Location $ProjectPath
+    try {
+        $status = git status --porcelain 2>$null
+        if ($status) {
+            Write-Host "Workspace at $ProjectPath was dirty; running 'git reset --hard' to reset."
+            git reset --hard 2>&1 | Out-Null
+            # Remove smoke-rename artefacts that survive 'git reset --hard' (untracked new paths).
+            $smokeArtefacts = @(
+                "Clipthrough/Views/MainWindowSmokeRenamed.axaml",
+                "Clipthrough/Views/MainWindowSmokeRenamed.axaml.cs"
+            )
+            foreach ($rel in $smokeArtefacts) {
+                $abs = Join-Path $ProjectPath $rel
+                if (Test-Path $abs) {
+                    Remove-Item -Path $abs -Force -ErrorAction SilentlyContinue
+                    Write-Host "Removed stale smoke artefact $rel"
+                }
+            }
+            $stillDirty = git status --porcelain 2>$null | Where-Object {
+                $_ -notmatch '^\?\? (\.agents/|\.github/skills/|jetmove/)$'
+            }
+            if ($stillDirty) {
+                throw "Workspace still dirty after reset:`n$($stillDirty -join "`n")"
+            }
+        }
+        Write-Host "Workspace clean."
+    } finally {
+        Pop-Location
+    }
+}
+
 if (-not (Test-Path $PluginZip)) { throw "Plugin ZIP not found: $PluginZip" }
 if (-not (Test-Path $RiderExe)) { throw "Rider executable not found: $RiderExe" }
 if (-not (Test-Path $SolutionPath)) { throw "Solution not found: $SolutionPath" }
 
 Stop-Rider
 Start-Sleep -Seconds 6
+Reset-WorkspaceClean
 Install-Plugin
 
 Write-Host "Starting Rider with $SolutionPath"
@@ -301,7 +338,7 @@ $regBareClassDef = Invoke-Tool -Id 70 -Name "ide_find_definition" -Arguments @{
     symbol = "MainWindowViewModel"
 }
 Assert-ToolOk -Name "ide_find_definition bare class symbol" -Response $regBareClassDef -Predicate {
-    param($json) $json.locations -ne $null -and @($json.locations).Count -ge 1
+    param($json) $json.file -like "*MainWindowViewModel.cs" -and $json.symbolName -eq "MainWindowViewModel"
 }
 
 # Reg 2 (fixed in 4.20.1): dotted Class.Property form is split on the last '.' and
@@ -312,7 +349,7 @@ $regDottedPropDef = Invoke-Tool -Id 71 -Name "ide_find_definition" -Arguments @{
     symbol = "Clipthrough.ViewModels.MainWindowViewModel.IsBusy"
 }
 Assert-ToolOk -Name "ide_find_definition Class.Prop dotted symbol" -Response $regDottedPropDef -Predicate {
-    param($json) $json.locations -ne $null -and @($json.locations).Count -ge 1
+    param($json) $json.file -like "*MainWindowViewModel.cs" -and $json.symbolName -eq "IsBusy"
 }
 
 # Reg 3 (fixed in 4.20.1): unresolved find_references targets now return a graceful

@@ -672,6 +672,13 @@ public class IndexMcpBackendHost
         // Foo→Bar→Foo where Bar contains Foo, or any AXAML/code-behind partial pair).
         var oldNameCountsBefore = SnapshotIdentifierCounts(affectedFiles, oldName);
 
+        // Pre-rename file-system snapshot: every project file path currently in the solution.
+        // Diffed against the post-rename snapshot below to surface AXAML-pair renames,
+        // partial-class file moves, and any other paths the rename engine actually mutated
+        // that the IDeclaredElement-based oracle cannot enumerate (element invalidates as
+        // soon as its primary declaration's source file is renamed).
+        var preRenameProjectFiles = SnapshotSolutionProjectFilePaths();
+
         try
         {
             var renameExecution = TryExecuteDrivenRename(element, request.NewName, preAcquiredTextControl);
@@ -719,6 +726,30 @@ public class IndexMcpBackendHost
                 {
                     foreach (var path in GetPotentiallyAffectedFiles(element))
                         AddAffectedFile(affectedFiles, path);
+                }
+            }
+            catch
+            {
+                // best-effort widening
+            }
+
+            // File-system snapshot diff: pick up any project files that were renamed
+            // (added at new path, removed at old path) regardless of element validity.
+            // Required to surface AXAML/XAML pair renames and partial-class file moves
+            // even when the IDeclaredElement was invalidated by the primary file rename.
+            try
+            {
+                var postRenameProjectFiles = SnapshotSolutionProjectFilePaths();
+                if (preRenameProjectFiles.Count > 0 || postRenameProjectFiles.Count > 0)
+                {
+                    var preSet = new HashSet<string>(preRenameProjectFiles, StringComparer.OrdinalIgnoreCase);
+                    var postSet = new HashSet<string>(postRenameProjectFiles, StringComparer.OrdinalIgnoreCase);
+                    foreach (var added in postSet)
+                        if (!preSet.Contains(added))
+                            AddAffectedFile(affectedFiles, added);
+                    foreach (var removed in preSet)
+                        if (!postSet.Contains(removed))
+                            AddAffectedFile(affectedFiles, removed);
                 }
             }
             catch
@@ -3729,6 +3760,77 @@ public class IndexMcpBackendHost
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Cast<string>()
             .ToList();
+    }
+
+    /// <summary>
+    /// Snapshots every project file path currently in the solution. Used to diff
+    /// pre/post rename so that file renames (AXAML pairs, partial-class moves) are
+    /// reported even after the source <see cref="IDeclaredElement"/> invalidates.
+    /// Best-effort: any failure returns an empty list and callers fall back to the
+    /// element-based oracle.
+    /// </summary>
+    /// <remarks>
+    /// We walk the project model once to enumerate paths, then take a direct
+    /// filesystem snapshot of the parent directories. The project model's
+    /// <c>GetAllProjectFiles</c> view can lag behind disk state inside the same
+    /// write-lock transaction, so disk-level enumeration is the authoritative
+    /// post-rename oracle for detecting renamed paths.
+    /// </remarks>
+    private List<string> SnapshotSolutionProjectFilePaths()
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var project in _solution.GetAllProjects())
+            {
+                foreach (var projectFile in project.GetAllProjectFiles())
+                {
+                    var path = projectFile.Location.FullPath;
+                    if (string.IsNullOrWhiteSpace(path))
+                        continue;
+                    paths.Add(path);
+                    try
+                    {
+                        var dir = Path.GetDirectoryName(path);
+                        if (!string.IsNullOrWhiteSpace(dir))
+                            directories.Add(dir!);
+                    }
+                    catch
+                    {
+                        // ignore individual path failures
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // best-effort snapshot
+        }
+
+        try
+        {
+            foreach (var dir in directories)
+            {
+                if (!Directory.Exists(dir))
+                    continue;
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(dir))
+                        paths.Add(file);
+                }
+                catch
+                {
+                    // skip unreadable directories
+                }
+            }
+        }
+        catch
+        {
+            // best-effort enumeration
+        }
+
+        return paths.ToList();
     }
 
     private MutationSemanticEvidence CollectFileMutationSemanticEvidence(string primaryFilePath, IReadOnlyList<string> declaredTypeNames)
