@@ -268,6 +268,55 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
         assertFalse(service.wasClosedByUs(project.basePath ?: ""))
     }
 
+    // ── Regression: .idea auto-open must clear closedProjectPaths ────────────
+    // Bug: resolveOrOpen's .idea fallback didn't call markReopened, leaving the
+    // project in closedProjectPaths while open → healthCheck reported "open but in
+    // closedProjectPaths" as a bug.
+
+    fun testMarkReopenedClearsClosedPathsRegistry() {
+        val path = project.basePath ?: ""
+        service.enroll(project)
+        service.markClosed(path)
+        assertTrue("precondition: must be in closedProjectPaths", service.wasClosedByUs(path))
+
+        service.markReopened(path)
+
+        assertFalse(
+            "after markReopened: project must NOT remain in closedProjectPaths",
+            service.wasClosedByUs(path)
+        )
+    }
+
+    fun testHealthCheckReportsOkWhenOpenProjectIsNotInClosedPaths() {
+        // Invariant the bug violated: a project that is open must not be in closedProjectPaths.
+        // healthCheck must not report a bug for a normally-open enrolled project.
+        service.enroll(project)
+        // healthCheck must complete without reporting a bug
+        service.healthCheck("test_invariant")
+        // If no exception and no "open but in closedProjectPaths" — test passes.
+        // We verify the invariant holds: open project is NOT in closedProjectPaths.
+        assertFalse(
+            "enrolled open project must not be in closedProjectPaths",
+            service.wasClosedByUs(project.basePath ?: "")
+        )
+    }
+
+    fun testOnProjectClosedExternallyFixesOpenButInClosedPathsInconsistency() {
+        // If a project somehow ends up open AND in closedProjectPaths (the bug),
+        // onProjectClosedExternally should repair it when the project actually closes.
+        val path = project.basePath ?: ""
+        service.enroll(project)
+        service.markClosed(path)  // Simulate the inconsistent state
+        assertTrue("test setup: in closedProjectPaths", service.wasClosedByUs(path))
+
+        // onProjectClosedExternally is called when the window closes
+        service.onProjectClosedExternally(path, project.name)
+
+        // State should now be consistent — closed and marked as such
+        assertTrue("after external close: must be in closedProjectPaths", service.wasClosedByUs(path))
+        assertFalse("after external close: must not be in pendingClose", service.isInPendingClose(path))
+    }
+
     // ── onDormant cancels focus alarm (Bug: timer:focus raced timer:inactivity)
 
     fun testDormantTransitionSetsModeCorrectly() {

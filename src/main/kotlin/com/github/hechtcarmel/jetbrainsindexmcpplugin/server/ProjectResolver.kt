@@ -293,8 +293,14 @@ object ProjectResolver {
                 LOG.info("Opening project with .idea at $normalizedPath")
                 val project = reopenAndAwaitSmartMode(normalizedPath)
                 if (project != null) {
-                    runCatching { ProjectModeService.getInstance() }.getOrNull()
-                        ?.resetInactivityTimer(project)
+                    val ms = runCatching { ProjectModeService.getInstance() }.getOrNull()
+                    // If this project was in closedProjectPaths, clear it — leaving it there
+                    // while the project is open causes "open but in closedProjectPaths" drift
+                    // that the health check flags as a bug.
+                    if (ms?.wasClosedByUs(normalizedPath) == true) {
+                        ms.markReopened(normalizedPath)
+                    }
+                    ms?.resetInactivityTimer(project)
                     return Result(project = project)
                 }
             }

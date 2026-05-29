@@ -1,17 +1,17 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManagerListener
 
 /**
- * Hooks into project open/close events to keep [ProjectModeService] consistent:
+ * Hooks into project open/close events to keep [ProjectModeService] consistent.
  *
- * - On close: if the project was in [ProjectModeService.pendingClose], marks it properly
- *   as closed and flushes the pending set. Triggers a health check so any state drift
- *   from the user closing a window externally is detected and logged.
- *
- * - Open events are handled by [ProjectFocusActivity] which runs per-project at startup
- *   and already triggers [ProjectModeService.flushPendingCloses].
+ * On close: if the project was in [ProjectModeService.pendingClose], marks it properly
+ * as closed and flushes the pending set. The health check is scheduled via invokeLater
+ * so it runs after the project is fully disposed — running it inside projectClosing
+ * would produce false positives because the project is still in openProjects at that point
+ * even though markClosed has already been called.
  */
 class ProjectLifecycleListener : ProjectManagerListener {
 
@@ -20,10 +20,14 @@ class ProjectLifecycleListener : ProjectManagerListener {
         val modeService = runCatching { ProjectModeService.getInstance() }.getOrNull() ?: return
 
         if (modeService.isManaged(project)) {
-            // Managed project closing — could be user or lifecycle manager.
-            // Delegate to service: if it was in pendingClose, mark it; then health-check.
-            modeService.onProjectClosedExternally(project.basePath ?: "", project.name)
-            modeService.healthCheck("project_closed:${project.name}")
+            val name = project.name
+            modeService.onProjectClosedExternally(project.basePath ?: "", name)
+            // Defer health check until after the project is fully disposed — otherwise the
+            // project is still in openProjects while closedProjectPaths already contains it,
+            // which the health check would incorrectly report as a bug.
+            ApplicationManager.getApplication().invokeLater {
+                modeService.healthCheck("project_closed:$name")
+            }
         } else {
             LifecycleEventLog.getInstance().log(
                 LifecycleEventLog.Entry(
