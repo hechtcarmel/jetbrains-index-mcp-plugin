@@ -244,11 +244,18 @@ class LifecycleUnitTest : TestCase() {
         val defaults = McpSettings.State().disabledTools
         listOf(
             ToolNames.ENROLL_ALL_PROJECTS, ToolNames.GET_PROJECT_MODES, ToolNames.LIFECYCLE_LOG,
-            ToolNames.LIFECYCLE_LOG_FILE, ToolNames.PROJECT_STATUS, ToolNames.RELEASE_ALL_PROJECTS,
+            ToolNames.LIFECYCLE_LOG_FILE, ToolNames.RELEASE_ALL_PROJECTS,
             ToolNames.RELEASE_PROJECT, ToolNames.SET_ALL_PROJECT_MODES, ToolNames.SET_PROJECT_MODE
         ).forEach { tool ->
             assertTrue("$tool must be opt-in by default", defaults.contains(tool))
         }
+    }
+
+    fun testProjectStatusIsEnabledByDefault() {
+        // ide_project_status is read-only and required for Claudes to discover project paths
+        // so they can self-navigate without asking the user to open projects manually.
+        val defaults = McpSettings.State().disabledTools
+        assertFalse("ide_project_status must be enabled by default", defaults.contains(ToolNames.PROJECT_STATUS))
     }
 
     fun testSetAllProjectModesToolName() {

@@ -42,8 +42,11 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
             // Project window management (opt-in — disruptive or irreversible actions)
             "ide_close_project", "ide_open_project", "ide_set_power_save_mode",
             // Lifecycle management (opt-in — significant IDE behaviour changes)
+            // ide_project_status is intentionally NOT here — it's read-only and required
+            // for Claudes to discover project paths so they can self-navigate without
+            // asking the user to open projects manually.
             "ide_enroll_all_projects", "ide_get_project_modes", "ide_lifecycle_log",
-            "ide_set_lifecycle_log_file", "ide_project_status", "ide_release_all_projects",
+            "ide_set_lifecycle_log_file", "ide_release_all_projects",
             "ide_release_project", "ide_set_all_project_modes", "ide_set_project_mode",
             // Plugin development tools (opt-in — irreversible actions)
             "ide_install_plugin", "ide_restart"
