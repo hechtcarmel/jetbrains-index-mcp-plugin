@@ -7,29 +7,17 @@ namespace ReSharperPlugin.IndexMcp.Mutations;
 
 internal static class ExactTargetResolver
 {
-    private static readonly Regex TypeDeclarationPattern = new(@"\b(?:class|interface|record|struct|enum)\s+(?<name>@?[A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled);
+    internal static readonly Regex TypeDeclarationPattern = new(@"\b(?:class|interface|record|struct|enum)\s+(?<name>@?[A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled);
     private static readonly Regex LocalDeclarationPattern = new(@"\b(?:var|[A-Za-z_][A-Za-z0-9_<>,\[\]?]*)\s+(?<name>@?[A-Za-z_][A-Za-z0-9_]*)\s*(?:=|;)", RegexOptions.Compiled);
     private static readonly Regex FieldDeclarationPattern = new(@"\b(?:(?:public|private|protected|internal|static|readonly|sealed|virtual|override|partial|new|unsafe|volatile|required|file)\s+)*(?:[A-Za-z_][A-Za-z0-9_<>,\[\]?]*)\s+(?<name>@?[A-Za-z_][A-Za-z0-9_]*)\s*(?:=|;|=>|\{)", RegexOptions.Compiled);
     private static readonly Regex MethodDeclarationPattern = new(@"\b(?:(?:public|private|protected|internal|static|virtual|override|sealed|partial|async|new|unsafe|extern)\s+)*(?:[A-Za-z_][A-Za-z0-9_<>,\[\]?]*)\s+(?<name>@?[A-Za-z_][A-Za-z0-9_]*)\s*\(", RegexOptions.Compiled);
     private static readonly Regex ParameterPattern = new(@"(?<name>@?[A-Za-z_][A-Za-z0-9_]*)\s*(?:,|\))", RegexOptions.Compiled);
 
-    public static ExactTargetResolution ResolveExactTarget(string workspaceRoot, string relativeFilePath, int line, int column, string requestedSymbol)
+    public static ExactTargetResolution ResolveContract(string workspaceRoot, string relativeFilePath, int line, int column, string requestedSymbol)
         => ResolveExactTargetCore(Path.Combine(workspaceRoot, relativeFilePath), relativeFilePath, line, column, requestedSymbol);
 
-    public static ExactTargetResolution ResolveExactTarget(string absoluteFilePath, int line, int column, string requestedSymbol)
-        => ResolveExactTargetCore(absoluteFilePath, Path.GetFileName(absoluteFilePath), line, column, requestedSymbol);
-
-    public static ExactTargetResolution ResolveRenameTarget(string workspaceRoot, string relativeFilePath, int line, int column, string requestedSymbol)
-        => ResolveExactTarget(workspaceRoot, relativeFilePath, line, column, requestedSymbol);
-
-    public static ExactTargetResolution ResolveRenameTarget(string absoluteFilePath, int line, int column, string requestedSymbol)
-        => ResolveExactTarget(absoluteFilePath, line, column, requestedSymbol);
-
-    public static ExactTargetResolution ResolveContract(string workspaceRoot, string relativeFilePath, int line, int column, string requestedSymbol)
-        => ResolveExactTarget(workspaceRoot, relativeFilePath, line, column, requestedSymbol);
-
     public static ExactTargetResolution ResolveContract(string absoluteFilePath, int line, int column, string requestedSymbol)
-        => ResolveExactTarget(absoluteFilePath, line, column, requestedSymbol);
+        => ResolveExactTargetCore(absoluteFilePath, Path.GetFileName(absoluteFilePath), line, column, requestedSymbol);
 
     public static ExactTargetResolution ResolveFileTarget(string workspaceRoot, string relativeFilePath, string? requestedFileName = null)
         => ResolveFileTargetCore(Path.Combine(workspaceRoot, relativeFilePath), relativeFilePath, requestedFileName);

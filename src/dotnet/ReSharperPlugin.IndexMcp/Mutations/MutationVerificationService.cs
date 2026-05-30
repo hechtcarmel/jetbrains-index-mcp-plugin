@@ -46,12 +46,6 @@ internal sealed record VerifiedMutationOutcome(
     string Message,
     MutationVerification? Verification)
 {
-    public RdRenameSymbolResult ToRenameSymbolResult(string oldName, string newName)
-        => new(Success, oldName, newName, AffectedFiles, ChangesCount, Message, Status, Verification?.ToRdModel());
-
-    public RdRenameFileResult ToRenameFileResult(string oldPath, string newPath)
-        => new(Success, oldPath, newPath, AffectedFiles, ChangesCount, Message, Status, Verification?.ToRdModel());
-
     public RdMoveFileResult ToMoveFileResult(string oldPath, string newPath)
         => new(Success, oldPath, newPath, AffectedFiles, ChangesCount, Message, Status, Verification?.ToRdModel());
 

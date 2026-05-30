@@ -79,7 +79,6 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
     fun testBlockedRiderFrontendFallbackMapsActiveEditorRequirementToNeedsActiveEditor() {
         val result = RenameSymbolTool.buildBlockedRiderFrontendFallbackResult(
             oldName = "WidgetService",
-            backendStatus = "unsupported",
             actionReason = "active editor is required for Rider rename lane"
         )
 
@@ -95,7 +94,6 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         ).forEach { reason ->
             val result = RenameSymbolTool.buildBlockedRiderFrontendFallbackResult(
                 oldName = "WidgetService",
-                backendStatus = "unsupported",
                 actionReason = reason
             )
 
@@ -129,14 +127,12 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
     fun testBlockedRiderFrontendFallbackMapsOtherFailClosedReasonsToUnsupportedContext() {
         val result = RenameSymbolTool.buildBlockedRiderFrontendFallbackResult(
             oldName = "WidgetService",
-            backendStatus = "unsupported",
             actionReason = "experimental action fallback disabled"
         )
 
         assertFalse(result.success)
         assertEquals("unsupported_context", result.status)
         assertTrue(result.message.contains("experimental action fallback disabled"))
-        assertTrue(result.message.contains("Backend reported 'unsupported'"))
     }
 
     fun testActiveEditorFeasibilityFailsClosedWhenDeclarationEditorIsMissing() {
@@ -194,24 +190,26 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
         val check = RenameSymbolTool.verifyRiderFrontendMutation(
             beforeName = "OldName",
             afterName = "OldName",
+            newName = "NewName",
             beforeFileText = "class OldName {}",
             afterFileText = "class OldName {}"
         )
 
         assertFalse(check.verified)
-        assertTrue(check.reason.contains("remained unchanged"))
+        assertTrue(check.reason.contains("does not match"))
     }
 
     fun testVerifyRiderFrontendMutationSucceedsWhenTargetNameChanges() {
         val check = RenameSymbolTool.verifyRiderFrontendMutation(
             beforeName = "OldName",
             afterName = "NewName",
+            newName = "NewName",
             beforeFileText = "class OldName {}",
             afterFileText = "class OldName {}"
         )
 
         assertTrue(check.verified)
-        assertTrue(check.reason.contains("target name changed"))
+        assertTrue(check.reason.contains("matching the requested rename"))
     }
 
     fun testMutationPollingAcceptsRenamedContainerFileWhenOriginalPathDisappears() {
@@ -230,6 +228,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
                     RenameSymbolTool.verifyRiderFrontendMutation(
                         beforeName = null,
                         afterName = null,
+                        newName = "ISmokeModelDocumentationProvider",
                         beforeFileText = "interface IModelDocumentationProvider {}",
                         afterFileText = null,
                         pathEvidence = RenameSymbolTool.frontendRenamePathEvidence(
@@ -242,6 +241,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
                     RenameSymbolTool.verifyRiderFrontendMutation(
                         beforeName = null,
                         afterName = null,
+                        newName = "ISmokeModelDocumentationProvider",
                         beforeFileText = "interface IModelDocumentationProvider {}",
                         afterFileText = null,
                         pathEvidence = RenameSymbolTool.frontendRenamePathEvidence(
@@ -627,6 +627,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
                 RenameSymbolTool.verifyRiderFrontendMutation(
                     beforeName = "IModelDocumentationProvider",
                     afterName = "IModelDocumentationProvider",
+                    newName = "ISmokeModelDocumentationProvider",
                     beforeFileText = "interface IModelDocumentationProvider {}",
                     afterFileText = "interface IModelDocumentationProvider {}"
                 )
@@ -634,6 +635,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
                 RenameSymbolTool.verifyRiderFrontendMutation(
                     beforeName = "IModelDocumentationProvider",
                     afterName = "ISmokeModelDocumentationProvider",
+                    newName = "ISmokeModelDocumentationProvider",
                     beforeFileText = "interface IModelDocumentationProvider {}",
                     afterFileText = "interface ISmokeModelDocumentationProvider {}"
                 )
@@ -662,6 +664,7 @@ class RenameSymbolToolExperimentalActionUnitTest : TestCase() {
             RenameSymbolTool.verifyRiderFrontendMutation(
                 beforeName = "IModelDocumentationProvider",
                 afterName = "IModelDocumentationProvider",
+                newName = "ISmokeModelDocumentationProvider",
                 beforeFileText = "interface IModelDocumentationProvider {}",
                 afterFileText = "interface IModelDocumentationProvider {}"
             )

@@ -121,9 +121,8 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals(20, CALL_HIERARCHY_RESULT_LIMIT)
     }
 
-    fun testRdCallTimeoutsUseInteractiveHierarchyBudgetButKeepRenameLongRunning() {
+    fun testRdCallTimeoutsUseInteractiveHierarchyBudget() {
         assertEquals(30L, RdProtocolBridge.timeoutSecondsForCall("getCallHierarchy"))
-        assertEquals(300L, RdProtocolBridge.timeoutSecondsForCall("renameSymbol"))
         assertEquals(60L, RdProtocolBridge.timeoutSecondsForCall("findReferences"))
     }
 
@@ -139,10 +138,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals(BuiltInSearchScope.PROJECT_FILES.wireValue, rdProperty(findSymbolsRequest, "scope"))
         assertEquals("C#", rdProperty(findSymbolsRequest, "language"))
         assertEquals(25, rdProperty(findSymbolsRequest, "limit"))
-
-        val renameFileRequest = requireRdStruct("RdRenameFileRequest", "src/Service.cs", "ServiceRenamed.cs")
-        assertEquals("src/Service.cs", rdProperty(renameFileRequest, "filePath"))
-        assertEquals("ServiceRenamed.cs", rdProperty(renameFileRequest, "newName"))
 
         val moveFileRequest = requireRdStruct("RdMoveFileRequest", "src/Service.cs", "src/Moved")
         assertEquals("src/Service.cs", rdProperty(moveFileRequest, "filePath"))
@@ -181,45 +176,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
             listOf("rename_applied", "usage_scan"),
             listOf("Closed-file diagnostics are supplementary only")
         )
-        val renameSymbolResult = requireRdStruct(
-            "RdRenameSymbolResult",
-            true,
-            "OldName",
-            "NewName",
-            listOf("src/Service.cs"),
-            1,
-            "Rename applied with bounded verification.",
-            "verification_limited",
-            verification
-        )
-        assertEquals(true, rdProperty(renameSymbolResult, "success"))
-        assertEquals("OldName", rdProperty(renameSymbolResult, "oldName"))
-        assertEquals("NewName", rdProperty(renameSymbolResult, "newName"))
-        assertEquals(listOf("src/Service.cs"), rdProperty(renameSymbolResult, "affectedFiles"))
-        assertEquals(1, rdProperty(renameSymbolResult, "changesCount"))
-        assertEquals("Rename applied with bounded verification.", rdProperty(renameSymbolResult, "message"))
-        assertEquals("verification_limited", rdProperty(renameSymbolResult, "status"))
-        assertEquals("verification_limited", rdProperty(verification, "status"))
-        assertEquals(listOf("rename_applied", "usage_scan"), rdProperty(verification, "checksRun"))
-        assertEquals(listOf("Closed-file diagnostics are supplementary only"), rdProperty(verification, "warnings"))
-        assertSame(verification, rdProperty(renameSymbolResult, "verification"))
-
-        val renameFileResult = requireRdStruct(
-            "RdRenameFileResult",
-            true,
-            "src/Service.cs",
-            "src/ServiceRenamed.cs",
-            listOf("src/Service.cs", "src/Consumer.cs"),
-            2,
-            "File rename applied.",
-            "success",
-            verification
-        )
-        assertEquals("src/Service.cs", rdProperty(renameFileResult, "oldPath"))
-        assertEquals("src/ServiceRenamed.cs", rdProperty(renameFileResult, "newPath"))
-        assertEquals("success", rdProperty(renameFileResult, "status"))
-        assertSame(verification, rdProperty(renameFileResult, "verification"))
-
         val moveFileResult = requireRdStruct(
             "RdMoveFileResult",
             true,
@@ -267,81 +223,6 @@ class RiderDotNetHandlersUnitTest : TestCase() {
         assertEquals("Service.Run()", rdProperty(blockedUsages.single()!!, "context"))
         assertEquals("method_call", rdProperty(blockedUsages.single()!!, "kind"))
         assertSame(verification, rdProperty(safeDeleteResult, "verification"))
-    }
-
-    fun testBackendMutationResultMapperParsesStructuredRenameDiagnosticsFromMessage() {
-        val verification = requireRdStruct(
-            "RdMutationVerification",
-            "verification_limited",
-            listOf("rename_execution", "post_change_semantics"),
-            listOf("Closed-file diagnostics are supplementary only")
-        )
-        val renameSymbolResult = requireRdStruct(
-            "RdRenameSymbolResult",
-            false,
-            "GetAllProducts",
-            "GetProducts",
-            emptyList<String>(),
-            0,
-            "ReSharper reports that 'GetAllProducts' cannot be renamed (CannotBeRenamed). No files were modified. [backendSymbolRename: resolutionStatus=success, targetKind=member, resolvedName=GetAllProducts, sourceTokenText=GetAllProducts, executionHint=frontend_editor_backed_exact_target_only, unsupportedReason=rename_availability_CannotBeRenamed, traceStages=plan.end>target-resolution.bound>availability.end]",
-            "unsupported_context",
-            verification
-        )
-
-        val mapped = RiderBackendMutationResultMapper.fromRdResult(renameSymbolResult)
-
-        assertFalse(mapped.success)
-        assertEquals("unsupported_context", mapped.status)
-        assertEquals(0, mapped.changesCount)
-        assertEquals(
-            "ReSharper reports that 'GetAllProducts' cannot be renamed (CannotBeRenamed). No files were modified.",
-            mapped.message
-        )
-        assertEquals("verification_limited", mapped.verification?.status)
-        assertEquals(listOf("rename_execution", "post_change_semantics"), mapped.verification?.checksRun)
-        assertEquals(listOf("Closed-file diagnostics are supplementary only"), mapped.verification?.warnings)
-        assertEquals("success", mapped.renameDiagnostics?.resolutionStatus)
-        assertEquals("member", mapped.renameDiagnostics?.targetKind)
-        assertEquals("GetAllProducts", mapped.renameDiagnostics?.resolvedName)
-        assertEquals("GetAllProducts", mapped.renameDiagnostics?.sourceTokenText)
-        assertEquals("frontend_editor_backed_exact_target_only", mapped.renameDiagnostics?.executionHint)
-        assertEquals("rename_availability_CannotBeRenamed", mapped.renameDiagnostics?.unsupportedReason)
-        assertEquals(
-            listOf("plan.end", "target-resolution.bound", "availability.end"),
-            mapped.renameDiagnostics?.traceStages
-        )
-    }
-
-    fun testBackendMutationResultMapperKeepsFileRenamePayloadUnchangedWhenNoDiagnosticsSuffixExists() {
-        val verification = requireRdStruct(
-            "RdMutationVerification",
-            "success",
-            listOf("rename_applied"),
-            emptyList<String>()
-        )
-        val renameFileResult = requireRdStruct(
-            "RdRenameFileResult",
-            true,
-            "src/Service.cs",
-            "src/ServiceRenamed.cs",
-            listOf("src/Service.cs", "src/Consumer.cs"),
-            2,
-            "File rename applied.",
-            "success",
-            verification
-        )
-
-        val mapped = RiderBackendMutationResultMapper.fromRdResult(renameFileResult)
-
-        assertTrue(mapped.success)
-        assertEquals("success", mapped.status)
-        assertEquals("File rename applied.", mapped.message)
-        assertEquals(listOf("src/Service.cs", "src/Consumer.cs"), mapped.affectedFiles)
-        assertEquals(2, mapped.changesCount)
-        assertNull(mapped.renameDiagnostics)
-        assertEquals("success", mapped.verification?.status)
-        assertEquals(listOf("rename_applied"), mapped.verification?.checksRun)
-        assertEquals(emptyList<String>(), mapped.verification?.warnings)
     }
 
     fun testRdTimeoutMessageIsExplicitAboutOperationAndCallName() {

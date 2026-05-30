@@ -1,8 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendMutationResultMapper
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendRenameDiagnostics
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.MODEL_PKG
@@ -103,7 +101,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         private const val RENAME_TRACE_SYSTEM_PROPERTY = "indexmcp.rename.trace"
         private const val RENAME_TRACE_ENV_VAR = "INDEXMCP_RENAME_TRACE"
         private const val RENAME_TRACE_VALUE_LIMIT = 160
-        private const val RIDER_BACKEND_EDITOR_SYNC_DELAY_MS = 1_500L
         private const val RIDER_DIALOG_AUTOMATION_TIMEOUT_MS = 15_000L
         private const val RIDER_DIALOG_READINESS_TIMEOUT_MS = 10_000L
         private const val RIDER_DIALOG_READINESS_POLL_MS = 200
@@ -253,11 +250,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             val totalWaitMs: Long
         )
 
-        internal data class FrontendExactTargetCheck(
-            val consistent: Boolean,
-            val reason: String
-        )
-
         private data class RenameCandidateInspection(
             val name: String?,
             val identifierRange: TextRange?,
@@ -269,22 +261,6 @@ class RenameSymbolTool : AbstractMcpTool() {
             val declarationLike: Boolean,
             val traceDescription: String
         )
-
-        internal fun shouldFallbackToFrontendForCompletedRiderSymbolRename(status: String?): Boolean {
-            return when (status?.trim()?.lowercase()) {
-                "unsupported", "not_supported" -> true
-                else -> false
-            }
-        }
-
-        @Suppress("UNUSED_PARAMETER")
-        internal fun shouldUseRiderBackendRename(
-            file: String,
-            isFileRename: Boolean,
-            relatedRenamingStrategy: String
-        ): Boolean {
-            return false
-        }
 
         @Suppress("UNUSED_PARAMETER")
         internal fun shouldUseRiderFrontendRenameAutomation(
@@ -607,9 +583,7 @@ class RenameSymbolTool : AbstractMcpTool() {
             affectedFiles: List<String>,
             changesCount: Int,
             riderFallbackStatus: String? = null,
-            mutationCheck: FrontendRenameMutationCheck? = null,
-            backendDiagnostics: RiderBackendRenameDiagnostics? = null,
-            verification: MutationVerification? = null
+            mutationCheck: FrontendRenameMutationCheck? = null
         ): RefactoringResult {
             val normalizedFiles = affectedFiles.distinct()
             val normalizedChangesCount = changesCount.coerceAtLeast(0)
@@ -632,8 +606,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     affectedFiles = emptyList(),
                     changesCount = 0,
                     message = "Rider frontend rename reported rename changes for '$oldName', but no real source mutation was verified: ${mutationCheck.reason}.",
-                    status = STATUS_NO_OP,
-                    verification = verification
+                    status = STATUS_NO_OP
                 )
             }
 
@@ -644,48 +617,11 @@ class RenameSymbolTool : AbstractMcpTool() {
                     changesCount = normalizedChangesCount,
                     message = "Rider frontend rename reported rename changes for '$oldName', but mutation proof could not be collected for verification.",
                     status = STATUS_FAILED,
-                    verification = verification ?: MutationVerification(
+                    verification = MutationVerification(
                         status = STATUS_FAILED,
                         checksRun = listOf("rename_execution", "mutation_proof"),
                         warnings = listOf("Mutation proof could not be collected after Rider frontend rename execution")
                     )
-                )
-            }
-
-            val exactTargetCheck = verifyRiderFrontendExactTargetConsistency(oldName, backendDiagnostics)
-            if (cameFromRiderFallback && hasObservableChanges && exactTargetCheck?.consistent == false) {
-                return RefactoringResult(
-                    success = false,
-                    affectedFiles = normalizedFiles,
-                    changesCount = normalizedChangesCount,
-                    message = "Rider frontend rename applied edits for '$oldName', but exact-target verification failed: ${exactTargetCheck.reason}.",
-                    status = STATUS_FAILED,
-                    verification = verification?.let {
-                        it.copy(
-                            warnings = (it.warnings + exactTargetCheck.reason).distinct()
-                        )
-                    } ?: MutationVerification(
-                        status = STATUS_FAILED,
-                        checksRun = listOf("rename_execution", "exact_target_consistency"),
-                        warnings = listOf(exactTargetCheck.reason)
-                    )
-                )
-            }
-
-            val normalizedVerification = verification?.let { verificationResult ->
-                when (verificationResult.status.trim().lowercase()) {
-                    "verification_limited", "limited", "verification_failed", STATUS_FAILED -> verificationResult
-                    else -> null
-                }
-            }
-            if (cameFromRiderFallback && hasObservableChanges && normalizedVerification != null) {
-                return RefactoringResult(
-                    success = false,
-                    affectedFiles = normalizedFiles,
-                    changesCount = normalizedChangesCount,
-                    message = "Rider frontend rename applied edits for '$oldName', but verification remained insufficient: ${normalizedVerification.warnings.joinToString("; ").ifBlank { normalizedVerification.status }}.",
-                    status = STATUS_FAILED,
-                    verification = normalizedVerification
                 )
             }
 
@@ -699,50 +635,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 success = true,
                 affectedFiles = normalizedFiles,
                 changesCount = normalizedChangesCount,
-                message = "Successfully renamed '$oldName' to '$newName'$relatedNote",
-                verification = verification
-            )
-        }
-
-        internal fun verifyRiderFrontendExactTargetConsistency(
-            oldName: String?,
-            backendDiagnostics: RiderBackendRenameDiagnostics?
-        ): FrontendExactTargetCheck? {
-            backendDiagnostics ?: return null
-            val resolutionStatus = backendDiagnostics.resolutionStatus?.trim()?.lowercase()
-            if (!resolutionStatus.isNullOrBlank() && resolutionStatus != STATUS_SUCCESS) {
-                return FrontendExactTargetCheck(
-                    consistent = false,
-                    reason = "backend exact-target resolution stayed '$resolutionStatus' instead of proving a successful symbol bind"
-                )
-            }
-
-            val frontendName = oldName?.trim().orEmpty()
-            if (frontendName.isBlank()) {
-                return FrontendExactTargetCheck(
-                    consistent = false,
-                    reason = "frontend rename candidate had no stable name to compare with backend exact-target diagnostics"
-                )
-            }
-
-            val backendNames = listOfNotNull(
-                backendDiagnostics.resolvedName?.trim()?.takeIf { it.isNotEmpty() },
-                backendDiagnostics.sourceTokenText?.trim()?.takeIf { it.isNotEmpty() }
-            ).distinct()
-            if (backendNames.isEmpty()) {
-                return null
-            }
-
-            if (backendNames.any { it == frontendName }) {
-                return FrontendExactTargetCheck(
-                    consistent = true,
-                    reason = "frontend target '$frontendName' matched backend exact-target diagnostics"
-                )
-            }
-
-            return FrontendExactTargetCheck(
-                consistent = false,
-                reason = "backend exact target resolved ${backendNames.joinToString(" / ")} but frontend prepared '$frontendName'"
+                message = "Successfully renamed '$oldName' to '$newName'$relatedNote"
             )
         }
 
@@ -846,10 +739,8 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         internal fun buildBlockedRiderFrontendFallbackResult(
             oldName: String,
-            backendStatus: String?,
             actionReason: String
         ): RefactoringResult {
-            val backendNote = backendStatus?.takeIf { it.isNotBlank() }?.let { " Backend reported '$it'." }.orEmpty()
             val normalizedReason = actionReason.trim().lowercase()
             val mappedStatus = when {
                 normalizedReason.contains("active editor") -> STATUS_NEEDS_ACTIVE_EDITOR
@@ -864,7 +755,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 success = false,
                 affectedFiles = emptyList(),
                 changesCount = 0,
-                message = "Rider frontend fallback was blocked for '$oldName': $actionReason.$backendNote",
+                message = "Rider frontend fallback was blocked for '$oldName': $actionReason.",
                 status = mappedStatus
             )
         }
@@ -872,25 +763,52 @@ class RenameSymbolTool : AbstractMcpTool() {
         internal fun verifyRiderFrontendMutation(
             beforeName: String?,
             afterName: String?,
+            newName: String,
             beforeFileText: String?,
             afterFileText: String?,
             pathEvidence: FrontendRenamePathEvidence? = null
         ): FrontendRenameMutationCheck {
-            val nameChanged = !beforeName.isNullOrBlank() && !afterName.isNullOrBlank() && beforeName != afterName
-            if (nameChanged) {
-                return FrontendRenameMutationCheck(true, "target name changed from '$beforeName' to '$afterName'")
+            // The oracle must confirm that the REQUESTED rename happened, not merely that
+            // "something changed". A name change to an unrelated identifier, or an arbitrary
+            // text edit, must NOT be treated as proof of the requested rename.
+            val requestedName = newName.trim().substringAfterLast('/').substringAfterLast('\\')
+
+            // Primary signal: the resolved target now carries the requested name.
+            if (!afterName.isNullOrBlank()) {
+                return if (afterName == requestedName) {
+                    FrontendRenameMutationCheck(true, "target name is now '$afterName' matching the requested rename")
+                } else {
+                    // We resolved a concrete name and it is NOT the requested one -> fail closed.
+                    FrontendRenameMutationCheck(
+                        false,
+                        "target name '$afterName' does not match the requested rename '$requestedName'"
+                    )
+                }
             }
 
-            val fileTextChanged = beforeFileText != null && afterFileText != null && beforeFileText != afterFileText
-            if (fileTextChanged) {
-                return FrontendRenameMutationCheck(true, "target file text changed")
-            }
-
+            // afterName unavailable (smart pointer invalidated). This is typical for C# type
+            // renames that also rename the containing file: trust path evidence that the
+            // container moved to the renamed location.
             if (pathEvidence != null && !pathEvidence.originalPathExists && !pathEvidence.observedFilePath.isNullOrBlank()) {
                 return FrontendRenameMutationCheck(
                     verified = true,
                     reason = "original file path disappeared and renamed container file was observed at '${pathEvidence.observedFilePath}'",
                     observedFilePath = pathEvidence.observedFilePath
+                )
+            }
+
+            // Last-resort textual fallback, used ONLY when the resolved name is unavailable and
+            // the file did not move: require the requested identifier to now be present and the
+            // previous identifier to be gone. This is far stricter than "any text changed".
+            if (afterFileText != null &&
+                afterFileText != beforeFileText &&
+                afterFileText.contains(requestedName) &&
+                !beforeName.isNullOrBlank() &&
+                !afterFileText.contains(beforeName)
+            ) {
+                return FrontendRenameMutationCheck(
+                    true,
+                    "resolved name unavailable but file now contains '$requestedName' and no longer contains '$beforeName'"
                 )
             }
 
@@ -902,7 +820,7 @@ class RenameSymbolTool : AbstractMcpTool() {
 
             return FrontendRenameMutationCheck(
                 false,
-                missingPathReason ?: "target name and containing file text remained unchanged"
+                missingPathReason ?: "could not verify the requested rename to '$requestedName'"
             )
         }
 
@@ -1611,67 +1529,20 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        var riderFrontendFallback: RiderRenameOutcome.FallbackToFrontend? = null
         val shouldUseRiderFrontendAutomation = shouldUseRiderFrontendRenameAutomation(file, isFileRename, relatedRenamingStrategy)
         // frontend.file.resolve / frontend.offset.resolve / frontend.resolve.start / frontend.resolve.end
         trace.event(
             "route.selected",
-            "route" to when {
-                shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy) -> "backend-rd"
-                shouldUseRiderFrontendAutomation -> "rider-frontend-automation"
-                else -> "generic"
-            },
-            "reason" to when {
-                shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy) -> "dotnet symbol rename via backend-rd"
-                shouldUseRiderFrontendAutomation -> "dotnet symbol rename must use rider frontend automation"
-                else -> "standard rename processor lane"
+            "route" to if (shouldUseRiderFrontendAutomation) "rider-frontend-automation" else "generic",
+            "reason" to if (shouldUseRiderFrontendAutomation) {
+                "dotnet symbol rename must use rider frontend automation"
+            } else {
+                "standard rename processor lane"
             }
         )
 
-        if (shouldUseRiderBackendRename(file, isFileRename, relatedRenamingStrategy)) {
-            val riderOutcome = tryExecuteRiderSymbolRename(project, file, line!!, column!!, newName)
-
-            val riderResult = when (riderOutcome) {
-                is RiderRenameOutcome.Success -> finish(
-                    riderOutcome.result,
-                    riderOutcome.summary.success,
-                    riderOutcome.summary.status,
-                    riderOutcome.summary.changesCount,
-                    riderOutcome.summary.affectedFiles.size,
-                    riderOutcome.summary.message
-                )
-                is RiderRenameOutcome.FallbackToFrontend -> {
-                    riderFrontendFallback = riderOutcome
-                    trace.event(
-                        "route.selected",
-                        "route" to "rider-frontend-automation",
-                        "reason" to "backend fallback: ${riderOutcome.status}",
-                        "backendReason" to riderOutcome.reason
-                    )
-                    null
-                }
-                is RiderRenameOutcome.NotInRider -> null
-                is RiderRenameOutcome.FileNotFound -> finish(
-                    createErrorResult("File not found in project: '$file'. Pass a path relative to the project root."),
-                    false,
-                    STATUS_FAILED,
-                    0,
-                    0,
-                    "File not found in project: '$file'. Pass a path relative to the project root."
-                )
-                is RiderRenameOutcome.BackendCallFailed -> finish(
-                    createErrorResult("Rider ReSharper backend rename failed: ${riderOutcome.reason}"),
-                    false,
-                    STATUS_FAILED,
-                    0,
-                    0,
-                    "Rider ReSharper backend rename failed: ${riderOutcome.reason}"
-                )
-            }
-            if (riderResult != null) return riderResult
-        }
-        val riderFrontendExecutionRequested = riderFrontendFallback != null || shouldUseRiderFrontendAutomation
-        val riderFrontendStatus = riderFrontendFallback?.status ?: shouldUseRiderFrontendAutomation.takeIf { it }?.let { STATUS_UNSUPPORTED }
+        val riderFrontendExecutionRequested = shouldUseRiderFrontendAutomation
+        val riderFrontendStatus = if (shouldUseRiderFrontendAutomation) STATUS_UNSUPPORTED else null
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and validate (suspending read action)
@@ -1741,16 +1612,38 @@ class RenameSymbolTool : AbstractMcpTool() {
                 // frontend.action.end
                 if (!actionPlan.policy.shouldInvoke) {
                     // reason=${actionPlan.policy.reason}
+                    // Close any editor we auto-opened during planning before failing closed.
+                    actionPlan.editorLookup.takeIf { it.openedByTool }?.virtualFile?.let { virtualFile ->
+                        edtAction { FileEditorManager.getInstance(project).closeFile(virtualFile) }
+                    }
                     val refusalReason = actionPlan.blockReason ?: actionPlan.policy.reason
                     val blocked = buildBlockedRiderFrontendFallbackResult(
                         oldName = oldName,
-                        backendStatus = riderFrontendFallback?.status,
                         actionReason = refusalReason
                     )
                     return finish(createJsonResult(blocked), false, blocked.status, blocked.changesCount, blocked.affectedFiles.size, blocked.message)
                 }
+            } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+                throw e
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                LOG.debug("Failed to inspect Rider frontend rename fallback lane", e)
+                // Fail closed: a Rider C# rename must NOT silently fall through to the generic
+                // rename lane when planning fails unexpectedly.
+                LOG.warn("Rider frontend rename planning failed unexpectedly; failing closed", e)
+                val message = "Rider C# rename could not be planned: ${e.message ?: e.javaClass.simpleName}. " +
+                    "Ensure the symbol's declaration file can be opened in an editor and retry."
+                return finish(
+                    createJsonResult(
+                        RefactoringResult(
+                            success = false,
+                            affectedFiles = emptyList(),
+                            changesCount = 0,
+                            message = message,
+                            status = STATUS_UNSUPPORTED_CONTEXT
+                        )
+                    ), false, STATUS_UNSUPPORTED_CONTEXT, 0, 0, message
+                )
             }
         }
 
@@ -1777,13 +1670,16 @@ class RenameSymbolTool : AbstractMcpTool() {
         val riderPlan = riderExecutionPlan
         val autoOpenedEditorFile = riderPlan?.editorLookup?.takeIf { it.openedByTool }?.virtualFile
 
+        val highLevelHandlerLane = riderFrontendExecutionRequested && riderPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
+        // PRE snapshot must be taken before the rename mutates anything. The POST snapshot/diff
+        // is deferred until after commit + saveAllDocuments so on-disk mtimes reflect the edits.
+        val preRenameTimestamps: Map<String, Long> = if (highLevelHandlerLane) {
+            snapshotProjectFileTimestamps(project)
+        } else {
+            emptyMap()
+        }
+
         try {
-            val highLevelHandlerLane = riderFrontendExecutionRequested && riderPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
-            val preRenameTimestamps: Map<String, Long> = if (highLevelHandlerLane) {
-                snapshotProjectFileTimestamps(project)
-            } else {
-                emptyMap()
-            }
             if (highLevelHandlerLane) {
                 // frontend.action.end
                 val selectedHandler = requireNotNull(riderPlan.selectedHandler) {
@@ -1846,6 +1742,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                         verifyRiderFrontendMutation(
                             beforeName = probe.beforeName,
                             afterName = (afterElement as? PsiNamedElement)?.name,
+                            newName = newName,
                             beforeFileText = probe.beforeFileText,
                             afterFileText = probe.targetFilePath
                                 ?.let(LocalFileSystem.getInstance()::findFileByPath)
@@ -1878,24 +1775,10 @@ class RenameSymbolTool : AbstractMcpTool() {
                 )
                 mutationCheck
             }
-            if (riderFrontendExecutionRequested && riderExecutionPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER && riderMutationCheck?.verified == true) {
-                // Disk-level snapshot diff: the dialog-automation lane can mutate many files
-                // (AXAML/code-behind pairs, partial classes, callers) but the mutation probe
-                // only observes a single file. Without diffing, affectedFiles collapses to 1
-                // (Reg 4). Snapshot before + after and report every changed/added/removed path.
-                val postRenameTimestamps = snapshotProjectFileTimestamps(project)
-                val changedPaths = diffSnapshotTimestamps(preRenameTimestamps, postRenameTimestamps)
-                if (changedPaths.isNotEmpty()) {
-                    changesCount = changedPaths.size
-                    for (path in changedPaths) {
-                        affectedFiles += toRelativeProjectPath(project, path)
-                    }
-                } else {
-                    changesCount = 1
-                    val affectedPath = riderMutationCheck?.observedFilePath ?: riderMutationProbe?.targetFilePath
-                    affectedPath?.let { affectedFiles += toRelativeProjectPath(project, it) }
-                }
-            }
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+            throw e
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
         } catch (e: Exception) {
             errorMessage = e.message ?: "Unknown error during rename"
             errorClassName = e::class.java.name
@@ -1913,6 +1796,30 @@ class RenameSymbolTool : AbstractMcpTool() {
         if (errorMessage == null) {
             commitDocuments(project)
             edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+        }
+
+        if (errorMessage == null &&
+            riderFrontendExecutionRequested &&
+            riderExecutionPlan?.lane == RiderRenameExecutionLane.HIGH_LEVEL_HANDLER &&
+            riderMutationCheck?.verified == true
+        ) {
+            // Disk-level snapshot diff: the dialog-automation lane can mutate many files
+            // (AXAML/code-behind pairs, partial classes, callers) but the mutation probe
+            // only observes a single file. Without diffing, affectedFiles collapses to 1
+            // (Reg 4). The POST snapshot is taken AFTER commit + saveAllDocuments so on-disk
+            // mtimes reflect the in-memory edits; otherwise multi-file changes are missed.
+            val postRenameTimestamps = snapshotProjectFileTimestamps(project)
+            val changedPaths = diffSnapshotTimestamps(preRenameTimestamps, postRenameTimestamps)
+            if (changedPaths.isNotEmpty()) {
+                changesCount = changedPaths.size
+                for (path in changedPaths) {
+                    affectedFiles += toRelativeProjectPath(project, path)
+                }
+            } else {
+                changesCount = 1
+                val affectedPath = riderMutationCheck?.observedFilePath ?: riderMutationProbe?.targetFilePath
+                affectedPath?.let { affectedFiles += toRelativeProjectPath(project, it) }
+            }
         }
 
         val dotNetFileRenameVerification = if (errorMessage == null) {
@@ -1953,9 +1860,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 affectedFiles = affectedFiles.toList(),
                 changesCount = changesCount,
                 riderFallbackStatus = riderFrontendStatus,
-                mutationCheck = riderMutationCheck,
-                backendDiagnostics = riderFrontendFallback?.backendDiagnostics,
-                verification = riderFrontendFallback?.verification
+                mutationCheck = riderMutationCheck
             )
 
             if (dotNetFileRenameVerification != null) {
@@ -1973,22 +1878,6 @@ class RenameSymbolTool : AbstractMcpTool() {
                 finish(createJsonResult(summary), summary.success, summary.status, summary.changesCount, summary.affectedFiles.size, summary.message)
             }
         }
-    }
-
-    private sealed interface RiderRenameOutcome {
-        data class Success(
-            val result: ToolCallResult,
-            val summary: RiderMutationResultMapper.Summary
-        ) : RiderRenameOutcome
-        data class FallbackToFrontend(
-            val status: String,
-            val reason: String,
-            val backendDiagnostics: RiderBackendRenameDiagnostics?,
-            val verification: MutationVerification?
-        ) : RiderRenameOutcome
-        data object NotInRider : RiderRenameOutcome
-        data object FileNotFound : RiderRenameOutcome
-        data class BackendCallFailed(val reason: String) : RiderRenameOutcome
     }
 
     private data class RiderFrontendMutationProbe(
@@ -2896,189 +2785,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
     }
 
-    private suspend fun tryExecuteRiderSymbolRename(
-        project: Project,
-        file: String,
-        line: Int,
-        column: Int,
-        newName: String
-    ): RiderRenameOutcome {
-        commitDocuments(project)
-        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
-
-        val virtualFile = suspendingReadAction {
-            val psiFile = getPsiFile(project, file) ?: return@suspendingReadAction null
-            psiFile.virtualFile
-        } ?: return RiderRenameOutcome.FileNotFound
-        val absolutePath = virtualFile.path
-
-        var openedByTool = false
-        runCatching {
-            openedByTool = edtAction {
-                val fileEditorManager = FileEditorManager.getInstance(project)
-                val wasOpen = fileEditorManager.isFileOpen(virtualFile)
-                val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-                val safeLineIndex = if (document != null && document.lineCount > 0) {
-                    (line - 1).coerceIn(0, document.lineCount - 1)
-                } else {
-                    0
-                }
-                val safeColumnIndex = (column - 1).coerceAtLeast(0)
-                val safeOffset = if (document != null && document.lineCount > 0) {
-                    (document.getLineStartOffset(safeLineIndex) + safeColumnIndex)
-                        .coerceIn(0, document.textLength)
-                } else {
-                    0
-                }
-
-                // Historical smoke-test markers kept for focused source assertions:
-                // fileEditorManager.openFile(virtualFile, false)
-                val editor = fileEditorManager.openTextEditor(
-                    OpenFileDescriptor(project, virtualFile, safeLineIndex, safeColumnIndex),
-                    true
-                ) ?: fileEditorManager.getEditors(virtualFile)
-                    .filterIsInstance<TextEditor>()
-                    .firstOrNull { !it.editor.isDisposed }
-                    ?.editor
-                if (editor != null && document != null && editor.document == document && document.lineCount > 0) {
-                    editor.caretModel.moveToOffset(safeOffset)
-                }
-
-                !wasOpen
-            }
-        }
-
-        if (openedByTool) {
-            // kotlinx.coroutines.delay(500)
-            kotlinx.coroutines.delay(RIDER_BACKEND_EDITOR_SYNC_DELAY_MS)
-        }
-
-        try {
-            val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
-            val position = RdProtocolBridge.createStruct("$MODEL_PKG.RdSourcePosition", absolutePath, line, column)
-                ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd source position struct (rdgen mismatch?)")
-            val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameSymbolRequest", position, newName)
-                ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename request struct (rdgen mismatch?)")
-
-            val outcome = RdProtocolBridge.invokeCallResult(model, "renameSymbol", request)
-
-            val result = when (outcome) {
-                is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Success -> {
-                    outcome.value ?: return RiderRenameOutcome.BackendCallFailed(
-                        "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
-                    )
-                }
-                is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Timeout -> {
-                    return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
-                }
-                is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Failure -> {
-                    return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
-                }
-            }
-
-            return mapRiderRenameResult(project, result, allowFrontendFallback = true)
-        } finally {
-            if (openedByTool) {
-                edtAction {
-                    FileEditorManager.getInstance(project).closeFile(virtualFile)
-                }
-            }
-        }
-    }
-
-    private suspend fun tryExecuteRiderFileRename(
-        project: Project,
-        file: String,
-        newName: String
-    ): RiderRenameOutcome {
-        commitDocuments(project)
-        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
-
-        val absolutePath = suspendingReadAction {
-            val psiFile = getPsiFile(project, file) ?: return@suspendingReadAction null
-            psiFile.virtualFile.path
-        } ?: return RiderRenameOutcome.FileNotFound
-
-        val model = RdProtocolBridge.getModel(project) ?: return RiderRenameOutcome.NotInRider
-        val request = RdProtocolBridge.createStruct("$MODEL_PKG.RdRenameFileRequest", absolutePath, newName)
-            ?: return RiderRenameOutcome.BackendCallFailed("Failed to create rd rename file request struct (rdgen mismatch?)")
-
-        val outcome = RdProtocolBridge.invokeCallResult(model, "renameFile", request)
-
-        val result = when (outcome) {
-            is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Success -> {
-                outcome.value ?: return RiderRenameOutcome.BackendCallFailed(
-                    "Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)"
-                )
-            }
-            is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Timeout -> {
-                return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
-            }
-            is com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RdCallOutcome.Failure -> {
-                return RiderRenameOutcome.BackendCallFailed("Backend rd call returned no result (timeout, fault, or cancellation; check IDE log for details)")
-            }
-        }
-
-        return mapRiderRenameResult(project, result, allowFrontendFallback = false)
-    }
-
-    private suspend fun mapRiderRenameResult(
-        project: Project,
-        result: Any,
-        allowFrontendFallback: Boolean = false
-    ): RiderRenameOutcome {
-        val backendResult = RiderBackendMutationResultMapper.fromRdResult(result)
-        val success = backendResult.success
-        val message = backendResult.message ?: "Rider backend rename failed"
-        val status = backendResult.status
-            ?: return RiderRenameOutcome.BackendCallFailed("Backend rename result omitted required status field")
-
-        val rawAffectedFiles = backendResult.affectedFiles
-        val affectedFiles = rawAffectedFiles.map { absolute -> toRelativeProjectPath(project, absolute) }
-        val changesCount = backendResult.changesCount
-        val verification = backendResult.verification?.status?.let { verificationStatus ->
-            MutationVerification(
-                status = verificationStatus,
-                checksRun = backendResult.verification.checksRun,
-                warnings = backendResult.verification.warnings
-            )
-        }
-
-        if (allowFrontendFallback && shouldFallbackToFrontendForCompletedRiderSymbolRename(status)) {
-            return RiderRenameOutcome.FallbackToFrontend(
-                status = status,
-                reason = message,
-                backendDiagnostics = backendResult.renameDiagnostics,
-                verification = verification
-            )
-        }
-
-        val extraRefreshPaths = buildList {
-            addAll(rawAffectedFiles)
-            (RdProtocolBridge.getProperty(result, "oldPath") as? String)?.takeIf { it.isNotBlank() }?.let(::add)
-            (RdProtocolBridge.getProperty(result, "newPath") as? String)?.takeIf { it.isNotBlank() }?.let(::add)
-        }.distinct()
-
-        refreshAffectedFiles(extraRefreshPaths)
-        refreshProjectRootsAndCommit(project)
-        commitDocuments(project)
-        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
-
-        val summary = RiderMutationResultMapper.summary(
-            legacySuccess = success,
-            status = status,
-            affectedFiles = affectedFiles,
-            changesCount = changesCount,
-            message = message,
-            verification = verification
-        )
-
-        return RiderRenameOutcome.Success(
-            result = createJsonResult(summary.toRefactoringResult()),
-            summary = summary
-        )
-    }
-
     private fun assessPreferredRiderRenameHandler(selectedHandler: RenameHandler?): PreferredRiderActionLanePlan {
         return assessPreferredRiderRenameHandlerClassName(selectedHandler?.javaClass?.name)
     }
@@ -3090,73 +2796,96 @@ class RenameSymbolTool : AbstractMcpTool() {
     ): RiderRenameExecutionPlan {
         // val editorLookup = lookupRiderFrontendEditor(project, element, trace)
         val editorLookup = lookupRiderFrontendEditor(project, element)
-        val dataContext = composeDeterministicRiderDataContext(project, element, newName, editorLookup)
-        val feasibility = evaluateRiderFrontendFeasibility(
-            hasDeclarationEditor = editorLookup.editor != null,
-            canComposeDataContext = dataContext.dataContext != null
-        )
+        try {
+            val dataContext = composeDeterministicRiderDataContext(project, element, newName, editorLookup)
+            val feasibility = evaluateRiderFrontendFeasibility(
+                hasDeclarationEditor = editorLookup.editor != null,
+                canComposeDataContext = dataContext.dataContext != null
+            )
 
-        if (!feasibility.canProceed) {
+            if (!feasibility.canProceed) {
+                return RiderRenameExecutionPlan(
+                    availableHandlerTitles = emptyList(),
+                    selectedHandler = null,
+                    selectedHandlerClassName = null,
+                    selectedHandlerTitle = null,
+                    editorLookup = editorLookup,
+                    dataContext = dataContext,
+                    policy = RiderFrontendPolicyEvaluation(
+                        shouldInvoke = false,
+                        reason = feasibility.reason
+                    ),
+                    lane = RiderRenameExecutionLane.BLOCKED,
+                    blockReason = feasibility.reason
+                )
+            }
+
+            val registry = RenameHandlerRegistry.getInstance()
+            val handlers = registry.getRenameHandlers(requireNotNull(dataContext.dataContext))
+            val availableHandlerTitles = handlers.map(RenameHandlerRegistry::getHandlerTitle)
+            val selectedHandler = handlers.singleOrNull() as? RenameHandler
+            val handlerAssessment = assessPreferredRiderRenameHandler(selectedHandler)
+            val preferredLanePlan = evaluatePreferredRiderActionLane(
+                availableHandlerTitles = availableHandlerTitles,
+                selectedHandlerClassName = selectedHandler?.javaClass?.name,
+                selectedHandlerIsKnownSafeNonModal = handlerAssessment.shouldInvoke,
+                selectedHandlerBlockReason = handlerAssessment.reason
+            )
+            val policy = RiderFrontendPolicyEvaluation(
+                shouldInvoke = preferredLanePlan.shouldInvoke,
+                reason = preferredLanePlan.reason
+            )
+            // frontend.factory.policy
+            val factoryPlan = evaluateSecondChoiceRiderRefactoringFactoryLane(
+                hasDeclarationEditor = editorLookup.editor != null,
+                canComposeDataContext = dataContext.dataContext != null,
+                preferredLaneWasDeterministic = policy.shouldInvoke
+            )
+            val lane = if (policy.shouldInvoke) {
+                RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
+            } else {
+                RiderRenameExecutionLane.BLOCKED
+            }
+            val blockReason = if (lane == RiderRenameExecutionLane.BLOCKED) {
+                // frontend.factory.refused
+                "${policy.reason}; second choice refused: ${factoryPlan.reason}"
+            } else {
+                null
+            }
+
+            return RiderRenameExecutionPlan(
+                availableHandlerTitles = availableHandlerTitles,
+                selectedHandler = selectedHandler,
+                selectedHandlerClassName = selectedHandler?.javaClass?.name,
+                selectedHandlerTitle = selectedHandler?.let(RenameHandlerRegistry::getHandlerTitle),
+                editorLookup = editorLookup,
+                dataContext = dataContext,
+                policy = policy,
+                lane = lane,
+                blockReason = blockReason
+            )
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+            throw e
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Fail closed: a Rider C# rename whose planning fails must NOT silently fall through
+            // to the generic rename lane. Return a BLOCKED plan that preserves editorLookup so the
+            // auto-opened editor can still be cleaned up by the caller.
+            LOG.debug("Rider rename planning failed; failing closed to BLOCKED lane", e)
+            val reason = "rider rename planning failed: ${e.message ?: e.javaClass.simpleName}"
             return RiderRenameExecutionPlan(
                 availableHandlerTitles = emptyList(),
                 selectedHandler = null,
                 selectedHandlerClassName = null,
                 selectedHandlerTitle = null,
                 editorLookup = editorLookup,
-                dataContext = dataContext,
-                policy = RiderFrontendPolicyEvaluation(
-                    shouldInvoke = false,
-                    reason = feasibility.reason
-                ),
+                dataContext = RiderDeterministicDataContext(availableKeys = emptyList(), dataContext = null),
+                policy = RiderFrontendPolicyEvaluation(shouldInvoke = false, reason = reason),
                 lane = RiderRenameExecutionLane.BLOCKED,
-                blockReason = feasibility.reason
+                blockReason = reason
             )
         }
-
-        val registry = RenameHandlerRegistry.getInstance()
-        val handlers = registry.getRenameHandlers(requireNotNull(dataContext.dataContext))
-        val availableHandlerTitles = handlers.map(RenameHandlerRegistry::getHandlerTitle)
-        val selectedHandler = handlers.singleOrNull() as? RenameHandler
-        val handlerAssessment = assessPreferredRiderRenameHandler(selectedHandler)
-        val preferredLanePlan = evaluatePreferredRiderActionLane(
-            availableHandlerTitles = availableHandlerTitles,
-            selectedHandlerClassName = selectedHandler?.javaClass?.name,
-            selectedHandlerIsKnownSafeNonModal = handlerAssessment.shouldInvoke,
-            selectedHandlerBlockReason = handlerAssessment.reason
-        )
-        val policy = RiderFrontendPolicyEvaluation(
-            shouldInvoke = preferredLanePlan.shouldInvoke,
-            reason = preferredLanePlan.reason
-        )
-        // frontend.factory.policy
-        val factoryPlan = evaluateSecondChoiceRiderRefactoringFactoryLane(
-            hasDeclarationEditor = editorLookup.editor != null,
-            canComposeDataContext = dataContext.dataContext != null,
-            preferredLaneWasDeterministic = policy.shouldInvoke
-        )
-        val lane = if (policy.shouldInvoke) {
-            RiderRenameExecutionLane.HIGH_LEVEL_HANDLER
-        } else {
-            RiderRenameExecutionLane.BLOCKED
-        }
-        val blockReason = if (lane == RiderRenameExecutionLane.BLOCKED) {
-            // frontend.factory.refused
-            "${policy.reason}; second choice refused: ${factoryPlan.reason}"
-        } else {
-            null
-        }
-
-        return RiderRenameExecutionPlan(
-            availableHandlerTitles = availableHandlerTitles,
-            selectedHandler = selectedHandler,
-            selectedHandlerClassName = selectedHandler?.javaClass?.name,
-            selectedHandlerTitle = selectedHandler?.let(RenameHandlerRegistry::getHandlerTitle),
-            editorLookup = editorLookup,
-            dataContext = dataContext,
-            policy = policy,
-            lane = lane,
-            blockReason = blockReason
-        )
     }
 
     private suspend fun lookupRiderFrontendEditor(
@@ -3206,30 +2935,39 @@ class RenameSymbolTool : AbstractMcpTool() {
 
             val wasAlreadyOpen = fileEditorManager.isFileOpen(virtualFile)
             fileEditorManager.openFile(virtualFile, true)
-            val openedEditor = selectedMatchingEditor()
-            if (openedEditor != null && navigationOffset != null) {
-                val boundedOffset = navigationOffset.coerceIn(0, openedEditor.document.textLength)
-                openedEditor.caretModel.moveToOffset(boundedOffset)
-            }
+            try {
+                val openedEditor = selectedMatchingEditor()
+                if (openedEditor != null && navigationOffset != null) {
+                    val boundedOffset = navigationOffset.coerceIn(0, openedEditor.document.textLength)
+                    openedEditor.caretModel.moveToOffset(boundedOffset)
+                }
 
-            if (openedEditor != null) {
-                RiderFrontendEditorLookup(
-                    editor = openedEditor,
-                    reason = if (wasAlreadyOpen) {
-                        "focused already-open declaration file for Rider rename lane"
-                    } else {
-                        "auto-opened declaration file for Rider rename lane"
-                    },
-                    virtualFile = virtualFile,
-                    openedByTool = !wasAlreadyOpen
-                )
-            } else {
-                RiderFrontendEditorLookup(
-                    editor = null,
-                    reason = "no selected text editor matched declaration file after attempting to open it",
-                    virtualFile = virtualFile,
-                    openedByTool = false
-                )
+                if (openedEditor != null) {
+                    RiderFrontendEditorLookup(
+                        editor = openedEditor,
+                        reason = if (wasAlreadyOpen) {
+                            "focused already-open declaration file for Rider rename lane"
+                        } else {
+                            "auto-opened declaration file for Rider rename lane"
+                        },
+                        virtualFile = virtualFile,
+                        openedByTool = !wasAlreadyOpen
+                    )
+                } else {
+                    RiderFrontendEditorLookup(
+                        editor = null,
+                        reason = "no selected text editor matched declaration file after attempting to open it",
+                        virtualFile = virtualFile,
+                        openedByTool = false
+                    )
+                }
+            } catch (e: Throwable) {
+                // If we auto-opened the file and configuring the lookup then failed, close it so we
+                // do not leak an editor the caller never learns about.
+                if (!wasAlreadyOpen) {
+                    runCatching { fileEditorManager.closeFile(virtualFile) }
+                }
+                throw e
             }
         }
         return lookup
@@ -3265,10 +3003,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         )
     }
 
-    private fun toMutationVerification(rawVerification: Any?): MutationVerification? {
-        return RiderMutationResultMapper.toMutationVerification(rawVerification, RdProtocolBridge::getProperty)
-    }
-
     /**
      * Converts an absolute path returned by the Rider backend into a project-relative
      * tool-style path (forward slashes, relative to the matching content root).
@@ -3288,15 +3022,6 @@ class RenameSymbolTool : AbstractMcpTool() {
         } catch (e: Exception) {
             LOG.debug("Failed to relativize '$absolutePath': ${e.message}")
             absolutePath.replace('\\', '/')
-        }
-    }
-
-    private fun refreshAffectedFiles(paths: List<String>) {
-        val virtualFiles = paths.mapNotNull { path ->
-            LocalFileSystem.getInstance().refreshAndFindFileByPath(path.replace('\\', File.separatorChar))
-        }
-        if (virtualFiles.isNotEmpty()) {
-            VfsUtil.markDirtyAndRefresh(false, false, false, *virtualFiles.toTypedArray())
         }
     }
 

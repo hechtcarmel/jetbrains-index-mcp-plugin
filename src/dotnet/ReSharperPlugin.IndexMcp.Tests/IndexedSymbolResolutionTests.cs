@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -24,15 +23,7 @@ namespace ReSharperPlugin.IndexMcp.Tests;
 public class IndexedSymbolResolutionTests
 {
     private static readonly Type BackendHostType = typeof(IndexMcpBackendHost);
-    private static readonly string RepositoryRoot = FindRepositoryRoot();
-    private static readonly string MutationWorkspaceRoot = Path.Combine(
-        RepositoryRoot,
-        "src",
-        "dotnet",
-        "ReSharperPlugin.IndexMcp.Tests",
-        "testData",
-        "CSharpProductionReadiness",
-        "MutationWorkspace");
+
 
     [Test]
     public void ParseIndexedSymbol_RejectsInvalidMemberSeparator()
@@ -230,140 +221,6 @@ public class IndexedSymbolResolutionTests
     }
 
     [Test]
-    public void InspectSymbolRenameServiceExecutionPlan_FailsClosedWhenOnlyTextControlBoundOrUndocumentedEntrypointsExist()
-    {
-        var plan = InvokePrivateStatic("InspectSymbolRenameServiceExecutionPlan");
-        var signatures = GetProperty<IReadOnlyList<string>>(plan, "AvailableMethodSignatures");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(GetProperty<bool>(plan, "IsSupported"), Is.False,
-                "The spike must fail closed until a headless service-backed rename entry point is proven in this runtime.");
-            Assert.That(GetProperty<bool>(plan, "RequiresTextControl"), Is.True,
-                "The discovered documented service lane still requires ITextControl, which is unavailable in the headless mutation flow.");
-            Assert.That(GetProperty<string?>(plan, "SelectedMethodSignature"), Does.Contain("JetBrains.TextControl.ITextControl"));
-            Assert.That(GetProperty<string?>(plan, "SelectedMethodSignature"), Does.Not.Contain("RenameFromContext("),
-                "A discoverable IDataContext overload is NOT sufficient proof that backend symbol rename is safe to restore in production.");
-            Assert.That(signatures, Has.Some.Contains("System.String Rename(").And.Contains("JetBrains.TextControl.ITextControl"));
-            Assert.That(signatures, Has.Some.Contains("RenameAndGetConflicts").And.Contains("JetBrains.TextControl.ITextControl"));
-            Assert.That(signatures, Has.Some.Contains("RenameFromDrivenContext").And.Contains("JetBrains.TextControl.ITextControl"));
-            Assert.That(signatures, Has.Some.Contains("RenameFromContext(JetBrains.Application.DataContext.IDataContext context)"),
-                "Keep the raw runtime surface visible in the trace even when the lane remains unsupported.");
-            Assert.That(GetProperty<string>(plan, "Message"),
-                Does.Contain("fail-closed")
-                    .And.Contain("ITextControl")
-                    .And.Contain("RenameWorkflow.Initialize")
-                    .And.Contain("workflow.construct.end")
-                    .And.Contain("workflow.initialize.end"));
-        });
-    }
-
-    [TestCase("Renames/RenameTargets.cs", 9, 13, "local", "total")]
-    [TestCase("Renames/RenameTargets.cs", 7, 33, "parameter", "increment")]
-    [TestCase("Renames/RenameTargets.cs", 5, 17, "member", "_counter")]
-    [TestCase("Renames/TypeRenameTarget.cs", 3, 21, "type", "TypeRenameTarget")]
-    public void PlanExactSymbolRename_EmitsExactTargetMetadata(string relativePath, int line, int column, string expectedTargetKind, string expectedName)
-    {
-        var plannerType = BackendHostType.Assembly.GetType("ReSharperPlugin.IndexMcp.Mutations.RenameMutationPlanner");
-        Assert.That(plannerType, Is.Not.Null, "Missing RenameMutationPlanner type for exact-target backend planning.");
-
-        var method = plannerType!.GetMethod("PlanExactSymbolRename", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.That(method, Is.Not.Null, "Missing RenameMutationPlanner.PlanExactSymbolRename method.");
-
-        var plan = method!.Invoke(null, new object[]
-        {
-            Path.Combine(MutationWorkspaceRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)),
-            line,
-            column
-        });
-
-        Assert.That(plan, Is.Not.Null, "Exact symbol rename planning must remain available as backend target-resolution authority.");
-
-        var resolution = GetProperty<object>(plan!, "Resolution");
-        Assert.Multiple(() =>
-        {
-            Assert.That(GetProperty<string>(plan!, "OperationKind"), Is.EqualTo("symbol"));
-            Assert.That(GetProperty<string>(resolution, "Status"), Is.EqualTo("resolved"));
-            Assert.That(GetProperty<string?>(resolution, "TargetKind"), Is.EqualTo(expectedTargetKind));
-            Assert.That(GetProperty<string?>(resolution, "ResolvedName"), Is.EqualTo(expectedName));
-            Assert.That(GetProperty<string?>(resolution, "SourceTokenText"), Is.EqualTo(expectedName),
-                "Backend exact-target planning must preserve the declaration token it resolved so the frontend can reject widening.");
-            Assert.That(GetProperty<string?>(resolution, "Message"), Does.Contain("Resolved exact").And.Contain(expectedTargetKind));
-            Assert.That(GetProperty<string?>(plan!, "OldPath"), Does.EndWith(relativePath.Replace('/', Path.DirectorySeparatorChar)));
-            Assert.That(GetProperty<string?>(plan!, "NewPath"), Does.EndWith(relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        });
-    }
-
-    [Test]
-    public void RenameRefactoringService_Rename_NullTriplet_FailsFast()
-    {
-        var method = GetPublicStaticMethod(
-            typeof(JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename.RenameRefactoringService),
-            "Rename",
-            3);
-
-        var outcome = CaptureInvocationFailure(method, null, null, null);
-
-        TestContext.Progress.WriteLine($"PROBE Rename(null,null,null): elapsedMs={outcome.ElapsedMilliseconds}, exception={outcome.Exception.GetType().FullName}: {outcome.Exception.Message}");
-
-        Assert.That(outcome.ElapsedMilliseconds, Is.LessThan(500));
-        Assert.That(outcome.Exception, Is.Not.Null);
-    }
-
-    [Test]
-    public void RenameRefactoringService_RenameAndGetConflicts_NullTriplet_FailsFast()
-    {
-        var method = GetPublicStaticMethod(
-            typeof(JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename.RenameRefactoringService),
-            "RenameAndGetConflicts",
-            3);
-
-        var outcome = CaptureInvocationFailure(method, null, null, null);
-
-        TestContext.Progress.WriteLine($"PROBE RenameAndGetConflicts(null,null,null): elapsedMs={outcome.ElapsedMilliseconds}, exception={outcome.Exception.GetType().FullName}: {outcome.Exception.Message}");
-
-        Assert.That(outcome.ElapsedMilliseconds, Is.LessThan(500));
-        Assert.That(outcome.Exception, Is.Not.Null);
-    }
-
-    [Test]
-    public void RenameRefactoringService_RenameFromContext_NullContext_FailsFast()
-    {
-        var method = GetPublicStaticMethod(
-            typeof(JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename.RenameRefactoringService),
-            "RenameFromContext",
-            1);
-
-        var outcome = CaptureInvocationFailure(method, new object?[] { null });
-
-        TestContext.Progress.WriteLine($"PROBE RenameFromContext(null): elapsedMs={outcome.ElapsedMilliseconds}, exception={outcome.Exception.GetType().FullName}: {outcome.Exception.Message}");
-
-        Assert.That(outcome.ElapsedMilliseconds, Is.LessThan(500));
-        Assert.That(outcome.Exception, Is.Not.Null);
-    }
-
-    [Test]
-    public void RenameRefactoringService_RenameFromDrivenContext_NullQuintet_FailsFast_AndStillRequiresDriverAndTextControl()
-    {
-        var method = GetPublicStaticMethod(
-            typeof(JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename.RenameRefactoringService),
-            "RenameFromDrivenContext",
-            5);
-
-        var outcome = CaptureInvocationFailure(method, null, null, null, null, null);
-        var parameters = method.GetParameters();
-
-        TestContext.Progress.WriteLine(
-            $"PROBE RenameFromDrivenContext(null,...): elapsedMs={outcome.ElapsedMilliseconds}, exception={outcome.Exception.GetType().FullName}: {outcome.Exception.Message}, driverType={parameters[0].ParameterType.FullName}, driverIsInterface={parameters[0].ParameterType.IsInterface}, textControlType={parameters[3].ParameterType.FullName}, textControlIsInterface={parameters[3].ParameterType.IsInterface}");
-
-        Assert.That(outcome.ElapsedMilliseconds, Is.LessThan(500));
-        Assert.That(outcome.Exception, Is.Not.Null);
-        Assert.That(parameters[0].ParameterType.IsInterface, Is.True);
-        Assert.That(parameters[3].ParameterType.FullName, Is.EqualTo("JetBrains.TextControl.ITextControl"));
-        Assert.That(parameters[3].ParameterType.IsInterface, Is.True);
-    }
-
-    [Test]
     public void GetPresentableTypeName_CSharpPreferredLanguage_PreservesCSharpPresentation()
     {
         var declaredType = CreateType("csharp-name");
@@ -490,20 +347,30 @@ public class IndexedSymbolResolutionTests
             "ReSharperPlugin.IndexMcp",
             "IndexMcpBackendHost.cs"));
         var source = File.ReadAllText(sourcePath);
-        var groupByIndex = source.IndexOf(".GroupBy(reference =>", StringComparison.Ordinal);
-        var takeIndex = source.IndexOf(".Take(effectiveLimit)", StringComparison.Ordinal);
-        var orderByIndex = groupByIndex >= 0
-            ? source.IndexOf(".OrderBy(", groupByIndex, StringComparison.Ordinal)
+
+        // Deduplication + deterministic ordering now live in OrderReferenceInfosDeterministically,
+        // which CollectScopedReferenceInfos returns and HandleFindReferences truncates. The
+        // ordering method must dedup (GroupBy on the reference identity key) before its final
+        // deterministic OrderBy, and the caller must truncate the already-ordered list.
+        var orderMethodIndex = source.IndexOf(
+            "List<RdReferenceInfo> OrderReferenceInfosDeterministically", StringComparison.Ordinal);
+        var dedupIndex = orderMethodIndex >= 0
+            ? source.IndexOf(".GroupBy(GetReferenceIdentityKey", orderMethodIndex, StringComparison.Ordinal)
+            : -1;
+        var orderByIndex = dedupIndex >= 0
+            ? source.IndexOf(".OrderBy(ReferenceLocationBucket)", dedupIndex, StringComparison.Ordinal)
             : -1;
 
         Assert.Multiple(() =>
         {
-            Assert.That(source, Does.Contain("GroupBy(reference =>")
-                .And.Contain("Take(effectiveLimit)"),
-                "Regression guard: Rider reference results still need an explicit distinct phase before limiting.");
-            Assert.That(orderByIndex >= 0 && orderByIndex < takeIndex,
+            Assert.That(orderMethodIndex >= 0 && dedupIndex >= 0,
                 Is.True,
-                "Reference rows should be ordered deterministically after deduplication and before truncation; backend enumeration order is not a stable API contract.");
+                "Regression guard: Rider reference results still need an explicit distinct phase (GroupBy on the reference identity key) before ordering.");
+            Assert.That(orderByIndex >= 0 && dedupIndex < orderByIndex,
+                Is.True,
+                "Reference rows should be deduplicated and then ordered deterministically; backend enumeration order is not a stable API contract.");
+            Assert.That(source, Does.Contain("orderedReferences.Take(effectiveLimit)"),
+                "HandleFindReferences must truncate the already-ordered, scope-filtered reference list rather than raw enumeration order.");
         });
     }
 
@@ -836,26 +703,6 @@ public class IndexedSymbolResolutionTests
         return methodInfo.Invoke(null, args);
     }
 
-    private static MethodInfo GetPublicStaticMethod(Type declaringType, string methodName, int parameterCount)
-    {
-        var methods = declaringType.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Where(method => method.Name == methodName)
-            .ToList();
-        Assert.That(methods, Is.Not.Empty, $"Missing public static method '{methodName}' on {declaringType.FullName}.");
-
-        var method = methods.Single(candidate => candidate.GetParameters().Length == parameterCount);
-        return method;
-    }
-
-    private static (Exception Exception, long ElapsedMilliseconds) CaptureInvocationFailure(MethodInfo method, params object?[] args)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        var exception = Assert.Throws<TargetInvocationException>(() => method.Invoke(null, args));
-        stopwatch.Stop();
-
-        return (exception!.InnerException ?? exception, stopwatch.ElapsedMilliseconds);
-    }
-
     private static object CreateUninitializedBackendHost()
     {
         return FormatterServices.GetUninitializedObject(BackendHostType);
@@ -1143,18 +990,4 @@ public class IndexedSymbolResolutionTests
     {
     }
 
-    private static string FindRepositoryRoot()
-    {
-        var current = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-        while (current != null)
-        {
-            var candidate = Path.Combine(current.FullName, "src", "dotnet", "ReSharperPlugin.IndexMcp.Tests", "testData", "CSharpProductionReadiness", "MutationWorkspace", "fixture-index.json");
-            if (File.Exists(candidate))
-                return current.FullName;
-
-            current = current.Parent;
-        }
-
-        throw new AssertionException("Could not locate repository root for C# production-readiness fixtures.");
-    }
 }

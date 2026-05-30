@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text.Json;
-using JetBrains.Lifetimes;
 using JetBrains.Rider.Model.IndexMcp;
 using NUnit.Framework;
 
@@ -57,206 +56,6 @@ public class RiderMutationWorkflowTests
             Assert.That(outcome.Verification.Warnings, Has.Some.Contains(scenario.RequiredVerificationKeyword!).IgnoreCase,
                 "Verification summaries must explain why a bounded status did not remain an unqualified success.");
         });
-    }
-
-    [TestCase("localRename", "local")]
-    [TestCase("parameterRename", "parameter")]
-    [TestCase("memberRename", "member")]
-    [TestCase("typeRename", "type")]
-    public void SymbolRenamePlan_UsesExactSymbolLane(string fixtureName, string expectedKind)
-    {
-        var fixture = GetCase(fixtureName);
-        var plan = PlanSymbolRename(Path.Combine(WorkspaceRoot, fixture.File), fixture.Line!.Value, fixture.Column!.Value);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(plan.OperationKind, Is.EqualTo("symbol"));
-            Assert.That(plan.Status, Is.EqualTo("resolved"), plan.Message);
-            Assert.That(plan.TargetKind, Is.EqualTo(expectedKind), plan.Message);
-            Assert.That(plan.ResolvedName, Is.EqualTo(fixture.Symbol), plan.Message);
-            Assert.That(plan.SourceTokenText, Is.EqualTo(fixture.Symbol),
-                "Exact-target planning must preserve the declaration token text so frontend execution can reject widened Rider mutations.");
-            Assert.That(plan.Message, Does.Contain("Resolved exact").And.Contain(expectedKind));
-            Assert.That(NormalizePathSeparators(plan.OldPath), Does.EndWith(NormalizePathSeparators(fixture.File)));
-            Assert.That(NormalizePathSeparators(plan.NewPath), Does.EndWith(NormalizePathSeparators(fixture.File)));
-        });
-    }
-
-    [Test]
-    public void SymbolRenamePlan_RejectsUnsafeWideningBeforeMutation()
-    {
-        var fixture = GetCase("memberRename");
-        var plan = PlanSymbolRename(Path.Combine(WorkspaceRoot, fixture.File), fixture.Line!.Value, fixture.NonNameTokenColumn!.Value);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(plan.OperationKind, Is.EqualTo("symbol"));
-            Assert.That(plan.Status, Is.Not.EqualTo("resolved"));
-            Assert.That(plan.TargetKind, Is.Not.EqualTo("type"));
-            Assert.That(plan.Message, Does.Contain("widen").IgnoreCase.Or.Contain("exact").IgnoreCase);
-        });
-    }
-
-    [Test]
-    public void FileRenamePlan_UsesDistinctFileLaneWithoutTypeWidening()
-    {
-        var safeFixture = GetCase("fileRename");
-        var safePlan = PlanFileRename(Path.Combine(WorkspaceRoot, safeFixture.File), safeFixture.NewName!);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(safePlan.OperationKind, Is.EqualTo("file"));
-            Assert.That(safePlan.TargetKind, Is.EqualTo("file"), safePlan.Message);
-            Assert.That(safePlan.ResolvedName, Is.EqualTo(Path.GetFileName(safeFixture.File)), safePlan.Message);
-            Assert.That(safePlan.NewPath, Does.EndWith(safeFixture.NewName));
-        });
-
-        if (string.Equals(safePlan.Status, "unsupported_context", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(safePlan.Status, "unsupported", StringComparison.OrdinalIgnoreCase))
-        {
-            Assert.Multiple(() =>
-            {
-                Assert.That(safePlan.Status, Is.EqualTo("unsupported_context"),
-                    "File rename fail-closed outcomes must surface the canonical unsupported_context status.");
-                Assert.That(safePlan.Message,
-                    Does.Contain("fail-closed").IgnoreCase
-                        .Or.Contain("workflow").IgnoreCase
-                        .Or.Contain("symbol rename").IgnoreCase);
-            });
-        }
-        else
-        {
-            Assert.That(safePlan.Status, Is.EqualTo("resolved"), safePlan.Message);
-        }
-
-        var sameBaseNameTypePath = Path.Combine(WorkspaceRoot, GetCase("typeRename").File);
-        var sameBaseNameTypePlan = PlanFileRename(sameBaseNameTypePath, "RenamedTypeTarget.cs");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(sameBaseNameTypePlan.OperationKind, Is.EqualTo("file"));
-            Assert.That(sameBaseNameTypePlan.Status, Is.EqualTo("resolved"), sameBaseNameTypePlan.Message);
-            Assert.That(sameBaseNameTypePlan.TargetKind, Is.EqualTo("file"));
-            Assert.That(sameBaseNameTypePlan.ResolvedName, Is.EqualTo("TypeRenameTarget.cs"));
-            Assert.That(sameBaseNameTypePlan.NewPath, Does.EndWith("RenamedTypeTarget.cs"));
-        });
-    }
-
-    [Test]
-    public void FileRenameExecution_SameBaseNameTypePreservesDeclaredTypeIdentityOrFailsClosed()
-    {
-        var fixture = GetCase("typeRename");
-        using var workspace = CreateWorkspaceCopy();
-        var sourcePath = Path.Combine(workspace.RootPath, fixture.File);
-        var renamedPath = Path.Combine(Path.GetDirectoryName(sourcePath)!, "RenamedTypeTarget.cs");
-        var consumerPath = Path.Combine(workspace.RootPath, "Renames", "TypeRenameConsumer.cs");
-        var originalSourceText = File.ReadAllText(sourcePath);
-        var originalConsumerText = File.ReadAllText(consumerPath);
-        var outcome = ReadOutcome(ExecuteFileRename(sourcePath, "RenamedTypeTarget.cs"));
-
-        if (string.Equals(outcome.Status, "unsupported_context", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(outcome.Status, "unsupported", StringComparison.OrdinalIgnoreCase))
-        {
-            Assert.Multiple(() =>
-            {
-                Assert.That(outcome.Status, Is.EqualTo("unsupported_context"));
-                Assert.That(File.Exists(sourcePath), Is.True);
-                Assert.That(File.Exists(renamedPath), Is.False);
-                Assert.That(File.ReadAllText(sourcePath), Is.EqualTo(originalSourceText));
-                Assert.That(File.ReadAllText(consumerPath), Is.EqualTo(originalConsumerText));
-            });
-            return;
-        }
-
-        var renamedFileText = File.ReadAllText(renamedPath);
-        var consumerText = File.ReadAllText(consumerPath);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(File.Exists(sourcePath), Is.False);
-            Assert.That(File.Exists(renamedPath), Is.True);
-            Assert.That(renamedFileText, Does.Contain("class TypeRenameTarget"));
-            Assert.That(renamedFileText, Does.Not.Contain("class RenamedTypeTarget"));
-            Assert.That(consumerText, Does.Contain("TypeRenameTarget"));
-            Assert.That(consumerText, Does.Not.Contain("RenamedTypeTarget"));
-        });
-    }
-
-    [Test]
-    public void FileRenameExecution_UsesFilePathLaneAndPreservesDeclaredTypeOrFailsClosed()
-    {
-        var fixture = GetCase("fileRename");
-        using var workspace = CreateWorkspaceCopy();
-        var sourcePath = Path.Combine(workspace.RootPath, fixture.File);
-        var renamedPath = Path.Combine(Path.GetDirectoryName(sourcePath)!, fixture.NewName!);
-        var consumerPath = Path.Combine(workspace.RootPath, "FileRename", "FileRenameConsumer.cs");
-        var originalSourceText = File.ReadAllText(sourcePath);
-        var originalConsumerText = File.ReadAllText(consumerPath);
-        var outcome = ReadOutcome(ExecuteFileRename(sourcePath, fixture.NewName!));
-        var prohibitedTypeRename = fixture.ProhibitedTypeRename ?? Path.GetFileNameWithoutExtension(fixture.NewName!);
-
-        if (string.Equals(outcome.Status, "unsupported_context", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(outcome.Status, "unsupported", StringComparison.OrdinalIgnoreCase))
-        {
-            Assert.Multiple(() =>
-            {
-                Assert.That(outcome.Status, Is.EqualTo("unsupported_context"),
-                    "Fail-closed file rename rejection must expose unsupported_context instead of the legacy unsupported label.");
-                Assert.That(File.Exists(sourcePath), Is.True,
-                    "Fail-closed file rename rejection must leave the source file untouched.");
-                Assert.That(File.Exists(renamedPath), Is.False,
-                    "Fail-closed file rename rejection must not leave a partially renamed file behind.");
-                Assert.That(File.ReadAllText(sourcePath), Is.EqualTo(originalSourceText));
-                Assert.That(File.ReadAllText(consumerPath), Is.EqualTo(originalConsumerText));
-                Assert.That(outcome.ChangesCount, Is.EqualTo(0));
-                Assert.That(outcome.AffectedFiles, Is.Empty);
-                Assert.That(outcome.Message,
-                    Does.Contain("fail-closed").IgnoreCase
-                        .Or.Contain("unsupported").IgnoreCase
-                        .Or.Contain("workflow").IgnoreCase);
-                Assert.That(outcome.Message,
-                    Does.Not.Contain("caret").IgnoreCase
-                        .And.Not.Contain("line").IgnoreCase
-                        .And.Not.Contain("column").IgnoreCase
-                        .And.Not.Contain("exact declaration name token").IgnoreCase);
-            });
-            return;
-        }
-
-        var renamedFileText = File.ReadAllText(renamedPath);
-        var consumerText = File.ReadAllText(consumerPath);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(outcome.Status,
-                Is.EqualTo("success").Or.EqualTo("failed"),
-                outcome.Message);
-            Assert.That(File.Exists(sourcePath), Is.False,
-                "Applied file rename must remove the original file path.");
-            Assert.That(File.Exists(renamedPath), Is.True,
-                "Applied file rename must create the requested destination file.");
-            Assert.That(renamedFileText, Does.Contain($"class {fixture.PreserveTypeName!}"),
-                "File-lane rename must preserve the declared type name instead of widening into a type rename.");
-            Assert.That(renamedFileText, Does.Not.Contain($"class {prohibitedTypeRename}"),
-                "Regression guard: file rename must not widen into renaming the declared type to the new file base name.");
-            Assert.That(consumerText, Does.Contain(fixture.PreserveTypeName!),
-                "Consumer code must keep referencing the original declared type after a file-scoped rename.");
-            Assert.That(consumerText, Does.Not.Contain(prohibitedTypeRename),
-                "Regression guard: consumer code must not be widened into the renamed file base name.");
-            Assert.That(consumerText, Does.Contain(fixture.ConsumerSentinel!),
-                "Consumer sentinel must remain tied to the original declared type when only the file path changes.");
-        });
-
-        var semanticProof = ReadOutcome(ConfirmSemanticFileMutationProof(
-            renamedPath,
-            Path.Combine(workspace.RootPath, "MutationWorkspace.csproj"),
-            expectedNamespace: "CSharpProductionReadiness.FileRename",
-            affectedFiles: outcome.AffectedFiles,
-            referenceFiles: new[] { consumerPath },
-            referenceTokens: new[] { fixture.PreserveTypeName!, fixture.ConsumerSentinel! }));
-
-        AssertSemanticProofMatchesOutcome(outcome, semanticProof,
-            "Diagnostics-only file rename verification MUST NOT report success without namespace/default-namespace, affected-file, and resolvable-reference evidence.");
     }
 
     [Test]
@@ -465,12 +264,22 @@ public class RiderMutationWorkflowTests
     public void SafeDeleteBlocked_ReturnsBlockingUsageEvidence()
     {
         var fixture = GetCase("safeDeleteBlocked");
+        // Semantic usage discovery now lives in the host (IndexMcpBackendHost.CollectSafeDeleteExternalUsages),
+        // which requires a live solution and is validated by the live smoke harness. This test exercises the
+        // executor's blocking branch by supplying the externally-resolved usages the host would pass in.
+        var consumerPath = Path.Combine(WorkspaceRoot, "SafeDelete", "BlockedDeletionConsumer.cs");
+        var externalUsages = new List<RdSafeDeleteBlockedUsage>
+        {
+            new RdSafeDeleteBlockedUsage(consumerPath, 1, 1, "var blocked = new BlockedDeletionTarget();", "external_usage")
+        };
+
         var outcome = ReadSafeDeleteOutcome(ExecuteSafeDelete(
             Path.Combine(WorkspaceRoot, fixture.File),
             fixture.Line!.Value,
             fixture.Column!.Value,
             fixture.Symbol!,
-            force: false));
+            force: false,
+            externalUsages));
 
         Assert.Multiple(() =>
         {
@@ -678,23 +487,11 @@ public class RiderMutationWorkflowTests
             ReadString(planType, rawPlan, false, "NewPath"));
     }
 
-    private static PlannedRename PlanSymbolRename(string absoluteFilePath, int line, int column)
-        => InvokePlanner("PlanExactSymbolRename", new object[] { absoluteFilePath, line, column });
-
-    private static PlannedRename PlanFileRename(string absoluteFilePath, string newName)
-        => InvokePlanner("PlanExactFileRename", new object[] { absoluteFilePath, newName });
-
     private static PlannedRename PlanMove(string absoluteFilePath, string destinationDirectory)
         => InvokePlannerType(
             "ReSharperPlugin.IndexMcp.Mutations.MoveMutationPlanner",
             "PlanSemanticMove",
             new object[] { absoluteFilePath, destinationDirectory });
-
-    private static PlannedRename InvokePlanner(string methodName, object[] args)
-        => InvokePlannerType(
-            "ReSharperPlugin.IndexMcp.Mutations.RenameMutationPlanner",
-            methodName,
-            args);
 
     private static PlannedRename InvokePlannerType(string plannerTypeName, string methodName, object[] args)
     {
@@ -716,20 +513,6 @@ public class RiderMutationWorkflowTests
             "ReSharperPlugin.IndexMcp.Mutations.MoveMutationExecutor",
             "ExecuteSemanticMove",
             new object[] { absoluteFilePath, destinationDirectory });
-
-    private static object ExecuteFileRename(string absoluteFilePath, string newName)
-    {
-        var host = FormatterServices.GetUninitializedObject(BackendAssemblyMarker);
-        var method = BackendAssemblyMarker.GetMethod("HandleRenameFile", BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.That(method, Is.Not.Null, "IndexMcpBackendHost.HandleRenameFile was not found.");
-
-        var task = method!.Invoke(host, new object[] { Lifetime.Eternal, new RdRenameFileRequest(absoluteFilePath, newName) })
-                   as Task<RdRenameFileResult?>;
-        Assert.That(task, Is.Not.Null, "HandleRenameFile must return Task<RdRenameFileResult?>.");
-
-        return task!.GetAwaiter().GetResult()
-               ?? throw new AssertionException("HandleRenameFile returned null.");
-    }
 
     private static object ConfirmSemanticFileMutationProof(
         string primaryFilePath,
@@ -790,11 +573,20 @@ public class RiderMutationWorkflowTests
             });
     }
 
-    private static object ExecuteSafeDelete(string absoluteFilePath, int line, int column, string symbol, bool force)
+    private static object ExecuteSafeDelete(string absoluteFilePath, int line, int column, string symbol, bool force,
+        IReadOnlyList<RdSafeDeleteBlockedUsage>? externalUsages = null)
         => InvokeStaticRequired(
             "ReSharperPlugin.IndexMcp.Mutations.SafeDeleteMutationExecutor",
             "ExecuteSafeDelete",
-            new object[] { absoluteFilePath, line, column, symbol, force });
+            new object[]
+            {
+                absoluteFilePath,
+                line,
+                column,
+                symbol,
+                force,
+                externalUsages ?? (IReadOnlyList<RdSafeDeleteBlockedUsage>)Array.Empty<RdSafeDeleteBlockedUsage>()
+            });
 
     private static object InvokeStaticRequired(string typeName, string methodName, object[] args)
         => InvokeStaticRequired(typeName, methodName, parameterTypes: null, args);

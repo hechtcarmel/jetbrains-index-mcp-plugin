@@ -65,7 +65,7 @@ object McpConstants {
      * (e.g. inside unit tests that don't load the manifest). Update alongside
      * `pluginVersion` in `gradle.properties`.
      */
-    const val SERVER_VERSION_FALLBACK = "4.20.0"
+    const val SERVER_VERSION_FALLBACK = "4.20.1"
 
     /**
      * Resolve the plugin's reported version from the live plugin descriptor at runtime
@@ -88,7 +88,7 @@ object McpConstants {
         ReplaceWith("McpConstants.getServerVersion()"),
     )
     const val SERVER_VERSION = SERVER_VERSION_FALLBACK
-    const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and Markdown file structure. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
+    const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover, Rider). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, C# (Rider), and Markdown file structure. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
 
     /**
      * Topic for server status change notifications.

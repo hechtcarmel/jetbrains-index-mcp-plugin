@@ -78,8 +78,11 @@ class FindDefinitionTool : AbstractMcpTool() {
             maxPreviewLines = maxPreviewLines
         )
         if (riderDefinition.handled) {
-            return riderDefinition.value?.let { createJsonResult(it) }
-                ?: createErrorResult("Rider ReSharper backend could not resolve the C# definition target")
+            riderDefinition.value?.let { return createJsonResult(it) }
+            return createErrorResult(
+                riderDefinition.errorMessage
+                    ?: "Rider ReSharper backend could not resolve the C# definition target"
+            )
         }
         if (isRiderSymbolMode) {
             return createErrorResult(RIDER_SYMBOL_MODE_UNSUPPORTED)

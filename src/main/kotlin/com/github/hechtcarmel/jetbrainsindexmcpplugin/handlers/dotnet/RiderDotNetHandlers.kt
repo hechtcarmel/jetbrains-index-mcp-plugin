@@ -262,7 +262,6 @@ object RdProtocolBridge {
     }
 
     internal fun timeoutSecondsForCall(callName: String): Long = when (callName) {
-        "renameSymbol" -> 300L
         "getCallHierarchy" -> 30L
         else -> 60L
     }
@@ -377,110 +376,6 @@ internal data class RiderBackendSymbolResult(
     val message: String?,
     val symbolInfo: Any?
 )
-
-internal data class RiderBackendVerificationResult(
-    val status: String?,
-    val checksRun: List<String>,
-    val warnings: List<String>
-)
-
-internal data class RiderBackendRenameDiagnostics(
-    val resolutionStatus: String?,
-    val targetKind: String?,
-    val resolvedName: String?,
-    val sourceTokenText: String?,
-    val executionHint: String?,
-    val unsupportedReason: String?,
-    val traceStages: List<String>
-)
-
-internal data class RiderBackendMutationResult(
-    val success: Boolean,
-    val status: String?,
-    val message: String?,
-    val affectedFiles: List<String>,
-    val changesCount: Int,
-    val verification: RiderBackendVerificationResult?,
-    val renameDiagnostics: RiderBackendRenameDiagnostics?
-)
-
-internal object RiderBackendMutationResultMapper {
-    private const val RENAME_DIAGNOSTICS_PREFIX = "[backendSymbolRename:"
-    private val renameDiagnosticsEntryRegex = Regex("""(?:^|,\s*)([A-Za-z][A-Za-z0-9]*)=(.*?)(?=,\s*[A-Za-z][A-Za-z0-9]*=|$)""")
-
-    fun fromRdResult(result: Any): RiderBackendMutationResult {
-        val rawMessage = RdProtocolBridge.getProperty(result, "message") as? String
-        val parsedMessage = parseRenameDiagnostics(rawMessage)
-        val verification = parseVerification(RdProtocolBridge.getProperty(result, "verification"))
-        @Suppress("UNCHECKED_CAST")
-        val affectedFiles = (RdProtocolBridge.getProperty(result, "affectedFiles") as? List<String>) ?: emptyList()
-
-        return RiderBackendMutationResult(
-            success = RdProtocolBridge.getProperty(result, "success") as? Boolean ?: false,
-            status = RdProtocolBridge.getProperty(result, "status") as? String,
-            message = parsedMessage.userMessage,
-            affectedFiles = affectedFiles,
-            changesCount = RdProtocolBridge.getProperty(result, "changesCount") as? Int ?: 0,
-            verification = verification,
-            renameDiagnostics = parsedMessage.renameDiagnostics
-        )
-    }
-
-    private fun parseVerification(verification: Any?): RiderBackendVerificationResult? {
-        verification ?: return null
-        @Suppress("UNCHECKED_CAST")
-        val checksRun = (RdProtocolBridge.getProperty(verification, "checksRun") as? List<String>) ?: emptyList()
-        @Suppress("UNCHECKED_CAST")
-        val warnings = (RdProtocolBridge.getProperty(verification, "warnings") as? List<String>) ?: emptyList()
-        return RiderBackendVerificationResult(
-            status = RdProtocolBridge.getProperty(verification, "status") as? String,
-            checksRun = checksRun,
-            warnings = warnings
-        )
-    }
-
-    private fun parseRenameDiagnostics(message: String?): ParsedRiderBackendMessage {
-        if (message.isNullOrBlank()) {
-            return ParsedRiderBackendMessage(message, null)
-        }
-
-        val markerIndex = message.lastIndexOf(RENAME_DIAGNOSTICS_PREFIX)
-        if (markerIndex < 0 || !message.endsWith(']')) {
-            return ParsedRiderBackendMessage(message, null)
-        }
-
-        val userMessage = message.substring(0, markerIndex).trimEnd().ifBlank { null }
-        val payload = message.substring(markerIndex + RENAME_DIAGNOSTICS_PREFIX.length, message.length - 1).trim()
-        val entries = renameDiagnosticsEntryRegex.findAll(payload)
-            .associate { match ->
-                match.groupValues[1] to match.groupValues[2].trim()
-            }
-
-        val diagnostics = RiderBackendRenameDiagnostics(
-            resolutionStatus = entries["resolutionStatus"].normalizedDiagnosticValue(),
-            targetKind = entries["targetKind"].normalizedDiagnosticValue(),
-            resolvedName = entries["resolvedName"].normalizedDiagnosticValue(),
-            sourceTokenText = entries["sourceTokenText"].normalizedDiagnosticValue(),
-            executionHint = entries["executionHint"].normalizedDiagnosticValue(),
-            unsupportedReason = entries["unsupportedReason"].normalizedDiagnosticValue(),
-            traceStages = entries["traceStages"].normalizedDiagnosticValue()
-                ?.split('>')
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                ?: emptyList()
-        )
-
-        return ParsedRiderBackendMessage(userMessage, diagnostics)
-    }
-
-    private fun String?.normalizedDiagnosticValue(): String? =
-        this?.takeUnless { it.isBlank() || it == "<null>" }
-
-    private data class ParsedRiderBackendMessage(
-        val userMessage: String?,
-        val renameDiagnostics: RiderBackendRenameDiagnostics?
-    )
-}
 
 object RiderBackendSemanticService {
     private val LOG = logger<RiderBackendSemanticService>()

@@ -217,44 +217,12 @@ object IndexMcpModel : Ext(SolutionModel.Solution) {
         field("nodes", immutableList(RdFlatStructureNode))
     }
 
-    // ── Rename Symbol ───────────────────────────────────────────────────────
-
-    private val RdRenameSymbolRequest = structdef {
-        field("position", RdSourcePosition)
-        field("newName", string)
-    }
+    // ── Mutation Verification (shared by move/safe-delete) ──────────────────
 
     private val RdMutationVerification = structdef {
         field("status", string)
         field("checksRun", immutableList(string))
         field("warnings", immutableList(string))
-    }
-
-    private val RdRenameSymbolResult = structdef {
-        field("success", bool)
-        field("oldName", string)
-        field("newName", string)
-        field("affectedFiles", immutableList(string))
-        field("changesCount", int)
-        field("message", string)
-        field("status", string)
-        field("verification", RdMutationVerification.nullable)
-    }
-
-    private val RdRenameFileRequest = structdef {
-        field("filePath", string)
-        field("newName", string)
-    }
-
-    private val RdRenameFileResult = structdef {
-        field("success", bool)
-        field("oldPath", string)
-        field("newPath", string)
-        field("affectedFiles", immutableList(string))
-        field("changesCount", int)
-        field("message", string)
-        field("status", string)
-        field("verification", RdMutationVerification.nullable)
     }
 
     private val RdMoveFileRequest = structdef {
@@ -312,8 +280,6 @@ object IndexMcpModel : Ext(SolutionModel.Solution) {
         call("getCallHierarchy", RdCallHierarchyRequest, RdCallHierarchyResult.nullable)
         call("findSuperMethods", RdSuperMethodsRequest, RdSuperMethodsResult.nullable)
         call("getFileStructure", RdFileStructureRequest, RdFileStructureResult.nullable)
-        call("renameSymbol", RdRenameSymbolRequest, RdRenameSymbolResult.nullable)
-        call("renameFile", RdRenameFileRequest, RdRenameFileResult.nullable)
         call("moveFile", RdMoveFileRequest, RdMoveFileResult.nullable)
         call("safeDelete", RdSafeDeleteRequest, RdSafeDeleteResult.nullable)
     }

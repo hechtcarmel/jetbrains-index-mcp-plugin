@@ -349,11 +349,10 @@ val testDotNet by tasks.registering(Exec::class) {
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Constants.Tasks.PREPARE_SANDBOX) {
     dependsOn(compileDotNet)
     notCompatibleWithConfigurationCache("Aggregates the compileDotNet Exec task output")
-    val pluginName = providers.gradleProperty("pluginName").get()
     from(dotNetOutputDir) {
         include("*.dll")
         include("*.pdb")
-        into("$pluginName/dotnet")
+        into("${rootProject.name}/dotnet")
     }
     doFirst {
         require(dotNetOutputDir.resolve("ReSharperPlugin.IndexMcp.dll").isFile) {
@@ -365,9 +364,7 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>(Con
 tasks.named<Zip>(Constants.Tasks.BUILD_PLUGIN) {
     dependsOn(compileDotNet)
     notCompatibleWithConfigurationCache("Aggregates the compileDotNet Exec task output")
-    from(dotNetOutputDir) {
-        include("*.dll")
-        include("*.pdb")
-        into("dotnet")
-    }
+    // The ReSharper backend DLLs are placed into "<rootProject.name>/dotnet" by the
+    // PrepareSandboxTask above; buildPlugin zips the prepared sandbox, so they are already
+    // included. A second explicit copy here would collide with that entry (duplicate ZIP path).
 }

@@ -16,7 +16,7 @@ public class MutationTargetResolutionTests
         "src", "dotnet", "ReSharperPlugin.IndexMcp.Tests", "testData", "CSharpProductionReadiness", "MutationWorkspace");
     private static readonly Lazy<MutationFixtureCatalog> FixtureCatalog = new(LoadFixtureCatalog);
     private static readonly Type BackendAssemblyMarker = typeof(IndexMcpBackendHost);
-    private static readonly string[] ResolverMethodNames = { "ResolveExactTarget", "ResolveRenameTarget", "ResolveContract" };
+    private const string ResolverMethodName = "ResolveContract";
 
     [TestCase("localRename")]
     [TestCase("parameterRename")]
@@ -113,7 +113,7 @@ public class MutationTargetResolutionTests
             .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
             .FirstOrDefault(IsSupportedResolverMethod);
         Assert.That(method, Is.Not.Null,
-            "ExactTargetResolver must expose a static ResolveExactTarget/ResolveRenameTarget/ResolveContract method for fixture-backed contract tests.");
+            "ExactTargetResolver must expose a static ResolveContract method for fixture-backed contract tests.");
 
         var rawResult = method!.GetParameters().Length == 5
             ? method.Invoke(null, new object?[] { WorkspaceRoot, fixture.File, fixture.Line, column, requestedSymbol })
@@ -124,7 +124,7 @@ public class MutationTargetResolutionTests
 
     private static bool IsSupportedResolverMethod(MethodInfo method)
     {
-        if (!ResolverMethodNames.Contains(method.Name, StringComparer.Ordinal))
+        if (!string.Equals(method.Name, ResolverMethodName, StringComparison.Ordinal))
             return false;
 
         var parameters = method.GetParameters();

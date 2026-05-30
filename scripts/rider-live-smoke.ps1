@@ -11,6 +11,8 @@ param(
     [int] $StartupWaitSeconds = 60,
     [switch] $FullMatrix,
     [switch] $TestRename,
+    [switch] $TestSafeDelete,
+    [switch] $ResetWorkspace,
     [string] $ExpectedVersion
 )
 
@@ -160,6 +162,11 @@ function Reset-WorkspaceClean {
     try {
         $status = git status --porcelain 2>$null
         if ($status) {
+            if (-not $ResetWorkspace) {
+                Write-Host "Workspace at $ProjectPath is dirty:"
+                $status | ForEach-Object { Write-Host $_ }
+                throw "Refusing to run 'git reset --hard' without -ResetWorkspace. Re-run with -ResetWorkspace only on a disposable/throwaway checkout."
+            }
             Write-Host "Workspace at $ProjectPath was dirty; running 'git reset --hard' to reset."
             git reset --hard 2>&1 | Out-Null
             # Remove smoke-rename artefacts that survive 'git reset --hard' (untracked new paths).
@@ -185,6 +192,32 @@ function Reset-WorkspaceClean {
     } finally {
         Pop-Location
     }
+}
+
+function Assert-PathUnchanged {
+    # Guards "blocked"/"fail-closed" mutation tests: the named tool reported it did NOT
+    # mutate, so the working tree for these paths must be byte-for-byte unchanged. Catches
+    # partial mutations that slip through before a tool reports blocked.
+    param(
+        [string] $Name,
+        [string[]] $RelativePaths
+    )
+    if (-not (Test-Path (Join-Path $ProjectPath ".git"))) {
+        Write-Host "SKIP $Name no-mutation check: $ProjectPath is not a git repo."
+        return
+    }
+    Push-Location $ProjectPath
+    try {
+        foreach ($rel in $RelativePaths) {
+            $dirty = git status --porcelain -- $rel 2>$null
+            if ($dirty) {
+                throw "$Name was expected to be non-mutating, but '$rel' changed on disk:`n$dirty"
+            }
+        }
+    } finally {
+        Pop-Location
+    }
+    Write-Host "PASS $Name left $($RelativePaths -join ', ') unchanged on disk"
 }
 
 if (-not (Test-Path $PluginZip)) { throw "Plugin ZIP not found: $PluginZip" }
@@ -213,6 +246,18 @@ if ($expectedVersion) {
 } else {
     Write-Warning "Expected plugin version could not be determined (no -ExpectedVersion and no readable gradle.properties); skipping version assertion."
 }
+
+# Finding #11: SERVER_DESCRIPTION must advertise "C# (Rider)" after F# was dropped in 4.20.0.
+# The description rides on initialize.result.serverInfo.description (JsonRpcHandler), so the
+# live initialize response is the authoritative source.
+$serverDescription = [string]$initialize.result.serverInfo.description
+if ($serverDescription -notmatch "C# \(Rider\)") {
+    throw "MCP serverInfo.description should advertise 'C# (Rider)' but was: $serverDescription"
+}
+if ($serverDescription -match "C#/F#") {
+    throw "MCP serverInfo.description still advertises the removed 'C#/F#' Rider support: $serverDescription"
+}
+Write-Host "PASS serverInfo.description advertises C# (Rider) without stale F#"
 
 $indexStatus = Invoke-Tool -Id 2 -Name "ide_index_status" -Arguments @{ project_path = $ProjectPath }
 Assert-ToolOk -Name "ide_index_status" -Response $indexStatus -Predicate {
@@ -371,6 +416,86 @@ if (-not $regBareClassRefs.result.isError) {
 }
 Write-Host "PASS ide_find_references unresolved symbol sanitized"
 
+# Finding #10: ide_find_definition must surface the backend's errorMessage for an
+# unresolvable C# symbol instead of swallowing it behind a generic fallback. The response
+# must be a clean tool error with a non-empty, sanitized message (no RdFault / backend
+# source path leak), mirroring the find_references contract above.
+$missingDef = Invoke-Tool -Id 73 -Name "ide_find_definition" -Arguments @{
+    project_path = $ProjectPath
+    language = "C#"
+    symbol = "DoesNotExistAnywhereInClipthrough"
+}
+$missingDefText = Get-ToolText $missingDef
+if (-not $missingDef.result.isError) {
+    throw "ide_find_definition unresolved symbol: expected tool error response, got success: $missingDefText"
+}
+if ($missingDefText -match "IndexMcpBackendHost\.cs" -or $missingDefText -match "RdFault") {
+    throw "REGRESSION ide_find_definition error leaks backend RdFault or source path: $missingDefText"
+}
+if ([string]::IsNullOrWhiteSpace($missingDefText)) {
+    throw "ide_find_definition unresolved symbol returned an empty error message; backend errorMessage is not being surfaced."
+}
+Write-Host "PASS ide_find_definition unresolved symbol surfaces sanitized error"
+
+# Finding #7: C# member/constructor matching is case-sensitive Ordinal. The real member is
+# `TryConnectClipListScrollViewer`; a wrong-case `tryConnectClipListScrollViewer` must NOT
+# resolve via a case-insensitive fallback. Hedge: tolerate success ONLY if the backend
+# echoes the exact requested casing (i.e. it genuinely found that spelling, not a fuzzy
+# fall-through to the real PascalCase member).
+$wrongCaseDef = Invoke-Tool -Id 74 -Name "ide_find_definition" -Arguments @{
+    project_path = $ProjectPath
+    language = "C#"
+    symbol = "Clipthrough.Views.MainWindow#tryConnectClipListScrollViewer"
+}
+if ($wrongCaseDef.result.isError) {
+    Write-Host "PASS ide_find_definition wrong-case C# member rejected (case-sensitive)"
+} else {
+    $wrongCaseJson = (Get-ToolText $wrongCaseDef) | ConvertFrom-Json
+    if ($wrongCaseJson.symbolName -ceq "tryConnectClipListScrollViewer") {
+        Write-Host "PASS ide_find_definition wrong-case resolved to exact requested casing only"
+    } else {
+        throw "REGRESSION ide_find_definition resolved wrong-case 'tryConnectClipListScrollViewer' to '$($wrongCaseJson.symbolName)'; case-insensitive member matching regressed."
+    }
+}
+
+# Finding #4: ide_find_references applies `scope` BEFORE truncation and reports a scope-aware
+# totalCount. This is scope-sanity coverage (not truncation-boundary coverage): assert the
+# counts are monotonic across widening scopes and that the production-only result never
+# includes a reference from a test project directory.
+$refSymbol = "Clipthrough.Views.MainWindow#TryConnectClipListScrollViewer"
+$refProd = Invoke-Tool -Id 75 -Name "ide_find_references" -Arguments @{
+    project_path = $ProjectPath; language = "C#"; symbol = $refSymbol
+    scope = "project_production_files"; pageSize = 50
+}
+$refAll = Invoke-Tool -Id 76 -Name "ide_find_references" -Arguments @{
+    project_path = $ProjectPath; language = "C#"; symbol = $refSymbol
+    scope = "project_files"; pageSize = 50
+}
+$refLibs = Invoke-Tool -Id 77 -Name "ide_find_references" -Arguments @{
+    project_path = $ProjectPath; language = "C#"; symbol = $refSymbol
+    scope = "project_and_libraries"; pageSize = 50
+}
+$refProdJson = (Get-ToolText $refProd) | ConvertFrom-Json
+$refAllJson  = (Get-ToolText $refAll)  | ConvertFrom-Json
+$refLibsJson = (Get-ToolText $refLibs) | ConvertFrom-Json
+foreach ($pair in @(@{ n = "production"; j = $refProdJson }, @{ n = "project"; j = $refAllJson }, @{ n = "libraries"; j = $refLibsJson })) {
+    if ($pair.j.totalCount -lt 0) {
+        throw "ide_find_references scope $($pair.n): totalCount should be >= 0, got $($pair.j.totalCount)."
+    }
+}
+if (-not ($refProdJson.totalCount -le $refAllJson.totalCount -and $refAllJson.totalCount -le $refLibsJson.totalCount)) {
+    throw "ide_find_references scope counts not monotonic: production=$($refProdJson.totalCount) project=$($refAllJson.totalCount) libraries=$($refLibsJson.totalCount). Scope may be applied after truncation."
+}
+$prodTestLeak = @($refProdJson.references | Where-Object { $_.file -match '(?i)[\\/][^\\/]*Tests?[\\/]' })
+if ($prodTestLeak.Count -gt 0) {
+    throw "ide_find_references project_production_files leaked test-project references: $(($prodTestLeak | ForEach-Object { $_.file }) -join ', ')"
+}
+Write-Host "PASS ide_find_references scope filtering monotonic + production excludes test paths (prod=$($refProdJson.totalCount) project=$($refAllJson.totalCount) libs=$($refLibsJson.totalCount))"
+
+# Findings #1 (git reset gating), #2 (sandbox DLL dir) and #9 (version constant sync) are not
+# directly observable as MCP tool calls: #1/#2 are exercised by this script's own pre-flight
+# and install steps, and #9 is covered by the version assertion above.
+
 if ($FullMatrix) {
     $findClassExact = Invoke-Tool -Id 8 -Name "ide_find_class" -Arguments @{
         project_path = $ProjectPath
@@ -493,6 +618,34 @@ if ($FullMatrix) {
         param($json) ($json.subtypes | Where-Object { $_.name -eq "ClipStoreService" }).Count -gt 0
     }
 
+    # Finding #5: ide_find_implementations / ide_type_hierarchy honor `scope` (the scope filter
+    # is applied before truncation). Production scope must still surface the production
+    # implementation `ClipStoreService`; test scope must NOT return that production class
+    # (an empty result is acceptable — the contract only guarantees production code is excluded).
+    $implProdScope = Invoke-Tool -Id 84 -Name "ide_find_implementations" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Services/Storage/IClipStoreService.cs"
+        line = 8
+        column = 18
+        scope = "project_production_files"
+        pageSize = 10
+    }
+    Assert-ToolOk -Name "ide_find_implementations production scope C#" -Response $implProdScope -Predicate {
+        param($json) ($json.implementations | Where-Object { $_.name -eq "ClipStoreService" }).Count -gt 0
+    }
+
+    $implTestScope = Invoke-Tool -Id 85 -Name "ide_find_implementations" -Arguments @{
+        project_path = $ProjectPath
+        file = "Clipthrough/Services/Storage/IClipStoreService.cs"
+        line = 8
+        column = 18
+        scope = "project_test_files"
+        pageSize = 10
+    }
+    Assert-ToolOk -Name "ide_find_implementations test scope excludes production C#" -Response $implTestScope -Predicate {
+        param($json) @($json.implementations | Where-Object { $_.name -eq "ClipStoreService" }).Count -eq 0
+    }
+
     $superMethods = Invoke-Tool -Id 19 -Name "ide_find_super_methods" -Arguments @{
         project_path = $ProjectPath
         file = "Clipthrough/App.axaml.cs"
@@ -529,6 +682,43 @@ if ($FullMatrix) {
     if ($TestRename) {
         $renamedFile = Join-Path $ProjectPath "Clipthrough/Views/MainWindowSmokeRenamed.axaml.cs"
         $originalFile = Join-Path $ProjectPath "Clipthrough/Views/MainWindow.axaml.cs"
+
+        # Finding #3 (fail-closed Rider C# rename planning) is NOT exercised live here.
+        # The backend-rename lane was removed; C# rename now always goes through the Rider
+        # frontend-automation lane (`RenameSymbolTool.shouldUseRiderFrontendRenameAutomation`),
+        # which resolves a caret UP to the nearest
+        # renamable declaration (e.g. a caret on the `: Window` base-type token resolves to the
+        # enclosing class `MainWindow` and renames it). There is therefore no file+line+column that
+        # deterministically AND safely drives the #3 fall-through guard without risking an unwanted
+        # mutation of this real repo. #3 is covered comprehensively by unit tests instead:
+        #   RenameSymbolToolExperimentalActionUnitTest  (planning failure -> unsupported_context,
+        #                                                 missing-editor / automation-timeout fail-closed)
+        #   RenameSymbolToolRoutingUnitTest             (zero-change summary -> fail closed)
+        #   RenameSymbolToolTargetResolutionUnitTest    (container-like candidates fail closed)
+        #
+        # The check below is a GENERIC name-validation / no-mutation smoke (NOT #3 coverage): an
+        # invalid C# identifier must be rejected before any rename engine runs, leaving the file
+        # untouched. This is mutation-safe because identifier validation precedes Rider planning.
+        $renameInvalid = Invoke-Tool -Id 83 -Name "ide_refactor_rename" -Arguments @{
+            project_path = $ProjectPath
+            file = "Clipthrough/Views/MainWindow.axaml.cs"
+            line = 19
+            column = 22
+            newName = "123 Not A Valid Identifier"
+        }
+        $renameInvalidText = Get-ToolText $renameInvalid
+        $renameInvalidRejected = $renameInvalid.result.isError
+        if (-not $renameInvalidRejected) {
+            $renameInvalidJson = $renameInvalidText | ConvertFrom-Json
+            if ($renameInvalidJson.success -eq $true) {
+                throw "ide_refactor_rename accepted an invalid C# identifier '123 Not A Valid Identifier' and reported success: $renameInvalidText"
+            }
+        }
+        if ($renameInvalidText -match "IndexMcpBackendHost\.cs" -or $renameInvalidText -match "RdFault") {
+            throw "REGRESSION ide_refactor_rename rejection path leaks backend RdFault or source path: $renameInvalidText"
+        }
+        Assert-PathUnchanged -Name "ide_refactor_rename invalid-name rejection" -RelativePaths @("Clipthrough/Views/MainWindow.axaml.cs")
+        Write-Host "PASS ide_refactor_rename rejects invalid identifier without mutation (generic; #3 is unit-covered)"
 
         $rename = Invoke-Tool -Id 20 -Name "ide_refactor_rename" -Arguments @{
             project_path = $ProjectPath
@@ -605,6 +795,56 @@ if ($FullMatrix) {
     } else {
         Write-Host "SKIP ide_refactor_rename C# apply: pass -TestRename only for disposable project copies."
     }
+}
+
+# Finding #8: ide_refactor_safe_delete uses a semantic reference search (the regex scan was
+# removed) and BLOCKS deletion when real usages exist. `IClipStoreService` is implemented by
+# `ClipStoreService` and consumed via DI, so a non-forced safe delete must report blocked with
+# concrete blocking usages — and crucially must NOT mutate the workspace. Gated behind
+# -TestSafeDelete because it drives real Rider refactoring machinery; the blocked path is
+# non-destructive and verified so via a git no-mutation check.
+if ($TestSafeDelete) {
+    $safeDeleteTarget = "Clipthrough/Services/Storage/IClipStoreService.cs"
+    $safeDeleteAbs = Join-Path $ProjectPath $safeDeleteTarget
+    if (-not (Test-Path $safeDeleteAbs)) {
+        throw "ide_refactor_safe_delete precondition: target $safeDeleteAbs not found."
+    }
+    $safeDelete = Invoke-Tool -Id 80 -Name "ide_refactor_safe_delete" -Arguments @{
+        project_path = $ProjectPath
+        file = $safeDeleteTarget
+        line = 8
+        column = 18
+        force = $false
+    }
+    $safeDeleteText = Get-ToolText $safeDelete
+    if ($safeDeleteText -match "IndexMcpBackendHost\.cs" -or $safeDeleteText -match "RdFault") {
+        throw "REGRESSION ide_refactor_safe_delete leaks backend RdFault or source path: $safeDeleteText"
+    }
+    # Blocked may surface either as a tool error or as a structured canDelete=false payload.
+    $safeDeleteBlocked = $false
+    if ($safeDelete.result.isError) {
+        $safeDeleteBlocked = $true
+    } else {
+        $safeDeleteJson = $safeDeleteText | ConvertFrom-Json
+        $usageCount = if ($null -ne $safeDeleteJson.usageCount) { [int]$safeDeleteJson.usageCount } else { @($safeDeleteJson.blockingUsages).Count }
+        if ($safeDeleteJson.canDelete -eq $false -or $safeDeleteJson.status -eq "blocked" -or $usageCount -gt 0) {
+            $safeDeleteBlocked = $true
+            if ($usageCount -le 0) {
+                throw "ide_refactor_safe_delete reported blocked but listed no blocking usages; semantic usage search may be broken: $safeDeleteText"
+            }
+            Write-Host "PASS ide_refactor_safe_delete reported blocked with $usageCount blocking usage(s)"
+        }
+    }
+    if (-not $safeDeleteBlocked) {
+        throw "ide_refactor_safe_delete of in-use interface IClipStoreService was expected to be BLOCKED, got: $safeDeleteText"
+    }
+    if (-not (Test-Path $safeDeleteAbs)) {
+        throw "ide_refactor_safe_delete BLOCKED path deleted $safeDeleteAbs anyway; safe delete is not fail-safe."
+    }
+    Assert-PathUnchanged -Name "ide_refactor_safe_delete blocked" -RelativePaths @($safeDeleteTarget)
+    Write-Host "PASS ide_refactor_safe_delete blocked path is non-destructive"
+} else {
+    Write-Host "SKIP ide_refactor_safe_delete blocked check: pass -TestSafeDelete to exercise finding #8."
 }
 
 Write-Host "All Rider live smoke checks passed."

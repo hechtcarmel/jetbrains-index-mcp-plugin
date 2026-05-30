@@ -31,8 +31,6 @@ class IndexMcpModel private constructor(
     private val _getCallHierarchy: RdCall<RdCallHierarchyRequest, RdCallHierarchyResult?>,
     private val _findSuperMethods: RdCall<RdSuperMethodsRequest, RdSuperMethodsResult?>,
     private val _getFileStructure: RdCall<RdFileStructureRequest, RdFileStructureResult?>,
-    private val _renameSymbol: RdCall<RdRenameSymbolRequest, RdRenameSymbolResult?>,
-    private val _renameFile: RdCall<RdRenameFileRequest, RdRenameFileResult?>,
     private val _moveFile: RdCall<RdMoveFileRequest, RdMoveFileResult?>,
     private val _safeDelete: RdCall<RdSafeDeleteRequest, RdSafeDeleteResult?>
 ) : RdExtBase() {
@@ -70,11 +68,7 @@ class IndexMcpModel private constructor(
             serializers.register(LazyCompanionMarshaller(RdId(-6049031805937391491), classLoader, "com.jetbrains.rd.ide.model.RdFileStructureRequest"))
             serializers.register(LazyCompanionMarshaller(RdId(-994497033408018441), classLoader, "com.jetbrains.rd.ide.model.RdFlatStructureNode"))
             serializers.register(LazyCompanionMarshaller(RdId(1590038723070745711), classLoader, "com.jetbrains.rd.ide.model.RdFileStructureResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(-1370157819129083564), classLoader, "com.jetbrains.rd.ide.model.RdRenameSymbolRequest"))
             serializers.register(LazyCompanionMarshaller(RdId(-5136722195302102871), classLoader, "com.jetbrains.rd.ide.model.RdMutationVerification"))
-            serializers.register(LazyCompanionMarshaller(RdId(-5994761243749120840), classLoader, "com.jetbrains.rd.ide.model.RdRenameSymbolResult"))
-            serializers.register(LazyCompanionMarshaller(RdId(3365879169746377776), classLoader, "com.jetbrains.rd.ide.model.RdRenameFileRequest"))
-            serializers.register(LazyCompanionMarshaller(RdId(3678914310064694876), classLoader, "com.jetbrains.rd.ide.model.RdRenameFileResult"))
             serializers.register(LazyCompanionMarshaller(RdId(-4180692821025388419), classLoader, "com.jetbrains.rd.ide.model.RdMoveFileRequest"))
             serializers.register(LazyCompanionMarshaller(RdId(-4895311142280643473), classLoader, "com.jetbrains.rd.ide.model.RdMoveFileResult"))
             serializers.register(LazyCompanionMarshaller(RdId(-1384896468765046606), classLoader, "com.jetbrains.rd.ide.model.RdSafeDeleteRequest"))
@@ -92,12 +86,10 @@ class IndexMcpModel private constructor(
         private val __RdCallHierarchyResultNullableSerializer = RdCallHierarchyResult.nullable()
         private val __RdSuperMethodsResultNullableSerializer = RdSuperMethodsResult.nullable()
         private val __RdFileStructureResultNullableSerializer = RdFileStructureResult.nullable()
-        private val __RdRenameSymbolResultNullableSerializer = RdRenameSymbolResult.nullable()
-        private val __RdRenameFileResultNullableSerializer = RdRenameFileResult.nullable()
         private val __RdMoveFileResultNullableSerializer = RdMoveFileResult.nullable()
         private val __RdSafeDeleteResultNullableSerializer = RdSafeDeleteResult.nullable()
         
-        const val serializationHash = -5717211913063562566L
+        const val serializationHash = -826763348442500747L
         
     }
     override val serializersOwner: ISerializersOwner get() = IndexMcpModel
@@ -116,8 +108,6 @@ class IndexMcpModel private constructor(
     val getCallHierarchy: IRdCall<RdCallHierarchyRequest, RdCallHierarchyResult?> get() = _getCallHierarchy
     val findSuperMethods: IRdCall<RdSuperMethodsRequest, RdSuperMethodsResult?> get() = _findSuperMethods
     val getFileStructure: IRdCall<RdFileStructureRequest, RdFileStructureResult?> get() = _getFileStructure
-    val renameSymbol: IRdCall<RdRenameSymbolRequest, RdRenameSymbolResult?> get() = _renameSymbol
-    val renameFile: IRdCall<RdRenameFileRequest, RdRenameFileResult?> get() = _renameFile
     val moveFile: IRdCall<RdMoveFileRequest, RdMoveFileResult?> get() = _moveFile
     val safeDelete: IRdCall<RdSafeDeleteRequest, RdSafeDeleteResult?> get() = _safeDelete
     //methods
@@ -135,8 +125,6 @@ class IndexMcpModel private constructor(
         bindableChildren.add("getCallHierarchy" to _getCallHierarchy)
         bindableChildren.add("findSuperMethods" to _findSuperMethods)
         bindableChildren.add("getFileStructure" to _getFileStructure)
-        bindableChildren.add("renameSymbol" to _renameSymbol)
-        bindableChildren.add("renameFile" to _renameFile)
         bindableChildren.add("moveFile" to _moveFile)
         bindableChildren.add("safeDelete" to _safeDelete)
     }
@@ -156,8 +144,6 @@ class IndexMcpModel private constructor(
         RdCall<RdCallHierarchyRequest, RdCallHierarchyResult?>(RdCallHierarchyRequest, __RdCallHierarchyResultNullableSerializer),
         RdCall<RdSuperMethodsRequest, RdSuperMethodsResult?>(RdSuperMethodsRequest, __RdSuperMethodsResultNullableSerializer),
         RdCall<RdFileStructureRequest, RdFileStructureResult?>(RdFileStructureRequest, __RdFileStructureResultNullableSerializer),
-        RdCall<RdRenameSymbolRequest, RdRenameSymbolResult?>(RdRenameSymbolRequest, __RdRenameSymbolResultNullableSerializer),
-        RdCall<RdRenameFileRequest, RdRenameFileResult?>(RdRenameFileRequest, __RdRenameFileResultNullableSerializer),
         RdCall<RdMoveFileRequest, RdMoveFileResult?>(RdMoveFileRequest, __RdMoveFileResultNullableSerializer),
         RdCall<RdSafeDeleteRequest, RdSafeDeleteResult?>(RdSafeDeleteRequest, __RdSafeDeleteResultNullableSerializer)
     )
@@ -180,8 +166,6 @@ class IndexMcpModel private constructor(
             print("getCallHierarchy = "); _getCallHierarchy.print(printer); println()
             print("findSuperMethods = "); _findSuperMethods.print(printer); println()
             print("getFileStructure = "); _getFileStructure.print(printer); println()
-            print("renameSymbol = "); _renameSymbol.print(printer); println()
-            print("renameFile = "); _renameFile.print(printer); println()
             print("moveFile = "); _moveFile.print(printer); println()
             print("safeDelete = "); _safeDelete.print(printer); println()
         }
@@ -202,8 +186,6 @@ class IndexMcpModel private constructor(
             _getCallHierarchy.deepClonePolymorphic(),
             _findSuperMethods.deepClonePolymorphic(),
             _getFileStructure.deepClonePolymorphic(),
-            _renameSymbol.deepClonePolymorphic(),
-            _renameFile.deepClonePolymorphic(),
             _moveFile.deepClonePolymorphic(),
             _safeDelete.deepClonePolymorphic()
         )
@@ -294,7 +276,7 @@ data class RdBackendStatusResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:165]
+ * #### Generated from [IndexMcpModel.kt:166]
  */
 data class RdCallHierarchyRequest (
     val target: RdSemanticTarget,
@@ -397,7 +379,7 @@ data class RdCallHierarchyResult (
             val message = buffer.readNullable { buffer.readString() }
             return RdCallHierarchyResult(root, calls, message)
         }
-
+        
         override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdCallHierarchyResult)  {
             RdSymbolInfo.write(ctx, buffer, value.root)
             buffer.writeList(value.calls) { v -> RdSymbolInfo.write(ctx, buffer, v) }
@@ -420,7 +402,7 @@ data class RdCallHierarchyResult (
         if (root != other.root) return false
         if (calls != other.calls) return false
         if (message != other.message) return false
-
+        
         return true
     }
     //hash code trait
@@ -428,7 +410,7 @@ data class RdCallHierarchyResult (
         var __r = 0
         __r = __r*31 + root.hashCode()
         __r = __r*31 + calls.hashCode()
-        __r = __r*31 + (message?.hashCode() ?: 0)
+        __r = __r*31 + if (message != null) message.hashCode() else 0
         return __r
     }
     //pretty print
@@ -531,7 +513,7 @@ data class RdDefinitionResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:199]
+ * #### Generated from [IndexMcpModel.kt:201]
  */
 data class RdFileStructureRequest (
     val filePath: String
@@ -590,7 +572,7 @@ data class RdFileStructureRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:214]
+ * #### Generated from [IndexMcpModel.kt:216]
  */
 data class RdFileStructureResult (
     val nodes: List<RdFlatStructureNode>
@@ -811,7 +793,7 @@ data class RdFindReferencesResult (
             val message = buffer.readNullable { buffer.readString() }
             return RdFindReferencesResult(references, totalCount, message)
         }
-
+        
         override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdFindReferencesResult)  {
             buffer.writeList(value.references) { v -> RdReferenceInfo.write(ctx, buffer, v) }
             buffer.writeInt(value.totalCount)
@@ -834,7 +816,7 @@ data class RdFindReferencesResult (
         if (references != other.references) return false
         if (totalCount != other.totalCount) return false
         if (message != other.message) return false
-
+        
         return true
     }
     //hash code trait
@@ -842,7 +824,7 @@ data class RdFindReferencesResult (
         var __r = 0
         __r = __r*31 + references.hashCode()
         __r = __r*31 + totalCount.hashCode()
-        __r = __r*31 + (message?.hashCode() ?: 0)
+        __r = __r*31 + if (message != null) message.hashCode() else 0
         return __r
     }
     //pretty print
@@ -1152,7 +1134,7 @@ data class RdFindTypesResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:205]
+ * #### Generated from [IndexMcpModel.kt:207]
  */
 data class RdFlatStructureNode (
     val name: String,
@@ -1241,7 +1223,7 @@ data class RdFlatStructureNode (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:153]
+ * #### Generated from [IndexMcpModel.kt:154]
  */
 data class RdImplementationsRequest (
     val position: RdSourcePosition,
@@ -1312,7 +1294,7 @@ data class RdImplementationsRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:159]
+ * #### Generated from [IndexMcpModel.kt:160]
  */
 data class RdImplementationsResult (
     val implementations: List<RdSymbolInfo>
@@ -1371,7 +1353,7 @@ data class RdImplementationsResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:258]
+ * #### Generated from [IndexMcpModel.kt:228]
  */
 data class RdMoveFileRequest (
     val filePath: String,
@@ -1436,7 +1418,7 @@ data class RdMoveFileRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:263]
+ * #### Generated from [IndexMcpModel.kt:233]
  */
 data class RdMoveFileResult (
     val success: Boolean,
@@ -1537,7 +1519,7 @@ data class RdMoveFileResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:225]
+ * #### Generated from [IndexMcpModel.kt:222]
  */
 data class RdMutationVerification (
     val status: String,
@@ -1697,339 +1679,7 @@ data class RdReferenceInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:242]
- */
-data class RdRenameFileRequest (
-    val filePath: String,
-    val newName: String
-) : IPrintable {
-    //companion
-    
-    companion object : IMarshaller<RdRenameFileRequest> {
-        override val _type: KClass<RdRenameFileRequest> = RdRenameFileRequest::class
-        override val id: RdId get() = RdId(3365879169746377776)
-        
-        @Suppress("UNCHECKED_CAST")
-        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdRenameFileRequest  {
-            val filePath = buffer.readString()
-            val newName = buffer.readString()
-            return RdRenameFileRequest(filePath, newName)
-        }
-        
-        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdRenameFileRequest)  {
-            buffer.writeString(value.filePath)
-            buffer.writeString(value.newName)
-        }
-        
-        
-    }
-    //fields
-    //methods
-    //initializer
-    //secondary constructor
-    //equals trait
-    override fun equals(other: Any?): Boolean  {
-        if (this === other) return true
-        if (other == null || other::class != this::class) return false
-        
-        other as RdRenameFileRequest
-        
-        if (filePath != other.filePath) return false
-        if (newName != other.newName) return false
-        
-        return true
-    }
-    //hash code trait
-    override fun hashCode(): Int  {
-        var __r = 0
-        __r = __r*31 + filePath.hashCode()
-        __r = __r*31 + newName.hashCode()
-        return __r
-    }
-    //pretty print
-    override fun print(printer: PrettyPrinter)  {
-        printer.println("RdRenameFileRequest (")
-        printer.indent {
-            print("filePath = "); filePath.print(printer); println()
-            print("newName = "); newName.print(printer); println()
-        }
-        printer.print(")")
-    }
-    //deepClone
-    //contexts
-    //threading
-}
-
-
-/**
- * #### Generated from [IndexMcpModel.kt:247]
- */
-data class RdRenameFileResult (
-    val success: Boolean,
-    val oldPath: String,
-    val newPath: String,
-    val affectedFiles: List<String>,
-    val changesCount: Int,
-    val message: String,
-    val status: String,
-    val verification: RdMutationVerification?
-) : IPrintable {
-    //companion
-    
-    companion object : IMarshaller<RdRenameFileResult> {
-        override val _type: KClass<RdRenameFileResult> = RdRenameFileResult::class
-        override val id: RdId get() = RdId(3678914310064694876)
-        
-        @Suppress("UNCHECKED_CAST")
-        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdRenameFileResult  {
-            val success = buffer.readBool()
-            val oldPath = buffer.readString()
-            val newPath = buffer.readString()
-            val affectedFiles = buffer.readList { buffer.readString() }
-            val changesCount = buffer.readInt()
-            val message = buffer.readString()
-            val status = buffer.readString()
-            val verification = buffer.readNullable { RdMutationVerification.read(ctx, buffer) }
-            return RdRenameFileResult(success, oldPath, newPath, affectedFiles, changesCount, message, status, verification)
-        }
-        
-        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdRenameFileResult)  {
-            buffer.writeBool(value.success)
-            buffer.writeString(value.oldPath)
-            buffer.writeString(value.newPath)
-            buffer.writeList(value.affectedFiles) { v -> buffer.writeString(v) }
-            buffer.writeInt(value.changesCount)
-            buffer.writeString(value.message)
-            buffer.writeString(value.status)
-            buffer.writeNullable(value.verification) { RdMutationVerification.write(ctx, buffer, it) }
-        }
-        
-        
-    }
-    //fields
-    //methods
-    //initializer
-    //secondary constructor
-    //equals trait
-    override fun equals(other: Any?): Boolean  {
-        if (this === other) return true
-        if (other == null || other::class != this::class) return false
-        
-        other as RdRenameFileResult
-        
-        if (success != other.success) return false
-        if (oldPath != other.oldPath) return false
-        if (newPath != other.newPath) return false
-        if (affectedFiles != other.affectedFiles) return false
-        if (changesCount != other.changesCount) return false
-        if (message != other.message) return false
-        if (status != other.status) return false
-        if (verification != other.verification) return false
-        
-        return true
-    }
-    //hash code trait
-    override fun hashCode(): Int  {
-        var __r = 0
-        __r = __r*31 + success.hashCode()
-        __r = __r*31 + oldPath.hashCode()
-        __r = __r*31 + newPath.hashCode()
-        __r = __r*31 + affectedFiles.hashCode()
-        __r = __r*31 + changesCount.hashCode()
-        __r = __r*31 + message.hashCode()
-        __r = __r*31 + status.hashCode()
-        __r = __r*31 + if (verification != null) verification.hashCode() else 0
-        return __r
-    }
-    //pretty print
-    override fun print(printer: PrettyPrinter)  {
-        printer.println("RdRenameFileResult (")
-        printer.indent {
-            print("success = "); success.print(printer); println()
-            print("oldPath = "); oldPath.print(printer); println()
-            print("newPath = "); newPath.print(printer); println()
-            print("affectedFiles = "); affectedFiles.print(printer); println()
-            print("changesCount = "); changesCount.print(printer); println()
-            print("message = "); message.print(printer); println()
-            print("status = "); status.print(printer); println()
-            print("verification = "); verification.print(printer); println()
-        }
-        printer.print(")")
-    }
-    //deepClone
-    //contexts
-    //threading
-}
-
-
-/**
- * #### Generated from [IndexMcpModel.kt:220]
- */
-data class RdRenameSymbolRequest (
-    val position: RdSourcePosition,
-    val newName: String
-) : IPrintable {
-    //companion
-    
-    companion object : IMarshaller<RdRenameSymbolRequest> {
-        override val _type: KClass<RdRenameSymbolRequest> = RdRenameSymbolRequest::class
-        override val id: RdId get() = RdId(-1370157819129083564)
-        
-        @Suppress("UNCHECKED_CAST")
-        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdRenameSymbolRequest  {
-            val position = RdSourcePosition.read(ctx, buffer)
-            val newName = buffer.readString()
-            return RdRenameSymbolRequest(position, newName)
-        }
-        
-        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdRenameSymbolRequest)  {
-            RdSourcePosition.write(ctx, buffer, value.position)
-            buffer.writeString(value.newName)
-        }
-        
-        
-    }
-    //fields
-    //methods
-    //initializer
-    //secondary constructor
-    //equals trait
-    override fun equals(other: Any?): Boolean  {
-        if (this === other) return true
-        if (other == null || other::class != this::class) return false
-        
-        other as RdRenameSymbolRequest
-        
-        if (position != other.position) return false
-        if (newName != other.newName) return false
-        
-        return true
-    }
-    //hash code trait
-    override fun hashCode(): Int  {
-        var __r = 0
-        __r = __r*31 + position.hashCode()
-        __r = __r*31 + newName.hashCode()
-        return __r
-    }
-    //pretty print
-    override fun print(printer: PrettyPrinter)  {
-        printer.println("RdRenameSymbolRequest (")
-        printer.indent {
-            print("position = "); position.print(printer); println()
-            print("newName = "); newName.print(printer); println()
-        }
-        printer.print(")")
-    }
-    //deepClone
-    //contexts
-    //threading
-}
-
-
-/**
- * #### Generated from [IndexMcpModel.kt:231]
- */
-data class RdRenameSymbolResult (
-    val success: Boolean,
-    val oldName: String,
-    val newName: String,
-    val affectedFiles: List<String>,
-    val changesCount: Int,
-    val message: String,
-    val status: String,
-    val verification: RdMutationVerification?
-) : IPrintable {
-    //companion
-    
-    companion object : IMarshaller<RdRenameSymbolResult> {
-        override val _type: KClass<RdRenameSymbolResult> = RdRenameSymbolResult::class
-        override val id: RdId get() = RdId(-5994761243749120840)
-        
-        @Suppress("UNCHECKED_CAST")
-        override fun read(ctx: SerializationCtx, buffer: AbstractBuffer): RdRenameSymbolResult  {
-            val success = buffer.readBool()
-            val oldName = buffer.readString()
-            val newName = buffer.readString()
-            val affectedFiles = buffer.readList { buffer.readString() }
-            val changesCount = buffer.readInt()
-            val message = buffer.readString()
-            val status = buffer.readString()
-            val verification = buffer.readNullable { RdMutationVerification.read(ctx, buffer) }
-            return RdRenameSymbolResult(success, oldName, newName, affectedFiles, changesCount, message, status, verification)
-        }
-        
-        override fun write(ctx: SerializationCtx, buffer: AbstractBuffer, value: RdRenameSymbolResult)  {
-            buffer.writeBool(value.success)
-            buffer.writeString(value.oldName)
-            buffer.writeString(value.newName)
-            buffer.writeList(value.affectedFiles) { v -> buffer.writeString(v) }
-            buffer.writeInt(value.changesCount)
-            buffer.writeString(value.message)
-            buffer.writeString(value.status)
-            buffer.writeNullable(value.verification) { RdMutationVerification.write(ctx, buffer, it) }
-        }
-        
-        
-    }
-    //fields
-    //methods
-    //initializer
-    //secondary constructor
-    //equals trait
-    override fun equals(other: Any?): Boolean  {
-        if (this === other) return true
-        if (other == null || other::class != this::class) return false
-        
-        other as RdRenameSymbolResult
-        
-        if (success != other.success) return false
-        if (oldName != other.oldName) return false
-        if (newName != other.newName) return false
-        if (affectedFiles != other.affectedFiles) return false
-        if (changesCount != other.changesCount) return false
-        if (message != other.message) return false
-        if (status != other.status) return false
-        if (verification != other.verification) return false
-        
-        return true
-    }
-    //hash code trait
-    override fun hashCode(): Int  {
-        var __r = 0
-        __r = __r*31 + success.hashCode()
-        __r = __r*31 + oldName.hashCode()
-        __r = __r*31 + newName.hashCode()
-        __r = __r*31 + affectedFiles.hashCode()
-        __r = __r*31 + changesCount.hashCode()
-        __r = __r*31 + message.hashCode()
-        __r = __r*31 + status.hashCode()
-        __r = __r*31 + if (verification != null) verification.hashCode() else 0
-        return __r
-    }
-    //pretty print
-    override fun print(printer: PrettyPrinter)  {
-        printer.println("RdRenameSymbolResult (")
-        printer.indent {
-            print("success = "); success.print(printer); println()
-            print("oldName = "); oldName.print(printer); println()
-            print("newName = "); newName.print(printer); println()
-            print("affectedFiles = "); affectedFiles.print(printer); println()
-            print("changesCount = "); changesCount.print(printer); println()
-            print("message = "); message.print(printer); println()
-            print("status = "); status.print(printer); println()
-            print("verification = "); verification.print(printer); println()
-        }
-        printer.print(")")
-    }
-    //deepClone
-    //contexts
-    //threading
-}
-
-
-/**
- * #### Generated from [IndexMcpModel.kt:127]
+ * #### Generated from [IndexMcpModel.kt:128]
  */
 data class RdResolveSymbolIndexedRequest (
     val language: String,
@@ -2094,7 +1744,7 @@ data class RdResolveSymbolIndexedRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:132]
+ * #### Generated from [IndexMcpModel.kt:133]
  */
 data class RdResolveSymbolIndexedResult (
     val status: String,
@@ -2165,7 +1815,7 @@ data class RdResolveSymbolIndexedResult (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:122]
+ * #### Generated from [IndexMcpModel.kt:123]
  */
 data class RdResolveSymbolRequest (
     val language: String,
@@ -2230,7 +1880,7 @@ data class RdResolveSymbolRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:280]
+ * #### Generated from [IndexMcpModel.kt:250]
  */
 data class RdSafeDeleteBlockedUsage (
     val filePath: String,
@@ -2313,7 +1963,7 @@ data class RdSafeDeleteBlockedUsage (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:274]
+ * #### Generated from [IndexMcpModel.kt:244]
  */
 data class RdSafeDeleteRequest (
     val target: RdSemanticTarget,
@@ -2384,7 +2034,7 @@ data class RdSafeDeleteRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:288]
+ * #### Generated from [IndexMcpModel.kt:258]
  */
 data class RdSafeDeleteResult (
     val success: Boolean,
@@ -2633,7 +2283,7 @@ data class RdSourcePosition (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:184]
+ * #### Generated from [IndexMcpModel.kt:186]
  */
 data class RdSuperMethodInfo (
     val symbol: RdSymbolInfo,
@@ -2716,7 +2366,7 @@ data class RdSuperMethodInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:180]
+ * #### Generated from [IndexMcpModel.kt:182]
  */
 data class RdSuperMethodsRequest (
     val position: RdSourcePosition
@@ -2775,7 +2425,7 @@ data class RdSuperMethodsRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:192]
+ * #### Generated from [IndexMcpModel.kt:194]
  */
 data class RdSuperMethodsResult (
     val method: RdSymbolInfo,
@@ -2947,7 +2597,7 @@ data class RdSymbolInfo (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:140]
+ * #### Generated from [IndexMcpModel.kt:141]
  */
 data class RdTypeHierarchyRequest (
     val position: RdSourcePosition,
@@ -3012,7 +2662,7 @@ data class RdTypeHierarchyRequest (
 
 
 /**
- * #### Generated from [IndexMcpModel.kt:145]
+ * #### Generated from [IndexMcpModel.kt:146]
  */
 data class RdTypeHierarchyResult (
     val element: RdSymbolInfo,

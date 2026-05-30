@@ -1,14 +1,11 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
-using JetBrains.Application.DataContext;
 using JetBrains.Application.Parts;
 using JetBrains.Application.Progress;
 using JetBrains.Application.Threading;
@@ -17,29 +14,23 @@ using JetBrains.DocumentModel;
 using JetBrains.DocumentManagers.Transactions;
 using JetBrains.Lifetimes;
 using JetBrains.ProjectModel;
-using JetBrains.ProjectModel.DataContext;
 using JetBrains.ReSharper.Resources.Shell;
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.Caches;
 using JetBrains.ReSharper.Psi.CSharp;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
-using JetBrains.ReSharper.Psi.DataContext;
 using JetBrains.ReSharper.Psi.Files;
 using JetBrains.ReSharper.Psi.Modules;
 using JetBrains.ReSharper.Psi.Search;
 using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Transactions;
 using JetBrains.ReSharper.Psi.Util;
-using JetBrains.ReSharper.Feature.Services.Refactorings;
-using JetBrains.ReSharper.Feature.Services.Refactorings.Specific.Rename;
 using JetBrains.ReSharper.Feature.Services.Protocol;
-using JetBrains.ReSharper.Refactorings.Rename;
 using JetBrains.Rider.Model;
 using JetBrains.Rider.Model.IndexMcp;
 using JetBrains.Rd.Tasks;
 using JetBrains.Util;
 using JetBrains.Util.dataStructures.TypedIntrinsics;
-using JetBrains.Util.EventBus;
 using JetBrains.Util.Threading.Tasks;
 using ReSharperPlugin.IndexMcp.Mutations;
 
@@ -56,11 +47,11 @@ public class IndexMcpBackendHost
 {
     private readonly ISolution _solution;
     private readonly IShellLocks _shellLocks;
-    private readonly RenameRefactoringService _renameRefactoringService;
-    private const string BackendVersion = "4.18.0";
+    private const string BackendVersion = "4.20.1";
     private const int MaxResults = 200;
-    private const int TextControlPollTimeoutMs = 10_000;
-    private const int TextControlPollIntervalMs = 250;
+    // find_references-specific over-collect / ceiling (see GetEffectiveReferenceLimit).
+    private const int DefaultReferenceOverCollect = 500;
+    private const int MaxReferenceResults = 5000;
     private static readonly Lazy<MethodInfo?> ourGetPresentableNameMethod =
         new(() => typeof(IType).GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .FirstOrDefault(method => method.Name == nameof(IType.GetPresentableName) &&
@@ -69,12 +60,10 @@ public class IndexMcpBackendHost
     public IndexMcpBackendHost(
         Lifetime lifetime,
         ISolution solution,
-        IShellLocks shellLocks,
-        RenameRefactoringService renameRefactoringService)
+        IShellLocks shellLocks)
     {
         _solution = solution;
         _shellLocks = shellLocks;
-        _renameRefactoringService = renameRefactoringService;
         var model = solution.GetProtocolSolution().GetIndexMcpModel();
 
         model.GetBackendStatus.SetAsync(HandleGetBackendStatus);
@@ -89,8 +78,6 @@ public class IndexMcpBackendHost
         model.GetCallHierarchy.SetAsync(HandleGetCallHierarchy);
         model.FindSuperMethods.SetAsync(HandleFindSuperMethods);
         model.GetFileStructure.SetAsync(HandleGetFileStructure);
-        model.RenameSymbol.SetAsync(HandleRenameSymbol);
-        model.RenameFile.SetAsync(HandleRenameFile);
         model.MoveFile.SetAsync(HandleMoveFile);
         model.SafeDelete.SetAsync(HandleSafeDelete);
     }
@@ -407,7 +394,7 @@ public class IndexMcpBackendHost
     {
         return Task.Run(() => ExecuteUnderReadLock(() =>
         {
-            var effectiveLimit = GetEffectiveResultLimit(request.Limit);
+            var effectiveLimit = GetEffectiveReferenceLimit(request.Limit);
             var targetResolution = ResolveTargetForFindReferences(lt, request.Target, request.Scope);
             var element = targetResolution.TryGetElement();
             if (element == null)
@@ -428,27 +415,11 @@ public class IndexMcpBackendHost
                 return new RdFindReferencesResult(new List<RdReferenceInfo>(), 0, unresolvedMessage);
             }
 
-            var orderedReferences = FindReferences(lt, element, effectiveLimit)
-                .Select(ToReferenceInfo)
-                .Where(reference => reference != null)
-                .Cast<RdReferenceInfo>()
-                .Where(reference => MatchesPathScope(reference.FilePath, request.Scope))
-                .GroupBy(reference => GetReferenceIdentityKey(reference), StringComparer.OrdinalIgnoreCase)
-                .Select(group => group
-                    .OrderBy(ReferenceLocationBucket)
-                    .ThenBy(reference => NormalizeReferencePath(reference.FilePath), StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(reference => reference.Line)
-                    .ThenBy(reference => reference.Column)
-                    .ThenBy(reference => reference.Kind, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(reference => reference.Context, StringComparer.OrdinalIgnoreCase)
-                    .First())
-                .OrderBy(ReferenceLocationBucket)
-                .ThenBy(reference => NormalizeReferencePath(reference.FilePath), StringComparer.OrdinalIgnoreCase)
-                .ThenBy(reference => reference.Line)
-                .ThenBy(reference => reference.Column)
-                .ThenBy(reference => reference.Kind, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(reference => reference.Context, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            // Apply the scope filter INSIDE the ReSharper find consumer so truncation
+            // counts only in-scope references. Collecting `effectiveLimit` raw references
+            // first and filtering afterwards (the previous behavior) made scoped queries
+            // under-return whenever the first N raw references were out of scope.
+            var orderedReferences = CollectScopedReferenceInfos(lt, element, request.Scope, effectiveLimit);
 
             return new RdFindReferencesResult(orderedReferences.Take(effectiveLimit).ToList(), orderedReferences.Count, null);
         }));
@@ -466,22 +437,6 @@ public class IndexMcpBackendHost
     private Task<RdResolveSymbolIndexedResult> HandleResolveSymbolIndexed(Lifetime lt, RdResolveSymbolIndexedRequest request)
     {
         return Task.Run(() => ExecuteUnderReadLock(() => ResolveSymbolIndexed(request.Language, request.Symbol).ToRdResult()));
-    }
-
-    // ── Rename Symbol ───────────────────────────────────────────────────────
-
-    private Task<RdRenameSymbolResult?> HandleRenameSymbol(
-        Lifetime lt, RdRenameSymbolRequest request)
-    {
-        var preAcquiredTextControl = TryAcquireTextControlBeforeWriteLock(request);
-        OuterLifetime outerLifetime = lt;
-        RdRenameSymbolResult? result = null;
-        return ExecuteWriteLockedMutation(
-            outerLifetime,
-            work: () => { result = ExecuteRenameSymbol(request, preAcquiredTextControl); },
-            getResult: () => result,
-            operationName: "rename",
-            toBlockedResult: blocked => blocked.ToRenameSymbolResult("", request.NewName));
     }
 
     // ── Read Lock Helper ─────────────────────────────────────────────────────
@@ -556,18 +511,17 @@ public class IndexMcpBackendHost
         {
             return (Task)writeLockWhenAvailable.Invoke(
                 null,
-                new object[] { _shellLocks, outerLifetime, "Index MCP Rider rename", action, TimeSpan.FromSeconds(30), "", "" })!;
+                new object[] { _shellLocks, outerLifetime, "Index MCP Rider mutation", action, TimeSpan.FromSeconds(30), "", "" })!;
         }
 
         throw new MissingMethodException(
-            "No compatible Rider/ReSharper write-lock API was found for headless symbol rename.");
+            "No compatible Rider/ReSharper write-lock API was found for headless mutation execution.");
     }
 
     /// <summary>
     /// Run a mutation under the ReSharper write lock and convert any fault into a Blocked
-    /// outcome shaped for the calling endpoint. The three mutation endpoints (rename symbol,
-    /// rename file, safe delete) previously duplicated this 12-line ContinueWith / Blocked
-    /// pattern; this helper centralises the message wording and outcome mapping.
+    /// outcome shaped for the calling endpoint. Safe delete still uses this shared write-lock
+    /// helper, so it must remain even after removing the abandoned backend rename lane.
     /// </summary>
     /// <param name="operationName">Wording inserted into the blocked message (e.g. "rename",
     /// "file rename", "safe delete"). Used in: "ReSharper backend {operationName} failed
@@ -591,253 +545,6 @@ public class IndexMcpBackendHost
                     : $"ReSharper backend {operationName} failed while acquiring/executing the write lock: {exception.GetType().Name}: {exception.Message}";
                 return toBlockedResult(MutationVerificationService.Blocked(blockedMessage));
             });
-    }
-
-    private RdRenameSymbolResult ExecuteRenameSymbol(
-        RdRenameSymbolRequest request,
-        object? preAcquiredTextControl)
-    {
-        var planStopwatch = Stopwatch.StartNew();
-        var renamePlan = RenameMutationPlanner.PlanExactSymbolRename(
-            request.Position.FilePath,
-            request.Position.Line,
-            request.Position.Column);
-        planStopwatch.Stop();
-
-        if (!renamePlan.CanProceed)
-        {
-            return ToRenameBlockedResult(renamePlan.Resolution, request.NewName);
-        }
-
-        var resolveStopwatch = Stopwatch.StartNew();
-        var localDeclarationNode = ResolveExactDeclarationNodeAt(
-            request.Position,
-            renamePlan.Resolution.ResolvedName!,
-            renamePlan.Resolution.TargetKind);
-        resolveStopwatch.Stop();
-        if (localDeclarationNode == null || !TryGetDeclaredElement(localDeclarationNode, out var element))
-        {
-            return MutationVerificationService
-                .Blocked(
-                    AppendSymbolRenameDiagnostics(
-                        $"Exact symbol rename preflight resolved '{renamePlan.Resolution.ResolvedName}', but the Rider backend could not bind the exact declaration node at {request.Position.FilePath}:{request.Position.Line}:{request.Position.Column} without widening. No files were modified.",
-                        renamePlan.Resolution,
-                        executionHint: "frontend_editor_backed_exact_target_only",
-                        unsupportedReason: "exact_declaration_node_binding_failed",
-                        "plan.end",
-                        "target-resolution.end",
-                        "target-resolution.blocked"))
-                .ToRenameSymbolResult(renamePlan.Resolution.ResolvedName ?? string.Empty, request.NewName);
-        }
-
-        var oldName = renamePlan.Resolution.ResolvedName!;
-
-        if (string.Equals(oldName, request.NewName, StringComparison.Ordinal))
-        {
-            return MutationVerificationService
-                .NoOp(
-                    AppendSymbolRenameDiagnostics(
-                        $"Rename refused: new name '{request.NewName}' equals current name '{oldName}' (no-op rename). No files were modified.",
-                        renamePlan.Resolution,
-                        executionHint: "no_mutation_required",
-                        unsupportedReason: "requested_name_matches_current_name",
-                        "plan.end",
-                        "target-resolution.bound",
-                        "no-op"))
-                .ToRenameSymbolResult(oldName, request.NewName);
-        }
-
-        var availability = _renameRefactoringService.CheckRenameAvailability(element);
-        if (availability != RenameAvailabilityCheckResult.CanBeRenamed)
-        {
-            return MutationVerificationService
-                .Unsupported(AppendSymbolRenameDiagnostics(
-                    $"ReSharper reports that '{oldName}' cannot be renamed ({availability}). No files were modified.",
-                    renamePlan.Resolution,
-                    executionHint: "frontend_editor_backed_exact_target_only",
-                    unsupportedReason: $"rename_availability_{availability}",
-                    "plan.end",
-                    "target-resolution.bound",
-                    "availability.end"))
-                .ToRenameSymbolResult(oldName, request.NewName);
-        }
-
-        var affectedFiles = GetPotentiallyAffectedFiles(element);
-        AddAffectedFile(affectedFiles, localDeclarationNode?.GetSourceFile()?.GetLocation().FullPath);
-
-        // Capture per-file count of the OLD identifier (as a standalone identifier, not substring).
-        // The success oracle below uses this snapshot: a real rename must reduce the old-name count
-        // in at least one affected file. Substring-only checks (the v4.19.0/v4.19.1 oracle) gave
-        // false positives whenever the new name was a substring of the old name (e.g. revert
-        // Foo→Bar→Foo where Bar contains Foo, or any AXAML/code-behind partial pair).
-        var oldNameCountsBefore = SnapshotIdentifierCounts(affectedFiles, oldName);
-
-        // Pre-rename file-system snapshot: every project file path currently in the solution.
-        // Diffed against the post-rename snapshot below to surface AXAML-pair renames,
-        // partial-class file moves, and any other paths the rename engine actually mutated
-        // that the IDeclaredElement-based oracle cannot enumerate (element invalidates as
-        // soon as its primary declaration's source file is renamed).
-        var preRenameProjectFiles = SnapshotSolutionProjectFilePaths();
-
-        try
-        {
-            var renameExecution = TryExecuteDrivenRename(element, request.NewName, preAcquiredTextControl);
-
-            if (!renameExecution.Succeeded)
-            {
-                if (renameExecution.IsUnsupported)
-                {
-                    return MutationVerificationService
-                        .Unsupported(renameExecution.Message)
-                        .ToRenameSymbolResult(oldName, request.NewName);
-                }
-
-                return MutationVerificationService
-                    .VerificationFailed(
-                        affectedFiles,
-                        affectedFiles.Count,
-                        AppendSymbolRenameDiagnostics(
-                            $"ReSharper rename did not update affected files: {renameExecution.Message}",
-                            renamePlan.Resolution,
-                            executionHint: "frontend_editor_backed_exact_target_only",
-                            unsupportedReason: renameExecution.IsUnsupported
-                                ? "service_inspection_rejected_backend_symbol_lane"
-                                : "backend_symbol_execution_failed_without_mutation",
-                            "plan.end",
-                            "target-resolution.bound",
-                            "service-rename.inspect",
-                            "service-rename.failure"),
-                        new[] { "rename_execution", "post_change_semantics" },
-                        renameExecution.Message)
-                    .ToRenameSymbolResult(oldName, request.NewName);
-            }
-
-            // Re-snapshot the affected file set after the rename succeeds. The pre-rename
-            // GetPotentiallyAffectedFiles call (line 643) only enumerates declarations and
-            // references reachable from the IDeclaredElement at that point; partial-class
-            // siblings, AXAML code-behind pairs, and tests that the rename refactoring
-            // touched but that weren't yet bound to the element can be missed. Widening
-            // here means the response payload reflects what actually changed on disk.
-            // Best-effort: any failure (element invalidated, indexes not warm) is silently
-            // ignored and the pre-rename list stands.
-            try
-            {
-                if (element.IsValid())
-                {
-                    foreach (var path in GetPotentiallyAffectedFiles(element))
-                        AddAffectedFile(affectedFiles, path);
-                }
-            }
-            catch
-            {
-                // best-effort widening
-            }
-
-            // File-system snapshot diff: pick up any project files that were renamed
-            // (added at new path, removed at old path) regardless of element validity.
-            // Required to surface AXAML/XAML pair renames and partial-class file moves
-            // even when the IDeclaredElement was invalidated by the primary file rename.
-            try
-            {
-                var postRenameProjectFiles = SnapshotSolutionProjectFilePaths();
-                if (preRenameProjectFiles.Count > 0 || postRenameProjectFiles.Count > 0)
-                {
-                    var preSet = new HashSet<string>(preRenameProjectFiles, StringComparer.OrdinalIgnoreCase);
-                    var postSet = new HashSet<string>(postRenameProjectFiles, StringComparer.OrdinalIgnoreCase);
-                    foreach (var added in postSet)
-                        if (!preSet.Contains(added))
-                            AddAffectedFile(affectedFiles, added);
-                    foreach (var removed in preSet)
-                        if (!postSet.Contains(removed))
-                            AddAffectedFile(affectedFiles, removed);
-                }
-            }
-            catch
-            {
-                // best-effort widening
-            }
-
-            if (!RenameChangedAffectedFiles(oldNameCountsBefore, oldName))
-            {
-                return MutationVerificationService
-                    .NoOp(
-                        AppendSymbolRenameDiagnostics(
-                            $"ReSharper rename completed without error, but no affected file's count of the identifier '{oldName}' decreased. The rename did not actually rewrite anything on disk (no-op outcome).",
-                            renamePlan.Resolution,
-                            executionHint: "frontend_editor_backed_exact_target_only",
-                            unsupportedReason: "no_observable_identifier_mutation",
-                            "plan.end",
-                            "target-resolution.bound",
-                            "service-rename.inspect",
-                            "verification"))
-                    .ToRenameSymbolResult(oldName, request.NewName);
-            }
-
-            return MutationVerificationService
-                .Success(
-                    affectedFiles,
-                    affectedFiles.Count,
-                    AppendSymbolRenameDiagnostics(
-                        $"Renamed '{oldName}' to '{request.NewName}' using ReSharper backend rename with verified semantic updates.",
-                        renamePlan.Resolution,
-                        executionHint: "frontend_editor_backed_exact_target_preferred_when_backend_lane_is_unsupported",
-                        unsupportedReason: "none",
-                        "plan.end",
-                        "target-resolution.bound",
-                        "service-rename.inspect",
-                        "success"))
-                .ToRenameSymbolResult(oldName, request.NewName);
-        }
-        catch (Exception ex)
-        {
-            return MutationVerificationService
-                .Blocked(AppendSymbolRenameDiagnostics(
-                    $"ReSharper backend rename failed: {ex.GetType().Name}: {ex.Message}",
-                    renamePlan.Resolution,
-                    executionHint: "frontend_editor_backed_exact_target_only",
-                    unsupportedReason: "backend_symbol_lane_exception",
-                    "plan.end",
-                    "target-resolution.bound",
-                    "execute-rename"))
-                .ToRenameSymbolResult(oldName, request.NewName);
-        }
-    }
-
-    private Task<RdRenameFileResult?> HandleRenameFile(Lifetime lt, RdRenameFileRequest request)
-    {
-        OuterLifetime outerLifetime = lt;
-        var renamePlan = RenameMutationPlanner.PlanExactFileRename(request.FilePath, request.NewName);
-        var oldPath = renamePlan.OldPath ?? request.FilePath;
-        var newPath = renamePlan.NewPath ?? CombinePath(Path.GetDirectoryName(oldPath), request.NewName);
-
-        if (string.Equals(Path.GetFileName(oldPath), request.NewName, StringComparison.OrdinalIgnoreCase))
-        {
-            return Task.FromResult<RdRenameFileResult?>(
-                MutationVerificationService
-                    .NoOp($"File rename refused because '{request.NewName}' already matches the current file name (no-op file rename).")
-                    .ToRenameFileResult(oldPath, oldPath));
-        }
-
-        if (!renamePlan.CanProceed)
-        {
-            return Task.FromResult<RdRenameFileResult?>(ToRenameFileBlockedResult(renamePlan.Resolution, oldPath, newPath));
-        }
-
-        if (!TryValidateHeadlessFileRenameAvailability(oldPath, out var availabilityFailure))
-        {
-            return Task.FromResult<RdRenameFileResult?>(
-                MutationVerificationService
-                    .Unsupported(availabilityFailure)
-                    .ToRenameFileResult(oldPath, newPath));
-        }
-
-        RdRenameFileResult? result = null;
-        return ExecuteWriteLockedMutation(
-            outerLifetime,
-            work: () => { result = ExecuteRenameFile(renamePlan); },
-            getResult: () => result,
-            operationName: "file rename",
-            toBlockedResult: blocked => blocked.ToRenameFileResult(oldPath, newPath));
     }
 
     private Task<RdMoveFileResult?> HandleMoveFile(Lifetime lt, RdMoveFileRequest request)
@@ -871,117 +578,6 @@ public class IndexMcpBackendHost
             ? fileName
             : Path.Combine(directory, fileName);
 
-    private RdRenameFileResult ExecuteRenameFile(RenameMutationPlan renamePlan)
-    {
-        var oldPath = renamePlan.OldPath!;
-        var newPath = renamePlan.NewPath!;
-        var declaredTypeNamesBefore = RenameMutationPlanner.ReadDeclaredTypeNames(oldPath);
-
-        if (!TryValidateHeadlessFileRenameAvailability(oldPath, out var availabilityFailure))
-        {
-            return MutationVerificationService
-                .Unsupported(availabilityFailure)
-                .ToRenameFileResult(oldPath, newPath);
-        }
-
-        var projectFile = GetProjectFileForPath(oldPath);
-        if (projectFile == null)
-        {
-            return MutationVerificationService
-                .Blocked($"Rider file rename resolved '{oldPath}', but the backend could not bind it to a project file for RenameDataProvider/RenameWorkflow execution. No files were modified.")
-                .ToRenameFileResult(oldPath, newPath);
-        }
-
-        var expectedNamespace = FileMutationSemantics.TryReadNamespaceOrDefault(oldPath, projectFile.Location.FullPath);
-
-        try
-        {
-            var workflowMessage = TryExecuteDrivenFileRename(projectFile, renamePlan.NewPath!);
-            if (!string.IsNullOrWhiteSpace(workflowMessage))
-            {
-                return MutationVerificationService
-                    .Unsupported(workflowMessage)
-                    .ToRenameFileResult(oldPath, newPath);
-            }
-
-            if (File.Exists(oldPath) || !File.Exists(newPath))
-            {
-                return MutationVerificationService
-                    .VerificationFailed(
-                        new[] { oldPath, newPath },
-                        File.Exists(newPath) ? 1 : 0,
-                        "Rider file rename workflow reported completion, but the on-disk file path transition could not be confirmed.",
-                        new[] { "rename_execution", "file_path_transition" },
-                        "expected the old path to disappear and the new path to exist after the workflow finished")
-                    .ToRenameFileResult(oldPath, newPath);
-            }
-
-            var declaredTypeNamesAfter = RenameMutationPlanner.ReadDeclaredTypeNames(newPath);
-            var declaredTypeIdentityFailure = VerifyFileRenameDeclaredTypeIdentity(
-                declaredTypeNamesBefore,
-                declaredTypeNamesAfter,
-                newPath);
-            if (declaredTypeIdentityFailure != null)
-                return declaredTypeIdentityFailure.ToRenameFileResult(oldPath, newPath);
-
-            var semanticEvidence = CollectFileMutationSemanticEvidence(newPath, declaredTypeNamesBefore);
-
-            return MutationVerificationService
-                .ConfirmSemanticFileMutationProofWithEvidence(
-                    newPath,
-                    projectFile.Location.FullPath,
-                    expectedNamespace,
-                    semanticEvidence.ConfirmedAffectedFiles,
-                    semanticEvidence.ConfirmedReferenceFiles,
-                    declaredTypeNamesBefore,
-                    semanticEvidence,
-                    "Renamed the file through the Rider RenameDataProvider/RenameWorkflow lane and confirmed the file-scoped mutation path.")
-                .ToRenameFileResult(oldPath, newPath);
-        }
-        catch (Exception ex)
-        {
-            return MutationVerificationService
-                .Blocked($"Rider file rename workflow failed: {ex.GetType().Name}: {ex.Message}")
-                .ToRenameFileResult(oldPath, newPath);
-        }
-    }
-
-    private static VerifiedMutationOutcome? VerifyFileRenameDeclaredTypeIdentity(
-        IReadOnlyList<string> declaredTypeNamesBefore,
-        IReadOnlyList<string> declaredTypeNamesAfter,
-        string newPath)
-    {
-        var normalizedBefore = NormalizeDeclaredTypeNames(declaredTypeNamesBefore);
-        var normalizedAfter = NormalizeDeclaredTypeNames(declaredTypeNamesAfter);
-        if (normalizedBefore.SequenceEqual(normalizedAfter, StringComparer.Ordinal))
-            return null;
-
-        return MutationVerificationService.VerificationFailed(
-            new[] { newPath },
-            File.Exists(newPath) ? 1 : 0,
-            "Rider file rename changed declared type identity, so the backend cannot prove file-only semantics.",
-            new[] { "rename_execution", "file_path_transition", "declared_type_identity" },
-            $"declared type names changed during file rename: before [{FormatDeclaredTypeNames(normalizedBefore)}], after [{FormatDeclaredTypeNames(normalizedAfter)}]");
-    }
-
-    private static IReadOnlyList<string> NormalizeDeclaredTypeNames(IEnumerable<string>? typeNames)
-    {
-        return (typeNames ?? Array.Empty<string>())
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name.Trim().TrimStart('@'))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static string FormatDeclaredTypeNames(IEnumerable<string> typeNames)
-    {
-        var normalized = NormalizeDeclaredTypeNames(typeNames);
-        return normalized.Count == 0
-            ? "<none>"
-            : string.Join(", ", normalized);
-    }
-
     private Task<RdSafeDeleteResult?> HandleSafeDelete(Lifetime lt, RdSafeDeleteRequest request)
     {
         OuterLifetime outerLifetime = lt;
@@ -994,83 +590,80 @@ public class IndexMcpBackendHost
                     .ToSafeDeleteResult());
         }
 
+        // Resolve usages semantically (read lock) BEFORE entering the write lock / deleting
+        // the file. ReSharper reference search on the resolved declared element replaces the
+        // previous raw-regex .cs scan, which false-blocked on comments/strings/generated code
+        // and missed semantic usages.
+        // A null result means the target could not be semantically resolved, so usages were
+        // NOT verified; fail closed (refuse to delete) unless the caller forces it.
+        var externalUsages = CollectSafeDeleteExternalUsages(request);
+        if (externalUsages == null && !request.Force)
+        {
+            return Task.FromResult<RdSafeDeleteResult?>(
+                MutationVerificationService
+                    .Unsupported("Rider safe delete could not semantically resolve the target to verify external usages; refusing to delete. Pass force=true to override.")
+                    .ToSafeDeleteResult());
+        }
+        var resolvedUsages = externalUsages ?? (IReadOnlyList<RdSafeDeleteBlockedUsage>)Array.Empty<RdSafeDeleteBlockedUsage>();
+
         RdSafeDeleteResult? result = null;
         return ExecuteWriteLockedMutation(
             outerLifetime,
             work: () =>
             {
                 result = string.Equals(request.TargetType, "file", StringComparison.OrdinalIgnoreCase)
-                    ? SafeDeleteMutationExecutor.ExecuteFileSafeDelete(targetFilePath, request.Force)
+                    ? SafeDeleteMutationExecutor.ExecuteFileSafeDelete(targetFilePath, request.Force, resolvedUsages)
                     : SafeDeleteMutationExecutor.ExecuteSafeDelete(
                         targetFilePath,
                         request.Target.Line.Value,
                         request.Target.Column.Value,
                         request.Target.Symbol ?? string.Empty,
-                        request.Force);
+                        request.Force,
+                        resolvedUsages);
             },
             getResult: () => result,
             operationName: "safe delete",
             toBlockedResult: blocked => blocked.ToSafeDeleteResult());
     }
 
-    private RdRenameSymbolResult ToRenameBlockedResult(ExactTargetResolution resolution, string newName)
+    private IReadOnlyList<RdSafeDeleteBlockedUsage>? CollectSafeDeleteExternalUsages(RdSafeDeleteRequest request)
     {
-        var outcome = string.Equals(resolution.Status, MutationResolutionStatuses.Unsupported, StringComparison.OrdinalIgnoreCase)
-            ? MutationVerificationService.Unsupported(AppendSymbolRenameDiagnostics(
-                resolution.Message ?? "Exact symbol rename was rejected before mutation.",
-                resolution,
-                executionHint: "frontend_editor_backed_exact_target_only",
-                unsupportedReason: ClassifyExactTargetUnsupportedReason(resolution),
-                "plan.end",
-                "plan.blocked"))
-            : MutationVerificationService.Blocked(AppendSymbolRenameDiagnostics(
-                resolution.Message ?? "Exact symbol rename was rejected before mutation.",
-                resolution,
-                executionHint: "frontend_editor_backed_exact_target_only",
-                unsupportedReason: ClassifyExactTargetUnsupportedReason(resolution),
-                "plan.end",
-                "plan.blocked"));
-        return outcome.ToRenameSymbolResult(resolution.ResolvedName ?? string.Empty, newName);
-    }
+        var target = request.Target;
+        if (string.IsNullOrWhiteSpace(target.FilePath) || !target.Line.HasValue || !target.Column.HasValue)
+            return null;
 
-    private static string AppendSymbolRenameDiagnostics(
-        string message,
-        ExactTargetResolution resolution,
-        string executionHint,
-        string unsupportedReason,
-        params string[] traceStages)
-    {
-        var diagnostics = new List<string>
+        var targetFullPath = SafeGetFullPath(target.FilePath);
+        return ExecuteUnderReadLock<IReadOnlyList<RdSafeDeleteBlockedUsage>?>(() =>
         {
-            $"resolutionStatus={resolution.Status}",
-            $"targetKind={resolution.TargetKind ?? "<null>"}",
-            $"resolvedName={resolution.ResolvedName ?? "<null>"}",
-            $"sourceTokenText={resolution.SourceTokenText ?? "<null>"}",
-            $"executionHint={executionHint}",
-            $"unsupportedReason={unsupportedReason}",
-            $"traceStages={string.Join(">", traceStages.Where(stage => !string.IsNullOrWhiteSpace(stage)).Distinct(StringComparer.Ordinal))}"
-        };
+            var element = ResolveDeclaredElementAt(
+                new RdSourcePosition(target.FilePath, target.Line.Value, target.Column.Value));
+            if (element == null)
+                return null;
 
-        return $"{message} [backendSymbolRename: {string.Join(", ", diagnostics)}]";
+            // Usages inside the file being deleted disappear with it, so only references in
+            // OTHER files block the deletion.
+            return CollectScopedReferenceInfos(Lifetime.Eternal, element, "project_and_libraries", MaxResults)
+                .Where(HasConcreteReferenceLocation)
+                .Where(reference => !string.Equals(
+                    SafeGetFullPath(reference.FilePath), targetFullPath, StringComparison.OrdinalIgnoreCase))
+                .Select(reference => new RdSafeDeleteBlockedUsage(
+                    reference.FilePath!, reference.Line, reference.Column, reference.Context, "external_usage"))
+                .ToList();
+        });
     }
 
-    private static string ClassifyExactTargetUnsupportedReason(ExactTargetResolution resolution)
+    private static string SafeGetFullPath(string? path)
     {
-        return resolution.Status switch
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+        try
         {
-            MutationResolutionStatuses.Mismatch => "requested_symbol_mismatch",
-            MutationResolutionStatuses.Ambiguous => "exact_target_ambiguous",
-            MutationResolutionStatuses.Unsupported => "exact_target_unsupported",
-            _ => "exact_target_rejected"
-        };
-    }
-
-    private RdRenameFileResult ToRenameFileBlockedResult(ExactTargetResolution resolution, string oldPath, string newPath)
-    {
-        var outcome = string.Equals(resolution.Status, MutationResolutionStatuses.Unsupported, StringComparison.OrdinalIgnoreCase)
-            ? MutationVerificationService.Unsupported(resolution.Message ?? "Exact file rename was rejected before mutation.")
-            : MutationVerificationService.Blocked(resolution.Message ?? "Exact file rename was rejected before mutation.");
-        return outcome.ToRenameFileResult(oldPath, newPath);
+            return Path.GetFullPath(path);
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     private RdMoveFileResult ToMoveBlockedResult(ExactTargetResolution resolution, string oldPath, string newPath)
@@ -1092,489 +685,6 @@ public class IndexMcpBackendHost
             ? path
             : path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-    private bool TryValidateHeadlessFileRenameAvailability(string filePath, out string failureMessage)
-    {
-        if (_solution == null || _shellLocks == null || _renameRefactoringService == null)
-        {
-            failureMessage = "File rename is fail-closed because the Rider RenameRefactoringService workflow is unavailable in this headless context. The backend will not fall back to symbol rename, token targeting, or raw filesystem rename.";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
-        {
-            failureMessage = $"File rename is fail-closed because '{filePath}' is unavailable for workflow-backed execution.";
-            return false;
-        }
-
-        failureMessage = string.Empty;
-        return true;
-    }
-
-    private RenameExecutionAttempt TryExecuteDrivenRename(
-        IDeclaredElement element,
-        string newName,
-        object? preAcquiredTextControl)
-    {
-        try
-        {
-            var targetTextControl = preAcquiredTextControl;
-
-            if (targetTextControl != null)
-            {
-                var textControlRename = TryExecuteTextControlRename(element, newName, targetTextControl);
-
-                if (textControlRename.Succeeded)
-                    return textControlRename;
-            }
-
-            var plan = InspectSymbolRenameServiceExecutionPlan();
-
-            if (!plan.IsSupported)
-                return RenameExecutionAttempt.Unsupported(plan.Message);
-
-            if (plan.RequiresTextControl)
-                return RenameExecutionAttempt.Unsupported(plan.Message);
-
-            return RenameExecutionAttempt.Unsupported(plan.Message);
-        }
-        catch (Exception ex)
-        {
-            return RenameExecutionAttempt.Unsupported(
-                $"Symbol rename is fail-closed because RenameRefactoringService inspection failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private object? TryFindTextControlForElement(IDeclaredElement element)
-    {
-        try
-        {
-            var declaration = element.GetDeclarations().FirstOrDefault();
-            var document = declaration?.GetSourceFile()?.Document;
-            if (document == null)
-                return null;
-
-            var textControlManagerType = TryResolveRuntimeType("JetBrains.TextControl.ITextControlManager");
-            if (textControlManagerType == null)
-                return null;
-
-            var textControlManager = TryGetRuntimeComponent(textControlManagerType);
-            if (textControlManager == null)
-                return null;
-
-            return TryFindTextControlForDocument(textControlManagerType, textControlManager, document);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private object? TryAcquireTextControlBeforeWriteLock(RdRenameSymbolRequest request)
-    {
-        try
-        {
-            var renamePlan = RenameMutationPlanner.PlanExactSymbolRename(
-                request.Position.FilePath,
-                request.Position.Line,
-                request.Position.Column);
-            if (!renamePlan.CanProceed)
-                return null;
-
-            var localDeclarationNode = ResolveExactDeclarationNodeAt(
-                request.Position,
-                renamePlan.Resolution.ResolvedName!,
-                renamePlan.Resolution.TargetKind);
-            if (localDeclarationNode == null || !TryGetDeclaredElement(localDeclarationNode, out var element))
-                return null;
-
-            return TryFindTextControlForElement(element);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private object? TryFindTextControlForDocument(Type textControlManagerType, object textControlManager, object document)
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        while (true)
-        {
-            var textControl = TryEnumerateMatchingTextControl(textControlManagerType, textControlManager, document);
-            if (textControl != null)
-                return textControl;
-
-            if (stopwatch.ElapsedMilliseconds >= TextControlPollTimeoutMs)
-                return null;
-
-            Thread.Sleep(TextControlPollIntervalMs);
-        }
-    }
-
-    private static object? TryEnumerateMatchingTextControl(Type textControlManagerType, object textControlManager, object document)
-    {
-        var textControlsProperty = textControlManagerType.GetProperty("TextControls", BindingFlags.Public | BindingFlags.Instance);
-        if (textControlsProperty?.GetValue(textControlManager) is not IEnumerable textControls)
-            return null;
-
-        foreach (var textControl in textControls)
-        {
-            if (textControl == null)
-                continue;
-
-            var candidateDocument = textControl.GetType().GetProperty("Document", BindingFlags.Public | BindingFlags.Instance)?.GetValue(textControl);
-            if (ReferenceEquals(candidateDocument, document) || Equals(candidateDocument, document))
-                return textControl;
-        }
-
-        return null;
-    }
-
-    private RenameExecutionAttempt TryExecuteTextControlRename(IDeclaredElement element, string newName, object targetTextControl)
-    {
-        try
-        {
-            var declaration = element.GetDeclarations().FirstOrDefault();
-            if (declaration == null)
-                return RenameExecutionAttempt.Unsupported("No declaration was available for ITextControl-backed rename execution.");
-
-            var caret = targetTextControl.GetType().GetProperty("Caret", BindingFlags.Public | BindingFlags.Instance)?.GetValue(targetTextControl);
-            if (caret == null)
-                return RenameExecutionAttempt.Unsupported("The matched ITextControl does not expose a caret required for rename positioning.");
-
-            var moveToMethod = caret.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(method =>
-                {
-                    if (!string.Equals(method.Name, "MoveTo", StringComparison.Ordinal))
-                        return false;
-
-                    var parameters = method.GetParameters();
-                    return parameters.Length == 2 &&
-                           parameters[0].ParameterType == typeof(int) &&
-                           string.Equals(parameters[1].ParameterType.FullName, "JetBrains.TextControl.CaretVisualPlacement", StringComparison.Ordinal);
-                });
-
-            if (moveToMethod == null)
-                return RenameExecutionAttempt.Unsupported("The matched ITextControl caret does not expose MoveTo(int, CaretVisualPlacement).");
-
-            var placementType = moveToMethod.GetParameters()[1].ParameterType;
-            var dontScrollIfVisible = Enum.Parse(placementType, "DontScrollIfVisible");
-            var offset = declaration.GetNavigationRange().StartOffset.Offset;
-            moveToMethod.Invoke(caret, new[] { (object)offset, dontScrollIfVisible });
-
-            var dataProvider = new RenameDataProvider(element, newName);
-            var renameMethod = typeof(RenameRefactoringService)
-                .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
-                .FirstOrDefault(method =>
-                {
-                    if (!string.Equals(method.Name, "Rename", StringComparison.Ordinal) || method.IsGenericMethodDefinition)
-                        return false;
-
-                    var parameters = method.GetParameters();
-                    return parameters.Length == 3 &&
-                           parameters[0].ParameterType == typeof(ISolution) &&
-                           typeof(RenameDataProvider).IsAssignableFrom(parameters[1].ParameterType) &&
-                           string.Equals(parameters[2].ParameterType.FullName, "JetBrains.TextControl.ITextControl", StringComparison.Ordinal);
-                });
-
-            if (renameMethod == null)
-                return RenameExecutionAttempt.Unsupported("RenameRefactoringService.Rename(solution, provider, textControl) is unavailable in this Rider runtime.");
-
-            var renameTarget = renameMethod.IsStatic ? null : _renameRefactoringService;
-            var renameResult = renameMethod.Invoke(renameTarget, new[] { (object)_solution, dataProvider, targetTextControl });
-            return RenameExecutionAttempt.Success($"ITextControl-backed RenameRefactoringService invocation completed using {FormatMethodSignature(renameMethod)} (result={(renameResult == null ? "<null>" : renameResult.ToString())}).");
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            return RenameExecutionAttempt.Unsupported($"ITextControl-backed rename threw {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
-        }
-        catch (Exception ex)
-        {
-            return RenameExecutionAttempt.Unsupported($"ITextControl-backed rename failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private object? TryGetRuntimeComponent(Type componentType)
-    {
-        var component = TryGetRuntimeComponent(_solution, componentType);
-        return component ?? TryGetRuntimeComponent(Shell.Instance, componentType);
-    }
-
-    private static object? TryGetRuntimeComponent(object host, Type componentType)
-    {
-        try
-        {
-            var getComponentMethod = host.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(method =>
-                    string.Equals(method.Name, "GetComponent", StringComparison.Ordinal) &&
-                    method.IsGenericMethodDefinition &&
-                    method.GetParameters().Length == 0);
-
-            return getComponentMethod?.MakeGenericMethod(componentType).Invoke(host, Array.Empty<object>());
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static Type? TryResolveRuntimeType(string fullName)
-    {
-        return Type.GetType(fullName)
-               ?? AppDomain.CurrentDomain.GetAssemblies()
-                   .Select(assembly => assembly.GetType(fullName, false))
-                   .FirstOrDefault(type => type != null);
-    }
-
-    private static string DescribeReflectedTextControl(object? textControl)
-    {
-        if (textControl == null)
-            return "<null>";
-
-        try
-        {
-            var document = textControl.GetType().GetProperty("Document", BindingFlags.Public | BindingFlags.Instance)?.GetValue(textControl);
-            var documentPath = document?.GetType().GetProperty("Moniker", BindingFlags.Public | BindingFlags.Instance)?.GetValue(document) as string;
-            return $"type={textControl.GetType().FullName}, document={documentPath ?? "<unknown>"}";
-        }
-        catch
-        {
-            return $"type={textControl.GetType().FullName}";
-        }
-    }
-
-    private static RenameServiceExecutionPlan InspectSymbolRenameServiceExecutionPlan()
-    {
-        var renameMethods = typeof(RenameRefactoringService)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
-            .Where(method => method.Name.StartsWith("Rename", StringComparison.Ordinal))
-            .OrderBy(method => method.Name, StringComparer.Ordinal)
-            .ThenBy(method => method.GetParameters().Length)
-            .ToList();
-
-        var signatures = renameMethods
-            .Select(FormatMethodSignature)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        var selectedMethod = renameMethods.FirstOrDefault(MethodRequiresTextControl);
-        var documentedMethod = renameMethods.FirstOrDefault(method =>
-            string.Equals(method.Name, "RenameAndGetConflicts", StringComparison.Ordinal) && MethodRequiresTextControl(method));
-
-        var message =
-            "Symbol rename is fail-closed in this Rider runtime. " +
-            $"RenameRefactoringService exposes: {string.Join(" || ", signatures)}. " +
-            $"The documented service lane is {(documentedMethod == null ? "not discoverable" : "bound to '" + FormatMethodSignature(documentedMethod) + "'")}, " +
-            "which still requires JetBrains.TextControl.ITextControl. " +
-            "No public headless service overload or custom host entry point analogous to the existing MoveToFolderWorkflow + SimpleWorkflowHost lane was confirmed for symbol rename. " +
-            "The backend will not fall back to manual RenameWorkflow.Initialize because runtime trace evidence showed it hangs after 'workflow.construct.end' and never reaches 'workflow.initialize.end'. No files were modified.";
-
-        return RenameServiceExecutionPlan.Unsupported(
-            selectedMethod == null ? null : FormatMethodSignature(selectedMethod),
-            selectedMethod != null,
-            signatures,
-            message);
-    }
-
-    private static bool MethodRequiresTextControl(MethodInfo method)
-        => method.GetParameters().Any(parameter =>
-            string.Equals(parameter.ParameterType.FullName, "JetBrains.TextControl.ITextControl", StringComparison.Ordinal));
-
-    private static string FormatMethodSignature(MethodInfo method)
-    {
-        var parameters = method.GetParameters()
-            .Select(parameter => $"{parameter.ParameterType.FullName ?? parameter.ParameterType.Name} {parameter.Name}");
-        return $"{method.ReturnType.FullName ?? method.ReturnType.Name} {method.Name}({string.Join(", ", parameters)})";
-    }
-
-    private string? TryExecuteDrivenFileRename(IProjectFile projectFile, string newPath)
-    {
-        try
-        {
-            var newName = Path.GetFileName(newPath);
-            if (string.IsNullOrWhiteSpace(newName))
-                return "Rider file rename rejected the requested destination because the new file name was empty.";
-
-            var fileRenameBinding = CreateRuntimeFileRenameDataProvider(projectFile, newName, out var providerFailure);
-            if (fileRenameBinding == null)
-                return providerFailure;
-
-            var driver = ExecuteRenameWorkflow(fileRenameBinding.DataProvider, lifetime => CreateFileRenameDataContext(projectFile, fileRenameBinding.DataProvider, lifetime));
-            var conflicts = driver.Conflicts.ToList();
-            if (conflicts.Count > 0)
-                return string.Join("; ", conflicts.Select(conflict => conflict.Description).Where(description => !string.IsNullOrWhiteSpace(description)));
-
-            return null;
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            return $"Rider file rename workflow failed: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
-        }
-        catch (Exception ex)
-        {
-            return $"Rider file rename workflow failed: {ex.GetType().Name}: {ex.Message}";
-        }
-    }
-
-    private RefactoringDriverWithConflicts ExecuteRenameWorkflow(
-        IDeclaredElement element,
-        RenameDataProvider dataProvider)
-        => ExecuteRenameWorkflow(dataProvider, lifetimeDefinition => CreateRenameDataContext(element, dataProvider, lifetimeDefinition));
-
-    private RefactoringDriverWithConflicts ExecuteRenameWorkflow(
-        RenameDataProvider dataProvider,
-        Func<LifetimeDefinition, IDataContext> dataContextFactory)
-    {
-        using var lifetimeDefinition = Lifetime.Define(_solution.GetSolutionLifetimes().UntilSolutionCloseLifetime);
-        using var compilationContext = CompilationContextCookie.GetExplicitUniversalContextIfNotSet();
-        var dataContext = dataContextFactory(lifetimeDefinition);
-        var workflow = new RenameWorkflow(_solution, "Index MCP Rider rename")
-        {
-            EventBus = Shell.Instance.GetComponent<IEventBus>(),
-            WorkflowExecuterLifetime = lifetimeDefinition.Lifetime
-        };
-
-        var initialized = workflow.Initialize(dataContext);
-        if (!initialized)
-            throw new InvalidOperationException("ReSharper rename workflow is not available for the selected symbol.");
-
-        ProcessWorkflowPages(workflow);
-
-        var driver = new RefactoringDriverWithConflicts(new RefactoringDriverStorage());
-        var executer = workflow.CreateRefactoring(driver)
-                       ?? throw new InvalidOperationException("ReSharper rename workflow did not create a refactoring executer.");
-
-        var preExecuted = workflow.PreExecute(NoOpProgressIndicator.Instance);
-        if (!preExecuted)
-            throw new InvalidOperationException("ReSharper rename workflow PreExecute returned false.");
-
-        var executed = PsiTransactionCookie.ExecuteConditionally(
-            _solution.GetPsiServices(),
-            () => executer.Execute(NoOpProgressIndicator.Instance),
-            "Index MCP Rider rename");
-        if (!executed)
-            throw new InvalidOperationException("ReSharper rename workflow Execute returned false.");
-
-        var postExecuted = workflow.PostExecute(NoOpProgressIndicator.Instance);
-        if (!postExecuted)
-            throw new InvalidOperationException("ReSharper rename workflow PostExecute returned false.");
-
-        workflow.SuccessfulFinish(NoOpProgressIndicator.Instance);
-        return driver;
-    }
-
-    private IDataContext CreateRenameDataContext(
-        IDeclaredElement element,
-        RenameDataProvider dataProvider,
-        LifetimeDefinition lifetimeDefinition)
-    {
-        ICollection<IDeclaredElement> declaredElements = new List<IDeclaredElement> { element };
-        var rules = DataRules.AddRule("IndexMcpRename", PsiDataConstants.DECLARED_ELEMENTS, declaredElements)
-            .AddRule("IndexMcpRename", PsiDataConstants.DECLARED_ELEMENTS_FROM_ALL_CONTEXTS, declaredElements)
-            .AddRule("IndexMcpRename", ProjectModelDataConstants.SOLUTION, _solution)
-            .AddRule("IndexMcpRename", RenameRefactoringService.RenameDataProvider, dataProvider);
-        return _solution.GetComponent<DataContexts>().CreateWithDataRules(lifetimeDefinition.Lifetime, rules);
-    }
-
-    private IDataContext CreateFileRenameDataContext(
-        IProjectFile projectFile,
-        RenameDataProvider dataProvider,
-        LifetimeDefinition lifetimeDefinition)
-    {
-        var rules = DataRules
-            .AddRule("IndexMcpRenameFile", ProjectModelDataConstants.PROJECT_MODEL_ELEMENTS, new IProjectModelElement[] { projectFile })
-            .AddRule("IndexMcpRenameFile", ProjectModelDataConstants.SOLUTION, _solution)
-            .AddRule("IndexMcpRenameFile", RenameRefactoringService.RenameDataProvider, dataProvider);
-        return _solution.GetComponent<DataContexts>().CreateWithDataRules(lifetimeDefinition.Lifetime, rules);
-    }
-
-    private RuntimeFileRenameProviderBinding? CreateRuntimeFileRenameDataProvider(IProjectFile projectFile, string newName, out string failureMessage)
-    {
-        failureMessage = string.Empty;
-
-        var targetBinding = RuntimeRenameTargetBinding.Bind(typeof(RenameDataProvider), projectFile, newName);
-        if (!targetBinding.IsSupported || targetBinding.Provider is not RenameDataProvider dataProvider)
-        {
-            failureMessage = targetBinding.FailureMessage ??
-                             "File rename is fail-closed because the Rider runtime could not bind the project file target to RenameDataProvider.";
-            return null;
-        }
-
-        TrySetRuntimeProperty(dataProvider, "CanBeLocal", false);
-
-        object model;
-        try
-        {
-            model = new CustomRenameModel();
-        }
-        catch (Exception ex)
-        {
-            failureMessage = $"File rename is fail-closed because the Rider rename model could not be created headlessly: {ex.GetType().Name}: {ex.Message}";
-            return null;
-        }
-
-        try
-        {
-            SetRuntimeProperty(model, "HasUI", false);
-            SetRuntimeProperty(model, "QuickRename", false);
-            SetRuntimeProperty(model, "CreateRenameConfirmationPage", false);
-            SetRuntimeProperty(model, "ChangeTextOccurrences", false);
-            SetRuntimeProperty(model, "RenameDerived", false);
-            SetRuntimeProperty(model, "Bulk", false);
-            if (!TrySetRuntimeProperty(model, "RenameFile", true))
-            {
-                failureMessage = "File rename is fail-closed because the Rider rename model does not expose RenameFile in this runtime. The backend will not risk symbol rename widening without explicit file-lane support.";
-                return null;
-            }
-
-            SetRuntimeProperty(dataProvider, "Model", model);
-        }
-        catch (Exception ex)
-        {
-            failureMessage = $"File rename is fail-closed because the Rider rename model could not be configured for file-scoped execution: {ex.GetType().Name}: {ex.Message}";
-            return null;
-        }
-
-        return new RuntimeFileRenameProviderBinding(dataProvider, targetBinding.Kind);
-    }
-
-    private sealed record RuntimeFileRenameProviderBinding(
-        RenameDataProvider DataProvider,
-        RuntimeRenameTargetBindingKind BindingKind);
-
-    private static void ProcessWorkflowPages(IRefactoringWorkflow workflow)
-    {
-        var page = workflow.FirstPendingRefactoringPage;
-        var guard = 0;
-        while (page != null)
-        {
-            if (++guard > 32)
-                throw new InvalidOperationException("ReSharper rename workflow produced too many non-UI pages.");
-            if (!page.Initialize(NoOpProgressIndicator.Instance))
-                throw new InvalidOperationException($"ReSharper rename page '{page.Title}' failed to initialize.");
-            page = page.Commit(NoOpProgressIndicator.Instance);
-        }
-    }
-
-    private static void SetRuntimeProperty(object target, string propertyName, object value)
-    {
-        var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
-        if (property == null || !property.CanWrite)
-            throw new MissingMethodException(target.GetType().FullName, $"set_{propertyName}");
-        property.SetValue(target, value);
-    }
-
-    private static bool TrySetRuntimeProperty(object target, string propertyName, object value)
-    {
-        var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
-        if (property == null || !property.CanWrite)
-            return false;
-
-        property.SetValue(target, value);
-        return true;
-    }
-
     private static string? GetContainingProjectFilePath(IProjectFile projectFile)
         => projectFile.GetProject()?.ProjectFileLocation.FullPath;
 
@@ -1588,6 +698,10 @@ public class IndexMcpBackendHost
             var typeElement = ResolveTypeElementAt(request.Position);
             if (typeElement == null) return null;
 
+            // Supertypes are the type's definitional inheritance chain (commonly library
+            // types such as Avalonia's Window or System.Object) and are not a scoped search,
+            // so they are always returned. `scope` only constrains the inheritor search below
+            // and the find-implementations results.
             var supertypes = typeElement.GetAllSuperTypes()
                 .Select(t => t.GetTypeElement())
                 .Where(te => te != null)
@@ -1606,7 +720,7 @@ public class IndexMcpBackendHost
                 declaredInheritor =>
                 {
                     var subType = declaredInheritor.GetTypeElement();
-                    if (subType != null)
+                    if (subType != null && MatchesScope(subType, request.Scope))
                         subtypes.Add(ToSymbolInfo(subType));
                     return subtypes.Count < MaxResults
                         ? FindExecution.Continue
@@ -1635,14 +749,14 @@ public class IndexMcpBackendHost
 
             return element switch
             {
-                ITypeElement typeElement => FindTypeImplementations(typeElement, effectiveLimit),
-                IOverridableMember overridable => FindMemberImplementations(overridable, effectiveLimit),
+                ITypeElement typeElement => FindTypeImplementations(typeElement, effectiveLimit, request.Scope),
+                IOverridableMember overridable => FindMemberImplementations(overridable, effectiveLimit, request.Scope),
                 _ => null
             };
         }));
     }
 
-    private RdImplementationsResult FindTypeImplementations(ITypeElement typeElement, int effectiveLimit)
+    private RdImplementationsResult FindTypeImplementations(ITypeElement typeElement, int effectiveLimit, string scope)
     {
         var implementations = new List<RdSymbolInfo>();
         var searchDomain = _solution.GetPsiServices().SearchDomainFactory
@@ -1654,10 +768,13 @@ public class IndexMcpBackendHost
             declaredInheritor =>
             {
                 var implType = declaredInheritor.GetTypeElement();
-                if (implType is IClass cls && !cls.IsAbstract)
-                    implementations.Add(ToSymbolInfo(implType));
-                else if (implType is IStruct)
-                    implementations.Add(ToSymbolInfo(implType));
+                if (implType != null && MatchesScope(implType, scope))
+                {
+                    if (implType is IClass cls && !cls.IsAbstract)
+                        implementations.Add(ToSymbolInfo(implType));
+                    else if (implType is IStruct)
+                        implementations.Add(ToSymbolInfo(implType));
+                }
                 return FindExecution.Continue;
             },
             searchDomain,
@@ -1666,7 +783,7 @@ public class IndexMcpBackendHost
         return BuildImplementationsResult(implementations, effectiveLimit);
     }
 
-    private RdImplementationsResult FindMemberImplementations(IOverridableMember target, int effectiveLimit)
+    private RdImplementationsResult FindMemberImplementations(IOverridableMember target, int effectiveLimit, string scope)
     {
         var containingType = target.GetContainingType();
         if (containingType == null)
@@ -1685,7 +802,8 @@ public class IndexMcpBackendHost
                 if (implType == null) return FindExecution.Continue;
                 foreach (var member in implType.GetMembers())
                 {
-                    if (member is IOverridableMember overridable && overridable.OverridesOrImplements(target))
+                    if (member is IOverridableMember overridable && overridable.OverridesOrImplements(target)
+                        && MatchesScope(member, scope))
                         implementations.Add(ToSymbolInfo(member));
                 }
                 return FindExecution.Continue;
@@ -1902,6 +1020,76 @@ public class IndexMcpBackendHost
             return MaxResults;
 
         return Math.Min(requestedLimit, MaxResults);
+    }
+
+    // find_references over-collects so the Kotlin PaginationService can page over the
+    // returned set. The default over-collect matches the Kotlin collect limit; a larger
+    // explicit request is honored up to a hard ceiling. This is intentionally separate
+    // from MaxResults (used by hierarchy/implementations) so raising it doesn't bloat
+    // those handlers.
+    private static int GetEffectiveReferenceLimit(int requestedLimit)
+    {
+        if (requestedLimit <= 0)
+            return DefaultReferenceOverCollect;
+
+        return Math.Min(requestedLimit, MaxReferenceResults);
+    }
+
+    // Runs the ReSharper reference search applying conversion + scope filtering inside the
+    // find consumer, terminating once `limit` DISTINCT in-scope references are seen. All
+    // in-scope occurrences are retained so OrderReferenceInfosDeterministically can pick the
+    // best representative per identity, then the caller trims to the page size.
+    private List<RdReferenceInfo> CollectScopedReferenceInfos(
+        Lifetime lt,
+        IDeclaredElement element,
+        string scope,
+        int limit)
+    {
+        var searchDomain = _solution.GetPsiServices().SearchDomainFactory
+            .CreateSearchDomain(_solution, false);
+        var effectiveProgressIndicator = ResolveFindReferencesProgressIndicator(null);
+
+        var collected = new List<RdReferenceInfo>();
+        var distinctKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var consumer = new FindResultConsumer<List<FindResult>>(
+            result => new List<FindResult> { result },
+            results =>
+            {
+                EnsureLifetimeAlive(lt);
+                foreach (var result in results)
+                {
+                    EnsureLifetimeAlive(lt);
+                    if (result is not FindResultReference referenceResult)
+                        continue;
+
+                    var reference = referenceResult.Reference;
+                    if (!reference.IsValid())
+                        continue;
+
+                    var info = ToReferenceInfo(reference);
+                    if (info == null)
+                        continue;
+
+                    if (!MatchesPathScope(info.FilePath, scope))
+                        continue;
+
+                    collected.Add(info);
+                    distinctKeys.Add(GetReferenceIdentityKey(info));
+                    if (distinctKeys.Count >= limit)
+                        return FindExecution.Stop;
+                }
+                return FindExecution.Continue;
+            });
+
+        _solution.GetPsiServices().Finder.FindReferences(
+            element,
+            searchDomain,
+            consumer,
+            effectiveProgressIndicator,
+            false);
+
+        return OrderReferenceInfosDeterministically(collected);
     }
 
     private CallableTarget? ResolveCallHierarchyTarget(RdSemanticTarget target)
@@ -2452,7 +1640,7 @@ public class IndexMcpBackendHost
             return member is IConstructor;
 
         return NormalizeSimpleName(member.ShortName)
-            .Equals(NormalizeSimpleName(parsed.MemberName!), StringComparison.OrdinalIgnoreCase);
+            .Equals(NormalizeSimpleName(parsed.MemberName!), StringComparison.Ordinal);
     }
 
     private static bool MatchesParameterContract(IDeclaredElement element, IReadOnlyList<string>? parameterTypes)
@@ -2650,7 +1838,7 @@ public class IndexMcpBackendHost
         var normalizedMemberName = NormalizeSimpleName(memberName);
         var normalizedContainerLeaf = NormalizeSimpleName(GetContainerLeafName(containerPart));
         isConstructor = normalizedMemberName.Equals(".ctor", StringComparison.OrdinalIgnoreCase) ||
-                        normalizedMemberName.Equals(normalizedContainerLeaf, StringComparison.OrdinalIgnoreCase);
+                        normalizedMemberName.Equals(normalizedContainerLeaf, StringComparison.Ordinal);
         memberName = isConstructor ? ".ctor" : memberName;
         return true;
     }
@@ -3459,39 +2647,6 @@ public class IndexMcpBackendHost
         return typeDeclaration?.DeclaredName;
     }
 
-    private ITreeNode? ResolveExactDeclarationNodeAt(RdSourcePosition position, string expectedName, string? expectedTargetKind)
-    {
-        var psiFile = GetPsiFileForPath(position.FilePath);
-        if (psiFile == null) return null;
-
-        var sourceFile = psiFile.GetSourceFile();
-        var document = sourceFile?.Document;
-        if (document == null) return null;
-
-        var line = Math.Max(0, position.Line - 1);
-        var col = Math.Max(0, position.Column - 1);
-        var offset = document.GetLineStartOffset((Int32<DocLine>)line) + col;
-
-        foreach (var candidateOffset in CandidateOffsets(offset))
-        {
-            var node = psiFile.FindNodeAt(TreeTextRange.FromLength(new TreeOffset(candidateOffset), 1));
-            if (node == null) continue;
-
-            var declaration = node.GetContainingNode<IDeclaration>();
-            if (declaration != null && string.Equals(declaration.DeclaredName, expectedName, StringComparison.Ordinal))
-                return declaration as ITreeNode;
-
-            if (string.Equals(expectedTargetKind, MutationTargetKind.Type.ToContractValue(), StringComparison.OrdinalIgnoreCase))
-            {
-                var typeDeclaration = node.GetContainingNode<ITypeDeclaration>();
-                if (typeDeclaration != null && string.Equals(typeDeclaration.DeclaredName, expectedName, StringComparison.Ordinal))
-                    return typeDeclaration as ITreeNode;
-            }
-        }
-
-        return null;
-    }
-
     private static string? GetDeclarationNodeName(ITreeNode? node)
     {
         if (node is ITypeDeclaration typeDeclaration) return typeDeclaration.DeclaredName;
@@ -3668,56 +2823,6 @@ public class IndexMcpBackendHost
     }
 
 
-    private sealed class RenameExecutionAttempt
-    {
-        private RenameExecutionAttempt(bool succeeded, bool isUnsupported, string message)
-        {
-            Succeeded = succeeded;
-            IsUnsupported = isUnsupported;
-            Message = message;
-        }
-
-        public bool Succeeded { get; }
-
-        public bool IsUnsupported { get; }
-
-        public string Message { get; }
-
-        public static RenameExecutionAttempt Success(string message = "")
-            => new(true, false, message);
-
-        public static RenameExecutionAttempt Unsupported(string message)
-            => new(false, true, message);
-    }
-
-    private sealed class RenameServiceExecutionPlan
-    {
-        private RenameServiceExecutionPlan(bool isSupported, string? selectedMethodSignature, bool requiresTextControl,
-            IReadOnlyList<string> availableMethodSignatures, string message)
-        {
-            IsSupported = isSupported;
-            SelectedMethodSignature = selectedMethodSignature;
-            RequiresTextControl = requiresTextControl;
-            AvailableMethodSignatures = availableMethodSignatures;
-            Message = message;
-        }
-
-        public bool IsSupported { get; }
-
-        public string? SelectedMethodSignature { get; }
-
-        public bool RequiresTextControl { get; }
-
-        public IReadOnlyList<string> AvailableMethodSignatures { get; }
-
-        public string Message { get; }
-
-        public static RenameServiceExecutionPlan Unsupported(string? selectedMethodSignature, bool requiresTextControl,
-            IReadOnlyList<string> availableMethodSignatures, string message)
-            => new(false, selectedMethodSignature, requiresTextControl, availableMethodSignatures, message);
-    }
-
-
     private sealed class FindReferencesTargetResolution
     {
         private FindReferencesTargetResolution(string status, string? message, IDeclaredElement? element, string origin)
@@ -3750,227 +2855,6 @@ public class IndexMcpBackendHost
         public IDeclaredElement? TryGetElement() => Status == "success" ? Element : null;
     }
 
-    private List<string> GetPotentiallyAffectedFiles(IDeclaredElement element)
-    {
-        return element.GetDeclarations()
-            .Select(declaration => declaration.GetSourceFile()?.GetLocation().FullPath)
-            .Concat(FindReferences(Lifetime.Eternal, element, MaxResults)
-                .Select(reference => reference.GetTreeNode().GetSourceFile()?.GetLocation().FullPath))
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Cast<string>()
-            .ToList();
-    }
-
-    /// <summary>
-    /// Snapshots every project file path currently in the solution. Used to diff
-    /// pre/post rename so that file renames (AXAML pairs, partial-class moves) are
-    /// reported even after the source <see cref="IDeclaredElement"/> invalidates.
-    /// Best-effort: any failure returns an empty list and callers fall back to the
-    /// element-based oracle.
-    /// </summary>
-    /// <remarks>
-    /// We walk the project model once to enumerate paths, then take a direct
-    /// filesystem snapshot of the parent directories. The project model's
-    /// <c>GetAllProjectFiles</c> view can lag behind disk state inside the same
-    /// write-lock transaction, so disk-level enumeration is the authoritative
-    /// post-rename oracle for detecting renamed paths.
-    /// </remarks>
-    private List<string> SnapshotSolutionProjectFilePaths()
-    {
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            foreach (var project in _solution.GetAllProjects())
-            {
-                foreach (var projectFile in project.GetAllProjectFiles())
-                {
-                    var path = projectFile.Location.FullPath;
-                    if (string.IsNullOrWhiteSpace(path))
-                        continue;
-                    paths.Add(path);
-                    try
-                    {
-                        var dir = Path.GetDirectoryName(path);
-                        if (!string.IsNullOrWhiteSpace(dir))
-                            directories.Add(dir!);
-                    }
-                    catch
-                    {
-                        // ignore individual path failures
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // best-effort snapshot
-        }
-
-        try
-        {
-            foreach (var dir in directories)
-            {
-                if (!Directory.Exists(dir))
-                    continue;
-                try
-                {
-                    foreach (var file in Directory.EnumerateFiles(dir))
-                        paths.Add(file);
-                }
-                catch
-                {
-                    // skip unreadable directories
-                }
-            }
-        }
-        catch
-        {
-            // best-effort enumeration
-        }
-
-        return paths.ToList();
-    }
-
-    private MutationSemanticEvidence CollectFileMutationSemanticEvidence(string primaryFilePath, IReadOnlyList<string> declaredTypeNames)
-    {
-        var projectFile = GetProjectFileForPath(primaryFilePath);
-        var psiFile = GetPsiFileForPath(primaryFilePath);
-        var confirmedAffectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var confirmedReferenceFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (projectFile != null && File.Exists(primaryFilePath))
-            confirmedAffectedFiles.Add(primaryFilePath);
-
-        if (psiFile != null)
-        {
-            foreach (var element in GetDeclaredTypeElementsForFile(psiFile, primaryFilePath, declaredTypeNames))
-            {
-                foreach (var affectedFile in GetPotentiallyAffectedFiles(element))
-                {
-                    if (string.IsNullOrWhiteSpace(affectedFile))
-                        continue;
-
-                    confirmedAffectedFiles.Add(affectedFile);
-                    if (!PathsEqual(affectedFile, primaryFilePath))
-                        confirmedReferenceFiles.Add(affectedFile);
-                }
-            }
-        }
-
-        return MutationSemanticEvidence.Create(
-            projectFile != null,
-            psiFile != null,
-            confirmedAffectedFiles,
-            confirmedReferenceFiles);
-    }
-
-    private IEnumerable<ITypeElement> GetDeclaredTypeElementsForFile(IFile psiFile, string primaryFilePath, IReadOnlyList<string> declaredTypeNames)
-    {
-        var declaredElements = new List<IDeclaredElement>();
-        CollectDeclaredElements(psiFile, declaredElements);
-        var expectedNames = new HashSet<string>(declaredTypeNames ?? Array.Empty<string>(), StringComparer.Ordinal);
-
-        return declaredElements
-            .OfType<ITypeElement>()
-            .Where(element => ElementDeclaredInFile(element, primaryFilePath))
-            .Where(element => expectedNames.Count == 0 || expectedNames.Contains(element.ShortName))
-            .Distinct();
-    }
-
-    private static bool ElementDeclaredInFile(IDeclaredElement element, string primaryFilePath)
-    {
-        return element.GetDeclarations()
-            .Select(declaration => declaration.GetSourceFile()?.GetLocation().FullPath)
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Any(path => PathsEqual(path, primaryFilePath));
-    }
-
-    private static void AddAffectedFile(List<string> affectedFiles, string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return;
-        if (affectedFiles.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
-        affectedFiles.Add(path);
-    }
-
-    /// <summary>
-    /// Snapshot the per-file occurrence count of <paramref name="identifier"/> as a standalone
-    /// identifier (word-boundary regex) before a rename runs. Used by
-    /// <see cref="RenameChangedAffectedFiles"/> to detect whether the rename actually rewrote any
-    /// occurrences. Files that don't exist on disk yet are skipped (count == 0 is recorded only for
-    /// existing files; missing files surface in <c>RenameChangedAffectedFiles</c> as "file disappeared").
-    /// </summary>
-    private static Dictionary<string, int> SnapshotIdentifierCounts(IEnumerable<string> affectedFiles, string identifier)
-    {
-        var pattern = BuildIdentifierRegex(identifier);
-        var snapshot = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var path in affectedFiles
-                     .Where(p => !string.IsNullOrWhiteSpace(p))
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            try
-            {
-                if (!File.Exists(path)) continue;
-                var text = File.ReadAllText(path);
-                snapshot[path] = pattern.Matches(text).Count;
-            }
-            catch (IOException)
-            {
-                // Treat unreadable files as "we cannot prove anything about them"; they are excluded
-                // from the snapshot, so they cannot signal success either. The other affected files
-                // will carry the oracle.
-            }
-        }
-        return snapshot;
-    }
-
-    /// <summary>
-    /// Polls the affected files for evidence that <paramref name="oldName"/> was rewritten. A file
-    /// is considered "changed by rename" when either:
-    /// <list type="bullet">
-    ///   <item>the file no longer exists on disk (renamed/moved by the refactoring), OR</item>
-    ///   <item>the current word-boundary occurrence count of <paramref name="oldName"/> is strictly
-    ///         less than the snapshot count.</item>
-    /// </list>
-    /// Returns true as soon as ANY snapshotted file shows a decrease (or disappears).
-    /// </summary>
-    private static bool RenameChangedAffectedFiles(IReadOnlyDictionary<string, int> oldNameCountsBefore, string oldName)
-    {
-        if (oldNameCountsBefore.Count == 0) return false;
-
-        var pattern = BuildIdentifierRegex(oldName);
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            if (oldNameCountsBefore.Any(kv =>
-                {
-                    if (!File.Exists(kv.Key)) return true; // disappeared = rename-on-disk
-                    try
-                    {
-                        var text = File.ReadAllText(kv.Key);
-                        return pattern.Matches(text).Count < kv.Value;
-                    }
-                    catch (IOException)
-                    {
-                        // Transient IO during ReSharper write; treat as "no evidence yet" and keep polling.
-                        return false;
-                    }
-                }))
-            {
-                return true;
-            }
-
-            Task.Delay(100).GetAwaiter().GetResult();
-        }
-
-        return false;
-    }
-
-    private static Regex BuildIdentifierRegex(string identifier)
-    {
-        return new Regex(@"\b" + Regex.Escape(identifier) + @"\b", RegexOptions.Compiled);
-    }
-
     private IFile? GetPsiFileForPath(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
@@ -3997,18 +2881,6 @@ public class IndexMcpBackendHost
         }
 
         return psiFiles.FirstOrDefault(ContainsDeclaredElement) ?? psiFiles.FirstOrDefault();
-    }
-
-    private IProjectFile? GetProjectFileForPath(string filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath) || _solution == null)
-            return null;
-
-        var normalizedPath = filePath.Replace('/', Path.DirectorySeparatorChar);
-        var vfp = VirtualFileSystemPath.Parse(normalizedPath, InteractionContext.SolutionContext);
-        return _solution.FindProjectItemsByLocation(vfp)
-            .OfType<IProjectFile>()
-            .FirstOrDefault();
     }
 
     private static bool ContainsDeclaredElement(ITreeNode node)
@@ -4297,4 +3169,3 @@ internal sealed class NoOpProgressIndicator : IProgressIndicator
     public void Advance(double work) { }
     public void Dispose() { }
 }
-
