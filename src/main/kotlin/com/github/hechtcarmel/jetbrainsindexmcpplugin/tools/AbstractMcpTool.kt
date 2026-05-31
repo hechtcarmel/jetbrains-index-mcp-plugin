@@ -471,7 +471,8 @@ abstract class AbstractMcpTool : McpTool {
     protected enum class LookupModeState {
         MISSING,
         POSITION,
-        SYMBOL
+        SYMBOL,
+        AMBIGUOUS
     }
 
     /**
@@ -526,14 +527,23 @@ abstract class AbstractMcpTool : McpTool {
      * Blank string fields and blank numeric strings do not count as present.
      *
      * Selection policy:
-     * 1. Prefer complete position targets (`file` + `line` + `column`) because they are more precise.
-     * 2. Otherwise use complete symbol targets (`language` + `symbol`).
-     * 3. Otherwise report missing target information.
+     * 1. If BOTH a complete position target and a complete symbol target are present, the request is
+     *    [LookupModeState.AMBIGUOUS] (mutually exclusive parameter groups) and must be rejected.
+     * 2. Use the complete position target (`file` + `line` + `column`).
+     * 3. Otherwise use the complete symbol target (`language` + `symbol`).
+     * 4. Otherwise report missing target information.
+     *
+     * Note: a "complete position" requires positive `line`/`column` (see [optionalPositionIntArg]),
+     * so schema-default fields like `file:"", line:0, column:0` do not count as a position target and
+     * therefore never produce a false conflict against a real `language`+`symbol` request.
      */
     protected fun resolveLookupMode(arguments: JsonObject): LookupModeState {
+        val hasPosition = hasCompletePositionTarget(arguments)
+        val hasSymbol = hasCompleteSymbolTarget(arguments)
         return when {
-            hasCompletePositionTarget(arguments) -> LookupModeState.POSITION
-            hasCompleteSymbolTarget(arguments) -> LookupModeState.SYMBOL
+            hasPosition && hasSymbol -> LookupModeState.AMBIGUOUS
+            hasPosition -> LookupModeState.POSITION
+            hasSymbol -> LookupModeState.SYMBOL
             else -> LookupModeState.MISSING
         }
     }
@@ -612,6 +622,8 @@ abstract class AbstractMcpTool : McpTool {
 
                 Result.success(element)
             }
+
+            LookupModeState.AMBIGUOUS -> ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE.toArgumentFailure()
 
             LookupModeState.MISSING -> ErrorMessages.SYMBOL_OR_POSITION_REQUIRED.toArgumentFailure()
         }

@@ -153,7 +153,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
-    fun testFindUsagesToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
+    fun testFindUsagesToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindUsagesTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -164,8 +164,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should still error because test position is invalid", result.isError)
-        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
+        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindUsagesToolUnsupportedLanguage() = runBlocking {
@@ -210,7 +210,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
-    fun testFindDefinitionToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
+    fun testFindDefinitionToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindDefinitionTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -221,8 +221,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should still error because test position is invalid", result.isError)
-        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
+        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
     // Navigation Tools Tests
@@ -307,7 +307,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error with invalid file", result.isError)
     }
 
-    fun testFindImplementationsToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
+    fun testFindImplementationsToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindImplementationsTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -318,8 +318,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should still error because test position is invalid", result.isError)
-        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
+        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindImplementationsToolUnsupportedLanguage() = runBlocking {
@@ -992,7 +992,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
-    fun testFindSuperMethodsToolPrefersPositionWhenBothTargetsProvided() = runBlocking {
+    fun testFindSuperMethodsToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindSuperMethodsTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -1003,8 +1003,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should still error because test position is invalid", result.isError)
-        assertFalse("Should prefer position mode instead of rejecting dual-mode requests", errorText(result).contains("Cannot specify both"))
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
+        assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindSuperMethodsToolUnsupportedLanguage() = runBlocking {

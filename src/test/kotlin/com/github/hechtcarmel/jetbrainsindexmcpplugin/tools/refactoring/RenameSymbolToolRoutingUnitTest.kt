@@ -19,7 +19,7 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
         assertNull(mode.error)
     }
 
-    fun testRenameModeTreatsZeroLineAndColumnAsFileRename() {
+    fun testRenameModeTreatsZeroLineAndColumnAsInvalidPosition() {
         val mode = RenameSymbolTool().resolveRenameMode(buildJsonObject {
             put("file", JsonPrimitive("src/File.cs"))
             put("line", JsonPrimitive(0))
@@ -27,10 +27,27 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
             put("newName", JsonPrimitive("Renamed.cs"))
         })
 
-        assertTrue(mode.isFileRename)
+        assertFalse(
+            "Explicit line=0,column=0 must NOT silently become a destructive file rename",
+            mode.isFileRename
+        )
         assertNull(mode.line)
         assertNull(mode.column)
-        assertNull(mode.error)
+        assertNotNull(mode.error)
+        assertTrue(mode.error!!.contains("positive integers"))
+    }
+
+    fun testRenameModeTreatsNegativeLineAndColumnAsInvalidPosition() {
+        val mode = RenameSymbolTool().resolveRenameMode(buildJsonObject {
+            put("file", JsonPrimitive("src/File.cs"))
+            put("line", JsonPrimitive(-1))
+            put("column", JsonPrimitive(-3))
+            put("newName", JsonPrimitive("Renamed.cs"))
+        })
+
+        assertFalse(mode.isFileRename)
+        assertNotNull(mode.error)
+        assertTrue(mode.error!!.contains("positive integers"))
     }
 
     fun testRenameModeTreatsBlankLineAndColumnStringsAsFileRename() {
@@ -61,7 +78,7 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
         assertNull(mode.error)
     }
 
-    fun testRenameModeRejectsMixedPositiveAndNonPositiveCoordinates() {
+    fun testRenameModeRejectsBothPresentWithNonPositiveCoordinateAsInvalidPosition() {
         listOf(
             buildJsonObject {
                 put("line", JsonPrimitive(12))
@@ -70,7 +87,25 @@ class RenameSymbolToolRoutingUnitTest : TestCase() {
             buildJsonObject {
                 put("line", JsonPrimitive(0))
                 put("column", JsonPrimitive(8))
-            },
+            }
+        ).forEach { coordinatesOnly ->
+            val mode = RenameSymbolTool().resolveRenameMode(buildJsonObject {
+                put("file", JsonPrimitive("src/File.cs"))
+                put("newName", JsonPrimitive("RenamedSymbol"))
+                coordinatesOnly.forEach { (key, value) -> put(key, value) }
+            })
+
+            assertFalse(mode.isFileRename)
+            assertNotNull(mode.error)
+            assertTrue(
+                "Both fields present but one non-positive should be an invalid-position error",
+                mode.error!!.contains("positive integers")
+            )
+        }
+    }
+
+    fun testRenameModeRejectsExactlyOneCoordinatePresent() {
+        listOf(
             buildJsonObject {
                 put("line", JsonPrimitive(12))
             },

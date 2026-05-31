@@ -39,6 +39,18 @@ class RenameSymbolToolTargetResolutionUnitTest : TestCase() {
         elementText = elementText
     )
 
+    private class CSharpDeclarationIdentifierWithReference(
+        elementRange: TextRange,
+        elementParent: PsiElement?,
+        elementText: String,
+        elementReferences: Array<PsiReference>
+    ) : FakeElement(
+        elementRange = elementRange,
+        elementParent = elementParent,
+        elementText = elementText,
+        elementReferences = elementReferences
+    )
+
     private class CSharpMethodDeclaration(
         elementRange: TextRange,
         elementParent: PsiElement?,
@@ -60,6 +72,24 @@ class RenameSymbolToolTargetResolutionUnitTest : TestCase() {
         override fun getTextRange(): TextRange = elementRange
         override fun getParent(): PsiElement? = elementParent
         override fun getReferences(): Array<PsiReference> = emptyArray()
+    }
+
+    private class FakeNamedDeclaration(
+        private val elementName: String,
+        private val elementRange: TextRange,
+        private val elementParent: PsiElement?,
+        private var elementChildren: Array<PsiElement> = emptyArray(),
+        private val elementReferences: Array<PsiReference> = emptyArray()
+    ) : PsiNamedElement by mockk(relaxed = true) {
+        override fun getName(): String = elementName
+        override fun getTextRange(): TextRange = elementRange
+        override fun getParent(): PsiElement? = elementParent
+        override fun getChildren(): Array<PsiElement> = elementChildren
+        override fun getReferences(): Array<PsiReference> = elementReferences
+
+        fun setChildren(children: Array<PsiElement>) {
+            elementChildren = children
+        }
     }
 
     fun testResolveNamedElementCandidateSkipsDirectoryReferenceAndFallsBackToDeclarationAncestor() {
@@ -103,7 +133,10 @@ class RenameSymbolToolTargetResolutionUnitTest : TestCase() {
         assertSame("Reference-based rename targets must still work for real declarations", resolvedTarget, resolved)
     }
 
-    fun testInspectNamedElementCandidatePrefersEnclosingNamedAncestorOverReferenceResolution() {
+    fun testInspectNamedElementCandidatePrefersReferenceUnderCursorOverEnclosingDeclaration() {
+        // The cursor sits on a usage token that resolves to a real declaration, while the only
+        // enclosing supported candidate is a different declaration whose name is NOT under the cursor.
+        // The reference target must win (renaming the thing under the cursor, not the container).
         val resolvedTarget = mockk<PsiNamedElement>(relaxed = true)
         val declaration = mockk<PsiNamedElement>(relaxed = true)
         val reference = mockk<PsiReference>(relaxed = true)
@@ -123,8 +156,46 @@ class RenameSymbolToolTargetResolutionUnitTest : TestCase() {
 
         val resolution = RenameSymbolTool.inspectNamedElementCandidateForRename(leaf, requestedOffset = 60)
 
-        assertSame("Enclosing named ancestor should beat reference fallback when both are available", declaration, resolution.candidate)
-        assertEquals("selected enclosing named element at depth=1", resolution.selectedReason)
+        assertSame(
+            "Reference resolved under the cursor must beat an enclosing-declaration fallback",
+            resolvedTarget,
+            resolution.candidate
+        )
+        assertEquals("selected reference-resolved declaration from depth=0 ref#=0", resolution.selectedReason)
+    }
+
+    fun testInspectNamedElementCandidatePrefersDeclarationWhoseNameIsUnderCursorOverReference() {
+        // The cursor sits on a declaration's OWN name identifier, but the leaf also carries a
+        // resolvable reference (mimics constructors/overrides/partials). The declaration must win.
+        val otherTarget = mockk<PsiNamedElement>(relaxed = true)
+        val reference = mockk<PsiReference>(relaxed = true)
+
+        every { otherTarget.name } returns "OtherSymbol"
+        every { otherTarget.textRange } returns TextRange(100, 140)
+        every { reference.resolve() } returns otherTarget
+        every { reference.rangeInElement } returns TextRange(5, 6)
+
+        val declaration = FakeNamedDeclaration(
+            elementName = "Target",
+            elementRange = TextRange(40, 90),
+            elementParent = null
+        )
+        val leaf = CSharpDeclarationIdentifierWithReference(
+            elementRange = TextRange(55, 65),
+            elementParent = declaration,
+            elementText = "Target",
+            elementReferences = arrayOf(reference)
+        )
+        declaration.setChildren(arrayOf(leaf))
+
+        val resolution = RenameSymbolTool.inspectNamedElementCandidateForRename(leaf, requestedOffset = 60)
+
+        assertSame(
+            "A declaration whose own name identifier is under the cursor must win over a reference",
+            declaration,
+            resolution.candidate
+        )
+        assertEquals("Target", resolution.candidateName)
     }
 
     fun testResolveNamedElementCandidateSkipsContainerLikeNamedAncestors() {

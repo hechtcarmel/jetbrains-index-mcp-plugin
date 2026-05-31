@@ -20,6 +20,8 @@ object ErrorMessages {
     const val DEFINITION_DOCUMENT_NOT_FOUND = "Could not get document for definition"
 
     // Symbol resolution errors
+    const val SYMBOL_AND_POSITION_EXCLUSIVE =
+        "Cannot specify both language+symbol and file+line+column. Use one or the other."
     const val SYMBOL_OR_POSITION_REQUIRED =
         "Must specify either file+line+column or language+symbol to identify the target element."
     fun missingParamForSymbol(param: String) =

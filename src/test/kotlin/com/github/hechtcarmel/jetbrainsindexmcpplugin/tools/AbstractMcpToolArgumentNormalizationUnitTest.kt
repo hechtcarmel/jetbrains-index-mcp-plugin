@@ -112,7 +112,7 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
         assertEquals("POSITION", lookupMode)
     }
 
-    fun testCompletePositionWinsOverCompleteSymbol() {
+    fun testCompletePositionAndCompleteSymbolAreAmbiguous() {
         val arguments = buildJsonObject {
             put("file", JsonPrimitive("src/Main.kt"))
             put("line", JsonPrimitive(12))
@@ -123,7 +123,25 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
 
         val lookupMode = tool.lookupModeForTest(arguments)
 
-        assertEquals("POSITION", lookupMode)
+        assertEquals("AMBIGUOUS", lookupMode)
+    }
+
+    fun testCompletePositionAndCompleteSymbolRejectedAsExclusive() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("language", JsonPrimitive("kotlin"))
+            put("symbol", JsonPrimitive("com.example.Main#run()"))
+        }
+
+        val result = tool.resolveElementForTest(project, arguments)
+
+        assertTrue("Mutually exclusive target groups must be rejected", result.isFailure)
+        assertEquals(
+            ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE,
+            result.exceptionOrNull()?.message
+        )
     }
 
     fun testPositionLookupIgnoresBlankLanguageAndSymbol() {

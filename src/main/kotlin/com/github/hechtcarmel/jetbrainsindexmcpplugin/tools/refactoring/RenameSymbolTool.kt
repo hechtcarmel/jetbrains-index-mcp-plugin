@@ -1035,6 +1035,7 @@ class RenameSymbolTool : AbstractMcpTool() {
             var localCandidate: PsiElement? = null
             var localCandidateName: String? = null
             var localCandidateReason: String? = null
+            var localCandidateDirectlyUnderCursor = false
             var referenceCandidate: PsiElement? = null
             var referenceCandidateName: String? = null
             var referenceCandidateReason: String? = null
@@ -1060,6 +1061,8 @@ class RenameSymbolTool : AbstractMcpTool() {
                 if (currentSupported && localCandidate == null) {
                     localCandidate = current
                     localCandidateName = currentInspection.name
+                    localCandidateDirectlyUnderCursor = requestedOffset != null &&
+                        currentInspection.identifierRange?.containsOffset(requestedOffset) == true
                     localCandidateReason = if (currentInspection.isPsiNamedElement) {
                         "selected enclosing named element at depth=$depth"
                     } else {
@@ -1132,11 +1135,44 @@ class RenameSymbolTool : AbstractMcpTool() {
                 depth++
             }
 
-            val selectedCandidate = localCandidate ?: referenceCandidate
-            val selectedCandidateName = localCandidateName ?: referenceCandidateName
-            val selectedReason = localCandidateReason
-                ?: referenceCandidateReason
-                ?: "no supported non-container named element found"
+            val noCandidateReason = "no supported non-container named element found"
+            val selectedCandidate: PsiElement?
+            val selectedCandidateName: String?
+            val selectedReason: String?
+            when {
+                // (1) Direct declaration under the cursor: a declaration whose own name identifier
+                //     contains the requested offset. This always wins, even if the leaf also carries a
+                //     resolvable reference (e.g. constructors/overrides/partials).
+                requestedOffset != null && localCandidate != null && localCandidateDirectlyUnderCursor -> {
+                    selectedCandidate = localCandidate
+                    selectedCandidateName = localCandidateName
+                    selectedReason = localCandidateReason ?: noCandidateReason
+                }
+                // (2) Reference-resolved declaration under the cursor beats an enclosing-declaration
+                //     fallback (cursor sits on a usage like `target.process()`).
+                requestedOffset != null && !localCandidateDirectlyUnderCursor && referenceCandidate != null -> {
+                    selectedCandidate = referenceCandidate
+                    selectedCandidateName = referenceCandidateName
+                    selectedReason = referenceCandidateReason ?: noCandidateReason
+                }
+                // (3) Enclosing declaration fallback. Also the offset-less path, which preserves the
+                //     historical `localCandidate ?: referenceCandidate` ordering.
+                localCandidate != null -> {
+                    selectedCandidate = localCandidate
+                    selectedCandidateName = localCandidateName
+                    selectedReason = localCandidateReason ?: noCandidateReason
+                }
+                referenceCandidate != null -> {
+                    selectedCandidate = referenceCandidate
+                    selectedCandidateName = referenceCandidateName
+                    selectedReason = referenceCandidateReason ?: noCandidateReason
+                }
+                else -> {
+                    selectedCandidate = null
+                    selectedCandidateName = null
+                    selectedReason = noCandidateReason
+                }
+            }
 
             return RenameTargetResolution(
                 candidate = selectedCandidate,
@@ -1437,27 +1473,42 @@ class RenameSymbolTool : AbstractMcpTool() {
     )
 
     internal fun resolveRenameMode(arguments: JsonObject): RenameModeResolution {
-        val normalizedLine = optionalIntArg(arguments, "line")?.takeIf { it > 0 }
-        val normalizedColumn = optionalIntArg(arguments, "column")?.takeIf { it > 0 }
+        val linePresent = optionalStringArg(arguments, "line") != null
+        val columnPresent = optionalStringArg(arguments, "column") != null
+        val line = optionalIntArg(arguments, "line")
+        val column = optionalIntArg(arguments, "column")
 
         return when {
-            normalizedLine == null && normalizedColumn == null -> RenameModeResolution(
+            // Both omitted/blank -> file rename.
+            !linePresent && !columnPresent -> RenameModeResolution(
                 isFileRename = true,
                 line = null,
                 column = null
             )
 
-            normalizedLine != null && normalizedColumn != null -> RenameModeResolution(
+            // Exactly one coordinate supplied -> incomplete symbol target.
+            linePresent != columnPresent -> RenameModeResolution(
                 isFileRename = false,
-                line = normalizedLine,
-                column = normalizedColumn
+                line = line?.takeIf { it > 0 },
+                column = column?.takeIf { it > 0 },
+                error = "Both 'line' and 'column' must be provided for symbol rename, or both omitted for file rename."
             )
 
+            // Both present and valid -> symbol rename.
+            line != null && line > 0 && column != null && column > 0 -> RenameModeResolution(
+                isFileRename = false,
+                line = line,
+                column = column
+            )
+
+            // Both present, but at least one is non-positive or non-numeric. An explicit 0/negative
+            // position is an invalid input, NOT a request for a (destructive) file rename: fail closed.
             else -> RenameModeResolution(
                 isFileRename = false,
-                line = normalizedLine,
-                column = normalizedColumn,
-                error = "Both 'line' and 'column' must be provided for symbol rename, or both omitted for file rename."
+                line = line?.takeIf { it > 0 },
+                column = column?.takeIf { it > 0 },
+                error = "Invalid position: 'line' and 'column' must be positive integers (1-based). " +
+                    "Omit both fields entirely for a file rename."
             )
         }
     }
