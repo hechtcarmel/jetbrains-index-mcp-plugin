@@ -10,3 +10,5 @@ exclude:
   - name: All
     paths:
       - .qodana
+      - protocol/src/main/kotlin
+      - src/rider/main/kotlin

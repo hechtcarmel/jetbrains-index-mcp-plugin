@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
@@ -53,7 +54,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ### Language-Specific Navigation Tools
  *
- * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, Markdown)
+     * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, C#, Markdown)
  * and are registered when at least one language handler is available:
  *
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
@@ -68,9 +69,9 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_reformat_code` - Reformat code using project code style (disabled by default)
  * - `ide_optimize_imports` - Optimize imports without reformatting (disabled by default)
  *
- * ### Java-Specific Refactoring Tools (IntelliJ IDEA & Android Studio Only)
+ * ### Conditional Refactoring Tools
  *
- * - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
+ * - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin or Rider backend)
  *
  * ### Kotlin Conversion Tools (IntelliJ IDEA with Java & Kotlin Plugins)
  *
@@ -175,7 +176,7 @@ class ToolRegistry {
      * Tools are registered conditionally based on IDE capabilities:
      * - Universal tools are always registered
      * - Language-specific navigation tools are registered when any language handler is available
-     * - Refactoring tools are only registered when the Java plugin is available
+     * - Safe delete is registered when either the Java plugin or the Rider backend is available
      */
     fun registerBuiltInTools() {
         // Initialize language handlers first
@@ -187,9 +188,9 @@ class ToolRegistry {
         // Language-specific navigation tools - registered when handlers are available
         registerLanguageNavigationTools()
 
-        // Java-specific refactoring tools - only available when Java plugin is present
-        if (PluginDetectors.java.isAvailable) {
-            registerJavaRefactoringTools()
+        // Safe delete is available through Java PSI/refactoring or Rider's ReSharper backend.
+        if (PluginDetectors.java.isAvailable || RiderBackendSemanticService.isRiderEnvironment()) {
+            registerSafeDeleteTool()
         }
 
         // Kotlin conversion tools - only available when both Java and Kotlin plugins are present
@@ -273,7 +274,7 @@ class ToolRegistry {
      * Registers language-specific navigation tools.
      *
      * These tools delegate to language handlers and support multiple languages
-     * (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust).
+     * (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, C#).
      *
      * Tools are registered when at least one language handler is available
      * for the tool's functionality.
@@ -292,17 +293,15 @@ class ToolRegistry {
     }
 
     /**
-     * Registers Java-specific refactoring tools.
+     * Registers safe delete when an implementation backend is available.
      *
-     * These tools use Java-specific refactoring APIs and are only available
-     * when the Java plugin is present (IntelliJ IDEA, Android Studio).
+     * Safe delete uses Java-specific refactoring APIs for Java/Kotlin targets, and
+     * Rider's ReSharper backend for Rider .NET targets.
      *
      * Note: RenameSymbolTool has been moved to registerUniversalTools() as it
      * now uses the platform-level RenameProcessor which works across all languages.
-     *
-     * IMPORTANT: This method must only be called after checking [PluginDetectors.java.isAvailable]
      */
-    private fun registerJavaRefactoringTools() {
+    private fun registerSafeDeleteTool() {
         val refactoringToolClasses = listOf(
             "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool"
         )
@@ -312,8 +311,8 @@ class ToolRegistry {
                 val toolClass = Class.forName(className)
                 val tool = toolClass.getDeclaredConstructor().newInstance() as McpTool
                 register(tool)
-            } catch (e: Exception) {
-                LOG.warn("Failed to register Java refactoring tool $className: ${e.message}")
+            } catch (e: Throwable) {
+                LOG.warn("Failed to register safe delete tool $className: ${e.message}")
             }
         }
     }

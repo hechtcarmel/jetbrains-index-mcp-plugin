@@ -118,6 +118,30 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         assertFalse("Library implementation should be filtered out by project_test_files", classNames.any { it == "LibraryRepositoryImpl" })
     }
 
+    fun testFindFileRespectsProjectProductionFilesScopeForCSharpFixtures() = runBlocking {
+        val fixture = createCSharpFindFileFixture()
+        val tool = FindFileTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("query", fixture.fileName)
+            put("scope", "project_production_files")
+        })
+
+        assertFalse("Find file should succeed for C# fixtures: ${result.content}", result.isError)
+
+        val content = result.content.first() as ContentBlock.Text
+        val files = json.decodeFromString<FindFileResult>(content.text)
+
+        assertTrue(
+            "Production C# file should remain visible inside project_production_files",
+            files.files.any { it.path.endsWith(fixture.productionRelativePath) }
+        )
+        assertFalse(
+            "Test C# file should be filtered out by project_production_files",
+            files.files.any { it.path.endsWith(fixture.testRelativePath) }
+        )
+    }
+
     fun testFindSymbolRespectsProjectTestFilesScopeAcrossPagination() = runBlocking {
         createLibraryInterfaceFixture()
         val tool = FindSymbolTool()
@@ -500,6 +524,12 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val relativePath: String
     )
 
+    private data class CSharpFindFileFixture(
+        val fileName: String,
+        val productionRelativePath: String,
+        val testRelativePath: String
+    )
+
     private data class QualifiedSymbolFixture(
         val basicSolverRelativePath: String,
         val stackSolverRelativePath: String,
@@ -773,6 +803,41 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             className = className,
             fileName = "$className.java",
             relativePath = relativePath
+        )
+    }
+
+    private fun createCSharpFindFileFixture(): CSharpFindFileFixture {
+        val prodRootPath = createProjectDirectory("csharp-prod-src")
+        val testRootPath = createProjectDirectory("csharp-test-src")
+        val prodRoot = refreshVfsDirectory(prodRootPath)
+        val testRoot = refreshVfsDirectory(testRootPath)
+        PsiTestUtil.addSourceRoot(module, prodRoot, false)
+        PsiTestUtil.addSourceRoot(module, testRoot, true)
+
+        val fileName = "ReadOnlyBaselineController.cs"
+        val productionRelativePath = "csharp-prod-src/Controllers/$fileName"
+        val testRelativePath = "csharp-test-src/Controllers/$fileName"
+
+        val prodFile = writePathFile(
+            prodRootPath,
+            "Controllers/$fileName",
+            "namespace Demo.Controllers { public class ReadOnlyBaselineController { } }"
+        )
+        val testFile = writePathFile(
+            testRootPath,
+            "Controllers/$fileName",
+            "namespace Demo.Tests { public class ReadOnlyBaselineController { } }"
+        )
+
+        refreshVfsFile(prodFile)
+        refreshVfsFile(testFile)
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        return CSharpFindFileFixture(
+            fileName = fileName,
+            productionRelativePath = productionRelativePath,
+            testRelativePath = testRelativePath
         )
     }
 

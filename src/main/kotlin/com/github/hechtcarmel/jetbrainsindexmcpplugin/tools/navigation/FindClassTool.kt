@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
@@ -125,6 +126,42 @@ class FindClassTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
+        val riderBackend = RiderBackendSemanticService.findTypes(project, query, matchMode, scope, languageFilter, collectLimit)
+        if (riderBackend.handled) {
+            val classes = riderBackend.value.orEmpty()
+                .distinctBy { "${it.qualifiedName}:${it.file}:${it.line}" }
+                .take(collectLimit)
+            val serializedResults = classes.map { cls ->
+                PaginationService.SerializedResult(
+                    key = "${cls.file}:${cls.line}:${cls.column}:${cls.name}",
+                    data = json.encodeToJsonElement(cls)
+                )
+            }
+            val paginationService = ApplicationManager.getApplication().getService(PaginationService::class.java)
+            val token = paginationService.createCursor(
+                toolName = name,
+                results = serializedResults,
+                seenKeys = serializedResults.map { it.key }.toSet(),
+                searchExtender = null,
+                psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
+                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
+                metadata = mapOf("query" to query)
+            )
+            return buildPaginatedResult<SymbolMatch, FindClassResult>(getPageFromCache(token, pageSize, project)) { items, page ->
+                FindClassResult(
+                    classes = items,
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: query,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
+        }
+
         val cursorToken = suspendingReadAction {
             val searchScope = resolveSearchScope(project, scope)
 
@@ -133,7 +170,7 @@ class FindClassTool : AbstractMcpTool() {
             val classes = searchClasses(project, query, searchScope, scope, collectLimit, nameFilter, matcher, languageFilter)
 
             val sortedClasses = classes
-                .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+                .distinctBy { "${it.qualifiedName}:${it.file}:${it.line}" }
                 .sortedByDescending { matcher.matchingDegree(it.name) }
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->

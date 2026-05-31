@@ -6,7 +6,7 @@
 
 A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, enabling AI coding assistants like Claude, Codex, Cursor, and Windsurf to leverage the IDE's powerful indexing and refactoring capabilities.
 
-**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
+**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm, Rider
 **May work** (untested): RubyMine, CLion, DataGrip
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
@@ -24,6 +24,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
+- **C#** - Rider (via an in-process ReSharper backend bound through the rd protocol)
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 **Universal Tools (All Supported JetBrains IDEs)**
@@ -52,8 +53,10 @@ These tools activate based on installed language plugins:
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
-- **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
+- **Safe Delete** - Remove code with usage checking (Java/Kotlin, plus Rider .NET via ReSharper backend)
 - **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
+
+**Rider C# note:** rename and move can fall back to native dialog automation, while optimize/reformat use editor-tab + IDE-action flows.
 
 ### Why Use This Plugin?
 
@@ -256,20 +259,20 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C# in Rider |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, C# in Rider |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust, C# in Rider |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP, C# in Rider |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown, C# in Rider |
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
-### Java-Specific Refactoring Tools
+### Conditional Refactoring Tools
 
 | Tool | Description |
 |------|-------------|
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
-| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
+| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin, plus Rider .NET via ReSharper backend) |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
 
@@ -286,6 +289,8 @@ PHP file structure support requires the PHP plugin and is available in PhpStorm 
 | GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
 | RustRover | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
 | PhpStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
+
+> **Rider note**: Rider-backed C# is the production focus for semantic navigation/refactoring. `ide_refactor_safe_delete` is exposed in Rider when the ReSharper backend is available.
 
 **May Work (Untested):**
 

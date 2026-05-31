@@ -25,12 +25,16 @@ internal object BuiltInSearchScopeResolver {
         BuiltInSearchScope.PROJECT_PRODUCTION_FILES -> {
             val fileIndex = ProjectRootManager.getInstance(project).fileIndex
             projectContentScope(project) { file ->
-                fileIndex.isInSourceContent(file) && !fileIndex.isInTestSourceContent(file)
+                if (fileIndex.isInSourceContent(file)) {
+                    !fileIndex.isInTestSourceContent(file)
+                } else {
+                    !isLikelyTestFile(file)
+                }
             }
         }
         BuiltInSearchScope.PROJECT_TEST_FILES -> {
             val fileIndex = ProjectRootManager.getInstance(project).fileIndex
-            projectContentScope(project) { file -> fileIndex.isInTestSourceContent(file) }
+            projectContentScope(project) { file -> fileIndex.isInTestSourceContent(file) || isLikelyTestFile(file) }
         }
     }
 
@@ -45,5 +49,13 @@ internal object BuiltInSearchScopeResolver {
         return object : DelegatingGlobalSearchScope(baseScope) {
             override fun contains(file: VirtualFile): Boolean = super.contains(file) && predicate(file)
         }
+    }
+
+    private fun isLikelyTestFile(file: VirtualFile): Boolean {
+        val path = file.path.replace('\\', '/')
+        return path.contains(".Tests/", ignoreCase = true) ||
+            path.contains("/Tests/", ignoreCase = true) ||
+            path.contains(".Test/", ignoreCase = true) ||
+            path.contains("/Test/", ignoreCase = true)
     }
 }

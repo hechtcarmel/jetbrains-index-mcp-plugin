@@ -1,0 +1,11 @@
+<Project>
+    <PropertyGroup>
+        <!-- Plugin metadata -->
+        <PluginId>com.github.hechtcarmel.jetbrainsindexmcpplugin</PluginId>
+        <PluginName>IDE Index MCP Server</PluginName>
+
+        <!-- SDK Versions — keep in sync with gradle.properties platformVersion -->
+        <ReSharperSdkVersion>[2025.1,2026.1)</ReSharperSdkVersion>
+        <RiderSdkVersion>[2025.1,2026.1)</RiderSdkVersion>
+    </PropertyGroup>
+</Project>

@@ -43,6 +43,22 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
         assertNull("Null optional value should normalize to null", normalized)
     }
 
+    fun testOptionalBlankIntNormalization() {
+        val arguments = buildJsonObject { put("line", JsonPrimitive("   ")) }
+
+        val normalized = tool.optionalIntForTest(arguments, "line")
+
+        assertNull("Blank optional int should normalize to null", normalized)
+    }
+
+    fun testOptionalNumericStringNormalization() {
+        val arguments = buildJsonObject { put("line", JsonPrimitive(" 42 ")) }
+
+        val normalized = tool.optionalIntForTest(arguments, "line")
+
+        assertEquals(42, normalized)
+    }
+
     fun testRequiredBlankRejected() {
         val arguments = buildJsonObject { put("file", JsonPrimitive("   ")) }
 
@@ -69,7 +85,48 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
         )
     }
 
-    fun testMixedNonEmptyLookupModesRemainMutuallyExclusive() {
+    fun testBlankSymbolWithCompletePositionResolvesAsPosition() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("symbol", JsonPrimitive(""))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("POSITION", lookupMode)
+    }
+
+    fun testBlankLanguageAndSymbolWithCompletePositionResolvesAsPosition() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("language", JsonPrimitive(" C# "))
+            put("symbol", JsonPrimitive("   "))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("POSITION", lookupMode)
+    }
+
+    fun testCompletePositionAndCompleteSymbolAreAmbiguous() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("language", JsonPrimitive("kotlin"))
+            put("symbol", JsonPrimitive("com.example.Main#run()"))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("AMBIGUOUS", lookupMode)
+    }
+
+    fun testCompletePositionAndCompleteSymbolRejectedAsExclusive() {
         val arguments = buildJsonObject {
             put("file", JsonPrimitive("src/Main.kt"))
             put("line", JsonPrimitive(12))
@@ -80,11 +137,114 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
 
         val result = tool.resolveElementForTest(project, arguments)
 
-        assertTrue(result.isFailure)
+        assertTrue("Mutually exclusive target groups must be rejected", result.isFailure)
         assertEquals(
             ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE,
             result.exceptionOrNull()?.message
         )
+    }
+
+    fun testPositionLookupIgnoresBlankLanguageAndSymbol() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("language", JsonPrimitive("   "))
+            put("symbol", JsonPrimitive("\t"))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("POSITION", lookupMode)
+    }
+
+    fun testLookupModeTreatsBlankNumericStringsAsAbsent() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("   "))
+            put("line", JsonPrimitive("   "))
+            put("column", JsonPrimitive(""))
+            put("language", JsonPrimitive("   "))
+            put("symbol", JsonPrimitive("   "))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("MISSING", lookupMode)
+    }
+
+    fun testCompleteSymbolModeStillWorksWhenPositionIsAbsent() {
+        val arguments = buildJsonObject {
+            put("language", JsonPrimitive("C#"))
+            put("symbol", JsonPrimitive("Namespace.Type#Method"))
+            put("file", JsonPrimitive("   "))
+            put("line", JsonPrimitive(""))
+            put("column", JsonPrimitive("\t"))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("SYMBOL", lookupMode)
+    }
+
+    fun testNonPositivePositionDefaultsDoNotOverrideCompleteSymbol() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(0))
+            put("column", JsonPrimitive(0))
+            put("language", JsonPrimitive("C#"))
+            put("symbol", JsonPrimitive("Namespace.Type#Method"))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("SYMBOL", lookupMode)
+    }
+
+    fun testIncompletePositionDoesNotOverrideCompleteSymbol() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive("   "))
+            put("column", JsonPrimitive(5))
+            put("language", JsonPrimitive("C#"))
+            put("symbol", JsonPrimitive("Namespace.Type#Method"))
+        }
+
+        val lookupMode = tool.lookupModeForTest(arguments)
+
+        assertEquals("SYMBOL", lookupMode)
+    }
+
+    fun testIncompleteModesStillFailAsMissingTarget() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive("   "))
+            put("language", JsonPrimitive("C#"))
+            put("symbol", JsonPrimitive("   "))
+        }
+
+        val result = tool.resolveElementForTest(project, arguments)
+
+        assertTrue(result.isFailure)
+        assertEquals(
+            ErrorMessages.SYMBOL_OR_POSITION_REQUIRED,
+            result.exceptionOrNull()?.message
+        )
+    }
+
+    fun testBlankExplicitPageSizeUsesCursorEmbeddedFallback() {
+        val arguments = buildJsonObject { put("pageSize", JsonPrimitive("   ")) }
+
+        val pageSize = tool.explicitPageSizeForTest(arguments)
+
+        assertNull("Blank explicit page size should be treated as absent", pageSize)
+    }
+
+    fun testBlankPageSizeAliasUsesDefaultPageSize() {
+        val arguments = buildJsonObject { put("limit", JsonPrimitive("   ")) }
+
+        val pageSize = tool.pageSizeForTest(arguments, defaultPageSize = 25, alias = "limit")
+
+        assertEquals(25, pageSize)
     }
 
     private fun invokeOptionalStringArg(arguments: JsonObject, name: String): String? {
@@ -122,6 +282,22 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
 
         fun requiredStringForTest(arguments: JsonObject, name: String): Result<String> {
             return requiredStringArg(arguments, name)
+        }
+
+        fun optionalIntForTest(arguments: JsonObject, name: String): Int? {
+            return optionalIntArg(arguments, name)
+        }
+
+        fun lookupModeForTest(arguments: JsonObject): String {
+            return resolveLookupMode(arguments).name
+        }
+
+        fun explicitPageSizeForTest(arguments: JsonObject): Int? {
+            return resolveExplicitPageSize(arguments)
+        }
+
+        fun pageSizeForTest(arguments: JsonObject, defaultPageSize: Int, alias: String): Int {
+            return resolvePageSize(arguments, defaultPageSize, aliases = arrayOf(alias))
         }
     }
 }

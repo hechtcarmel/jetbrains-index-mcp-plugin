@@ -38,6 +38,12 @@ jobs:
           distribution: zulu
           java-version: 21
 
+      # Set up the .NET environment for the ReSharper backend build (compileDotNet)
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
       # Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5

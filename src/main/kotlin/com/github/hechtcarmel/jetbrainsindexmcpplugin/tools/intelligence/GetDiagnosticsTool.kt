@@ -11,12 +11,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInf
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ThreadingUtils
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.intention.IntentionManager
-import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -25,7 +26,6 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -41,14 +41,19 @@ import kotlinx.serialization.json.jsonPrimitive
  * - Build errors/warnings from the last build
  * - Test results from open test run tabs
  *
- * File diagnostics use open-editor daemon highlights when the file is already
- * open, and public batch code-smell analysis for closed files.
+ * File diagnostics ensure the target file is opened in an editor before
+ * collecting daemon-backed diagnostics, then fall back to public batch
+ * code-smell analysis only when live editor analysis is unavailable.
  */
 class GetDiagnosticsTool : AbstractMcpTool() {
 
     companion object {
         private const val MAX_PROBLEMS = 100
         private const val MAX_INTENTIONS = 50
+
+        internal fun shouldPrepareEditorForFileAnalysis(filePath: String?, hasOpenTextEditor: Boolean): Boolean {
+            return filePath != null && !hasOpenTextEditor
+        }
     }
 
     override val name = "ide_diagnostics"
@@ -60,7 +65,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
 
         At least one source must be active: provide 'file' for code analysis, 'includeBuildErrors' for build output, or 'includeTestResults' for test results. Can combine all three.
 
-        File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open.
+        File analysis opens the target file in an editor when needed so daemon highlights can be collected before falling back to public batch analysis. Batch fallback may still be less complete when live editor analysis is unavailable for that file type.
 
         Parameters: file (optional, enables code analysis), line + column (optional, for intentions, requires file), startLine/endLine (optional, requires file), includeBuildErrors (optional), includeTestResults (optional), severity (optional, default 'all'), testResultFilter (optional, default 'failed'), maxBuildErrors (optional, default 100), maxTestResults (optional, default 100).
 
@@ -120,32 +125,39 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                 ?: return createErrorResult("File not found: $filePath")
 
             val fileEditorManager = FileEditorManager.getInstance(project)
-            val analysisResult = DiagnosticsAnalysisService.getInstance(project).analyzeFile(
-                virtualFile = virtualFile,
-                filePath = filePath,
-                severity = severity,
-                startLine = startLine,
-                endLine = endLine,
-                maxProblems = MAX_PROBLEMS
-            )
-            problems = analysisResult.problems
-            analysisFresh = analysisResult.analysisFresh
-            analysisTimedOut = analysisResult.analysisTimedOut
-            analysisMessage = analysisResult.analysisMessage
-            intentions = analyzeIntentions(
-                project = project,
-                fileEditorManager = fileEditorManager,
-                virtualFile = virtualFile,
-                line = line,
-                column = column,
-                highlights = analysisResult.highlights
-            )
+            val editorPreparation = prepareEditorForFileAnalysis(project, fileEditorManager, virtualFile, filePath)
 
-            if (intentions.isNullOrEmpty() && fileEditorManager.getEditors(virtualFile).filterIsInstance<TextEditor>().firstOrNull()?.editor == null) {
-                analysisMessage = appendAnalysisMessage(
-                    analysisMessage,
-                    "Intentions are unavailable because the file is not open in an editor."
+            try {
+                val analysisResult = DiagnosticsAnalysisService.getInstance(project).analyzeFile(
+                    virtualFile = virtualFile,
+                    filePath = filePath,
+                    severity = severity,
+                    startLine = startLine,
+                    endLine = endLine,
+                    maxProblems = MAX_PROBLEMS
                 )
+                problems = analysisResult.problems
+                analysisFresh = analysisResult.analysisFresh
+                analysisTimedOut = analysisResult.analysisTimedOut
+                analysisMessage = analysisResult.analysisMessage
+                val collectedIntentions = analyzeIntentions(
+                    project = project,
+                    fileEditorManager = fileEditorManager,
+                    virtualFile = virtualFile,
+                    line = line,
+                    column = column,
+                    highlights = analysisResult.highlights
+                )
+                intentions = collectedIntentions
+
+                if (collectedIntentions.isEmpty() && !hasOpenTextEditor(fileEditorManager, virtualFile)) {
+                    analysisMessage = appendAnalysisMessage(
+                        analysisMessage,
+                        "Intentions are unavailable because the file is not open in an editor."
+                    )
+                }
+            } finally {
+                restoreEditorStateAfterFileAnalysis(fileEditorManager, virtualFile, editorPreparation)
             }
         }
 
@@ -232,6 +244,52 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         }
 
         collectIntentions(project, psiFile, document, editor, line, column, highlights)
+    }
+
+    private fun prepareEditorForFileAnalysis(
+        project: Project,
+        fileEditorManager: FileEditorManager,
+        virtualFile: VirtualFile,
+        filePath: String
+    ): FileAnalysisEditorPreparation {
+        if (!shouldPrepareEditorForFileAnalysis(filePath, hasOpenTextEditor(fileEditorManager, virtualFile))) {
+            return FileAnalysisEditorPreparation(openedByTool = false)
+        }
+
+        return ThreadingUtils.runOnEdtAndWait {
+            val wasAlreadyOpen = fileEditorManager.isFileOpen(virtualFile)
+            val editor = fileEditorManager.openTextEditor(OpenFileDescriptor(project, virtualFile), true)
+                ?: fileEditorManager.getEditors(virtualFile)
+                    .filterIsInstance<TextEditor>()
+                    .firstOrNull { !it.editor.isDisposed }
+                    ?.editor
+
+            FileAnalysisEditorPreparation(
+                openedByTool = editor != null && !wasAlreadyOpen
+            )
+        }
+    }
+
+    private fun restoreEditorStateAfterFileAnalysis(
+        fileEditorManager: FileEditorManager,
+        virtualFile: VirtualFile,
+        preparation: FileAnalysisEditorPreparation
+    ) {
+        if (!preparation.openedByTool) {
+            return
+        }
+
+        ThreadingUtils.runOnEdtAndWait {
+            fileEditorManager.closeFile(virtualFile)
+        }
+    }
+
+    private fun hasOpenTextEditor(fileEditorManager: FileEditorManager, virtualFile: VirtualFile): Boolean {
+        return ThreadingUtils.runOnEdtAndWait {
+            fileEditorManager.getEditors(virtualFile)
+                .filterIsInstance<TextEditor>()
+                .any { !it.editor.isDisposed }
+        }
     }
 
     private fun filterBuildMessagesBySeverity(messages: List<BuildMessage>, severity: String): List<BuildMessage> {
@@ -330,4 +388,8 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         if (existing.contains(additional)) return existing
         return "$existing $additional"
     }
+
+    private data class FileAnalysisEditorPreparation(
+        val openedByTool: Boolean
+    )
 }

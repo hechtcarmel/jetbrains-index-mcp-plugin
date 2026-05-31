@@ -31,17 +31,22 @@ import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.testFramework.IndexingTestUtil
+import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.nio.file.Path
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -52,6 +57,8 @@ import kotlinx.serialization.json.put
  * For schema and registration tests that don't need the platform, see ToolsUnitTest.
  */
 class ToolsTest : BasePlatformTestCase() {
+
+    private var localSourceRootConfigured = false
 
     override fun setUp() {
         super.setUp()
@@ -146,7 +153,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
-    fun testFindUsagesToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindUsagesToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindUsagesTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -157,7 +164,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -203,7 +210,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
-    fun testFindDefinitionToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindDefinitionToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindDefinitionTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -214,7 +221,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -300,7 +307,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error with invalid file", result.isError)
     }
 
-    fun testFindImplementationsToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindImplementationsToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindImplementationsTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -311,7 +318,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -719,16 +726,225 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error when endLine < startLine", result.isError)
     }
 
+    fun testReformatCodeToolZeroRangeIsTreatedAsFullFile() = runBlocking {
+        val filePath = sourceRootPath().resolve("reformat/ZeroRangeMeansFullFile.java")
+        createLocalProjectFile(
+            "reformat/ZeroRangeMeansFullFile.java",
+            "class ZeroRangeMeansFullFile{void test(){System.out.println(\"ok\");}}"
+        )
+
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/reformat/ZeroRangeMeansFullFile.java")
+            put("startLine", 0)
+            put("endLine", 0)
+        })
+
+        assertFalse(
+            "Zero-valued optional range should behave like full-file reformat: ${if (result.isError) errorText(result) else "ok"}",
+            result.isError
+        )
+        assertTrue("Full-file reformat should update formatting", Files.readString(filePath).contains("class ZeroRangeMeansFullFile {"))
+    }
+
     fun testReformatCodeToolStartLineLessThanOne() = runBlocking {
         val tool = ReformatCodeTool()
 
         val result = tool.execute(project, buildJsonObject {
             put("file", "test.kt")
-            put("startLine", 0)
+            put("startLine", -1)
             put("endLine", 5)
         })
 
         assertTrue("Should error when startLine < 1", result.isError)
+    }
+
+    fun testReformatCodeToolEndLineLessThanOne() = runBlocking {
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.kt")
+            put("startLine", 1)
+            put("endLine", -1)
+        })
+
+        assertTrue("Should error when endLine < 1", result.isError)
+    }
+
+    fun testReformatCodeToolIncompleteRangeWhenZeroActsAsOmitted() = runBlocking {
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "test.kt")
+            put("startLine", 1)
+            put("endLine", 0)
+        })
+
+        assertTrue("Should error when one line is omitted via zero and the other is positive", result.isError)
+        assertTrue(
+            "Should explain incomplete range pairing",
+            errorText(result).contains("Both startLine and endLine must be provided together")
+        )
+    }
+
+    fun testReformatCodeToolEndLineExceedsFileLineCount() = runBlocking {
+        createLocalProjectFile(
+            "reformat/RangeValidation.java",
+            """
+            class RangeValidation {
+                void test() {}
+            }
+            """.trimIndent()
+        )
+
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/reformat/RangeValidation.java")
+            put("startLine", 1)
+            put("endLine", 99)
+        })
+
+        assertTrue("Should error when endLine exceeds file line count", result.isError)
+        assertTrue("Should mention endLine overflow", errorText(result).contains("exceeds file line count"))
+    }
+
+    fun testReformatCodeToolReportsNoOpWithConservativeDefault() = runBlocking {
+        val filePath = sourceRootPath().resolve("reformat/AlreadyFormatted.java")
+        createLocalProjectFile(
+            "reformat/AlreadyFormatted.java",
+            """
+            class AlreadyFormatted {
+                void test() {
+                    System.out.println("ok");
+                }
+            }
+            """.trimIndent() + "\n"
+        )
+
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/reformat/AlreadyFormatted.java")
+        })
+
+        assertFalse(
+            "Already formatted file should succeed: ${if (result.isError) errorText(result) else "ok"}",
+            result.isError
+        )
+
+        val payload = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertEquals(false, payload["success"]?.jsonPrimitive?.boolean)
+        assertEquals("no_op", payload["status"]?.jsonPrimitive?.content)
+        assertEquals(0, payload["changesCount"]?.jsonPrimitive?.int)
+        assertEquals(
+            listOf("reformat", "optimize_imports"),
+            payload["verification"]?.jsonObject
+                ?.get("checksRun")
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+        )
+        assertEquals(
+            listOf("rearrange_code_skipped"),
+            payload["verification"]?.jsonObject
+                ?.get("warnings")
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+        )
+        assertTrue(
+            "Message should report no-op outcome",
+            payload["message"]?.jsonPrimitive?.content?.contains("No formatting changes") == true
+        )
+        assertEquals(
+            "File text should remain unchanged",
+            """
+            class AlreadyFormatted {
+                void test() {
+                    System.out.println("ok");
+                }
+            }
+            """.trimIndent() + "\n",
+            Files.readString(filePath)
+        )
+    }
+
+    fun testReformatCodeToolReportsChangedFormattingOperations() = runBlocking {
+        val filePath = sourceRootPath().resolve("reformat/NeedsFormatting.java")
+        createLocalProjectFile(
+            "reformat/NeedsFormatting.java",
+            "class NeedsFormatting{void test(){System.out.println(\"ok\");}}"
+        )
+
+        val tool = ReformatCodeTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/reformat/NeedsFormatting.java")
+        })
+
+        assertFalse(
+            "Formatting changes should succeed: ${if (result.isError) errorText(result) else "ok"}",
+            result.isError
+        )
+
+        val payload = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertEquals(true, payload["success"]?.jsonPrimitive?.boolean)
+        assertEquals("success", payload["status"]?.jsonPrimitive?.content)
+        assertEquals(1, payload["changesCount"]?.jsonPrimitive?.int)
+        assertEquals(
+            listOf("reformat", "optimize_imports"),
+            payload["verification"]?.jsonObject
+                ?.get("checksRun")
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+        )
+        assertEquals(
+            listOf("rearrange_code_skipped"),
+            payload["verification"]?.jsonObject
+                ?.get("warnings")
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+        )
+        assertTrue(
+            "Message should report formatting changes",
+            payload["message"]?.jsonPrimitive?.content?.contains("Reformatted src/reformat/NeedsFormatting.java") == true
+        )
+        val formattedText = Files.readString(filePath)
+        assertTrue(
+            "File text should be reformatted",
+            formattedText.contains("void test() {") && formattedText.contains("System.out.println(\"ok\");")
+        )
+    }
+
+    private fun createLocalProjectFile(relativePath: String, content: String): PsiFile {
+        val basePath = project.basePath ?: error("Project base path is required for local file tests")
+        val sourceRootPath = sourceRootPath()
+        Files.createDirectories(sourceRootPath)
+        val sourceRoot = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(sourceRootPath)
+            ?: error("Failed to refresh source root into LocalFileSystem")
+
+        if (!localSourceRootConfigured) {
+            val projectRoot = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(basePath))
+                ?: error("Failed to refresh project root into LocalFileSystem")
+            PsiTestUtil.addContentRoot(module, projectRoot)
+            PsiTestUtil.addSourceRoot(module, sourceRoot)
+            localSourceRootConfigured = true
+        }
+
+        val filePath = sourceRootPath.resolve(relativePath)
+        Files.createDirectories(filePath.parent ?: Path.of(basePath))
+        Files.writeString(filePath, content)
+
+        val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(filePath)
+            ?: error("Failed to refresh $relativePath into LocalFileSystem")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+        return PsiManager.getInstance(project).findFile(virtualFile)
+            ?: error("Failed to create PSI for $relativePath")
+    }
+
+    private fun sourceRootPath(): Path {
+        val basePath = project.basePath ?: error("Project base path is required for local file tests")
+        return Path.of(basePath).resolve("src")
     }
 
     // FindSuperMethods Tool Tests (language+symbol)
@@ -776,7 +992,7 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
-    fun testFindSuperMethodsToolLanguageAndPositionExclusive() = runBlocking {
+    fun testFindSuperMethodsToolRejectsBothTargetsProvided() = runBlocking {
         val tool = FindSuperMethodsTool()
 
         val result = tool.execute(project, buildJsonObject {
@@ -787,7 +1003,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should reject mutually exclusive target groups", result.isError)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 

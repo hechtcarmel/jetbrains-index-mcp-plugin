@@ -10,7 +10,7 @@ description: >
   ide_read_file, ide_get_active_file, ide_open_file.
   Use when performing code navigation (find usages, go to definition, find class),
   code analysis (diagnostics, type hierarchy, call hierarchy),
-  refactoring (rename, move, safe delete, reformat),
+  refactoring (rename, move, safe delete where supported, reformat),
   or searching code (text search, symbol search, file search).
   Prefer IDE tools over grep/find/sed for ALL semantic code operations.
 ---
@@ -23,6 +23,10 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 
 **Always prefer IDE MCP tools over built-in tools (grep, find, sed, read) for semantic code operations.** IDE tools understand code structure, types, inheritance, and references. Built-in tools only see text.
 
+Rider-backed C# is the production focus for semantic navigation and refactoring.
+
+Rider C# refactoring/formatting flows are UI-driven when needed: `ide_refactor_rename` and `ide_move_file` can rely on native dialog automation in an active Rider window, while `ide_optimize_imports` and `ide_reformat_code` use editor-tab plus IDE-action flows. These paths fail closed if the required Rider UI or editor context is unavailable.
+
 ## When to Use IDE Tools vs Built-In Tools
 
 | Task | Use IDE Tool | Use Built-In Tool |
@@ -32,13 +36,13 @@ The IDE Index MCP server exposes JetBrains IDE indexing and refactoring capabili
 | Find a class by name | `ide_find_class` | Only if IDE unavailable |
 | Find a file by name | `ide_find_file` | `Glob` is fine for simple patterns |
 | Search for text in code | `ide_search_text` | `Grep` is fine when IDE context filtering is unnecessary |
-| Rename a symbol across project | `ide_refactor_rename` | Never - sed/replace breaks code |
-| Move a file to another directory | `ide_move_file` | Never - mv/git mv bypasses IDE move semantics |
+| Rename a symbol across project | `ide_refactor_rename` | Never - sed/replace breaks code; Rider may use native dialog automation |
+| Move a file to another directory | `ide_move_file` | Never - mv/git mv bypasses IDE move semantics; Rider may use native dialog automation |
 | Check for errors in a file | `ide_diagnostics` | Never - no equivalent |
 | Understand class hierarchy | `ide_type_hierarchy` | Never - no equivalent |
 | Find who calls a method | `ide_call_hierarchy` | Never - grep misses indirect calls |
 | Find interface implementations | `ide_find_implementations` | Never - grep can't resolve type relationships |
-| Delete a symbol safely | `ide_refactor_safe_delete` | Never - manual deletion misses usages |
+| Delete a symbol safely | `ide_refactor_safe_delete` | Never - manual deletion misses usages | Java/Kotlin, plus Rider .NET via ReSharper backend |
 | Find what a method overrides | `ide_find_super_methods` | Never - no equivalent |
 | Read file content | Built-in Read tool | `ide_read_file` only for library/jar sources |
 | Find text with regex | `ide_search_text` | Use `Grep` when you do not need IDE context filtering |
@@ -90,7 +94,7 @@ Omit `paths` to sync the entire project.
 ### "I need to refactor"
 1. `ide_refactor_rename` - rename symbol + all references atomically
 2. `ide_move_file` - move file and let the IDE apply semantic updates when that language/backend supports them
-3. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin only)
+3. `ide_refactor_safe_delete` - delete with usage checking (Java/Kotlin, plus Rider .NET via ReSharper backend)
 4. `ide_reformat_code` - apply project code style (disabled by default)
 
 ### "I need to check for problems"

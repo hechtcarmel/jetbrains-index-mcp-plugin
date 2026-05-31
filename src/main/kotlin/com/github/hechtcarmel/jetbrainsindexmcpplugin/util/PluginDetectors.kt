@@ -38,6 +38,11 @@ object PluginDetectors {
         fallbackClass = "org.intellij.plugins.markdown.lang.MarkdownLanguage"
     )
 
+    val rider = PluginDetector(
+        name = "Rider",
+        pluginIds = listOf("com.jetbrains.rider")
+    )
+
     val kotlin = PluginDetector(
         name = "Kotlin",
         pluginIds = listOf("org.jetbrains.kotlin")

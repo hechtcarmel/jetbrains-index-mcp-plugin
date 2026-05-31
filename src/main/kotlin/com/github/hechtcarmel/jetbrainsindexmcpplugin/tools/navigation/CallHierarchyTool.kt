@@ -6,6 +6,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderSymbolParser
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendTimeoutException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.normalizeAcceptedRiderLanguageAlias
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
@@ -14,18 +19,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /**
  * Tool for analyzing method call relationships across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -36,15 +36,16 @@ class CallHierarchyTool : AbstractMcpTool() {
     override val description = """
         Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, C#.
 
         Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
+        Rider note: C# results use Rider's frontend navigation bridge to the ReSharper backend. Caller/callee scope separation between project_files and project_and_libraries is only guaranteed where backend APIs can enforce that distinction, and framework-routed endpoints can legitimately have empty static callers. For routed/reflection-driven entry points, an empty callers result is a static-analysis limitation and does not imply backend failure.
 
         Returns: recursive tree with method signatures, file locations (line/column), and nested call relationships.
 
-        Target (mutually exclusive):
-        - file + line + column: position-based lookup
-        - language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()})
+        Target selection:
+        - Complete file + positive line + positive column: position-based lookup, preferred when present because it is more precise
+        - Complete language + symbol: fully qualified symbol reference used when no complete position target is present (supported languages: ${supportedSymbolReferenceLanguagesDescription()}). Blank strings and non-positive line/column values count as absent.
 
         Parameters: direction (required): "callers" or "callees". depth (optional, default: 3, max: 5). scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
 
@@ -66,9 +67,27 @@ class CallHierarchyTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_DEPTH = 3
         private const val MAX_DEPTH = 5
+
+        internal fun riderTimeoutMessage(timeout: RiderBackendTimeoutException): String =
+            timeout.message ?: "Rider backend timed out while resolving call hierarchy"
+
+        internal fun noCallableMessage(isSymbolMode: Boolean): String =
+            if (isSymbolMode) "No method/function found for the specified symbol"
+            else "No method/function found at position"
+
+        internal fun riderSymbolValidationMessage(language: String?, symbol: String?): String? {
+            if (language == null || symbol == null) return null
+            return RiderSymbolParser.callHierarchyCallableGuidance(language, symbol)
+        }
     }
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+        val requestedLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE)
+        val normalizedRequestedLanguage = normalizeAcceptedRiderLanguageAlias(requestedLanguage)
+        val requestedSymbol = optionalStringArg(arguments, ParamNames.SYMBOL)
+        val isRiderSymbolMode = resolveLookupMode(arguments) == LookupModeState.SYMBOL &&
+            normalizedRequestedLanguage in setOf("C#") &&
+            requestedSymbol != null
         val direction = arguments["direction"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: direction")
         val depth = (arguments["depth"]?.jsonPrimitive?.int ?: DEFAULT_DEPTH).coerceIn(1, MAX_DEPTH)
@@ -89,6 +108,38 @@ class CallHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
+            if (isRiderSymbolMode) {
+                riderSymbolValidationMessage(normalizedRequestedLanguage, requestedSymbol)?.let {
+                    return@suspendingReadAction createErrorResult(it)
+                }
+                val riderHierarchy = RiderBackendSemanticService.getCallHierarchy(
+                    project = project,
+                    file = optionalStringArg(arguments, ParamNames.FILE),
+                    line = optionalPositionIntArg(arguments, ParamNames.LINE),
+                    column = optionalPositionIntArg(arguments, ParamNames.COLUMN),
+                    language = normalizedRequestedLanguage,
+                    symbol = requestedSymbol,
+                    direction = direction,
+                    depth = depth,
+                    scope = scope
+                )
+                if (riderHierarchy.handled) {
+                    riderHierarchy.errorMessage?.let { return@suspendingReadAction createErrorResult(it) }
+                    riderHierarchy.value?.let {
+                        return@suspendingReadAction createJsonResult(
+                            CallHierarchyResult(
+                                element = convertToCallElement(it.element),
+                                calls = it.calls.map(::convertToCallElement),
+                                message = riderHierarchy.message
+                            )
+                        )
+                    }
+                    return@suspendingReadAction createErrorResult(noCallableMessage(isSymbolMode = true))
+                }
+
+                return@suspendingReadAction createErrorResult(RIDER_CALL_HIERARCHY_SYMBOL_MODE_UNSUPPORTED)
+            }
+
             val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
@@ -97,26 +148,28 @@ class CallHierarchyTool : AbstractMcpTool() {
             val handler = LanguageHandlerRegistry.getCallHierarchyHandler(element)
             if (handler == null) {
                 return@suspendingReadAction createErrorResult(
-                    "No call hierarchy handler available for language: ${element.language.id}. " +
+                    "No call hierarchy handler registered for detected PSI language: ${element.language.id}. " +
                     "Supported languages: ${LanguageHandlerRegistry.getSupportedLanguagesForCallHierarchy()}"
                 )
             }
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            val hierarchyData = handler.getCallHierarchy(element, project, direction, depth, scope)
+            val hierarchyData = try {
+                handler.getCallHierarchy(element, project, direction, depth, scope)
+            } catch (timeout: RiderBackendTimeoutException) {
+                return@suspendingReadAction createErrorResult(riderTimeoutMessage(timeout))
+            }
             if (hierarchyData == null) {
                 val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
-                return@suspendingReadAction createErrorResult(
-                    if (isSymbolMode) "No method/function found for the specified symbol"
-                    else "No method/function found at position"
-                )
+                return@suspendingReadAction createErrorResult(noCallableMessage(isSymbolMode))
             }
 
             // Convert handler result to tool result
             createJsonResult(CallHierarchyResult(
                 element = convertToCallElement(hierarchyData.element),
-                calls = hierarchyData.calls.map { convertToCallElement(it) }
+                calls = hierarchyData.calls.map { convertToCallElement(it) },
+                message = null
             ))
         }
     }

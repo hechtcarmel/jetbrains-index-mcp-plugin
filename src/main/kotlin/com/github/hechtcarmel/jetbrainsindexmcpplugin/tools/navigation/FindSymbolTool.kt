@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.dotnet.RiderBackendSemanticService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
@@ -17,13 +18,8 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /**
  * Tool for searching code symbols by name.
@@ -36,6 +32,7 @@ class FindSymbolTool : AbstractMcpTool() {
     companion object {
         private const val DEFAULT_PAGE_SIZE = 25
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
+        private val ACCEPTED_CSHARP_ALIASES = setOf("C#", "CSharp", "CSHARP")
     }
 
     override val name = ToolNames.FIND_SYMBOL
@@ -43,7 +40,7 @@ class FindSymbolTool : AbstractMcpTool() {
     override val description = """
         Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, and functions. Faster and more accurate than grep for code navigation.
 
-        Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, and Rust; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
+        Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and C#; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
 
         Matching and ranking follow IntelliJ's Go to Symbol popup, including qualified queries like "BasicSolver.run".
 
@@ -95,6 +92,7 @@ class FindSymbolTool : AbstractMcpTool() {
             return createInvalidScopeError(rawScope)
         }
         val languageFilter = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
+        val normalizedCSharpLanguageFilter = normalizeAcceptedCSharpAlias(languageFilter)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
 
@@ -103,6 +101,24 @@ class FindSymbolTool : AbstractMcpTool() {
         }
 
         requireSmartMode(project)
+
+        val riderBackend = RiderBackendSemanticService.findSymbols(
+            project = project,
+            query = query,
+            scope = scope,
+            language = normalizedCSharpLanguageFilter,
+            limit = collectLimit
+        )
+        if (riderBackend.handled) {
+            riderBackend.errorMessage?.let { return createErrorResult(it) }
+            return buildSymbolResult(
+                project = project,
+                query = query,
+                pageSize = pageSize,
+                matches = riderBackend.value.orEmpty(),
+                searchExtender = null
+            )
+        }
 
         val token = suspendingReadAction {
             val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
@@ -123,38 +139,15 @@ class FindSymbolTool : AbstractMcpTool() {
                 }
             }
 
-            val serializedResults = matches.map { sym ->
-                PaginationService.SerializedResult(
-                    key = sym.paginationKey(),
-                    data = json.encodeToJsonElement(sym)
-                )
-            }
-
-            val paginationService = ApplicationManager.getApplication().getService(PaginationService::class.java)
-            paginationService.createCursor(
-                toolName = name,
-                results = serializedResults,
-                seenKeys = serializedResults.map { it.key }.toSet(),
-                searchExtender = searchExtender,
-                psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
-                metadata = mapOf("query" to query)
+            createCursor(
+                project = project,
+                query = query,
+                matches = matches,
+                searchExtender = searchExtender
             )
         }
 
-        return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(token, pageSize, project)) { items, page ->
-            FindSymbolResult(
-                symbols = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
-        }
+        return buildSymbolResult(project, query, pageSize, matches = emptyList(), cursorToken = token)
     }
 
     /**
@@ -203,6 +196,60 @@ class FindSymbolTool : AbstractMcpTool() {
         containerName = containerName,
         language = language
     )
+
+    private fun normalizeAcceptedCSharpAlias(languageFilter: String?): String? =
+        languageFilter?.takeIf { it.isNotBlank() }?.let { filter ->
+            if (ACCEPTED_CSHARP_ALIASES.any { it.equals(filter, ignoreCase = true) }) "C#" else filter
+        }
+
+    private fun createCursor(
+        project: Project,
+        query: String,
+        matches: List<SymbolMatch>,
+        searchExtender: (suspend (Set<String>, Int) -> List<PaginationService.SerializedResult>)?
+    ): String {
+        val serializedResults = matches.map { sym ->
+            PaginationService.SerializedResult(
+                key = sym.paginationKey(),
+                data = json.encodeToJsonElement(sym)
+            )
+        }
+
+        val paginationService = ApplicationManager.getApplication().getService(PaginationService::class.java)
+        return paginationService.createCursor(
+            toolName = name,
+            results = serializedResults,
+            seenKeys = serializedResults.map { it.key }.toSet(),
+            searchExtender = searchExtender,
+            psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
+            projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
+            metadata = mapOf("query" to query)
+        )
+    }
+
+    private suspend fun buildSymbolResult(
+        project: Project,
+        query: String,
+        pageSize: Int,
+        matches: List<SymbolMatch>,
+        searchExtender: (suspend (Set<String>, Int) -> List<PaginationService.SerializedResult>)? = null,
+        cursorToken: String? = null
+    ): ToolCallResult {
+        val token = cursorToken ?: createCursor(project, query, matches, searchExtender)
+        return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(token, pageSize, project)) { items, page ->
+            FindSymbolResult(
+                symbols = items,
+                totalCount = page.totalCollected,
+                query = page.metadata["query"] ?: query,
+                nextCursor = page.nextCursor,
+                hasMore = page.hasMore,
+                totalCollected = page.totalCollected,
+                offset = page.offset,
+                pageSize = page.pageSize,
+                stale = page.stale
+            )
+        }
+    }
 
     private fun SymbolMatch.paginationKey(): String = "$file:$line:$column:$name"
 

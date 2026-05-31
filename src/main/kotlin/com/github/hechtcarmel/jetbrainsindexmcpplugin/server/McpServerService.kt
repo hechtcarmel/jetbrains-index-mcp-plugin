@@ -232,7 +232,7 @@ class McpServerService(
         val isRunning = isServerRunning()
         return ServerStatusInfo(
             name = McpConstants.SERVER_NAME,
-            version = McpConstants.SERVER_VERSION,
+            version = McpConstants.getServerVersion(),
             protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
             streamableHttpUrl = if (isRunning) "http://$host:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}" else "Server not running",
             legacySseUrl = if (isRunning) "http://$host:$port${McpConstants.SSE_ENDPOINT_PATH}" else "Server not running",
