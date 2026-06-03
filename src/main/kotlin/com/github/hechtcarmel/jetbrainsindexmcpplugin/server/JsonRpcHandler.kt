@@ -8,6 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -16,6 +17,9 @@ import kotlinx.serialization.json.*
 
 class JsonRpcHandler @JvmOverloads constructor(
     private val toolRegistry: ToolRegistry,
+    private val includeStructuredOutput: () -> Boolean = {
+        runCatching { McpSettings.getInstance().includeStructuredOutput }.getOrDefault(false)
+    },
     private val recordHistory: (Project, CommandEntry) -> Unit = { project, entry ->
         CommandHistoryService.getInstance(project).recordCommand(entry)
     },
@@ -106,7 +110,7 @@ class JsonRpcHandler @JvmOverloads constructor(
 
     private fun processToolsList(request: JsonRpcRequest, protocolVersion: String): JsonRpcResponse {
         val tools = toolRegistry.getToolDefinitions(
-            includeOutputSchema = McpProtocolVersions.supportsStructuredOutput(protocolVersion)
+            includeOutputSchema = shouldIncludeStructuredOutput(protocolVersion)
         )
         val result = ToolsListResult(tools = tools)
 
@@ -135,7 +139,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         if (projectResult.isError) {
             return JsonRpcResponse(
                 id = request.id,
-                result = json.encodeToJsonElement(stripStructuredOutputIfUnsupported(projectResult.errorResult!!, protocolVersion))
+                result = json.encodeToJsonElement(stripStructuredOutputIfDisabled(projectResult.errorResult!!, protocolVersion))
             )
         }
 
@@ -171,7 +175,7 @@ class JsonRpcHandler @JvmOverloads constructor(
 
             JsonRpcResponse(
                 id = request.id,
-                result = json.encodeToJsonElement(stripStructuredOutputIfUnsupported(result, protocolVersion))
+                result = json.encodeToJsonElement(stripStructuredOutputIfDisabled(result, protocolVersion))
             )
         } catch (e: Exception) {
             val duration = System.currentTimeMillis() - startTime
@@ -226,14 +230,20 @@ class JsonRpcHandler @JvmOverloads constructor(
         )
     }
 
-    private fun stripStructuredOutputIfUnsupported(
+    private fun stripStructuredOutputIfDisabled(
         result: ToolCallResult,
         protocolVersion: String
     ): ToolCallResult {
-        if (McpProtocolVersions.supportsStructuredOutput(protocolVersion)) {
+        if (shouldIncludeStructuredOutput(protocolVersion)) {
             return result
         }
         return result.copy(structuredContent = null)
+    }
+
+    private fun shouldIncludeStructuredOutput(protocolVersion: String): Boolean {
+        val settings = McpSettings.getInstance()
+        return McpProtocolVersions.supportsStructuredOutput(protocolVersion) &&
+                settings.includeStructuredOutput
     }
 
     private fun createErrorResponse(

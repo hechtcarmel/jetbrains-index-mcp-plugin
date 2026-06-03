@@ -38,9 +38,11 @@ class KtorMcpServerUnitTest : TestCase() {
     private lateinit var sseSessionManager: KtorSseSessionManager
     private lateinit var server: KtorMcpServer
     private var port: Int = 0
+    private var includeStructuredOutput = false
 
     override fun setUp() {
         super.setUp()
+        includeStructuredOutput = false
         toolRegistry = ToolRegistry().also { it.registerBuiltInTools() }
         coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         sseSessionManager = KtorSseSessionManager()
@@ -253,7 +255,24 @@ class KtorMcpServerUnitTest : TestCase() {
         assertNull(tool["outputSchema"])
     }
 
-    fun testStreamableToolsListUsesSupportedProtocolVersionHeader() {
+    fun testStreamableToolsListOmitsOutputSchemaForSupportedProtocolVersionHeaderByDefault() {
+        toolRegistry.register(outputSchemaTool())
+
+        val response = sendRequest(
+            method = "POST",
+            path = McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH,
+            body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""",
+            headers = mapOf(McpConstants.MCP_PROTOCOL_VERSION_HEADER to McpConstants.MCP_PROTOCOL_VERSION_2025_06_18)
+        )
+
+        assertEquals(HttpStatusCode.OK.value, response.statusCode())
+
+        val tool = findOutputSchemaTool(response.body())
+        assertNull(tool["outputSchema"])
+    }
+
+    fun testStreamableToolsListUsesSupportedProtocolVersionHeaderWhenStructuredOutputEnabled() {
+        includeStructuredOutput = true
         toolRegistry.register(outputSchemaTool())
 
         val response = sendRequest(
@@ -342,7 +361,7 @@ class KtorMcpServerUnitTest : TestCase() {
     private fun createServer(port: Int): KtorMcpServer {
         return KtorMcpServer(
             port = port,
-            jsonRpcHandler = JsonRpcHandler(toolRegistry),
+            jsonRpcHandler = JsonRpcHandler(toolRegistry, includeStructuredOutput = { includeStructuredOutput }),
             sseSessionManager = sseSessionManager,
             coroutineScope = coroutineScope
         )

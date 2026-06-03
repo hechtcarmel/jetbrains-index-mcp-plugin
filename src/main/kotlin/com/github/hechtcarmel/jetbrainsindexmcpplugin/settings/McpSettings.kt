@@ -42,6 +42,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var availableProjectsMode: AvailableProjectsMode = AvailableProjectsMode.EXPANDED,
         var responseFormat: ResponseFormat = ResponseFormat.JSON,
         var protocolVersionMode: ProtocolVersionMode = ProtocolVersionMode.AUTO,
+        var includeStructuredOutput: Boolean = false,
         var disabledTools: MutableSet<String> = mutableSetOf("ide_build_project", "ide_file_structure", "ide_find_symbol", "ide_read_file", "ide_get_active_file", "ide_open_file", "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin"),
         var serverPort: Int = -1, // -1 means use IDE-specific default
         var serverHost: String = McpConstants.DEFAULT_SERVER_HOST
@@ -74,6 +75,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var protocolVersionMode: ProtocolVersionMode
         get() = state.protocolVersionMode
         set(value) { state.protocolVersionMode = value }
+
+    var includeStructuredOutput: Boolean
+        get() = state.includeStructuredOutput
+        set(value) { state.includeStructuredOutput = value }
 
     var disabledTools: Set<String>
         get() = state.disabledTools.toSet()
