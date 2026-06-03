@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.JsonRpcHandler
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpProtocolVersions
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcError
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
 import com.intellij.openapi.Disposable
@@ -296,6 +297,7 @@ class KtorMcpServer(
             return
         }
 
+        val protocolVersion = resolveStreamableProtocolVersion(call) ?: return
         val requestId = parsed["id"]
 
         if (isJsonRpcResponseMessage(parsed)) {
@@ -309,7 +311,7 @@ class KtorMcpServer(
                 runWithIdeModality {
                     jsonRpcHandler.handleRequest(
                         body,
-                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                        protocolVersion = protocolVersion
                     )
                 }
             } catch (e: Exception) {
@@ -324,7 +326,7 @@ class KtorMcpServer(
             val response = runWithIdeModality {
                 jsonRpcHandler.handleRequest(
                     body,
-                    protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                    protocolVersion = protocolVersion
                 )
             }
             if (response != null) {
@@ -360,6 +362,7 @@ class KtorMcpServer(
             return
         }
 
+        val protocolVersion = resolveStreamableProtocolVersion(call) ?: return
         val batchKind = classifyStreamableBatch(batch)
         if (batchKind == null) {
             call.respondText(
@@ -384,7 +387,7 @@ class KtorMcpServer(
                 runWithIdeModality {
                     jsonRpcHandler.handleRequest(
                         message.toString(),
-                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                        protocolVersion = protocolVersion
                     )
                 }
             } catch (e: Exception) {
@@ -431,6 +434,22 @@ class KtorMcpServer(
                 ContentType.Application.Json
             )
         }
+    }
+
+    private suspend fun resolveStreamableProtocolVersion(call: ApplicationCall): String? {
+        val headerVersion = call.request.headers[McpConstants.MCP_PROTOCOL_VERSION_HEADER]
+        val protocolVersion = McpProtocolVersions.effectiveStreamableHttpVersion(
+            headerVersion = headerVersion,
+            mode = McpProtocolVersions.currentMode()
+        )
+        if (protocolVersion == null) {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32600, "Unsupported MCP protocol version: $headerVersion"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest
+            )
+        }
+        return protocolVersion
     }
 
     /**
@@ -554,7 +573,10 @@ class KtorMcpServer(
             HttpHeaders.AccessControlAllowMethods,
             listOf(HttpMethod.Get, HttpMethod.Post, HttpMethod.Delete, HttpMethod.Options).joinToString(", ") { it.value }
         )
-        call.response.header(HttpHeaders.AccessControlAllowHeaders, listOf(HttpHeaders.ContentType, HttpHeaders.Accept).joinToString(", "))
+        call.response.header(
+            HttpHeaders.AccessControlAllowHeaders,
+            listOf(HttpHeaders.ContentType, HttpHeaders.Accept, McpConstants.MCP_PROTOCOL_VERSION_HEADER).joinToString(", ")
+        )
         call.respond(HttpStatusCode.NoContent)
     }
 

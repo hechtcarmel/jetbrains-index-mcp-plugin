@@ -5,6 +5,7 @@ import junit.framework.TestCase
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 class McpModelsUnitTest : TestCase() {
@@ -96,6 +97,23 @@ class McpModelsUnitTest : TestCase() {
         assertTrue(deserialized.content[1] is ContentBlock.Image)
     }
 
+    fun testToolCallResultWithStructuredContent() {
+        val structuredContent = buildJsonObject {
+            put("file", "src/Main.kt")
+            put("line", 10)
+        }
+        val result = ToolCallResult(
+            content = listOf(ContentBlock.Text("Result text")),
+            structuredContent = structuredContent,
+            isError = false
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<ToolCallResult>(serialized)
+
+        assertEquals("src/Main.kt", deserialized.structuredContent!!["file"]!!.toString().trim('"'))
+    }
+
     // ToolDefinition tests
 
     fun testToolDefinitionSerialization() {
@@ -118,6 +136,30 @@ class McpModelsUnitTest : TestCase() {
         assertEquals("test_tool", deserialized.name)
         assertEquals("A test tool", deserialized.description)
         assertNotNull(deserialized.inputSchema)
+    }
+
+    fun testToolDefinitionWithOutputSchemaSerialization() {
+        val schema = buildJsonObject { put("type", "object") }
+        val outputSchema = buildJsonObject {
+            put("type", "object")
+            put("properties", buildJsonObject {
+                put("file", buildJsonObject { put("type", "string") })
+            })
+        }
+
+        val definition = ToolDefinition(
+            name = "test_tool",
+            description = "A test tool",
+            inputSchema = schema,
+            outputSchema = outputSchema
+        )
+
+        val serialized = json.encodeToString(definition)
+        val deserialized = json.decodeFromString<ToolDefinition>(serialized)
+
+        assertNotNull(deserialized.outputSchema)
+        assertEquals("object", deserialized.outputSchema!!["type"].toString().trim('"'))
+        assertNotNull(json.parseToJsonElement(serialized).jsonObject["outputSchema"])
     }
 
     // ServerInfo tests

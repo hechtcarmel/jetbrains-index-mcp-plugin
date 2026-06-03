@@ -49,6 +49,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -729,6 +730,7 @@ abstract class AbstractMcpTool : McpTool {
             val jsonText = json.encodeToString(JsonElement.serializer(), data)
             ToolCallResult(
                 content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+                structuredContent = data as? JsonObject,
                 isError = true
             )
         } catch (e: Exception) {
@@ -745,8 +747,10 @@ abstract class AbstractMcpTool : McpTool {
     protected inline fun <reified T> createJsonResult(data: T): ToolCallResult {
         return try {
             val jsonText = json.encodeToString(data)
+            val structuredContent = Json.encodeToJsonElement(data) as JsonObject
             ToolCallResult(
                 content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+                structuredContent = structuredContent,
                 isError = false
             )
         } catch (e: Exception) {

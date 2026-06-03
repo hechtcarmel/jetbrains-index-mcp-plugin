@@ -54,6 +54,7 @@ internal fun buildStructuredErrorResult(
                     text = ResponseFormatter.formatStructuredPayload(jsonText, format)
                 )
             ),
+            structuredContent = payload,
             isError = true
         )
     } catch (e: Exception) {

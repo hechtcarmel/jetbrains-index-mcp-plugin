@@ -2,7 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.JsonRpcHandler
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.McpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
+import com.intellij.openapi.project.Project
 import io.ktor.http.HttpStatusCode
 import junit.framework.TestCase
 import kotlinx.coroutines.CoroutineScope
@@ -10,9 +13,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.io.InputStream
 import java.net.ServerSocket
@@ -65,6 +71,38 @@ class KtorMcpServerUnitTest : TestCase() {
         val responseBody = json.parseToJsonElement(response.body()).jsonObject
         assertEquals(
             "2025-03-26",
+            responseBody["result"]!!.jsonObject["protocolVersion"]!!.jsonPrimitive.content
+        )
+    }
+
+    fun testStreamableInitializeNegotiates20250618() {
+        val response = sendRequest(
+            method = "POST",
+            path = McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH,
+            body = initializeRequestBody(McpConstants.MCP_PROTOCOL_VERSION_2025_06_18)
+        )
+
+        assertEquals(HttpStatusCode.OK.value, response.statusCode())
+
+        val responseBody = json.parseToJsonElement(response.body()).jsonObject
+        assertEquals(
+            McpConstants.MCP_PROTOCOL_VERSION_2025_06_18,
+            responseBody["result"]!!.jsonObject["protocolVersion"]!!.jsonPrimitive.content
+        )
+    }
+
+    fun testStreamableInitializeNegotiates20251125() {
+        val response = sendRequest(
+            method = "POST",
+            path = McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH,
+            body = initializeRequestBody(McpConstants.MCP_PROTOCOL_VERSION_2025_11_25)
+        )
+
+        assertEquals(HttpStatusCode.OK.value, response.statusCode())
+
+        val responseBody = json.parseToJsonElement(response.body()).jsonObject
+        assertEquals(
+            McpConstants.MCP_PROTOCOL_VERSION_2025_11_25,
             responseBody["result"]!!.jsonObject["protocolVersion"]!!.jsonPrimitive.content
         )
     }
@@ -189,6 +227,48 @@ class KtorMcpServerUnitTest : TestCase() {
         assertNotNull(responseBody["result"])
     }
 
+    fun testStreamableRequestRejectsUnsupportedProtocolVersionHeader() {
+        val response = sendRequest(
+            method = "POST",
+            path = McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH,
+            body = """{"jsonrpc":"2.0","id":1,"method":"ping"}""",
+            headers = mapOf(McpConstants.MCP_PROTOCOL_VERSION_HEADER to "2099-01-01")
+        )
+
+        assertEquals(HttpStatusCode.BadRequest.value, response.statusCode())
+    }
+
+    fun testStreamableToolsListDefaultsToInitialStreamableProtocolWhenHeaderIsMissing() {
+        toolRegistry.register(outputSchemaTool())
+
+        val response = sendRequest(
+            method = "POST",
+            path = McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH,
+            body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}"""
+        )
+
+        assertEquals(HttpStatusCode.OK.value, response.statusCode())
+
+        val tool = findOutputSchemaTool(response.body())
+        assertNull(tool["outputSchema"])
+    }
+
+    fun testStreamableToolsListUsesSupportedProtocolVersionHeader() {
+        toolRegistry.register(outputSchemaTool())
+
+        val response = sendRequest(
+            method = "POST",
+            path = McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH,
+            body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""",
+            headers = mapOf(McpConstants.MCP_PROTOCOL_VERSION_HEADER to McpConstants.MCP_PROTOCOL_VERSION_2025_06_18)
+        )
+
+        assertEquals(HttpStatusCode.OK.value, response.statusCode())
+
+        val tool = findOutputSchemaTool(response.body())
+        assertNotNull(tool["outputSchema"])
+    }
+
     fun testRejectsNonLocalOrigin() {
         val response = sendRequest(
             method = "POST",
@@ -293,6 +373,23 @@ class KtorMcpServerUnitTest : TestCase() {
         return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
     }
 
+    private fun findOutputSchemaTool(responseBody: String): JsonObject {
+        return json.parseToJsonElement(responseBody).jsonObject["result"]!!.jsonObject["tools"]!!.jsonArray
+            .first { it.jsonObject["name"]!!.jsonPrimitive.content == outputSchemaToolName }
+            .jsonObject
+    }
+
+    private fun outputSchemaTool(): McpTool = object : McpTool {
+        override val name: String = outputSchemaToolName
+        override val description: String = "Test tool with output schema"
+        override val inputSchema: JsonObject = buildJsonObject { put("type", "object") }
+        override val outputSchema: JsonObject = buildJsonObject { put("type", "object") }
+
+        override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
+            error("Tool execution is not needed for tools/list tests")
+        }
+    }
+
     private fun openSseStream(
         path: String,
         headers: Map<String, String> = emptyMap()
@@ -350,4 +447,8 @@ class KtorMcpServerUnitTest : TestCase() {
     """.trimIndent()
 
     private fun findFreePort(): Int = ServerSocket(0).use { it.localPort }
+
+    companion object {
+        private const val outputSchemaToolName = "test_output_schema"
+    }
 }
