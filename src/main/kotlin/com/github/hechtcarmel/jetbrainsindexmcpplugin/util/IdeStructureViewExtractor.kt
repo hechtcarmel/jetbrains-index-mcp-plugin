@@ -9,7 +9,6 @@ import com.intellij.lang.LanguageStructureViewBuilder
 import com.intellij.navigation.ItemPresentation
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import java.util.Collections
@@ -118,13 +117,18 @@ object IdeStructureViewExtractor {
             null
         } ?: return children
 
+        val resolvedLine = info.line ?: lineResolver(value)
+        if (resolvedLine == null && value is PsiElement && children.isEmpty()) {
+            return emptyList()
+        }
+
         return listOf(
             StructureNode(
                 name = info.name,
                 kind = info.kind,
                 modifiers = info.modifiers.distinct(),
                 signature = info.signature?.takeIf { it.isNotBlank() },
-                line = info.line ?: lineResolver(value) ?: children.firstOrNull()?.line ?: 1,
+                line = resolvedLine ?: children.firstOrNull()?.line ?: 1,
                 children = children
             )
         )
@@ -132,8 +136,6 @@ object IdeStructureViewExtractor {
 
     private fun resolveLine(project: Project, value: Any?): Int? {
         val element = value as? PsiElement ?: return null
-        val psiFile = element.containingFile ?: return null
-        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return null
-        return document.getLineNumber(element.textOffset) + 1
+        return PsiSourcePosition.line(project, element)
     }
 }

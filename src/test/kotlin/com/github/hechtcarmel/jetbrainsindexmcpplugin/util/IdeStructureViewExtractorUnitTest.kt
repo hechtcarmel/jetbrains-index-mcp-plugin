@@ -4,6 +4,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.intellij.ide.structureView.StructureViewTreeElement
 import com.intellij.ide.util.treeView.smartTree.TreeElement
 import com.intellij.navigation.ItemPresentation
+import com.intellij.psi.PsiElement
+import io.mockk.mockk
 import junit.framework.TestCase
 import javax.swing.Icon
 
@@ -77,6 +79,19 @@ class IdeStructureViewExtractorUnitTest : TestCase() {
         assertTrue(nodes.single().children.isEmpty())
     }
 
+    fun testConvertTreeElementsSkipsClassifiedPsiLeafWithoutSourceLine() {
+        val syntheticMethod = mockk<PsiElement>(relaxed = true)
+        val method = FakeTreeElement("generatedGetter()", syntheticMethod)
+
+        val nodes = IdeStructureViewExtractor.convertTreeElements(
+            elements = arrayOf(method),
+            classifier = SyntheticPsiClassifier,
+            lineResolver = { null }
+        )
+
+        assertTrue(nodes.isEmpty())
+    }
+
     private object TestClassifier : IdeStructureViewExtractor.Classifier {
         override fun describe(
             value: Any?,
@@ -104,6 +119,20 @@ class IdeStructureViewExtractorUnitTest : TestCase() {
                 )
                 else -> null
             }
+        }
+    }
+
+    private object SyntheticPsiClassifier : IdeStructureViewExtractor.Classifier {
+        override fun describe(
+            value: Any?,
+            presentation: ItemPresentation
+        ): IdeStructureViewExtractor.StructureElementInfo? {
+            if (value !is PsiElement) return null
+
+            return IdeStructureViewExtractor.StructureElementInfo(
+                name = presentation.presentableText ?: "generated",
+                kind = StructureKind.METHOD
+            )
         }
     }
 
