@@ -60,6 +60,7 @@ class FindSymbolTool : AbstractMcpTool() {
         .stringProperty(ParamNames.QUERY, "Search pattern. Matching follows IntelliJ's Go to Symbol popup, including qualified queries. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
         .stringProperty(ParamNames.LANGUAGE, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include symbols defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
@@ -95,6 +96,7 @@ class FindSymbolTool : AbstractMcpTool() {
             return createInvalidScopeError(rawScope)
         }
         val languageFilter = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = false)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
 
@@ -105,7 +107,7 @@ class FindSymbolTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val token = suspendingReadAction {
-            val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+            val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
             val nativeLanguageFilter = languageFilter?.takeIf { it.isNotBlank() }?.let { setOf(it) }
             val symbols = OptimizedSymbolSearch.search(
                 project = project,
@@ -119,7 +121,7 @@ class FindSymbolTool : AbstractMcpTool() {
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->
                 suspendingReadAction {
-                    extendSearchSymbols(project, query, scope, languageFilter, seenKeys, limit)
+                    extendSearchSymbols(project, query, scope, languageFilter, seenKeys, limit, excludeGenerated)
                 }
             }
 
@@ -168,9 +170,10 @@ class FindSymbolTool : AbstractMcpTool() {
         scope: BuiltInSearchScope,
         languageFilter: String?,
         seenKeys: Set<String>,
-        limit: Int
+        limit: Int,
+        excludeGenerated: Boolean
     ): List<PaginationService.SerializedResult> {
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
         val nativeLanguageFilter = languageFilter?.takeIf { it.isNotBlank() }?.let { setOf(it) }
         val symbols = OptimizedSymbolSearch.search(
             project = project,

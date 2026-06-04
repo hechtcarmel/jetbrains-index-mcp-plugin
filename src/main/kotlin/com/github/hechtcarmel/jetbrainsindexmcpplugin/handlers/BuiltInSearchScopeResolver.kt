@@ -22,16 +22,21 @@ internal object BuiltInSearchScopeResolver {
     /**
      * Resolve [scope] to a [GlobalSearchScope].
      *
-     * When [excludeGenerated] is true (the default), the result additionally excludes
-     * IDE-recognized generated sources (KSP/Dagger/annotation-processor output). This keeps
-     * navigation results — especially [FindUsagesTool] on heavily-injected symbols — focused
-     * on hand-written code instead of paginating through hundreds of generated DI factories.
-     * Callers expose an opt-out for the rare case of debugging generated code.
+     * When [excludeGenerated] is true, the result additionally excludes IDE-recognized
+     * generated sources (KSP/Dagger/annotation-processor output). This keeps reference
+     * results — especially `ide_find_references` on heavily-injected symbols — focused on
+     * hand-written code instead of paginating through hundreds of generated DI factories.
+     *
+     * The default is false (include generated): each tool decides its own default and
+     * exposes an `includeGenerated` parameter, so the shared resolver never silently drops
+     * generated sources unless a caller opts in. `ide_find_references` defaults to excluding;
+     * search and hierarchy tools default to including (e.g. so a type hierarchy still shows a
+     * generated supertype).
      */
     fun resolveGlobalScope(
         project: Project,
         scope: BuiltInSearchScope,
-        excludeGenerated: Boolean = true,
+        excludeGenerated: Boolean = false,
     ): GlobalSearchScope {
         val base = when (scope) {
             BuiltInSearchScope.PROJECT_FILES -> GlobalSearchScope.projectScope(project)
@@ -53,7 +58,7 @@ internal object BuiltInSearchScopeResolver {
     fun resolveSearchScope(
         project: Project,
         scope: BuiltInSearchScope,
-        excludeGenerated: Boolean = true,
+        excludeGenerated: Boolean = false,
     ): SearchScope =
         resolveGlobalScope(project, scope, excludeGenerated)
 

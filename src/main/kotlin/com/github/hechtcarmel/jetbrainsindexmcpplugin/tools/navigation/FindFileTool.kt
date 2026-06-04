@@ -70,6 +70,7 @@ class FindFileTool : AbstractMcpTool() {
         .projectPath()
         .stringProperty(ParamNames.QUERY, "File name pattern. Supports substring and fuzzy matching. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include files under generated sources (KSP/Dagger/annotation-processor output). Default: false.")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
@@ -104,6 +105,7 @@ class FindFileTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = false)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
 
@@ -114,7 +116,7 @@ class FindFileTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val searchScope = resolveSearchScope(project, scope)
+            val searchScope = resolveSearchScope(project, scope, excludeGenerated)
             val matcher = createMatcher(query)
             val files = searchFiles(project, query, searchScope, scope, collectLimit, matcher)
 
@@ -124,7 +126,7 @@ class FindFileTool : AbstractMcpTool() {
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->
                 suspendingReadAction {
-                    extendSearchFiles(project, query, scope, seenKeys, limit)
+                    extendSearchFiles(project, query, scope, seenKeys, limit, excludeGenerated)
                 }
             }
 
@@ -173,9 +175,10 @@ class FindFileTool : AbstractMcpTool() {
         query: String,
         scope: BuiltInSearchScope,
         seenKeys: Set<String>,
-        limit: Int
+        limit: Int,
+        excludeGenerated: Boolean
     ): List<PaginationService.SerializedResult> {
-        val searchScope = resolveSearchScope(project, scope)
+        val searchScope = resolveSearchScope(project, scope, excludeGenerated)
         val matcher = createMatcher(query)
         val files = searchFiles(project, query, searchScope, scope, limit + seenKeys.size, matcher)
 
@@ -295,8 +298,8 @@ class FindFileTool : AbstractMcpTool() {
         }
     }
 
-    private fun resolveSearchScope(project: Project, scope: BuiltInSearchScope): GlobalSearchScope {
-        return BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+    private fun resolveSearchScope(project: Project, scope: BuiltInSearchScope, excludeGenerated: Boolean): GlobalSearchScope {
+        return BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
     }
 
 

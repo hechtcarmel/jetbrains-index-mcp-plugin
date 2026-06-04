@@ -78,7 +78,8 @@ interface TypeHierarchyHandler : LanguageHandler<TypeHierarchyData> {
     fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES
+        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES,
+        excludeGenerated: Boolean = false
     ): TypeHierarchyData?
 }
 
@@ -98,7 +99,8 @@ interface ImplementationsHandler : LanguageHandler<List<ImplementationData>> {
     fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES
+        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES,
+        excludeGenerated: Boolean = false
     ): List<ImplementationData>?
 }
 
@@ -122,7 +124,8 @@ interface CallHierarchyHandler : LanguageHandler<CallHierarchyData> {
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES
+        scope: BuiltInSearchScope = BuiltInSearchScope.PROJECT_FILES,
+        excludeGenerated: Boolean = false
     ): CallHierarchyData?
 }
 

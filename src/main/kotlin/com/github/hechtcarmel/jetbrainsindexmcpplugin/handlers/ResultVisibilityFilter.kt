@@ -20,4 +20,5 @@ internal fun shouldIncludeNavigationFile(
 internal fun createNavigationSearchScope(
     project: com.intellij.openapi.project.Project,
     scope: BuiltInSearchScope,
-): GlobalSearchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+    excludeGenerated: Boolean = false,
+): GlobalSearchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)

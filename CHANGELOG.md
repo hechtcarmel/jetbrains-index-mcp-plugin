@@ -3,6 +3,11 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- `includeGenerated` parameter for `ide_find_references`, `ide_find_symbol`, `ide_find_class`, `ide_find_file`, `ide_type_hierarchy`, `ide_call_hierarchy`, and `ide_find_implementations`, controlling whether IDE-recognized generated sources (KSP/Dagger/annotation-processor output) are included in results.
+
+### Changed
+- Generated-source filtering is now per-tool via `includeGenerated`. `ide_find_references`, `ide_type_hierarchy`, and `ide_call_hierarchy` default to `includeGenerated: true` so valid runtime references and inherited generated types (Dagger/MapStruct/gRPC/serializers) aren't missed. `ide_find_symbol`, `ide_find_class`, `ide_find_file`, and `ide_find_implementations` default to `includeGenerated: false` to keep generated DI factories/mappers/stubs out of name- and implementation-search results. The shared search-scope resolver no longer excludes generated sources unless a caller opts in.
 
 ## [4.19.1] - 2026-05-26
 ### Fixed

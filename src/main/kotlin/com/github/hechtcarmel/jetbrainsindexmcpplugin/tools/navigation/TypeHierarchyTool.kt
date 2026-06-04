@@ -54,6 +54,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
         .scopeProperty("Search scope. Default: project_files.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include supertypes/subtypes defined in generated sources (KSP/Dagger/annotation-processor output). Default: true — keep generated types in the hierarchy.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
@@ -69,6 +70,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = true)
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
@@ -93,7 +95,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            val hierarchyData = handler.getTypeHierarchy(element, project, scope)
+            val hierarchyData = handler.getTypeHierarchy(element, project, scope, excludeGenerated)
             if (hierarchyData == null) {
                 return@suspendingReadAction createErrorResult("No class/type found at the specified position.")
             }

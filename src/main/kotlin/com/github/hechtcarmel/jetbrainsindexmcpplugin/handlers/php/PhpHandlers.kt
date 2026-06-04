@@ -1203,11 +1203,12 @@ class PhpTypeHierarchyHandler : BasePhpHandler<TypeHierarchyData>(), TypeHierarc
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         val phpClass = findContainingPhpClass(element) ?: return null
         LOG.debug("Getting type hierarchy for PHP class: ${getName(phpClass)}")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val supertypes = getSupertypes(project, phpClass, searchScope = searchScope)
         val subtypes = getSubtypes(project, phpClass, searchScope)
@@ -1366,10 +1367,11 @@ class PhpImplementationsHandler : BasePhpHandler<List<ImplementationData>>(), Im
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         // Check if it's a method
         val method = findContainingMethod(element)
@@ -1496,11 +1498,12 @@ class PhpCallHierarchyHandler : BasePhpHandler<CallHierarchyData>(), CallHierarc
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         val callable = findContainingCallable(element) ?: return null
         LOG.debug("Getting call hierarchy for ${getName(callable)}, direction=$direction, depth=$depth")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val visited = mutableSetOf<String>()
         val calls = if (direction == "callers") {

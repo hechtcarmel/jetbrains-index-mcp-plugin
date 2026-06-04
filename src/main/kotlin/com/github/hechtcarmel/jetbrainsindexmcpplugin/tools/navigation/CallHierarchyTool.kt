@@ -61,6 +61,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         .enumProperty("direction", "Direction: 'callers' (methods that call this method) or 'callees' (methods this method calls)", listOf("callers", "callees"), required = true)
         .intProperty("depth", "How many levels deep to traverse the call hierarchy (default: 3, max: 5)")
         .scopeProperty("Search scope. Default: project_files.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include callers/callees in generated sources (KSP/Dagger/annotation-processor output). Default: true.")
         .build()
 
     companion object {
@@ -83,6 +84,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         if (direction !in listOf("callers", "callees")) {
             return createErrorResult("direction must be 'callers' or 'callees'")
         }
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = true)
 
         requireSmartMode(project)
 
@@ -104,7 +106,7 @@ class CallHierarchyTool : AbstractMcpTool() {
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            val hierarchyData = handler.getCallHierarchy(element, project, direction, depth, scope)
+            val hierarchyData = handler.getCallHierarchy(element, project, direction, depth, scope, excludeGenerated)
             if (hierarchyData == null) {
                 val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
                 return@suspendingReadAction createErrorResult(

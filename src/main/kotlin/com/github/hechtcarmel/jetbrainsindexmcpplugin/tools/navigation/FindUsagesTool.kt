@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -79,7 +78,7 @@ class FindUsagesTool : AbstractMcpTool() {
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
         .scopeProperty("Search scope. Default: project_files.")
-        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: false — generated references are excluded because they regenerate on every build and otherwise dominate the result set.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: true — keeps valid runtime references (Dagger, MapStruct, gRPC, serializers). Set false to drop generated output when it dominates the result set.")
         .intProperty("maxResults", "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
@@ -106,10 +105,10 @@ class FindUsagesTool : AbstractMcpTool() {
 
         val pageSize = resolvePageSize(arguments, DEFAULT_MAX_RESULTS, aliases = arrayOf("maxResults"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
-        // Generated DI factories / *_MembersInjector classes regenerate on every build and
-        // otherwise dominate reference results on injected symbols. Exclude them unless asked.
-        val includeGenerated = arguments[ParamNames.INCLUDE_GENERATED]?.jsonPrimitive?.booleanOrNull ?: false
-        val excludeGenerated = !includeGenerated
+        // Generated DI factories / *_MembersInjector classes are included by default so valid
+        // runtime references (Dagger, MapStruct, gRPC, serializers) are not missed. Callers can
+        // pass includeGenerated=false to drop generated output when it dominates results.
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = true)
         val rawScope = rawScopeValue(arguments[ParamNames.SCOPE])
         val scope = try {
             BuiltInSearchScopeResolver.parse(arguments, BuiltInSearchScope.PROJECT_FILES)

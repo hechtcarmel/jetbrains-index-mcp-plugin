@@ -400,10 +400,11 @@ class RustTypeHierarchyHandler : BaseRustHandler<TypeHierarchyData>(), TypeHiera
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         LOG.debug("Getting type hierarchy for Rust element at ${element.containingFile?.name}")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         // Handle traits
         val trait = findContainingRsTrait(element)
@@ -707,10 +708,11 @@ class RustImplementationsHandler : BaseRustHandler<List<ImplementationData>>(), 
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         // Check if it's a trait
         val trait = findContainingRsTrait(element)
@@ -859,11 +861,12 @@ class RustCallHierarchyHandler : BaseRustHandler<CallHierarchyData>(), CallHiera
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         val function = findContainingRsFunction(element) ?: return null
         LOG.debug("Getting call hierarchy for ${getName(function)}, direction=$direction, depth=$depth")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val visited = mutableSetOf<String>()
         val calls = if (direction == "callers") {

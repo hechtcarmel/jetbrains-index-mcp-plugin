@@ -67,6 +67,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
         .scopeProperty("Search scope. Default: project_files.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include implementations in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
@@ -98,6 +99,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = false)
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
@@ -113,7 +115,7 @@ class FindImplementationsTool : AbstractMcpTool() {
                 )
             }
 
-            val implementations = handler.findImplementations(element, project, scope)
+            val implementations = handler.findImplementations(element, project, scope, excludeGenerated)
             if (implementations == null) {
                 val isSymbolMode = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
                 return@suspendingReadAction null to createErrorResult(

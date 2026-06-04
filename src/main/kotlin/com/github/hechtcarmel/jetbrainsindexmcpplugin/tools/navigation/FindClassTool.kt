@@ -79,6 +79,7 @@ class FindClassTool : AbstractMcpTool() {
         .stringProperty(ParamNames.QUERY, "Search pattern. Supports substring and camelCase matching. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
         .stringProperty(ParamNames.LANGUAGE, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
+        .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include classes defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
         .enumProperty(ParamNames.MATCH_MODE, "How to match the query. Default: \"substring\".", listOf("substring", "prefix", "exact"))
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
@@ -116,6 +117,7 @@ class FindClassTool : AbstractMcpTool() {
         }
         val languageFilter = arguments[ParamNames.LANGUAGE]?.jsonPrimitive?.content
         val matchMode = arguments[ParamNames.MATCH_MODE]?.jsonPrimitive?.content ?: "substring"
+        val excludeGenerated = resolveExcludeGenerated(arguments, default = false)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
 
@@ -126,7 +128,7 @@ class FindClassTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val searchScope = resolveSearchScope(project, scope)
+            val searchScope = resolveSearchScope(project, scope, excludeGenerated)
 
             val matcher = createMatcher(query, matchMode)
             val nameFilter = createNameFilter(query, matchMode, matcher)
@@ -138,7 +140,7 @@ class FindClassTool : AbstractMcpTool() {
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->
                 suspendingReadAction {
-                    extendSearchClasses(project, query, scope, matchMode, languageFilter, seenKeys, limit)
+                    extendSearchClasses(project, query, scope, matchMode, languageFilter, seenKeys, limit, excludeGenerated)
                 }
             }
 
@@ -189,9 +191,10 @@ class FindClassTool : AbstractMcpTool() {
         matchMode: String,
         languageFilter: String?,
         seenKeys: Set<String>,
-        limit: Int
+        limit: Int,
+        excludeGenerated: Boolean
     ): List<PaginationService.SerializedResult> {
-        val searchScope = resolveSearchScope(project, scope)
+        val searchScope = resolveSearchScope(project, scope, excludeGenerated)
         val matcher = createMatcher(query, matchMode)
         val nameFilter = createNameFilter(query, matchMode, matcher)
         val classes = searchClasses(project, query, searchScope, scope, limit + seenKeys.size, nameFilter, matcher, languageFilter)
@@ -318,8 +321,8 @@ class FindClassTool : AbstractMcpTool() {
         }
     }
 
-    private fun resolveSearchScope(project: Project, scope: BuiltInSearchScope): GlobalSearchScope {
-        return BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+    private fun resolveSearchScope(project: Project, scope: BuiltInSearchScope, excludeGenerated: Boolean): GlobalSearchScope {
+        return BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
     }
 
 

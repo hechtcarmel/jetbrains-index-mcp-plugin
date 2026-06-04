@@ -45,6 +45,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -489,6 +490,21 @@ abstract class AbstractMcpTool : McpTool {
             hasPosition -> LookupModeState.POSITION
             else -> LookupModeState.MISSING
         }
+    }
+
+    /**
+     * Resolves whether generated sources (KSP/Dagger/annotation-processor output) should be
+     * excluded from the search scope, derived from the optional `includeGenerated` argument.
+     *
+     * Each tool passes its own [default] for `includeGenerated` so behavior is per-tool:
+     * `ide_find_references` defaults to excluding generated code (it dominates reference
+     * results on injected symbols), while search and hierarchy tools default to including it.
+     *
+     * @return true when generated sources should be excluded from the resolved scope.
+     */
+    protected fun resolveExcludeGenerated(arguments: JsonObject, default: Boolean): Boolean {
+        val includeGenerated = arguments[ParamNames.INCLUDE_GENERATED]?.jsonPrimitive?.booleanOrNull ?: default
+        return !includeGenerated
     }
 
     /**

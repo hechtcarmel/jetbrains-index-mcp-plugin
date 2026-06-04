@@ -144,6 +144,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `includeGenerated` | boolean | No | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default: true** — keeps valid runtime references from generated DI factories, MapStruct mappers, gRPC stubs, and serializers. Set `false` to drop generated call sites when they dominate results. |
 | `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
@@ -313,6 +314,7 @@ Searches for classes and interfaces by name using the IDE's class index.
 | `query` | string | Yes | Search pattern |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`, `"Python"`). Case-insensitive |
+| `includeGenerated` | boolean | No | Include classes from generated sources (KSP/Dagger/annotation-processor output). Default: false |
 | `matchMode` | string | No | `"substring"` (default), `"prefix"`, or `"exact"` |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
@@ -373,6 +375,7 @@ Searches for files by name using the IDE's file index.
 |-----------|------|----------|-------------|
 | `query` | string | Yes | File name pattern |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `includeGenerated` | boolean | No | Include files under generated sources (KSP/Dagger/annotation-processor output). Default: false |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -878,6 +881,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 | `query` | string | Yes | Search pattern. Matching follows IntelliJ's Go to Symbol popup. |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`). Case-insensitive |
+| `includeGenerated` | boolean | No | Include symbols from generated sources (KSP/Dagger/annotation-processor output). Default: false |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -1234,6 +1238,7 @@ Retrieves the complete type hierarchy for a class or interface.
 | `column` | integer | No* | 1-based column number |
 | `className` | string | No* | Fully qualified class name (alternative to position) |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `includeGenerated` | boolean | No | Include supertypes/subtypes in generated sources (KSP/Dagger/annotation-processor output). Default: true — keeps generated types in the hierarchy |
 
 *Either `file`/`line`/`column` OR `className` must be provided.
 
@@ -1351,6 +1356,7 @@ Analyzes method call relationships to find callers or callees.
 | `direction` | string | Yes | `"callers"` or `"callees"` |
 | `depth` | integer | No | How deep to traverse (default: 3, max: 5) |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `includeGenerated` | boolean | No | Include callers/callees in generated sources (KSP/Dagger/annotation-processor output). Default: true |
 
 **Example Request (position-based):**
 
@@ -1441,6 +1447,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `includeGenerated` | boolean | No | Include implementations in generated sources (KSP/Dagger/annotation-processor output). Default: false |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
 

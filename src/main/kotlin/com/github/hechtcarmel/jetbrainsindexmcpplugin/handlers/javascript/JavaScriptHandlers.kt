@@ -355,11 +355,12 @@ class JavaScriptTypeHierarchyHandler : BaseJavaScriptHandler<TypeHierarchyData>(
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         val jsClass = findContainingJSClass(element) ?: return null
         LOG.debug("Getting type hierarchy for JS class: ${getName(jsClass)}")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val supertypes = getSupertypes(project, jsClass, searchScope = searchScope)
         val subtypes = getSubtypes(project, jsClass, searchScope)
@@ -542,10 +543,11 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
         LOG.debug("Finding implementations for element at ${element.containingFile?.name}")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val jsFunction = findContainingJSFunction(element)
         if (jsFunction != null) {
@@ -749,11 +751,12 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         val jsFunction = findContainingJSFunction(element) ?: return null
         LOG.debug("Getting call hierarchy for ${getName(jsFunction)}, direction=$direction, depth=$depth")
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val visited = mutableSetOf<String>()
         val calls = if (direction == "callers") {

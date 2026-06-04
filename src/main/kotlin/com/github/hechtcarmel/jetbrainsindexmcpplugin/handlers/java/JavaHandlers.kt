@@ -336,13 +336,14 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         // Use reference-aware resolution: if cursor is on a type reference,
         // resolve to the actual class being referenced
         val psiClass = resolveClass(element) ?: return null
 
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
         val supertypes = getSupertypes(project, psiClass, searchScope = searchScope)
         val subtypes = getSubtypes(project, psiClass, searchScope)
 
@@ -528,19 +529,20 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
         // Use reference-aware resolution: if cursor is on a method call/reference,
         // resolve to the actual method being referenced, not the containing method
         val method = resolveMethod(element)
         if (method != null) {
-            return findMethodImplementations(project, method, createNavigationSearchScope(project, scope))
+            return findMethodImplementations(project, method, createNavigationSearchScope(project, scope, excludeGenerated))
         }
 
         // Use reference-aware resolution for classes too
         val psiClass = resolveClass(element)
         if (psiClass != null) {
-            return findClassImplementations(project, psiClass, createNavigationSearchScope(project, scope))
+            return findClassImplementations(project, psiClass, createNavigationSearchScope(project, scope, excludeGenerated))
         }
 
         return null
@@ -637,13 +639,14 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         // Use reference-aware resolution: if cursor is on a method call,
         // resolve to the actual method being called
         val method = resolveMethod(element) ?: return null
         val visited = mutableSetOf<String>()
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val calls = if (direction == "callers") {
             findCallersRecursive(project, method, depth, visited, searchScope = searchScope)

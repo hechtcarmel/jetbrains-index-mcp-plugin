@@ -283,10 +283,11 @@ class PythonTypeHierarchyHandler : BasePythonHandler<TypeHierarchyData>(), TypeH
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         val pyClass = findContainingPyClass(element) ?: return null
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val supertypes = getSupertypes(project, pyClass, searchScope = searchScope)
         val subtypes = getSubtypes(project, pyClass, searchScope)
@@ -396,9 +397,10 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
         val pyFunction = findContainingPyFunction(element)
         if (pyFunction != null) {
             return findMethodImplementations(project, pyFunction, searchScope)
@@ -505,11 +507,12 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         val pyFunction = findContainingPyFunction(element) ?: return null
         val visited = mutableSetOf<String>()
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val calls = if (direction == "callers") {
             findCallersRecursive(project, pyFunction, depth, visited, searchScope = searchScope)

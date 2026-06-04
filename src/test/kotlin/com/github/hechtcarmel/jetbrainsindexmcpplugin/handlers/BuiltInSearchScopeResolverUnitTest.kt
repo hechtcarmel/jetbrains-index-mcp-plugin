@@ -82,26 +82,27 @@ class BuiltInSearchScopeResolverUnitTest : BasePlatformTestCase() {
         assertTrue((scope as GlobalSearchScope).contains(prodFile.virtualFile))
     }
 
-    fun testResolveGlobalScopeExcludesGeneratedSourcesByDefault() {
+    fun testResolveGlobalScopeIncludesGeneratedSourcesByDefault() {
         val prod = createSourceRoot("gen-prod", isTestSource = false)
         val genRoot = createGeneratedSourceRoot("gen-build/generated")
 
         val handWritten = createProjectFile(prod, "sample/HandWritten.kt", "class HandWritten")
         val generated = createProjectFile(genRoot, "sample/Generated_Factory.kt", "class Generated_Factory")
 
-        // Default (excludeGenerated = true): hand-written stays, generated is filtered out.
+        // Default (excludeGenerated = false): the shared resolver never silently drops generated
+        // sources. Each tool decides its own default and opts in via excludeGenerated when needed.
         val defaultScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, BuiltInSearchScope.PROJECT_FILES)
         assertTrue("Hand-written source must remain in default scope", defaultScope.contains(handWritten.virtualFile))
-        assertFalse("Generated source must be excluded by default", defaultScope.contains(generated.virtualFile))
+        assertTrue("Generated source must be visible by default", defaultScope.contains(generated.virtualFile))
 
-        // Opt-out (excludeGenerated = false): generated becomes visible again.
-        val inclusiveScope = BuiltInSearchScopeResolver.resolveGlobalScope(
+        // Opt-in (excludeGenerated = true): generated is filtered out, hand-written stays.
+        val exclusiveScope = BuiltInSearchScopeResolver.resolveGlobalScope(
             project,
             BuiltInSearchScope.PROJECT_FILES,
-            excludeGenerated = false
+            excludeGenerated = true
         )
-        assertTrue("Hand-written source must remain when generated are included", inclusiveScope.contains(handWritten.virtualFile))
-        assertTrue("Generated source must be visible when excludeGenerated=false", inclusiveScope.contains(generated.virtualFile))
+        assertTrue("Hand-written source must remain when generated are excluded", exclusiveScope.contains(handWritten.virtualFile))
+        assertFalse("Generated source must be excluded when excludeGenerated=true", exclusiveScope.contains(generated.virtualFile))
     }
 
     private fun createSourceRoot(name: String, isTestSource: Boolean): Path {
