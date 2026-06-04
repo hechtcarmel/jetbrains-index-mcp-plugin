@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
@@ -129,16 +130,11 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
     }
 
     protected fun getLineNumber(project: Project, element: PsiElement): Int? {
-        val psiFile = element.containingFile ?: return null
-        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return null
-        return document.getLineNumber(element.textOffset) + 1
+        return PsiSourcePosition.line(project, element)
     }
 
     protected fun getColumnNumber(project: Project, element: PsiElement): Int? {
-        val psiFile = element.containingFile ?: return null
-        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return null
-        val lineNumber = document.getLineNumber(element.textOffset)
-        return element.textOffset - document.getLineStartOffset(lineNumber) + 1
+        return PsiSourcePosition.column(project, element)
     }
 
     protected fun getClassKind(psiClass: PsiClass): String {
@@ -1050,35 +1046,36 @@ class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHa
         }
 
         for (psiClass in classes) {
-            structure.add(extractClassStructure(psiClass, project))
+            extractClassStructure(psiClass, project)?.let { structure.add(it) }
         }
 
         return structure
     }
 
-    private fun extractClassStructure(psiClass: PsiClass, project: Project): StructureNode {
+    private fun extractClassStructure(psiClass: PsiClass, project: Project): StructureNode? {
+        val line = getLineNumber(project, psiClass) ?: return null
         val children = mutableListOf<StructureNode>()
 
         // Fields
         for (field in psiClass.fields) {
-            children.add(extractFieldStructure(field, project))
+            extractFieldStructure(field, project)?.let { children.add(it) }
         }
 
         // Constructors
         for (constructor in psiClass.constructors) {
-            children.add(extractMethodStructure(constructor, project))
+            extractMethodStructure(constructor, project)?.let { children.add(it) }
         }
 
         // Methods (excluding constructors, which are already listed above via psiClass.constructors)
         for (method in psiClass.methods) {
             if (!method.isConstructor) {
-                children.add(extractMethodStructure(method, project))
+                extractMethodStructure(method, project)?.let { children.add(it) }
             }
         }
 
         // Inner classes
         for (innerClass in psiClass.innerClasses) {
-            children.add(extractClassStructure(innerClass, project))
+            extractClassStructure(innerClass, project)?.let { children.add(it) }
         }
 
         return StructureNode(
@@ -1093,28 +1090,30 @@ class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHa
             },
             modifiers = extractModifiers(psiClass.modifierList),
             signature = buildClassSignature(psiClass),
-            line = getLineNumber(project, psiClass) ?: 0,
+            line = line,
             children = children.sortedBy { it.line }
         )
     }
 
-    private fun extractFieldStructure(field: PsiField, project: Project): StructureNode {
+    private fun extractFieldStructure(field: PsiField, project: Project): StructureNode? {
+        val line = getLineNumber(project, field) ?: return null
         return StructureNode(
             name = field.name,
             kind = StructureKind.FIELD,
             modifiers = extractModifiers(field.modifierList),
             signature = field.type.presentableText,
-            line = getLineNumber(project, field) ?: 0
+            line = line
         )
     }
 
-    private fun extractMethodStructure(method: PsiMethod, project: Project): StructureNode {
+    private fun extractMethodStructure(method: PsiMethod, project: Project): StructureNode? {
+        val line = getLineNumber(project, method) ?: return null
         return StructureNode(
             name = method.name,
             kind = if (method.isConstructor) StructureKind.CONSTRUCTOR else StructureKind.METHOD,
             modifiers = extractModifiers(method.modifierList),
             signature = buildMethodSignature(method),
-            line = getLineNumber(project, method) ?: 0
+            line = line
         )
     }
 
