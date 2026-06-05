@@ -26,14 +26,21 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
+import com.intellij.lang.java.JavaLanguage
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiTypes
+import com.intellij.psi.augment.PsiAugmentProvider
 import com.intellij.psi.codeStyle.MinusculeMatcher
+import com.intellij.psi.impl.light.LightMethodBuilder
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
@@ -578,6 +585,84 @@ class ToolsTest : BasePlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isError)
+    }
+
+    fun testJavaStructureHandlerBuildsPhysicalSourceStructure() {
+        val psiFile = myFixture.addFileToProject(
+            "com/example/SampleDto.java",
+            """
+            package com.example;
+
+            public class SampleDto {
+                private String name;
+                private int count;
+
+                public SampleDto() {
+                }
+
+                public String getName() {
+                    return name;
+                }
+            }
+            """.trimIndent()
+        )
+        val handler = LanguageHandlerRegistry.getStructureHandler(psiFile)
+
+        assertNotNull("Expected Java structure handler", handler)
+        val nodes = handler!!.getFileStructure(psiFile, project)
+        val root = nodes.single()
+
+        assertEquals("SampleDto", root.name)
+        assertEquals("CLASS", root.kind.name)
+        assertEquals(3, root.line)
+        assertEquals(
+            listOf("name", "count", "SampleDto", "getName"),
+            root.children.map { it.name }
+        )
+        assertEquals(listOf(4, 5, 7, 10), root.children.map { it.line })
+    }
+
+    fun testJavaStructureHandlerSkipsAugmentedMethodWithoutSourceOffset() {
+        ExtensionTestUtil.maskExtensions(
+            PsiAugmentProvider.EP_NAME,
+            listOf(object : PsiAugmentProvider() {
+                override fun <Psi : PsiElement> getAugments(
+                    element: PsiElement,
+                    type: Class<Psi>,
+                    nameHint: String?
+                ): List<Psi> {
+                    if (type != PsiMethod::class.java) return emptyList()
+                    if (element !is PsiClass || element.name != "AugmentedDto") return emptyList()
+
+                    val method = LightMethodBuilder(element.manager, JavaLanguage.INSTANCE, "generatedGetter")
+                        .setMethodReturnType(PsiTypes.intType())
+                        .setContainingClass(element)
+
+                    @Suppress("UNCHECKED_CAST")
+                    return listOf(method as Psi)
+                }
+            }),
+            testRootDisposable
+        )
+
+        val psiFile = myFixture.addFileToProject(
+            "com/example/AugmentedDto.java",
+            """
+            package com.example;
+
+            public class AugmentedDto {
+                private int count;
+            }
+            """.trimIndent()
+        )
+        val handler = LanguageHandlerRegistry.getStructureHandler(psiFile)
+
+        assertNotNull("Expected Java structure handler", handler)
+        val nodes = handler!!.getFileStructure(psiFile, project)
+        val root = nodes.single()
+
+        assertEquals(listOf("count"), root.children.map { it.name })
+        assertFalse(root.children.any { it.name == "generatedGetter" })
     }
 
     fun testMarkdownStructureHandlerBuildsHeadingHierarchy() {
