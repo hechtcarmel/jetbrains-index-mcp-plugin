@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringRe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.lang.LanguageNamesValidation
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
@@ -221,6 +222,13 @@ class RenameSymbolTool : AbstractMcpTool() {
         val importerFilePointer: SmartPsiElementPointer<PsiFile>?
     )
 
+    private data class RenameExecutionResult(
+        val affectedFilesCount: Int,
+        val relatedRenamesCount: Int,
+        val warnings: List<String>?,
+        val unretargetedImporters: List<String>?
+    )
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
@@ -288,24 +296,22 @@ class RenameSymbolTool : AbstractMcpTool() {
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 2: EDT - Execute rename using RenameProcessor
         // ═══════════════════════════════════════════════════════════════════════
-        var changesCount = 0
         val affectedFiles = mutableSetOf<String>()
-        var relatedRenamesCount = 0
+        var renameExecutionResult: RenameExecutionResult? = null
         var errorMessage: String? = null
 
         edtAction {
             try {
-                val result = executeRename(
+                renameExecutionResult = executeRename(
                     project,
                     element,
+                    oldName,
                     newName,
                     overrideStrategy,
                     relatedRenamingStrategy,
                     affectedFiles,
                     jsTsFileRetargeting
                 )
-                changesCount = result.first
-                relatedRenamesCount = result.second
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Unknown error during rename"
             }
@@ -321,16 +327,23 @@ class RenameSymbolTool : AbstractMcpTool() {
         return if (errorMessage != null) {
             createErrorResult("Rename failed: $errorMessage")
         } else {
-            val relatedNote = if (relatedRenamesCount > 0) {
-                " (also renamed $relatedRenamesCount related element(s))"
+            val result = renameExecutionResult!!
+            val relatedNote = if (result.relatedRenamesCount > 0) {
+                " (also renamed ${result.relatedRenamesCount} related element(s))"
+            } else ""
+
+            val partialNote = if (!result.unretargetedImporters.isNullOrEmpty()) {
+                "; ${result.unretargetedImporters.size} importers could not be auto-retargeted (see unretargetedImporters for details)"
             } else ""
 
             createJsonResult(
                 RefactoringResult(
                     success = true,
                     affectedFiles = affectedFiles.toList(),
-                    changesCount = changesCount,
-                    message = "Successfully renamed '$oldName' to '$newName'$relatedNote"
+                    changesCount = result.affectedFilesCount,
+                    message = "Successfully renamed '$oldName' to '$newName'$relatedNote$partialNote",
+                    warnings = result.warnings,
+                    unretargetedImporters = result.unretargetedImporters
                 )
             )
         }
@@ -497,17 +510,19 @@ class RenameSymbolTool : AbstractMcpTool() {
      * - Constructor parameter -> field coupling is pre-added because the platform only provides
      *   the inverse relation (field -> constructor parameters)
      *
-     * @return Pair of (affected files count, related elements renamed count)
+     * @return [RenameExecutionResult] with affected file count, related rename count, and any
+     *   partial-success warnings from JS/TS import retargeting.
      */
     private fun executeRename(
         project: Project,
         element: PsiNamedElement,
+        oldName: String,
         newName: String,
         overrideStrategy: String,
         relatedRenamingStrategy: String,
         affectedFiles: MutableSet<String>,
         jsTsFileRetargeting: JsTsFileRenameRetargeting?
-    ): Pair<Int, Int> {
+    ): RenameExecutionResult {
         // Resolve the actual target element to rename based on override strategy.
         // For methods that override a base method, RenameJavaMethodProcessor's
         // substituteElementToRename() calls SuperMethodWarningUtil.checkSuperMethod()
@@ -533,6 +548,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         val jsTsFileElement = element as? PsiFile
         val shouldRetargetJsTsFileRename =
             jsTsFileElement != null && jsTsFileRetargeting != null
+
         // Create the RenameProcessor with language-appropriate settings.
         // NOTE: We intentionally DON'T search in comments/text occurrences to avoid
         // non-code usage dialogs. The basic rename is more predictable for agents.
@@ -560,17 +576,28 @@ class RenameSymbolTool : AbstractMcpTool() {
         // Disable preview dialog for headless operation
         renameProcessor.setPreviewUsages(false)
 
-        // Execute the rename - this modifies files in place (primary + all related elements)
-        renameProcessor.run()
+        // Collected partial-success data from JS/TS import retargeting.
+        val retargetWarnings = mutableListOf<String>()
+        val unretargetedImporters = mutableListOf<String>()
 
-        if (shouldRetargetJsTsFileRename) {
-            PsiDocumentManager.getInstance(project).commitAllDocuments()
-            val renamedFile = jsTsFileRetargeting!!.renamedFilePointer.element
-                ?: error("JS/TS file rename retargeting failed: renamed file is no longer available")
-            writeAction(project, "Retarget JS/TS File Rename References") {
-                finalizeJsTsFileRenameRetargeting(project, jsTsFileRetargeting, renamedFile, affectedFiles)
+        // Execute the rename and — for JS/TS file renames — the import retargeting inside a
+        // SINGLE WriteCommandAction so that Ctrl+Z reverts both operations atomically.
+        // RenameProcessor.run() internally creates its own WriteCommandAction; nesting inside
+        // an outer WriteCommandAction causes the inner undo entries to merge into the outer
+        // undo group, producing a single, clean undo step.
+        WriteCommandAction.runWriteCommandAction(project, "Rename '$oldName' to '$newName'", null, {
+            renameProcessor.run()
+
+            if (shouldRetargetJsTsFileRename) {
+                PsiDocumentManager.getInstance(project).commitAllDocuments()
+                val renamedFile = jsTsFileRetargeting!!.renamedFilePointer.element
+                    ?: error("JS/TS file rename retargeting failed: renamed file is no longer available")
+                finalizeJsTsFileRenameRetargeting(
+                    project, jsTsFileRetargeting, renamedFile, affectedFiles,
+                    retargetWarnings, unretargetedImporters
+                )
             }
-        }
+        })
 
         PsiDocumentManager.getInstance(project).commitAllDocuments()
         affectedFiles.addAll(collectUnsavedProjectFiles(project) - modifiedFilesBeforeRename)
@@ -582,7 +609,12 @@ class RenameSymbolTool : AbstractMcpTool() {
             }
         }
 
-        return Pair(affectedFiles.size, relatedRenamesCount)
+        return RenameExecutionResult(
+            affectedFilesCount = affectedFiles.size,
+            relatedRenamesCount = relatedRenamesCount,
+            warnings = retargetWarnings.takeIf { it.isNotEmpty() },
+            unretargetedImporters = unretargetedImporters.takeIf { it.isNotEmpty() }
+        )
     }
 
     /**
@@ -681,16 +713,22 @@ class RenameSymbolTool : AbstractMcpTool() {
         project: Project,
         retargeting: JsTsFileRenameRetargeting,
         renamedFile: PsiFile,
-        affectedFiles: MutableSet<String>
+        affectedFiles: MutableSet<String>,
+        warnings: MutableList<String>,
+        unretargetedImporters: MutableList<String>
     ) {
         for (referencePointer in retargeting.references) {
             val referenceElement = referencePointer.elementPointer.element
-                ?: failJsTsFileRenameRetargeting(
-                    project,
-                    referencePointer,
-                    null,
-                    "collected reference element is no longer available"
-                )
+            if (referenceElement == null) {
+                // HARD FAIL: The collected reference element is gone. This is a structural
+                // invariant violation: the rename itself may not have completed correctly
+                // (e.g., the file pointer was stale before the rename even ran). Throwing here
+                // is correct because we cannot safely determine which importer is affected, and
+                // continuing would leave us with no actionable partial-success data. The outer
+                // WriteCommandAction undo group ensures the whole operation is reverted.
+                error("JS/TS file rename retargeting failed: collected reference element is no longer available")
+            }
+
             val reference = referenceElement.references.firstOrNull {
                 it.rangeInElement == referencePointer.rangeInElement
             } ?: referenceElement.findReferenceAt(referencePointer.rangeInElement.startOffset)
@@ -700,26 +738,36 @@ class RenameSymbolTool : AbstractMcpTool() {
                     markJsTsRetargetingImporterAffected(project, referencePointer, referenceElement, affectedFiles)
                     continue
                 }
-                failJsTsFileRenameRetargeting(
-                    project,
-                    referencePointer,
-                    referenceElement,
-                    "collected reference could not be found at stored range ${referencePointer.rangeInElement}"
+                // HARD FAIL: We cannot find the reference at the stored range AND the element
+                // does not already point to the renamed file. This signals a structural invariant
+                // violation in PSI state — either the reference was already mutated by the
+                // RenameProcessor in an unexpected way, or the stored range is wrong. There is no
+                // safe collect-and-continue path here because we don't know which importer file
+                // this corresponds to. Throwing aborts the retargeting step atomically.
+                val importerPath = resolveImporterPath(project, referencePointer, referenceElement)
+                error(
+                    "JS/TS file rename retargeting failed${importerPath?.let { " in '$it'" } ?: ""}: " +
+                        "collected reference could not be found at stored range ${referencePointer.rangeInElement}"
                 )
             }
 
             try {
                 reference.bindToElement(renamedFile)
+                markJsTsRetargetingImporterAffected(project, referencePointer, referenceElement, affectedFiles)
             } catch (e: Exception) {
-                failJsTsFileRenameRetargeting(
-                    project,
-                    referencePointer,
-                    referenceElement,
-                    e.message ?: e.javaClass.simpleName
-                )
+                // COLLECT-AND-CONTINUE: bindToElement failures are per-importer limitations
+                // (e.g., the reference type does not support rebinding, or external library
+                // references). These do NOT abort the rename — the file has already been
+                // renamed successfully, and remaining importers can still be retargeted.
+                val importerPath = resolveImporterPath(project, referencePointer, referenceElement)
+                val reason = e.message ?: e.javaClass.simpleName
+                val warningMsg = "bindToElement failed${importerPath?.let { " for '$it'" } ?: ""}: $reason"
+                LOG.debug(warningMsg)
+                warnings += warningMsg
+                if (importerPath != null) {
+                    unretargetedImporters += importerPath
+                }
             }
-
-            markJsTsRetargetingImporterAffected(project, referencePointer, referenceElement, affectedFiles)
         }
     }
 
@@ -733,17 +781,14 @@ class RenameSymbolTool : AbstractMcpTool() {
         importerFile?.virtualFile?.let { affectedFiles.add(getRelativePath(project, it)) }
     }
 
-    private fun failJsTsFileRenameRetargeting(
+    private fun resolveImporterPath(
         project: Project,
         referencePointer: JsTsFileRenameReference,
-        referenceElement: PsiElement?,
-        reason: String
-    ): Nothing {
-        val importerPath = referencePointer.importerFilePointer?.element?.virtualFile?.let {
+        referenceElement: PsiElement?
+    ): String? {
+        return referencePointer.importerFilePointer?.element?.virtualFile?.let {
             getRelativePath(project, it)
         } ?: referenceElement?.containingFile?.virtualFile?.let { getRelativePath(project, it) }
-        val location = importerPath?.let { " in '$it'" } ?: ""
-        error("JS/TS file rename retargeting failed$location: $reason")
     }
 
     /**

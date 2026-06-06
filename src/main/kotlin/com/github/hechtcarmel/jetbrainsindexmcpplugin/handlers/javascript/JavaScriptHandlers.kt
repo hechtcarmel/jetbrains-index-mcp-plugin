@@ -183,6 +183,37 @@ internal fun expandJsTsModuleCandidates(modulePath: String): List<JsTsModuleCand
     return directFiles + indexFiles
 }
 
+/**
+ * Applies Node.js module-resolution precedence: when the same export name is found in both
+ * a direct file (`foo.ts`) and an index file (`foo/index.ts`), discard the index candidates.
+ *
+ * This mirrors Node.js module resolution: `require('./foo')` resolves `foo.ts` before
+ * `foo/index.ts`. Without this filter, [deterministicSingleMatchOrFailure] would return
+ * `ambiguous_match` — a false error that blocks agents unnecessarily.
+ *
+ * The filter is a no-op when only index candidates exist (fallback path is preserved).
+ * Genuine ambiguity between two non-index files is also preserved (the filter only removes
+ * index candidates when at least one non-index candidate matched).
+ *
+ * @param moduleCandidates The full list of module candidates from [expandJsTsModuleCandidates]
+ *   used to distinguish direct vs. index paths.
+ */
+internal fun List<Pair<String, PsiNamedElement>>.applyDirectFilePrecedence(
+    moduleCandidates: List<JsTsModuleCandidate>
+): List<Pair<String, PsiNamedElement>> {
+    if (isEmpty()) return this
+    val directPaths = moduleCandidates.filter { !it.isIndexCandidate }.map { it.relativePath }.toSet()
+    val indexPaths = moduleCandidates.filter { it.isIndexCandidate }.map { it.relativePath }.toSet()
+    // A candidate key is "$relativePath#exportName". Check if the path portion of the key
+    // matches a direct or index candidate path.
+    val hasDirectMatch = any { (key, _) -> directPaths.any { directPath -> key.startsWith("$directPath#") } }
+    return if (hasDirectMatch) {
+        filter { (key, _) -> !indexPaths.any { indexPath -> key.startsWith("$indexPath#") } }
+    } else {
+        this
+    }
+}
+
 internal fun deterministicSingleMatchOrFailure(
     symbol: String,
     candidates: List<Pair<String, PsiNamedElement>>
@@ -541,6 +572,13 @@ private fun callBooleanMethod(target: Any, methodName: String): Boolean? {
     }
 }
 
+private fun invokeNoArgMethod(target: Any, methodName: String): Any? {
+    return try {
+        val m = target.javaClass.methods.firstOrNull { it.name == methodName && it.parameterCount == 0 } ?: return null
+        m.invoke(target)
+    } catch (_: Exception) { null }
+}
+
 private fun isJavaScriptOrTypeScriptTypeAliasClass(type: Class<*>?): Boolean {
     if (type == null) return false
     if (type.name.contains("TypeScriptTypeAlias") || type.simpleName.contains("TypeScriptTypeAlias")) {
@@ -549,11 +587,6 @@ private fun isJavaScriptOrTypeScriptTypeAliasClass(type: Class<*>?): Boolean {
     return type.interfaces.any(::isJavaScriptOrTypeScriptTypeAliasClass) || isJavaScriptOrTypeScriptTypeAliasClass(type.superclass)
 }
 
-private fun looksLikeTypeAliasDeclaration(text: String?): Boolean {
-    val source = text?.trimStart().orEmpty()
-    if (source.isBlank()) return false
-    return Regex("^(?:export\\s+)?type\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*=").containsMatchIn(source)
-}
 
 private fun hasTypeAliasNodeType(element: PsiElement): Boolean {
     val nodeType = element.node?.elementType?.toString()?.uppercase() ?: return false
@@ -584,12 +617,18 @@ class JavaScriptSymbolReferenceHandler(
         val psiManager = PsiManager.getInstance(project)
         val roots = resolveJsTsSearchRoots(project.basePath, ProjectUtils.getModuleContentRoots(project))
         val candidates = mutableListOf<Pair<String, PsiNamedElement>>()
+        val moduleCandidates = expandJsTsModuleCandidates(target.modulePath)
 
-        for (moduleCandidate in expandJsTsModuleCandidates(target.modulePath)) {
+        for (moduleCandidate in moduleCandidates) {
             candidates += resolveNamedElementsFromCandidate(project, psiManager, roots, moduleCandidate, target)
         }
 
-        val normalizedCandidates = normalizeOverloadedNamedExportCandidates(symbol, candidates).getOrElse {
+        // Apply Node.js module-resolution precedence: direct file (foo.ts) wins over index
+        // file (foo/index.ts) when both export the same name. This prevents false
+        // ambiguous_match errors in the common pattern of foo.ts + foo/index.ts coexisting.
+        val filteredCandidates = candidates.applyDirectFilePrecedence(moduleCandidates)
+
+        val normalizedCandidates = normalizeOverloadedNamedExportCandidates(symbol, filteredCandidates).getOrElse {
             return Result.failure(it)
         }
 
@@ -725,7 +764,7 @@ class JavaScriptSymbolReferenceHandler(
 
         PsiTreeUtil.processElements(file) { element ->
             val named = element as? PsiNamedElement
-            if (named != null && named.name == className && looksLikeClassDeclaration(named)) {
+            if (named != null && named.name == className && isClassOrInterfaceDeclaration(named)) {
                 addCandidate(named)
             }
             true
@@ -748,14 +787,12 @@ class JavaScriptSymbolReferenceHandler(
         return callBooleanMethod(named, "isClass") == true
     }
 
-    private fun looksLikeClassDeclaration(named: PsiNamedElement): Boolean {
-        val source = named.text.trimStart()
-        return source.startsWith("class ") ||
-            source.startsWith("export class ") ||
-            source.startsWith("abstract class ") ||
-            source.startsWith("export abstract class ") ||
-            source.startsWith("interface ") ||
-            source.startsWith("export interface ")
+    private fun isClassOrInterfaceDeclaration(named: PsiNamedElement): Boolean {
+        if (isClassLike(named)) return true
+        val className = named.javaClass.name
+        return className.contains("TypeScriptClass") ||
+            className.contains("TypeScriptInterface") ||
+            callBooleanMethod(named, "isInterface") == true
     }
 
     private fun isClassMemberLike(named: PsiNamedElement): Boolean {
@@ -942,7 +979,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         if (callBooleanMethod(element, "isTypeAlias") == true) return true
         if (isJavaScriptOrTypeScriptTypeAliasClass(element.javaClass)) return true
         if (hasTypeAliasNodeType(element)) return true
-        return looksLikeTypeAliasDeclaration(element.text)
+        return false
     }
 
     /**
@@ -1768,14 +1805,17 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
     private fun findNearestImportExportContext(referenceElement: PsiElement): PsiElement? {
         var current: PsiElement? = referenceElement
         while (current != null && current !is PsiFile) {
-            val className = current.javaClass.name
-            val text = current.text.orEmpty()
-            if ((className.contains("Import") || className.contains("Export")) && text.contains("from")) {
-                return current
-            }
+            if (isModuleImportExportDeclaration(current)) return current
             current = current.parent
         }
         return null
+    }
+
+    private fun isModuleImportExportDeclaration(element: PsiElement): Boolean {
+        val className = element.javaClass.name
+        if (!(className.contains("Import") || className.contains("Export"))) return false
+        if (invokeNoArgMethod(element, "getFromClause") != null) return true
+        return element.children.any { it.javaClass.name.contains("FromClause") }
     }
 
     private fun bindingSemanticallyTargets(candidate: PsiNamedElement, targetSymbols: Set<PsiElement>): Boolean {
@@ -1836,13 +1876,22 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
     private fun isExportStarContext(referenceElement: PsiElement): Boolean {
         var current: PsiElement? = referenceElement
         while (current != null && current !is PsiFile) {
-            val text = current.text ?: ""
-            if (text.contains("export *")) {
-                return true
-            }
+            if (isExportStarDeclaration(current)) return true
             current = current.parent
         }
         return false
+    }
+
+    private fun isExportStarDeclaration(element: PsiElement): Boolean {
+        if (!element.javaClass.name.contains("ES6ExportDeclaration")) return false
+        if (invokeNoArgMethod(element, "getFromClause") == null) return false
+        val specifiers = invokeNoArgMethod(element, "getExportSpecifiers")
+        val count = when (specifiers) {
+            is Array<*> -> specifiers.size
+            is Collection<*> -> specifiers.size
+            else -> return false
+        }
+        return count == 0
     }
 
     private fun findMatchingExports(file: PsiFile?, symbolNames: Set<String>): List<PsiNamedElement> {

@@ -96,6 +96,9 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveAmbiguousMatchDeterministicFailure() {
+        // This test was previously documenting broken behavior (false ambiguous_match).
+        // It now asserts correct behavior: direct-file precedence resolves to foo.ts,
+        // not ambiguous_match, when both foo.ts and foo/index.ts export the same name.
         if (!requireJsTsCapability("testResolveAmbiguousMatchDeterministicFailure")) return
 
         myFixture.addFileToProject(
@@ -117,11 +120,70 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
 
         val result = handler.resolveSymbol(project, "src/utils/format#formatValue")
 
-        assertTrue("Should fail for ambiguous module candidates", result.isFailure)
-        val message = result.exceptionOrNull()?.message.orEmpty()
-        assertTrue("Should return deterministic ambiguous_match error", message.startsWith("ambiguous_match:"))
-        assertTrue("Should include direct candidate", message.contains("src/utils/format.ts"))
-        assertTrue("Should include index candidate", message.contains("src/utils/format/index.ts"))
+        assertTrue("Should resolve to direct file (direct-file precedence), not ambiguous_match", result.isSuccess)
+        val element = result.getOrThrow()
+        assertNamed(element, "formatValue")
+        assertContainingFileSuffix(element, "src/utils/format.ts")
+    }
+
+    fun testResolveDefaultExportClassForm() {
+        if (!requireJsTsCapability("testResolveDefaultExportClassForm")) return
+
+        addWebstormIntegrationFixture("export-default-class.ts")
+
+        val result = handler.resolveSymbol(project, fixtureSymbol("export-default-class.ts", "default"))
+
+        assertTrue("Should resolve export default class form", result.isSuccess)
+        val element = result.getOrThrow()
+        assertNamed(element, "MyWidget")
+    }
+
+    fun testResolveDirectFilePrecedenceOverIndex() {
+        if (!requireJsTsCapability("testResolveDirectFilePrecedenceOverIndex")) return
+
+        myFixture.addFileToProject(
+            "src/utils/format.ts",
+            """
+            export function formatValue(input: string): string {
+                return input;
+            }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "src/utils/format/index.ts",
+            """
+            export function formatValue(input: string): string {
+                return input.toUpperCase();
+            }
+            """.trimIndent()
+        )
+
+        val result = handler.resolveSymbol(project, "src/utils/format#formatValue")
+
+        assertTrue("Should resolve to direct file when both foo.ts and foo/index.ts export the same name", result.isSuccess)
+        val element = result.getOrThrow()
+        assertNamed(element, "formatValue")
+        assertContainingFileSuffix(element, "src/utils/format.ts")
+    }
+
+    fun testResolveIndexFileWhenDirectNotExists() {
+        if (!requireJsTsCapability("testResolveIndexFileWhenDirectNotExists")) return
+
+        myFixture.addFileToProject(
+            "src/utils/format/index.ts",
+            """
+            export function formatValue(input: string): string {
+                return input.toUpperCase();
+            }
+            """.trimIndent()
+        )
+
+        val result = handler.resolveSymbol(project, "src/utils/format#formatValue")
+
+        assertTrue("Should resolve to index file when only foo/index.ts exists (fallback path)", result.isSuccess)
+        val element = result.getOrThrow()
+        assertNamed(element, "formatValue")
+        assertContainingFileSuffix(element, "src/utils/format/index.ts")
     }
 
     fun testResolveWorkspacePrefixedModulePathUsesProjectRootBeforeNestedContentRoot() {
