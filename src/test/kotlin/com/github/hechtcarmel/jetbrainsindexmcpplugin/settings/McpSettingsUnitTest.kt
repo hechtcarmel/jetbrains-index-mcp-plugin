@@ -11,6 +11,7 @@ class McpSettingsUnitTest : TestCase() {
 
         assertEquals("Default maxHistorySize should be 100", 100, state.maxHistorySize)
         assertFalse("Default syncExternalChanges should be false", state.syncExternalChanges)
+        assertFalse("Default includeStructuredOutput should be false", state.includeStructuredOutput)
         assertEquals("Default serverHost should be 127.0.0.1", "127.0.0.1", state.serverHost)
     }
 
@@ -98,9 +99,11 @@ class McpSettingsUnitTest : TestCase() {
 
         settings.maxHistorySize = 250
         settings.syncExternalChanges = true
+        settings.includeStructuredOutput = true
 
         assertEquals(250, settings.maxHistorySize)
         assertTrue(settings.syncExternalChanges)
+        assertTrue(settings.includeStructuredOutput)
     }
 
     fun testMcpSettingsLoadState() {

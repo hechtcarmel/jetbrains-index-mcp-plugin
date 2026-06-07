@@ -100,6 +100,9 @@ interface McpTool {
      */
     val inputSchema: JsonObject
 
+    val outputSchema: JsonObject?
+        get() = null
+
     /**
      * Executes the tool with the given arguments.
      *

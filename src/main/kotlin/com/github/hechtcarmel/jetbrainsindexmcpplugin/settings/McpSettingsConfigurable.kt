@@ -50,6 +50,8 @@ class McpSettingsConfigurable : Configurable {
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private var availableProjectsModeComboBox: ComboBox<McpSettings.AvailableProjectsMode>? = null
     private var responseFormatComboBox: ComboBox<McpSettings.ResponseFormat>? = null
+    private var protocolVersionModeComboBox: ComboBox<McpSettings.ProtocolVersionMode>? = null
+    private var includeStructuredOutputCheckBox: JBCheckBox? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
 
@@ -111,6 +113,15 @@ class McpSettingsConfigurable : Configurable {
                 value?.let(::responseFormatLabel).orEmpty()
             }
         }
+        protocolVersionModeComboBox = ComboBox(McpSettings.ProtocolVersionMode.values()).apply {
+            toolTipText = McpBundle.message("settings.protocolVersionMode.tooltip")
+            renderer = SimpleListCellRenderer.create("") { value ->
+                value?.let(::protocolVersionModeLabel).orEmpty()
+            }
+        }
+        includeStructuredOutputCheckBox = JBCheckBox(McpBundle.message("settings.includeStructuredOutput")).apply {
+            toolTipText = McpBundle.message("settings.includeStructuredOutput.tooltip")
+        }
 
         val warningLabel = JBLabel(McpBundle.message("settings.syncExternalChanges.warning")).apply {
             foreground = JBColor.RED
@@ -137,6 +148,8 @@ class McpSettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel(McpBundle.message("settings.maxHistorySize") + ":"), maxHistorySizeSpinner!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.availableProjectsMode") + ":"), availableProjectsModeComboBox!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.responseFormat") + ":"), responseFormatComboBox!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("settings.protocolVersionMode") + ":"), protocolVersionModeComboBox!!, 1, false)
+            .addComponent(includeStructuredOutputCheckBox!!, 1)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
@@ -183,7 +196,10 @@ class McpSettingsConfigurable : Configurable {
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges ||
             availableProjectsModeComboBox?.selectedItem != settings.availableProjectsMode ||
-            responseFormatComboBox?.selectedItem != settings.responseFormat) {
+            responseFormatComboBox?.selectedItem != settings.responseFormat ||
+            protocolVersionModeComboBox?.selectedItem != settings.protocolVersionMode ||
+            includeStructuredOutputCheckBox?.isSelected != settings.includeStructuredOutput
+        ) {
             return true
         }
 
@@ -243,6 +259,10 @@ class McpSettingsConfigurable : Configurable {
         settings.responseFormat =
             responseFormatComboBox?.selectedItem as? McpSettings.ResponseFormat
                 ?: McpSettings.ResponseFormat.JSON
+        settings.protocolVersionMode =
+            protocolVersionModeComboBox?.selectedItem as? McpSettings.ProtocolVersionMode
+                ?: McpSettings.ProtocolVersionMode.AUTO
+        settings.includeStructuredOutput = includeStructuredOutputCheckBox?.isSelected ?: false
 
         val disabledTools = mutableSetOf<String>()
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -269,6 +289,7 @@ class McpSettingsConfigurable : Configurable {
                             )
                             .notify(null)
                     }
+
                     is KtorMcpServer.StartResult.PortInUse -> {
                         NotificationGroupManager.getInstance()
                             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
@@ -279,6 +300,7 @@ class McpSettingsConfigurable : Configurable {
                             )
                             .notify(null)
                     }
+
                     is KtorMcpServer.StartResult.Error -> {
                         NotificationGroupManager.getInstance()
                             .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
@@ -330,7 +352,9 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
         availableProjectsModeComboBox?.selectedItem = settings.availableProjectsMode
         responseFormatComboBox?.selectedItem = settings.responseFormat
-        
+        protocolVersionModeComboBox?.selectedItem = settings.protocolVersionMode
+        includeStructuredOutputCheckBox?.isSelected = settings.includeStructuredOutput
+
         hostValidationErrorLabel?.isVisible = false
         hostValidationIcon?.isVisible = false
         hostValidIcon?.isVisible = false
@@ -427,6 +451,8 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox = null
         availableProjectsModeComboBox = null
         responseFormatComboBox = null
+        protocolVersionModeComboBox = null
+        includeStructuredOutputCheckBox = null
         toolCheckBoxes.clear()
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
@@ -442,6 +468,14 @@ class McpSettingsConfigurable : Configurable {
         when (format) {
             McpSettings.ResponseFormat.JSON -> McpBundle.message("settings.responseFormat.json")
             McpSettings.ResponseFormat.TOON -> McpBundle.message("settings.responseFormat.toon")
+        }
+
+    private fun protocolVersionModeLabel(mode: McpSettings.ProtocolVersionMode): String =
+        when (mode) {
+            McpSettings.ProtocolVersionMode.AUTO -> McpBundle.message("settings.protocolVersionMode.auto")
+            McpSettings.ProtocolVersionMode.FORCE_2025_03_26 -> McpBundle.message("settings.protocolVersionMode.force20250326")
+            McpSettings.ProtocolVersionMode.FORCE_2025_06_18 -> McpBundle.message("settings.protocolVersionMode.force20250618")
+            McpSettings.ProtocolVersionMode.FORCE_2025_11_25 -> McpBundle.message("settings.protocolVersionMode.force20251125")
         }
 
     companion object {

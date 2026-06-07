@@ -139,7 +139,7 @@ class ToolRegistry {
      *
      * @return List of enabled tool definitions with name, description, and schema
      */
-    fun getToolDefinitions(): List<ToolDefinition> {
+    fun getToolDefinitions(includeOutputSchema: Boolean = false): List<ToolDefinition> {
         val settings = McpSettings.getInstance()
         return tools.values
             .filter { settings.isToolEnabled(it.name) }
@@ -147,7 +147,8 @@ class ToolRegistry {
                 ToolDefinition(
                     name = tool.name,
                     description = tool.description,
-                    inputSchema = tool.inputSchema
+                    inputSchema = tool.inputSchema,
+                    outputSchema = tool.outputSchema.takeIf { includeOutputSchema }
                 )
             }
     }
@@ -163,7 +164,8 @@ class ToolRegistry {
             ToolDefinition(
                 name = tool.name,
                 description = tool.description,
-                inputSchema = tool.inputSchema
+                inputSchema = tool.inputSchema,
+                outputSchema = tool.outputSchema
             )
         }
     }

@@ -1,24 +1,33 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonObject
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ToolDefinition(
     val name: String,
     val description: String,
-    val inputSchema: JsonObject
+    val inputSchema: JsonObject,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val outputSchema: JsonObject? = null
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ToolCallResult(
     val content: List<ContentBlock>,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val structuredContent: JsonObject? = null,
     val isError: Boolean = false
 )
 
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 @JsonClassDiscriminator("type")
 sealed class ContentBlock {
     @Serializable
