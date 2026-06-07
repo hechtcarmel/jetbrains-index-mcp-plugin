@@ -136,7 +136,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ implementations: [{name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala (not Go).
 
 ### ide_find_symbol (disabled by default)
 Search for any code symbol (classes, methods, fields, functions) by name.
@@ -171,7 +171,7 @@ Find parent methods that a given method overrides or implements.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ method: {name, class, file, line}, hierarchy: [{name, class, file, line, isInterface}], totalCount }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP (NOT Go, Rust).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Scala (NOT Go, Rust).
 
 ### ide_type_hierarchy
 Get complete type inheritance hierarchy (supertypes and subtypes).
@@ -188,7 +188,7 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 
 **Provide either** `className` **or** `file`+`line`+`column`.
 **Returns**: `{ element: {name, file, kind, language, supertypes?}, supertypes: [{name, file, kind, language, supertypes?}], subtypes: [{name, file, kind, language, supertypes?}] }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala.
 
 ### ide_call_hierarchy
 Build call tree showing who calls a method or what a method calls.
@@ -209,6 +209,7 @@ Build call tree showing who calls a method or what a method calls.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ element: {name, file, line, column, language}, calls: [{name, file, line, column, language, children: [...]}] }`
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala.
 
 ### ide_file_structure (disabled by default)
 Get hierarchical file structure like IDE's Structure panel.
@@ -219,7 +220,7 @@ Get hierarchical file structure like IDE's Structure panel.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 

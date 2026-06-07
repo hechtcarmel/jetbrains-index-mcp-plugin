@@ -36,6 +36,9 @@ enum class StructureKind {
     // Language-specific
     FUNCTION, VARIABLE, TYPE_ALIAS, HEADING, INCLUDE,
 
+    // Scala-specific
+    CASE_CLASS, PACKAGE_OBJECT, VAL, VAR,
+
     // Containers
     NAMESPACE, PACKAGE, MODULE,
 
