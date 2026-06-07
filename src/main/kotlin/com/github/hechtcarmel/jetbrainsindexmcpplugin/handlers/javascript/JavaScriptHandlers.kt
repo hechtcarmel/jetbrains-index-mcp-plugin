@@ -670,15 +670,35 @@ class JavaScriptSymbolReferenceHandler(
         return null
     }
 
-    private fun findNamedExports(file: PsiFile, exportName: String): List<PsiNamedElement> {
-        val matches = mutableListOf<PsiNamedElement>()
+    private fun findNamedExports(
+        file: PsiFile,
+        exportName: String,
+        visitedFiles: MutableSet<String> = mutableSetOf()
+    ): List<PsiNamedElement> {
+        val fileKey = file.virtualFile?.path ?: file.name
+        if (!visitedFiles.add(fileKey)) {
+            return emptyList()
+        }
+
+        val matchesByKey = linkedMapOf<String, PsiNamedElement>()
+        fun addMatch(match: PsiNamedElement) {
+            matchesByKey.putIfAbsent(buildPsiElementKey(match), match)
+        }
+
         PsiTreeUtil.processElements(file) { element ->
             val named = element as? PsiNamedElement
             if (named != null && named.name == exportName && isExportCandidate(named)) {
-                matches.add(named)
+                resolveNamedExportCandidate(named).forEach(::addMatch)
+            }
+
+            if (isExportStarDeclaration(element)) {
+                resolveExportStarFiles(element).forEach { exportedFile ->
+                    findNamedExports(exportedFile, exportName, visitedFiles).forEach(::addMatch)
+                }
             }
             true
         }
+        val matches = matchesByKey.values.toList()
         if (matches.size <= 1) {
             return matches
         }
@@ -693,6 +713,63 @@ class JavaScriptSymbolReferenceHandler(
         }
 
         return matches
+    }
+
+    private fun resolveNamedExportCandidate(candidate: PsiNamedElement): List<PsiNamedElement> {
+        if (!isExportSpecifier(candidate)) {
+            return listOf(candidate)
+        }
+
+        val resolved = candidate.references
+            .mapNotNull { reference -> reference.resolve() as? PsiNamedElement }
+            .filter { it.containingFile != candidate.containingFile || it != candidate }
+            .distinctBy(::buildPsiElementKey)
+
+        return resolved.ifEmpty { listOf(candidate) }
+    }
+
+    private fun isExportSpecifier(named: PsiNamedElement): Boolean {
+        val className = named.javaClass.name
+        return className.contains("ES6ExportSpecifier") || className.contains("ExportSpecifier")
+    }
+
+    private fun isExportStarDeclaration(element: PsiElement): Boolean {
+        if (!element.javaClass.name.contains("ES6ExportDeclaration")) return false
+        val fromClause = invokeNoArgMethod(element, "getFromClause") as? PsiElement ?: return false
+        val specifiers = invokeNoArgMethod(element, "getExportSpecifiers")
+        val hasNoSpecifiers = when (specifiers) {
+            is Array<*> -> specifiers.isEmpty()
+            is Collection<*> -> specifiers.isEmpty()
+            else -> element.text.orEmpty().contains("*")
+        }
+        return hasNoSpecifiers && fromClause.text.orEmpty().isNotBlank()
+    }
+
+    private fun resolveExportStarFiles(exportDeclaration: PsiElement): List<PsiFile> {
+        val fromClause = invokeNoArgMethod(exportDeclaration, "getFromClause") as? PsiElement ?: return emptyList()
+        val filesByPath = linkedMapOf<String, PsiFile>()
+        PsiTreeUtil.processElements(fromClause) { element ->
+            element.references.forEach { reference ->
+                val resolvedFile = reference.resolve() as? PsiFile
+                if (resolvedFile != null && isJsTsPsiFile(resolvedFile)) {
+                    val path = resolvedFile.virtualFile?.path ?: resolvedFile.name
+                    filesByPath.putIfAbsent(path, resolvedFile)
+                }
+            }
+            true
+        }
+        return filesByPath.values.toList()
+    }
+
+    private fun isJsTsPsiFile(file: PsiFile): Boolean {
+        return file.virtualFile?.extension?.lowercase() in JS_TS_ALLOWED_EXTENSIONS_SET
+    }
+
+    private fun buildPsiElementKey(element: PsiElement): String {
+        val range = element.textRange
+        val path = element.containingFile?.virtualFile?.path ?: ""
+        val name = (element as? PsiNamedElement)?.name ?: ""
+        return "$path:${range?.startOffset ?: -1}:${range?.endOffset ?: -1}:${element.javaClass.name}:$name"
     }
 
     private fun buildCandidateKey(

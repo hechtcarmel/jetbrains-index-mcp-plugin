@@ -256,6 +256,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
 
         assertTrue("Named re-export barrel fixture should be covered explicitly", result.isSuccess)
         assertNamed(result.getOrThrow(), "loadPluginConfig")
+        assertContainingFileSuffix(result.getOrThrow(), "barrels/plugin-config.ts")
     }
 
     fun testResolveExportStarBarrelFixtureCoverageHook() {
@@ -268,6 +269,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
 
         assertTrue("Export-star barrel fixture should be covered explicitly", result.isSuccess)
         assertNamed(result.getOrThrow(), "loadPluginConfig")
+        assertContainingFileSuffix(result.getOrThrow(), "barrels/plugin-config.ts")
     }
 
     fun testResolveBarrelFixturesRemainDisambiguatedAcrossSameNamedExports() {

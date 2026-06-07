@@ -995,7 +995,7 @@ Renames a symbol or file and updates all references across the project. This too
 - **Automatic related element renaming** - getters/setters, overriding methods, test classes are renamed automatically
 - Explicit `targetType` mode selection (`symbol` or `file`)
 - Conflict detection before rename execution (returns error instead of showing dialog)
-- Single atomic operation - all renames (primary + related) can be undone with one Ctrl/Cmd+Z
+- Supports IDE undo for rename changes
 
 **Use when:**
 - Renaming identifiers to improve code clarity
@@ -1089,7 +1089,7 @@ Related elements are automatically renamed without any prompts or dialogs:
 | Java/Kotlin | Getters/setters for fields, constructor parameters matching fields, overriding methods in subclasses, test classes |
 | All Languages | Method implementations in subclasses, interface method implementations |
 
-All renames happen in a single atomic operation, so one undo (Ctrl/Cmd+Z) reverts everything.
+Rename changes support IDE undo (Ctrl/Cmd+Z).
 
 ---
 

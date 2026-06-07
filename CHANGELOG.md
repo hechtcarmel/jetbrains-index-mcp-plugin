@@ -9,7 +9,7 @@
 - JS/TS symbol/navigation internals now detect type aliases, classes/interfaces, import/export `from` clauses, and `export *` re-exports via IntelliJ PSI (class/elementType + reflection) instead of source-text/regex heuristics, fixing false positives (e.g. `export *` matched inside comments/strings or anywhere in a file).
 
 ### Fixed
-- `ide_refactor_rename` now completes JS/TS file renames with partial success when import retargeting encounters per-importer `bindToElement` failures; the result includes `warnings` and `unretargetedImporters` fields describing which importers could not be auto-retargeted, and a single `Ctrl+Z` undoes the full rename atomically.
+- `ide_refactor_rename` now completes JS/TS file renames with partial success when import retargeting encounters per-importer `bindToElement` failures; the result includes `warnings` and `unretargetedImporters` fields describing which importers could not be auto-retargeted.
 - Symbol resolution no longer returns false `ambiguous_match` errors when both `foo.ts` and `foo/index.ts` export the same name; direct-file precedence now mirrors Node.js module resolution so `foo.ts` is preferred over `foo/index.ts`.
 - `export default class ClassName {}` forms are now correctly resolved as default exports in JavaScript/TypeScript symbol lookups (`modulePath#default`).
 - `ide_refactor_rename` now accepts an explicit `targetType` mode so file-renaming clients can send placeholder `line: 0, column: 0` without tripping symbol-position validation, while symbol mode still rejects invalid 1-based coordinates.
