@@ -560,6 +560,26 @@ class ToolModelsUnitTest : TestCase() {
         assertEquals(0, deserialized.changesCount)
     }
 
+    fun testRefactoringResultWarningsAndUnretargetedImportersSerialization() {
+        val result = RefactoringResult(
+            success = true,
+            affectedFiles = listOf("src/utils/leaf-renamed.ts"),
+            changesCount = 1,
+            message = "Renamed with partial JS/TS importer retargeting",
+            warnings = listOf("Semantic JS/TS file rename left importer unchanged for 'src/app.ts'"),
+            unretargetedImporters = listOf("src/app.ts")
+        )
+
+        val serialized = json.encodeToString(result)
+        val deserialized = json.decodeFromString<RefactoringResult>(serialized)
+
+        assertTrue(deserialized.success)
+        assertEquals(listOf("src/utils/leaf-renamed.ts"), deserialized.affectedFiles)
+        assertEquals(1, deserialized.changesCount)
+        assertEquals(result.warnings, deserialized.warnings)
+        assertEquals(result.unretargetedImporters, deserialized.unretargetedImporters)
+    }
+
     // IndexStatusResult tests
 
     fun testIndexStatusResultSmartMode() {

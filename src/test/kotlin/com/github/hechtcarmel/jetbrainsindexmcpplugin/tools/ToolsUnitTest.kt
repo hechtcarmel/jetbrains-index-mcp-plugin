@@ -611,22 +611,26 @@ class ToolsUnitTest : TestCase() {
         )
     }
 
-    fun testRenameSymbolToolJsTsRetargetingDoesNotSilentlySkipMissingReferences() {
+    fun testRenameSymbolToolJsTsRetargetingReportsMissingReferences() {
         val sourcePath = Path.of(
             System.getProperty("user.dir"),
             "src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/tools/refactoring/RenameSymbolTool.kt"
         )
         val source = Files.readString(sourcePath)
         val finalizeBody = source.substringAfter("private fun finalizeJsTsFileRenameRetargeting(")
-            .substringBefore("private fun markJsTsRetargetingImporterAffected(")
+            .substringBefore("private fun findCollectedReference(")
 
-        assertFalse(
-            "A stale smart pointer must fail JS/TS retargeting instead of silently continuing",
-            finalizeBody.contains("?: continue")
+        assertTrue(
+            "Missing reference elements must be reported instead of counted as importer success",
+            finalizeBody.contains("collected reference element is no longer available")
         )
         assertTrue(
-            "Missing references must be reported as JS/TS retargeting failures",
-            finalizeBody.contains("collected reference could not be found")
+            "Missing collected references must be surfaced as warnings",
+            finalizeBody.contains("warnings += warningMsg")
+        )
+        assertTrue(
+            "Missing collected references must be surfaced through unretargetedImporters",
+            finalizeBody.contains("unretargetedImporters += importerPath")
         )
         assertTrue(
             "Already-updated references may only be skipped after explicit renamed-file resolution verification",
