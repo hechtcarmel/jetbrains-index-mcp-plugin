@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.JsonRpcHandler
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.RepoScopeEntry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.RepoScopeRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcError
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
 import com.intellij.openapi.Disposable
@@ -135,6 +137,10 @@ class KtorMcpServer(
                 handleCorsPreflight(call)
             }
 
+            options("${McpConstants.MCP_ENDPOINT_PATH}/repos/{repoId}/streamable-http") {
+                handleCorsPreflight(call)
+            }
+
             options(McpConstants.MCP_ENDPOINT_PATH) {
                 handleCorsPreflight(call)
             }
@@ -149,6 +155,10 @@ class KtorMcpServer(
                 handleStreamableHttpPostRequest(call)
             }
 
+            post("${McpConstants.MCP_ENDPOINT_PATH}/repos/{repoId}/streamable-http") {
+                handleRepoScopedStreamableHttpPostRequest(call)
+            }
+
             get(McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH) {
                 if (!validateOrigin(call)) return@get
                 call.response.header(HttpHeaders.Allow, "POST")
@@ -156,6 +166,10 @@ class KtorMcpServer(
             }
 
             delete(McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH) {
+                handleStreamableHttpDeleteRequest(call)
+            }
+
+            delete("${McpConstants.MCP_ENDPOINT_PATH}/repos/{repoId}/streamable-http") {
                 handleStreamableHttpDeleteRequest(call)
             }
 
@@ -250,7 +264,32 @@ class KtorMcpServer(
         if (!validateOrigin(call)) return
 
         val body = call.receiveText()
+        handleStreamableHttpBody(call, body, repoScope = null)
+    }
 
+    private suspend fun handleRepoScopedStreamableHttpPostRequest(call: ApplicationCall) {
+        if (!validateOrigin(call)) return
+
+        val repoId = call.parameters["repoId"].orEmpty()
+        val repoScope = RepoScopeRegistry.getInstance().find(repoId)
+        if (repoScope == null) {
+            call.respondText(
+                createJsonRpcError(null as JsonElement?, -32602, "Unknown repo id: $repoId"),
+                ContentType.Application.Json,
+                HttpStatusCode.NotFound
+            )
+            return
+        }
+
+        val body = call.receiveText()
+        handleStreamableHttpBody(call, body, repoScope)
+    }
+
+    private suspend fun handleStreamableHttpBody(
+        call: ApplicationCall,
+        body: String,
+        repoScope: RepoScopeEntry?
+    ) {
         if (body.isBlank()) {
             call.respondText(
                 createJsonRpcError(null as JsonElement?, -32700, "Empty request body"),
@@ -273,7 +312,7 @@ class KtorMcpServer(
         }
 
         if (element is JsonArray) {
-            handleStreamableHttpBatchRequest(call, element)
+            handleStreamableHttpBatchRequest(call, element, repoScope)
             return
         }
 
@@ -309,7 +348,8 @@ class KtorMcpServer(
                 runWithIdeModality {
                     jsonRpcHandler.handleRequest(
                         body,
-                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION,
+                        repoScope = repoScope
                     )
                 }
             } catch (e: Exception) {
@@ -322,11 +362,12 @@ class KtorMcpServer(
         // Regular request: process and return JSON response
         try {
             val response = runWithIdeModality {
-                jsonRpcHandler.handleRequest(
-                    body,
-                    protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
-                )
-            }
+                    jsonRpcHandler.handleRequest(
+                        body,
+                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION,
+                        repoScope = repoScope
+                    )
+                }
             if (response != null) {
                 call.respondText(response, ContentType.Application.Json)
             } else {
@@ -341,7 +382,11 @@ class KtorMcpServer(
         }
     }
 
-    private suspend fun handleStreamableHttpBatchRequest(call: ApplicationCall, batch: JsonArray) {
+    private suspend fun handleStreamableHttpBatchRequest(
+        call: ApplicationCall,
+        batch: JsonArray,
+        repoScope: RepoScopeEntry?
+    ) {
         if (batch.isEmpty()) {
             call.respondText(
                 createJsonRpcError(null as JsonElement?, -32600, "JSON-RPC batch requests must not be empty"),
@@ -384,7 +429,8 @@ class KtorMcpServer(
                 runWithIdeModality {
                     jsonRpcHandler.handleRequest(
                         message.toString(),
-                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
+                        protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION,
+                        repoScope = repoScope
                     )
                 }
             } catch (e: Exception) {

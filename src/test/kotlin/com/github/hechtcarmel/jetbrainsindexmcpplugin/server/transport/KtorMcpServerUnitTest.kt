@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.JsonRpcHandler
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.RepoScopeRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import io.ktor.http.HttpStatusCode
 import junit.framework.TestCase
@@ -45,6 +46,7 @@ class KtorMcpServerUnitTest : TestCase() {
 
     override fun tearDown() {
         server.stop()
+        RepoScopeRegistry.getInstance().replaceOpenRoots(emptyList())
         coroutineScope.cancel()
         super.tearDown()
     }
@@ -184,6 +186,21 @@ class KtorMcpServerUnitTest : TestCase() {
 
         assertEquals(HttpStatusCode.OK.value, response.statusCode())
 
+        val responseBody = json.parseToJsonElement(response.body()).jsonObject
+        assertEquals("1", responseBody["id"]!!.jsonPrimitive.content)
+        assertNotNull(responseBody["result"])
+    }
+
+    fun testRepoScopedStreamableRequestUsesRepoRoute() {
+        RepoScopeRegistry.getInstance().replaceOpenRoots(listOf("C:/workspaces/api"))
+
+        val response = sendRequest(
+            method = "POST",
+            path = "${McpConstants.MCP_ENDPOINT_PATH}/repos/api/streamable-http",
+            body = """{"jsonrpc":"2.0","id":1,"method":"ping"}"""
+        )
+
+        assertEquals(HttpStatusCode.OK.value, response.statusCode())
         val responseBody = json.parseToJsonElement(response.body()).jsonObject
         assertEquals("1", responseBody["id"]!!.jsonPrimitive.content)
         assertNotNull(responseBody["result"])

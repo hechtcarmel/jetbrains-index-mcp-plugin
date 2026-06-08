@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.JsonRpcMethods
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcErrorCodes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcRequest
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
@@ -191,5 +192,38 @@ class JsonRpcHandlerUnitTest : TestCase() {
         val responseJson = handler.handleRequest(requestJson)
 
         assertNull("Notification should return null (no response)", responseJson)
+    }
+
+    fun testRepoScopedToolCallRejectsConflictingProjectPath() = runBlocking {
+        val request = JsonRpcRequest(
+            id = JsonPrimitive(9),
+            method = JsonRpcMethods.TOOLS_CALL,
+            params = buildJsonObject {
+                put(ParamNames.NAME, ToolNames.INDEX_STATUS)
+                put(ParamNames.ARGUMENTS, buildJsonObject {
+                    put(ParamNames.PROJECT_PATH, "C:/workspaces/other-repo")
+                })
+            }
+        )
+
+        val responseJson = handler.handleRequest(
+            json.encodeToString(JsonRpcRequest.serializer(), request),
+            protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
+            repoScope = RepoScopeEntry(
+                repoId = "api",
+                rootPath = "C:/workspaces/api"
+            )
+        )
+        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+
+        assertNull("Repo scope conflicts should be tool-result errors, not JSON-RPC errors", response.error)
+        val result = json.decodeFromJsonElement(
+            com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult.serializer(),
+            response.result!!
+        )
+        assertTrue("Conflicting project_path should be rejected", result.isError)
+        val text = (result.content.first() as com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock.Text).text
+        assertTrue("Error should identify repo scope conflict", text.contains("repo_scope_conflict"))
+        assertTrue("Error should include scoped repo id", text.contains("api"))
     }
 }

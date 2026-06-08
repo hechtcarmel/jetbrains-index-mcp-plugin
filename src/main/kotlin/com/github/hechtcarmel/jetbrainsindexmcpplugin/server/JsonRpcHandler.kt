@@ -40,6 +40,12 @@ class JsonRpcHandler @JvmOverloads constructor(
     suspend fun handleRequest(
         jsonString: String,
         protocolVersion: String
+    ): String? = handleRequest(jsonString, protocolVersion, repoScope = null)
+
+    suspend fun handleRequest(
+        jsonString: String,
+        protocolVersion: String,
+        repoScope: RepoScopeEntry?
     ): String? {
         val request = try {
             json.decodeFromString<JsonRpcRequest>(jsonString)
@@ -57,7 +63,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         }
 
         val response = try {
-            routeRequest(request, protocolVersion)
+            routeRequest(request, protocolVersion, repoScope)
         } catch (e: Exception) {
             LOG.error("Error processing request: ${request.method}", e)
             createErrorResponse(request.id, JsonRpcErrorCodes.INTERNAL_ERROR, e.message ?: "Unknown error")
@@ -66,12 +72,16 @@ class JsonRpcHandler @JvmOverloads constructor(
         return response?.let { json.encodeToString(response) }
     }
 
-    private suspend fun routeRequest(request: JsonRpcRequest, protocolVersion: String): JsonRpcResponse? {
+    private suspend fun routeRequest(
+        request: JsonRpcRequest,
+        protocolVersion: String,
+        repoScope: RepoScopeEntry?
+    ): JsonRpcResponse? {
         return when (request.method) {
             JsonRpcMethods.INITIALIZE -> processInitialize(request, protocolVersion)
             JsonRpcMethods.NOTIFICATIONS_INITIALIZED -> null
             JsonRpcMethods.TOOLS_LIST -> processToolsList(request)
-            JsonRpcMethods.TOOLS_CALL -> processToolCall(request)
+            JsonRpcMethods.TOOLS_CALL -> processToolCall(request, repoScope)
             JsonRpcMethods.PING -> processPing(request)
             else -> createErrorResponse(request.id, JsonRpcErrorCodes.METHOD_NOT_FOUND, ErrorMessages.methodNotFound(request.method))
         }
@@ -106,7 +116,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         )
     }
 
-    private suspend fun processToolCall(request: JsonRpcRequest): JsonRpcResponse {
+    private suspend fun processToolCall(request: JsonRpcRequest, repoScope: RepoScopeEntry?): JsonRpcResponse {
         val params = request.params
             ?: return createErrorResponse(request.id, JsonRpcErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_PARAMS)
 
@@ -118,8 +128,11 @@ class JsonRpcHandler @JvmOverloads constructor(
         val tool = toolRegistry.getTool(toolName)
             ?: return createErrorResponse(request.id, JsonRpcErrorCodes.METHOD_NOT_FOUND, ErrorMessages.toolNotFound(toolName))
 
+        val scopedArguments = applyRepoScope(request, arguments, repoScope)
+            ?: return createRepoScopeConflictResponse(request.id, arguments, repoScope!!)
+
         // Extract optional project_path from arguments
-        val projectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
+        val projectPath = scopedArguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
 
         val projectResult = projectResolver.resolve(projectPath)
         if (projectResult.isError) {
@@ -134,7 +147,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         // Record command in history
         val commandEntry = CommandEntry(
             toolName = toolName,
-            parameters = arguments
+            parameters = scopedArguments
         )
 
         recordHistorySafely(project, commandEntry)
@@ -142,7 +155,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         val startTime = System.currentTimeMillis()
 
         return try {
-            val result = tool.execute(project, arguments)
+            val result = tool.execute(project, scopedArguments)
             val duration = System.currentTimeMillis() - startTime
 
             // Update history
@@ -185,6 +198,45 @@ class JsonRpcHandler @JvmOverloads constructor(
                 )
             )
         }
+    }
+
+    private fun applyRepoScope(
+        request: JsonRpcRequest,
+        arguments: JsonObject,
+        repoScope: RepoScopeEntry?
+    ): JsonObject? {
+        if (repoScope == null || request.method != JsonRpcMethods.TOOLS_CALL) return arguments
+
+        val explicitProjectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
+        if (explicitProjectPath != null &&
+            ProjectResolver.normalizePath(explicitProjectPath) != ProjectResolver.normalizePath(repoScope.rootPath)
+        ) {
+            return null
+        }
+
+        return JsonObject(arguments + (ParamNames.PROJECT_PATH to JsonPrimitive(repoScope.rootPath)))
+    }
+
+    private fun createRepoScopeConflictResponse(
+        id: JsonElement?,
+        arguments: JsonObject,
+        repoScope: RepoScopeEntry
+    ): JsonRpcResponse {
+        val payload = buildJsonObject {
+            put("error", "repo_scope_conflict")
+            put("repo_id", repoScope.repoId)
+            put("repo_path", repoScope.rootPath)
+            put("project_path", arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull ?: "")
+        }
+        return JsonRpcResponse(
+            id = id,
+            result = json.encodeToJsonElement(
+                ToolCallResult(
+                    content = listOf(ContentBlock.Text(text = json.encodeToString(JsonObject.serializer(), payload))),
+                    isError = true
+                )
+            )
+        )
     }
 
     private fun recordHistorySafely(project: Project, commandEntry: CommandEntry) {
