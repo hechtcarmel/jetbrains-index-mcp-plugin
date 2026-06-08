@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
@@ -47,7 +48,7 @@ class FileStructureTool : AbstractMcpTool() {
         }
 
         return suspendingReadAction {
-            val psiFile = getPsiFile(project, file)
+            val psiFile = getPsiFile(project, file, optionalStringArg(arguments, ParamNames.PROJECT_PATH))
                 ?: return@suspendingReadAction createErrorResult("File not found: $file")
 
             // Get structure handler for this file's language

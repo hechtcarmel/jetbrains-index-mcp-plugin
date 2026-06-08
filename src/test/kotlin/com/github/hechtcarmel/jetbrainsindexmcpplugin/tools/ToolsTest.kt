@@ -751,6 +751,26 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error with line < 1", result.isError)
     }
 
+    fun testOpenFileToolOpensFixtureRootFile() = runBlocking {
+        val contentRoot = Files.createTempDirectory("open-file-tool-root")
+        val readme = contentRoot.resolve("README.md")
+        Files.writeString(readme, "ROOT_ONLY\n")
+        val rootVFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(contentRoot)
+        assertNotNull("Expected temp content root in local VFS", rootVFile)
+        ModuleRootModificationUtil.addContentRoot(module, rootVFile!!)
+
+        val tool = OpenFileTool()
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", readme.toString())
+        })
+
+        assertFalse("open_file should succeed for a fixture root file: ${errorText(result)}", result.isError)
+        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertEquals("README.md", resultJson["file"]?.jsonPrimitive?.content)
+        assertEquals("true", resultJson["opened"]?.jsonPrimitive?.content)
+    }
+
     // Reformat Code Tool Tests
 
     fun testReformatCodeToolMissingParams() = runBlocking {

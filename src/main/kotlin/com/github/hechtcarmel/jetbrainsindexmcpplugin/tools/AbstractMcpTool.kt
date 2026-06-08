@@ -343,16 +343,26 @@ abstract class AbstractMcpTool : McpTool {
      * @param relativePath Path relative to project root, or absolute path
      * @return The VirtualFile, or null if not found
      */
-    protected fun resolveFile(project: Project, relativePath: String): VirtualFile? {
+    protected fun resolveFile(project: Project, relativePath: String, preferredRoot: String? = null): VirtualFile? {
         // Absolute paths are validated against project roots before resolving
-        if (relativePath.startsWith("/") || relativePath.startsWith("\\")) {
-            val canonical = File(relativePath).canonicalPath
+        val requestedFile = File(relativePath)
+        if (requestedFile.isAbsolute) {
+            val canonical = requestedFile.canonicalPath
             val projectRoots = listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project)
             val withinProject = projectRoots.any { root ->
                 canonical.startsWith(File(root).canonicalPath + File.separator)
             }
             if (!withinProject) return null
             return LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+        }
+
+        if (!preferredRoot.isNullOrBlank()) {
+            val canonicalRoot = File(preferredRoot).canonicalPath
+            val canonical = File(canonicalRoot, relativePath).canonicalPath
+            if (canonical == canonicalRoot || canonical.startsWith(canonicalRoot + File.separator)) {
+                val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+                if (file != null) return file
+            }
         }
 
         // Try project basePath first
@@ -386,8 +396,8 @@ abstract class AbstractMcpTool : McpTool {
      * @param relativePath Path relative to project root
      * @return The PsiFile, or null if not found
      */
-    protected fun getPsiFile(project: Project, relativePath: String): PsiFile? {
-        val virtualFile = resolveFile(project, relativePath) ?: return null
+    protected fun getPsiFile(project: Project, relativePath: String, preferredRoot: String? = null): PsiFile? {
+        val virtualFile = resolveFile(project, relativePath, preferredRoot) ?: return null
         return PsiManager.getInstance(project).findFile(virtualFile)
     }
 

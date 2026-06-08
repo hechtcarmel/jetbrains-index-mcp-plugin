@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.OpenFileResult
@@ -53,7 +54,7 @@ class OpenFileTool : AbstractMcpTool() {
             return createErrorResult("Parameter 'column' must be >= 1, got $column.")
         }
 
-        val virtualFile = resolveFile(project, filePath)
+        val virtualFile = resolveFile(project, filePath, optionalStringArg(arguments, ParamNames.PROJECT_PATH))
             ?: return createErrorResult("File not found: $filePath")
 
         val relativePath = getRelativePath(project, virtualFile)

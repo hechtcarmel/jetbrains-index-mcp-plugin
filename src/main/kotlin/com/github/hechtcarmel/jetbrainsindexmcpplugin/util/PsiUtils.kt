@@ -114,12 +114,12 @@ object PsiUtils {
         return PsiManager.getInstance(project).findFile(virtualFile)
     }
 
-    fun getVirtualFile(project: Project, relativePath: String): VirtualFile? {
+    fun getVirtualFile(project: Project, relativePath: String, preferredRoot: String? = null): VirtualFile? {
         val basePath = project.basePath ?: return null
-        return resolveLocalFile(relativePath, sequenceOf(basePath))
+        return resolveLocalFile(relativePath, rootCandidates(project, preferredRoot, includeModuleRoots = false))
     }
 
-    fun resolveVirtualFileAnywhere(project: Project, path: String): VirtualFile? {
+    fun resolveVirtualFileAnywhere(project: Project, path: String, preferredRoot: String? = null): VirtualFile? {
         // On Windows, \ is a path separator (and is forbidden in filenames), so normalizing is
         // always safe and necessary. On POSIX, \ is a valid filename character and must not be
         // treated as a separator.
@@ -142,7 +142,10 @@ object PsiUtils {
                 val internalPath = parts[1]
 
                 val homeExpandedJarPath = expandHome(jarPath)
-                val absoluteJarPath = resolveAbsolutePathString(homeExpandedJarPath, listOfNotNull(project.basePath).asSequence())
+                val absoluteJarPath = resolveAbsolutePathString(
+                    homeExpandedJarPath,
+                    rootCandidates(project, preferredRoot, includeModuleRoots = false)
+                )
                     ?: homeExpandedJarPath
 
                 val projectLibraryJars = project.getProjectLibraryJars()
@@ -158,19 +161,14 @@ object PsiUtils {
             }
         }
 
-        return getVirtualFile(project, normalizedPath)
+        return getVirtualFile(project, normalizedPath, preferredRoot)
     }
 
     fun resolveNavigableVirtualFile(project: Project, path: String): VirtualFile? {
         // Match resolveVirtualFileAnywhere() semantics for path normalization.
         val normalizedPath = if (SystemInfo.isWindows) path.replace('\\', '/') else path
         val virtualFileManager = VirtualFileManager.getInstance()
-        val rootCandidates = sequence {
-            project.basePath?.let { yield(it) }
-            for (root in ProjectUtils.getModuleContentRoots(project)) {
-                yield(root)
-            }
-        }
+        val rootCandidates = rootCandidates(project, preferredRoot = null, includeModuleRoots = true)
 
         val resolved = when {
             normalizedPath.startsWith("jar://") -> virtualFileManager.findFileByUrl(normalizedPath)
@@ -213,6 +211,20 @@ object PsiUtils {
 
     fun resolveAbsolutePathString(path: String, rootCandidates: Sequence<String> = emptySequence()): String? =
         resolveAbsolutePath(path, rootCandidates)?.toString()?.replace('\\', '/')
+
+    private fun rootCandidates(
+        project: Project,
+        preferredRoot: String?,
+        includeModuleRoots: Boolean
+    ): Sequence<String> = sequence {
+        preferredRoot?.takeIf { it.isNotBlank() }?.let { yield(it) }
+        project.basePath?.let { yield(it) }
+        if (includeModuleRoots) {
+            for (root in ProjectUtils.getModuleContentRoots(project)) {
+                if (root != preferredRoot && root != project.basePath) yield(root)
+            }
+        }
+    }
 
     private fun resolveAgainstRoot(path: String, root: String?): Path? {
         val rootPath = toPathOrNull(root) ?: return null

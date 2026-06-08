@@ -23,6 +23,7 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.codeStyle.NameUtil
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.DelegatingGlobalSearchScope
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.indexing.FindSymbolParameters
 import kotlinx.serialization.json.JsonObject
@@ -114,7 +115,7 @@ class FindFileTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val searchScope = resolveSearchScope(project, scope)
+            val searchScope = resolveSearchScope(project, scope, optionalStringArg(arguments, ParamNames.PROJECT_PATH))
             val matcher = createMatcher(query)
             val files = searchFiles(project, query, searchScope, scope, collectLimit, matcher)
 
@@ -124,7 +125,7 @@ class FindFileTool : AbstractMcpTool() {
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->
                 suspendingReadAction {
-                    extendSearchFiles(project, query, scope, seenKeys, limit)
+                    extendSearchFiles(project, query, scope, optionalStringArg(arguments, ParamNames.PROJECT_PATH), seenKeys, limit)
                 }
             }
 
@@ -172,10 +173,11 @@ class FindFileTool : AbstractMcpTool() {
         project: Project,
         query: String,
         scope: BuiltInSearchScope,
+        preferredRoot: String?,
         seenKeys: Set<String>,
         limit: Int
     ): List<PaginationService.SerializedResult> {
-        val searchScope = resolveSearchScope(project, scope)
+        val searchScope = resolveSearchScope(project, scope, preferredRoot)
         val matcher = createMatcher(query)
         val files = searchFiles(project, query, searchScope, scope, limit + seenKeys.size, matcher)
 
@@ -295,8 +297,20 @@ class FindFileTool : AbstractMcpTool() {
         }
     }
 
-    private fun resolveSearchScope(project: Project, scope: BuiltInSearchScope): GlobalSearchScope {
-        return BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+    private fun resolveSearchScope(project: Project, scope: BuiltInSearchScope, preferredRoot: String?): GlobalSearchScope {
+        val baseScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+        if (preferredRoot.isNullOrBlank()) return baseScope
+
+        val normalizedRoot = ProjectResolver.normalizePath(preferredRoot)
+        return object : DelegatingGlobalSearchScope(baseScope) {
+            override fun contains(file: VirtualFile): Boolean {
+                if (scope == BuiltInSearchScope.PROJECT_AND_LIBRARIES && ProjectUtils.isDependencyFile(project, file)) {
+                    return true
+                }
+                val normalizedFile = ProjectResolver.normalizePath(file.path)
+                return super.contains(file) && (normalizedFile == normalizedRoot || normalizedFile.startsWith("$normalizedRoot/"))
+            }
+        }
     }
 
 
