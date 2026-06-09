@@ -129,7 +129,9 @@ Omit `paths` to sync the entire project.
 
 These tools exist but are disabled by default. If you get "tool not found", they need to be enabled in IDE settings (Settings > Tools > Index MCP Server):
 
-`ide_build_project`, `ide_file_structure`, `ide_find_symbol`, `ide_read_file`, `ide_get_active_file`, `ide_open_file`, `ide_reformat_code`
+`ide_build_project`, `ide_file_structure`, `ide_find_symbol`, `ide_install_plugin`, `ide_read_file`, `ide_get_active_file`, `ide_open_file`, `ide_reformat_code`, `ide_restart`
+
+Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
 
 ## Detailed Tool Parameters
 

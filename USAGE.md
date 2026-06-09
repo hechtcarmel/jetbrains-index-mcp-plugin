@@ -67,6 +67,9 @@ These tools activate based on available language plugins:
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
   - [ide_open_file](#ide_open_file)
+- [Plugin Development](#plugin-development)
+  - [ide_install_plugin](#ide_install_plugin)
+  - [ide_restart](#ide_restart)
 - [Refactoring Tools](#refactoring-tools)
   - [ide_refactor_rename](#ide_refactor_rename)
   - [ide_move_file](#ide_move_file)
@@ -969,6 +972,80 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 - `SYMBOL` - Generic symbol when the IDE contributor does not expose a more specific kind
 
 For Markdown heading outlines, use `ide_file_structure`.
+
+---
+
+## Plugin Development
+
+> **Note**: Both tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
+
+### ide_install_plugin
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Install a plugin zip into the IDE, replacing any existing version. When no path is given, auto-detects the most recently modified zip in `build/distributions/` of the active project — the output of `./gradlew buildPlugin`.
+
+A restart is required for the change to take effect. Call `ide_restart` after this tool returns.
+
+**Use when:**
+- Installing a freshly built plugin without leaving the MCP session
+- Iterating on plugin development: build → install → restart in one flow
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No | Absolute path to the plugin zip. Defaults to auto-detection from `build/distributions/` |
+| `project_path` | string | No | Project path when multiple projects are open and `path` is omitted |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_install_plugin",
+    "arguments": {}
+  }
+}
+```
+
+**Example Response:**
+
+```
+Plugin 'com.example.my-plugin' installed from my-plugin-1.0.0.zip. Restart the IDE to load the updated plugin (call ide_restart).
+```
+
+---
+
+### ide_restart
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Restart the IDE. This terminates the MCP connection — the AI assistant will lose connectivity and must reconnect after the IDE comes back up.
+
+**Use when:**
+- Loading a freshly installed plugin after `ide_install_plugin`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Project path when multiple projects are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_restart",
+    "arguments": {}
+  }
+}
+```
+
+> **Note**: The MCP connection drops immediately after this call. Reconnect your AI assistant client before making further tool calls.
 
 ---
 

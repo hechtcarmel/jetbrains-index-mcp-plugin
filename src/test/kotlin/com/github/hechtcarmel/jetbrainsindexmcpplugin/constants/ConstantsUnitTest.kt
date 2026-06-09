@@ -68,7 +68,9 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.OPTIMIZE_IMPORTS,
             ToolNames.CONVERT_JAVA_TO_KOTLIN,
             ToolNames.GET_ACTIVE_FILE,
-            ToolNames.OPEN_FILE
+            ToolNames.OPEN_FILE,
+            ToolNames.INSTALL_PLUGIN,
+            ToolNames.RESTART_IDE
         )
 
         for (name in expectedNames) {

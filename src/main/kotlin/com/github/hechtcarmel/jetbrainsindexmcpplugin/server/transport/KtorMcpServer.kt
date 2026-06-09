@@ -332,6 +332,8 @@ class KtorMcpServer(
             } else {
                 call.respond(HttpStatusCode.Accepted)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.error("Error processing MCP request (Streamable HTTP)", e)
             call.respondText(
@@ -387,6 +389,8 @@ class KtorMcpServer(
                         protocolVersion = McpConstants.STREAMABLE_HTTP_MCP_PROTOCOL_VERSION
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 LOG.error("Error processing MCP batch message (Streamable HTTP)", e)
                 createJsonRpcError(parsed?.get("id"), -32603, e.message ?: "Internal error")
@@ -424,6 +428,8 @@ class KtorMcpServer(
             } else {
                 call.respond(HttpStatusCode.InternalServerError)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.error("Error processing initialize (Streamable HTTP)", e)
             call.respondText(
@@ -469,6 +475,8 @@ class KtorMcpServer(
             } else {
                 call.respond(HttpStatusCode.Accepted)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.error("Error processing MCP request (Streamable HTTP)", e)
             call.respondText(
@@ -518,6 +526,8 @@ class KtorMcpServer(
                         LOG.warn("Failed to send response to session $sessionId - session may have closed")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 LOG.error("Error processing MCP request (SSE)", e)
                 sseSessionManager.sendEvent(

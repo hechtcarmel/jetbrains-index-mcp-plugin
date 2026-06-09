@@ -35,6 +35,10 @@ object ToolNames {
     const val GET_ACTIVE_FILE = "ide_get_active_file"
     const val OPEN_FILE = "ide_open_file"
 
+    // Plugin development tools
+    const val INSTALL_PLUGIN = "ide_install_plugin"
+    const val RESTART_IDE = "ide_restart"
+
     /**
      * All known tool names, sorted alphabetically.
      * Keep this list in sync when adding or removing tool name constants.
@@ -54,6 +58,7 @@ object ToolNames {
         FIND_SYMBOL,
         GET_ACTIVE_FILE,
         INDEX_STATUS,
+        INSTALL_PLUGIN,
         REFACTOR_MOVE,
         OPEN_FILE,
         OPTIMIZE_IMPORTS,
@@ -61,6 +66,7 @@ object ToolNames {
         REFACTOR_RENAME,
         REFACTOR_SAFE_DELETE,
         REFORMAT_CODE,
+        RESTART_IDE,
         SEARCH_TEXT,
         SYNC_FILES,
         TYPE_HIERARCHY
