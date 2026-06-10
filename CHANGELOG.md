@@ -3,8 +3,10 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+
+## [4.21.0] - 2026-06-10
 ### Added
-Both tools are **disabled by default** and must be enabled in Settings → Index MCP Server before use.
+Both tools are **disabled by default** and must be enabled in Settings → Tools → Index MCP Server before use.
 
 - **`ide_install_plugin`** — install a plugin zip into the IDE, replacing any existing version. Auto-detects the output of `./gradlew buildPlugin` (`build/distributions/*.zip`) when no path is supplied; accepts an explicit path for any plugin zip. A restart is required to load the updated plugin.
 - **`ide_restart`** — restart the IDE. Terminates the MCP connection immediately; no further tool calls should be made after invoking this. Typical use: `ide_install_plugin` followed by `ide_restart`.
@@ -16,10 +18,6 @@ Both tools are **disabled by default** and must be enabled in Settings → Index
 ## [4.19.3] - 2026-06-05
 ### Fixed
 - Replaced internal IntelliJ `PluginManager.findEnabledPlugin` usage with public plugin-state checks for Marketplace approval.
-- Fixed `ide_file_structure` for Lombok/augmented Java classes by skipping generated PSI members without real source offsets. Fixes [#201](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/201).
-
-## [4.19.2] - 2026-06-04
-### Fixed
 - Fixed `ide_file_structure` for Lombok/augmented Java classes by skipping generated PSI members without real source offsets. Fixes [#201](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/201).
 
 ## [4.19.1] - 2026-05-26
