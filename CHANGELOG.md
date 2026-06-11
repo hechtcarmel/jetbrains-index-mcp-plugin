@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [4.21.1] - 2026-06-11
+### Fixed
+- Fixed JetBrains Marketplace compatibility issue (internal IntelliJ API usage in `ide_restart`).
+
 ## [4.21.0] - 2026-06-10
 ### Added
 Both tools are **disabled by default** and must be enabled in Settings → Tools → Index MCP Server before use.

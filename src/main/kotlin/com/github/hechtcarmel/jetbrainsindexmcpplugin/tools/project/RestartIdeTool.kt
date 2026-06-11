@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ex.ApplicationEx
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 
@@ -35,7 +36,9 @@ class RestartIdeTool : AbstractMcpTool() {
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
         val app = ApplicationManager.getApplication()
         app.invokeLater {
-            app.saveAll()
+            // Flush unsaved documents up front; the platform's exit sequence persists
+            // application and project settings on its own (SAVE flag in ApplicationImpl.exit).
+            FileDocumentManager.getInstance().saveAllDocuments()
             if (app is ApplicationEx) app.restart(true) else app.restart()
         }
         return createSuccessResult("Restarting IDE.")
