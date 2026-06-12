@@ -70,6 +70,10 @@ These tools activate based on available language plugins:
 - [Plugin Development](#plugin-development)
   - [ide_install_plugin](#ide_install_plugin)
   - [ide_restart](#ide_restart)
+- [Project Window Management](#project-window-management)
+  - [ide_set_power_save_mode](#ide_set_power_save_mode)
+  - [ide_close_project](#ide_close_project)
+  - [ide_open_project](#ide_open_project)
 - [Refactoring Tools](#refactoring-tools)
   - [ide_refactor_rename](#ide_refactor_rename)
   - [ide_move_file](#ide_move_file)
@@ -990,6 +994,19 @@ A restart is required for the change to take effect. Call `ide_restart` after th
 **Use when:**
 - Installing a freshly built plugin without leaving the MCP session
 - Iterating on plugin development: build → install → restart in one flow
+## Project Window Management
+
+> **Note**: All tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
+
+### ide_set_power_save_mode
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Enable or disable IDE Power Save Mode. When enabled, background inspections and code analysis are suspended, reducing CPU and memory pressure. The index and all code intelligence operations (find usages, refactoring, navigation) remain fully functional.
+
+**Use when:**
+- Reducing resource usage on projects open for reference but not actively edited
+- Manually controlling power save state independently of lifecycle management
 
 **Parameters:**
 
@@ -997,6 +1014,8 @@ A restart is required for the change to take effect. Call `ide_restart` after th
 |-----------|------|----------|-------------|
 | `path` | string | No | Absolute path to the plugin zip. Defaults to auto-detection from `build/distributions/` |
 | `project_path` | string | No | Project path when multiple projects are open and `path` is omitted |
+| `enabled` | boolean | Yes | `true` to enable Power Save Mode, `false` to disable |
+| `project_path` | string | No | Project path when multiple projects are open |
 
 **Example Request:**
 
@@ -1006,6 +1025,10 @@ A restart is required for the change to take effect. Call `ide_restart` after th
   "params": {
     "name": "ide_install_plugin",
     "arguments": {}
+    "name": "ide_set_power_save_mode",
+    "arguments": {
+      "enabled": true
+    }
   }
 }
 ```
@@ -1026,6 +1049,17 @@ Restart the IDE. This terminates the MCP connection — the AI assistant will lo
 
 **Use when:**
 - Loading a freshly installed plugin after `ide_install_plugin`
+---
+
+### ide_close_project
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Close an open project window and free its memory. The project can be reopened later via Recent Projects or `ide_open_project`.
+
+**Use when:**
+- Freeing memory from a project that is no longer needed
+- Closing a project window programmatically
 
 **Parameters:**
 
@@ -1040,12 +1074,45 @@ Restart the IDE. This terminates the MCP connection — the AI assistant will lo
   "method": "tools/call",
   "params": {
     "name": "ide_restart",
+    "name": "ide_close_project",
     "arguments": {}
   }
 }
 ```
 
 > **Note**: The MCP connection drops immediately after this call. Reconnect your AI assistant client before making further tool calls.
+---
+
+### ide_open_project
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Open a project by filesystem path and block until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately.
+
+**Use when:**
+- Opening a project that is not currently open in the IDE
+- Ensuring a project is indexed before running code intelligence tools
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Filesystem path of the project directory to open |
+| `project_path` | string | No | Selects the JSON-RPC context project when multiple are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_open_project",
+    "arguments": {
+      "path": "/Users/dev/myproject"
+    }
+  }
+}
+```
 
 ---
 

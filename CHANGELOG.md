@@ -24,6 +24,10 @@ Both tools are **disabled by default** and must be enabled in Settings → Tools
 - Replaced internal IntelliJ `PluginManager.findEnabledPlugin` usage with public plugin-state checks for Marketplace approval.
 - Fixed `ide_file_structure` for Lombok/augmented Java classes by skipping generated PSI members without real source offsets. Fixes [#201](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/201).
 
+## [4.19.2] - 2026-06-04
+### Fixed
+- Fixed `ide_file_structure` for Lombok/augmented Java classes by skipping generated PSI members without real source offsets. Fixes [#201](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/201).
+
 ## [4.19.1] - 2026-05-26
 ### Fixed
 - Fixed `ide_search_text` regex search and `filePattern` filtering for [#190](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/190).

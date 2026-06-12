@@ -132,6 +132,7 @@ These tools exist but are disabled by default. If you get "tool not found", they
 `ide_build_project`, `ide_file_structure`, `ide_find_symbol`, `ide_install_plugin`, `ide_read_file`, `ide_get_active_file`, `ide_open_file`, `ide_reformat_code`, `ide_restart`
 
 Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
+`ide_build_project`, `ide_close_project`, `ide_file_structure`, `ide_find_symbol`, `ide_open_file`, `ide_open_project`, `ide_read_file`, `ide_get_active_file`, `ide_reformat_code`, `ide_set_power_save_mode`
 
 ## Detailed Tool Parameters
 

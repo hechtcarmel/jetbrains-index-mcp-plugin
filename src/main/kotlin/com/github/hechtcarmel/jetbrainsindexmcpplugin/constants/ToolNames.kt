@@ -38,6 +38,10 @@ object ToolNames {
     // Plugin development tools
     const val INSTALL_PLUGIN = "ide_install_plugin"
     const val RESTART_IDE = "ide_restart"
+    // Project window management
+    const val CLOSE_PROJECT = "ide_close_project"
+    const val OPEN_PROJECT = "ide_open_project"
+    const val SET_POWER_SAVE_MODE = "ide_set_power_save_mode"
 
     /**
      * All known tool names, sorted alphabetically.
@@ -46,6 +50,7 @@ object ToolNames {
     val ALL: List<String> = listOf(
         BUILD_PROJECT,
         CALL_HIERARCHY,
+        CLOSE_PROJECT,
         CONVERT_JAVA_TO_KOTLIN,
         DIAGNOSTICS,
         FILE_STRUCTURE,
@@ -61,6 +66,7 @@ object ToolNames {
         INSTALL_PLUGIN,
         REFACTOR_MOVE,
         OPEN_FILE,
+        OPEN_PROJECT,
         OPTIMIZE_IMPORTS,
         READ_FILE,
         REFACTOR_RENAME,
@@ -68,6 +74,7 @@ object ToolNames {
         REFORMAT_CODE,
         RESTART_IDE,
         SEARCH_TEXT,
+        SET_POWER_SAVE_MODE,
         SYNC_FILES,
         TYPE_HIERARCHY
     )
