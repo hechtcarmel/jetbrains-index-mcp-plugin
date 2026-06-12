@@ -361,6 +361,36 @@ Build project using IDE's build system (JPS, Gradle, Maven).
 **Returns**: `{ success, aborted, errors?, warnings?, buildMessages: [{message, file, line, column, severity}], truncated, rawOutput?, durationMs }`
 Note: `errors`/`warnings` are `null` when no messages were captured (not 0).
 
+### ide_set_power_save_mode (disabled by default)
+Enable or disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis; the index and code intelligence tools stay functional.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | boolean | yes | `true` to enable, `false` to disable |
+| `project_path` | string | no | Project root path |
+
+**Returns**: text confirmation, e.g. `Power Save Mode enabled (IDE-wide).`
+
+### ide_close_project (disabled by default)
+Close an open project window and free its memory. Non-blocking; returns once the close is scheduled. Refuses to close the last open project.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Project root path (required when multiple projects are open) |
+
+**Returns**: text confirmation, e.g. `Project 'name' is closing.`
+
+### ide_open_project (disabled by default)
+Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | yes | Absolute path of the project directory |
+| `timeoutSeconds` | integer | no | Max seconds to wait for open + indexing (default 600) |
+| `project_path` | string | no | JSON-RPC context project when multiple are open |
+
+**Returns**: text confirmation; on indexing timeout returns success with a note to check `ide_index_status`.
+
 ---
 
 ## Editor Tools
@@ -385,3 +415,26 @@ Open a file in the editor with optional navigation.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ file, opened, message }`
+
+---
+
+## Plugin Development Tools
+
+### ide_install_plugin (disabled by default)
+Install a plugin zip into the IDE, replacing any existing version. Auto-detects the newest `build/distributions/*.zip` of the active project when `path` is omitted. Requires `ide_restart` to load the new version.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | no | Absolute path to the plugin zip (default: auto-detect) |
+| `project_path` | string | no | Project root path when `path` is omitted |
+
+**Returns**: text confirmation with the installed plugin id and zip name.
+
+### ide_restart (disabled by default)
+Restart the IDE. Terminates the MCP connection immediately — reconnect after the IDE comes back up.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Project root path |
+
+**Returns**: text confirmation; the connection drops right after.

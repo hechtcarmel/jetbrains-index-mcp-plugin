@@ -6,7 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.ide.PowerSaveMode
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 class SetPowerSaveModeTool : AbstractMcpTool() {
@@ -22,12 +22,15 @@ class SetPowerSaveModeTool : AbstractMcpTool() {
         auto-import suggestions, reducing CPU and memory usage. The index and all code
         intelligence operations (find usages, refactoring, navigation) remain fully functional.
 
+        The setting is IDE-wide: it affects every open project, regardless of which
+        project serves as the JSON-RPC context.
+
         Useful when a project is open but not being actively edited — for example, when
         running searches or refactoring across multiple open projects.
 
         Parameters:
         - enabled: true to enable Power Save Mode, false to disable it
-        - project_path (optional): only needed when multiple projects are open
+        - project_path (optional): selects the JSON-RPC context project when multiple are open
 
         Example: { "enabled": true }
     """.trimIndent()
@@ -38,13 +41,13 @@ class SetPowerSaveModeTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
-        val enabled = arguments["enabled"]?.jsonPrimitive?.boolean
-            ?: return createErrorResult("Missing required parameter: enabled")
+        val enabled = arguments["enabled"]?.jsonPrimitive?.booleanOrNull
+            ?: return createErrorResult("Missing or invalid required parameter: enabled (must be a boolean)")
 
         edtAction { PowerSaveMode.setEnabled(enabled) }
 
         return createSuccessResult(
-            "Power Save Mode ${if (enabled) "enabled" else "disabled"} for '${project.name}'"
+            "Power Save Mode ${if (enabled) "enabled" else "disabled"} (IDE-wide)."
         )
     }
 }

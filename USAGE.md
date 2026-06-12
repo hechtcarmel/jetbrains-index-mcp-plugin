@@ -994,19 +994,6 @@ A restart is required for the change to take effect. Call `ide_restart` after th
 **Use when:**
 - Installing a freshly built plugin without leaving the MCP session
 - Iterating on plugin development: build → install → restart in one flow
-## Project Window Management
-
-> **Note**: All tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
-
-### ide_set_power_save_mode
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
-Enable or disable IDE Power Save Mode. When enabled, background inspections and code analysis are suspended, reducing CPU and memory pressure. The index and all code intelligence operations (find usages, refactoring, navigation) remain fully functional.
-
-**Use when:**
-- Reducing resource usage on projects open for reference but not actively edited
-- Manually controlling power save state independently of lifecycle management
 
 **Parameters:**
 
@@ -1014,8 +1001,6 @@ Enable or disable IDE Power Save Mode. When enabled, background inspections and 
 |-----------|------|----------|-------------|
 | `path` | string | No | Absolute path to the plugin zip. Defaults to auto-detection from `build/distributions/` |
 | `project_path` | string | No | Project path when multiple projects are open and `path` is omitted |
-| `enabled` | boolean | Yes | `true` to enable Power Save Mode, `false` to disable |
-| `project_path` | string | No | Project path when multiple projects are open |
 
 **Example Request:**
 
@@ -1025,10 +1010,6 @@ Enable or disable IDE Power Save Mode. When enabled, background inspections and 
   "params": {
     "name": "ide_install_plugin",
     "arguments": {}
-    "name": "ide_set_power_save_mode",
-    "arguments": {
-      "enabled": true
-    }
   }
 }
 ```
@@ -1049,6 +1030,72 @@ Restart the IDE. This terminates the MCP connection — the AI assistant will lo
 
 **Use when:**
 - Loading a freshly installed plugin after `ide_install_plugin`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Project path when multiple projects are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_restart",
+    "arguments": {}
+  }
+}
+```
+
+> **Note**: The MCP connection drops immediately after this call. Reconnect your AI assistant client before making further tool calls.
+
+---
+
+## Project Window Management
+
+> **Note**: All tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
+
+### ide_set_power_save_mode
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Enable or disable IDE Power Save Mode. When enabled, background inspections and code analysis are suspended, reducing CPU and memory pressure. The index and all code intelligence operations (find usages, refactoring, navigation) remain fully functional.
+
+The setting is IDE-wide: it affects every open project, regardless of which project serves as the JSON-RPC context.
+
+**Use when:**
+- Reducing resource usage on projects open for reference but not actively edited
+- Cutting background analysis cost while running searches or refactorings across multiple open projects
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | boolean | Yes | `true` to enable Power Save Mode, `false` to disable |
+| `project_path` | string | No | Project path when multiple projects are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_set_power_save_mode",
+    "arguments": {
+      "enabled": true
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```
+Power Save Mode enabled (IDE-wide).
+```
+
 ---
 
 ### ide_close_project
@@ -1056,6 +1103,8 @@ Restart the IDE. This terminates the MCP connection — the AI assistant will lo
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
 Close an open project window and free its memory. The project can be reopened later via Recent Projects or `ide_open_project`.
+
+Non-blocking: the tool returns as soon as the close is scheduled. Refuses to close the last open project — the MCP server needs at least one open project to serve requests (including `ide_open_project`).
 
 **Use when:**
 - Freeing memory from a project that is no longer needed
@@ -1073,21 +1122,29 @@ Close an open project window and free its memory. The project can be reopened la
 {
   "method": "tools/call",
   "params": {
-    "name": "ide_restart",
     "name": "ide_close_project",
-    "arguments": {}
+    "arguments": {
+      "project_path": "/Users/dev/myproject"
+    }
   }
 }
 ```
 
-> **Note**: The MCP connection drops immediately after this call. Reconnect your AI assistant client before making further tool calls.
+**Example Response:**
+
+```
+Project 'myproject' is closing.
+```
+
 ---
 
 ### ide_open_project
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
-Open a project by filesystem path and block until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately.
+Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, returns successfully right away.
+
+Requires at least one project to already be open (needed as the JSON-RPC context). Opening a project the IDE has not seen before may show the modal "Trust project?" dialog, which only a human can answer; the call fails after `timeoutSeconds` if the project has not opened by then. If the project opens but indexing outlasts the timeout, the tool returns success with a note to check `ide_index_status`.
 
 **Use when:**
 - Opening a project that is not currently open in the IDE
@@ -1097,7 +1154,8 @@ Open a project by filesystem path and block until indexing is complete, so subse
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | Yes | Filesystem path of the project directory to open |
+| `path` | string | Yes | Absolute filesystem path of the project directory to open |
+| `timeoutSeconds` | integer | No | Maximum seconds to wait for opening + indexing. Default: 600 |
 | `project_path` | string | No | Selects the JSON-RPC context project when multiple are open |
 
 **Example Request:**
@@ -1112,6 +1170,12 @@ Open a project by filesystem path and block until indexing is complete, so subse
     }
   }
 }
+```
+
+**Example Response:**
+
+```
+Project 'myproject' is open and ready.
 ```
 
 ---

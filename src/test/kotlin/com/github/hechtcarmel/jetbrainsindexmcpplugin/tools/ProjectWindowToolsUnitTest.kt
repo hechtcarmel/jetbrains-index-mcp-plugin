@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectT
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ProjectWindowToolsUnitTest : TestCase() {
@@ -52,6 +53,16 @@ class ProjectWindowToolsUnitTest : TestCase() {
         val required = OpenProjectTool().inputSchema["required"]
             ?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
         assertFalse(required.contains("project_path"))
+    }
+
+    fun testOpenProjectToolHasOptionalTimeoutSeconds() {
+        val schema = OpenProjectTool().inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull(properties)
+        assertTrue(properties!!.containsKey("timeoutSeconds"))
+        val required = schema["required"]
+            ?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+        assertFalse(required.contains("timeoutSeconds"))
     }
 
     fun testAllToolsInToolNamesAll() {

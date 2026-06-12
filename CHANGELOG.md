@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [4.22.0] - 2026-06-12
+### Added
+All three tools are **disabled by default** and must be enabled in Settings → Tools → Index MCP Server before use.
+
+- **`ide_set_power_save_mode`** — enable or disable IDE Power Save Mode (IDE-wide). Suspends background inspections and on-the-fly code analysis to cut CPU/memory usage while the index and all code intelligence operations (find usages, refactoring, navigation) remain fully functional.
+- **`ide_close_project`** — close an open project window and free its memory. Non-blocking; the project can be reopened via Recent Projects or `ide_open_project`. Refuses to close the last open project so the MCP server always keeps a JSON-RPC context project.
+- **`ide_open_project`** — open a project by absolute filesystem path and wait until indexing completes (`timeoutSeconds`, default 600), so follow-up tool calls succeed immediately. Idempotent for already-open projects; reports partial success if the project opens but indexing exceeds the timeout.
+
 ## [4.21.1] - 2026-06-11
 ### Fixed
 - Fixed JetBrains Marketplace compatibility issue (internal IntelliJ API usage in `ide_restart`).
@@ -22,10 +30,6 @@ Both tools are **disabled by default** and must be enabled in Settings → Tools
 ## [4.19.3] - 2026-06-05
 ### Fixed
 - Replaced internal IntelliJ `PluginManager.findEnabledPlugin` usage with public plugin-state checks for Marketplace approval.
-- Fixed `ide_file_structure` for Lombok/augmented Java classes by skipping generated PSI members without real source offsets. Fixes [#201](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/201).
-
-## [4.19.2] - 2026-06-04
-### Fixed
 - Fixed `ide_file_structure` for Lombok/augmented Java classes by skipping generated PSI members without real source offsets. Fixes [#201](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/201).
 
 ## [4.19.1] - 2026-05-26

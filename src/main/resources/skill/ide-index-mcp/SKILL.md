@@ -129,10 +129,10 @@ Omit `paths` to sync the entire project.
 
 These tools exist but are disabled by default. If you get "tool not found", they need to be enabled in IDE settings (Settings > Tools > Index MCP Server):
 
-`ide_build_project`, `ide_file_structure`, `ide_find_symbol`, `ide_install_plugin`, `ide_read_file`, `ide_get_active_file`, `ide_open_file`, `ide_reformat_code`, `ide_restart`
+`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_restart`, `ide_set_power_save_mode`
 
 Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
-`ide_build_project`, `ide_close_project`, `ide_file_structure`, `ide_find_symbol`, `ide_open_file`, `ide_open_project`, `ide_read_file`, `ide_get_active_file`, `ide_reformat_code`, `ide_set_power_save_mode`
+Note: `ide_close_project` refuses to close the last open project; `ide_open_project` requires an absolute path and may take up to `timeoutSeconds` (default 600) while the project indexes.
 
 ## Detailed Tool Parameters
 

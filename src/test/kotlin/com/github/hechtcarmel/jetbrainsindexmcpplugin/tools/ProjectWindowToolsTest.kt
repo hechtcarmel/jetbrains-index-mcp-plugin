@@ -49,14 +49,30 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         assertTrue(resultText(result).contains("enabled", ignoreCase = true))
     }
 
-    fun testCloseProjectReturnsSuccess() = runBlocking {
-        // We can't actually close the test project (it would break the test runner),
-        // but we verify the tool accepts the call and returns a success message.
-        // The close itself is scheduled via invokeLater and fires after the test.
-        val result = CloseProjectTool().execute(project, buildJsonObject { })
+    fun testSetPowerSaveModeRejectsNonBooleanEnabled() = runBlocking {
+        val result = SetPowerSaveModeTool().execute(project, buildJsonObject { put("enabled", "yes") })
+
+        assertTrue(result.isError)
+        assertTrue(resultText(result).contains("enabled", ignoreCase = true))
+    }
+
+    fun testSetPowerSaveModeMessageSaysIdeWide() = runBlocking {
+        // Power Save Mode is an application-level setting; the message must not
+        // imply it only affects the context project.
+        val result = SetPowerSaveModeTool().execute(project, buildJsonObject { put("enabled", true) })
 
         assertFalse(result.isError)
-        assertTrue(resultText(result).contains(project.name))
+        assertTrue(resultText(result).contains("IDE-wide"))
+    }
+
+    fun testCloseProjectRefusesToCloseLastOpenProject() = runBlocking {
+        // The test fixture project is the only open project. Closing it would leave
+        // the MCP server without a JSON-RPC context project (every call, including
+        // ide_open_project, fails with no_project_open), so the tool must refuse.
+        val result = CloseProjectTool().execute(project, buildJsonObject { })
+
+        assertTrue(result.isError)
+        assertTrue(resultText(result).contains("last open project", ignoreCase = true))
     }
 
     fun testOpenProjectRequiresPathParam() = runBlocking {
@@ -66,6 +82,33 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         assertTrue(resultText(result).contains("path", ignoreCase = true))
     }
 
+    fun testOpenProjectRejectsBlankPath() = runBlocking {
+        val result = OpenProjectTool().execute(project, buildJsonObject { put("path", "   ") })
+
+        assertTrue(result.isError)
+        assertTrue(resultText(result).contains("path", ignoreCase = true))
+    }
+
+    fun testOpenProjectRejectsRelativePath() = runBlocking {
+        val result = OpenProjectTool().execute(project, buildJsonObject { put("path", "relative/project/dir") })
+
+        assertTrue(result.isError)
+        assertTrue(resultText(result).contains("absolute", ignoreCase = true))
+    }
+
+    fun testOpenProjectRejectsNonPositiveTimeout() = runBlocking {
+        val result = OpenProjectTool().execute(
+            project,
+            buildJsonObject {
+                put("path", "/nonexistent/project/path")
+                put("timeoutSeconds", 0)
+            }
+        )
+
+        assertTrue(result.isError)
+        assertTrue(resultText(result).contains("timeoutSeconds"))
+    }
+
     fun testOpenProjectReturnsErrorForNonExistentPath() = runBlocking {
         val result = OpenProjectTool().execute(
             project,
@@ -73,5 +116,15 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         )
 
         assertTrue(result.isError)
+    }
+
+    fun testOpenProjectIsIdempotentWhenProjectAlreadyOpen() = runBlocking {
+        val basePath = project.basePath
+        assertNotNull("test project must have a basePath", basePath)
+
+        val result = OpenProjectTool().execute(project, buildJsonObject { put("path", basePath!!) })
+
+        assertFalse(result.isError)
+        assertTrue(resultText(result).contains("already open", ignoreCase = true))
     }
 }
