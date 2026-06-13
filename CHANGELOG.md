@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+
+## [4.23.0] - 2026-06-13
 ### Added — Project lifecycle management
 
 Automatic sleep/wake management for IntelliJ projects used as MCP servers. When multiple
