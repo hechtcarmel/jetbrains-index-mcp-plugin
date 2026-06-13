@@ -500,7 +500,17 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             // Project window management tools
             ToolNames.CLOSE_PROJECT,
             ToolNames.OPEN_PROJECT,
-            ToolNames.SET_POWER_SAVE_MODE
+            ToolNames.SET_POWER_SAVE_MODE,
+            // Lifecycle management tools
+            ToolNames.ENROLL_ALL_PROJECTS,
+            ToolNames.GET_PROJECT_MODES,
+            ToolNames.LIFECYCLE_LOG,
+            ToolNames.LIFECYCLE_LOG_FILE, // ide_set_lifecycle_log_file
+            ToolNames.PROJECT_STATUS,
+            ToolNames.RELEASE_ALL_PROJECTS,
+            ToolNames.RELEASE_PROJECT,
+            ToolNames.SET_ALL_PROJECT_MODES,
+            ToolNames.SET_PROJECT_MODE
         )
         if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
             expectedTools.add(ToolNames.CONVERT_JAVA_TO_KOTLIN)

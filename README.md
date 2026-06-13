@@ -55,6 +55,16 @@ These tools activate based on installed language plugins:
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
 - **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
 
+**Project Lifecycle Management**
+
+When working across many projects simultaneously, idle ones consume memory unnecessarily and leave editors open for no reason. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity — no configuration required.
+
+- **Automatic sleep/wake** - Projects move from active → background (Power Save on) → dormant (editors closed, PSI cache freed) → closed (fully unloaded), and auto-reopen transparently on the next MCP call
+- **`ide_project_status`** - Combined snapshot of every open and managed project
+- **`ide_set_project_mode`** / **`ide_get_project_modes`** - Explicit mode control
+- **`ide_release_project`** - Unenroll a project from lifecycle management
+- **`ide_lifecycle_log`** - Timestamped event log with trigger reasons, for diagnosing unexpected behaviour. The ring buffer is always active; file output enables via Help → Diagnostic Tools → Debug Log Settings
+
 ### Why Use This Plugin?
 
 Unlike simple text-based code analysis, this plugin gives AI assistants access to:
@@ -74,6 +84,7 @@ Perfect for AI-assisted development workflows where accuracy and safety matter.
 - [Client Configuration](#client-configuration)
 - [Available Tools](#available-tools)
 - [Multi-Project Support](#multi-project-support)
+- [Lifecycle Management](#lifecycle-management)
 - [Tool Window](#tool-window)
 - [Error Codes](#error-codes)
 - [Requirements](#requirements)
@@ -225,7 +236,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **21 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **38 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -277,6 +288,34 @@ PHP file structure support requires the PHP plugin and is available in PhpStorm 
 | `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
 
 > **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
+
+### Project Lifecycle Management Tools
+
+`ide_project_status` is enabled by default. All other lifecycle tools are disabled by default — enable them in Settings → Tools → Index MCP Server.
+
+| Tool | Description | Default |
+|------|-------------|---------|
+| `ide_project_status` | Combined snapshot: every open project and every managed project with open/managed/mode per row | Enabled |
+| `ide_set_project_mode` | Set a project's lifecycle mode: `active`, `background`, `dormant`, or `closed` | Disabled |
+| `ide_get_project_modes` | List all managed projects and their current modes, including closed ones | Disabled |
+| `ide_set_all_project_modes` | Set all managed projects to the same mode at once (active/background/dormant) | Disabled |
+| `ide_enroll_all_projects` | Enroll every currently open project in lifecycle management | Disabled |
+| `ide_release_project` | Unenroll a project from lifecycle management | Disabled |
+| `ide_release_all_projects` | Release every managed project (including closed ones) from lifecycle management | Disabled |
+| `ide_lifecycle_log` | Query recent lifecycle events from a ring buffer; each event has a `trigger` field explaining the cause | Disabled |
+
+**Lifecycle modes** — transitions are automatic, driven by window focus and MCP activity:
+
+| Mode | Power Save | Editors | PSI Cache | Auto-transition |
+|------|-----------|---------|-----------|-----------------|
+| `active` | off | open | loaded | focus lost for N min → background |
+| `background` | on | open | loaded | N min idle → dormant |
+| `dormant` | on | closed | freed | N min idle → closed |
+| `closed` | — | — | freed | next MCP call → background (auto-reopens) |
+
+Timing thresholds are configurable in Settings. Projects enroll automatically on first MCP use and auto-reopen when an MCP tool targets a closed project — existing tools require no changes.
+
+**MCP availability guarantee:** the lifecycle manager never closes the last open managed project — it stays in `dormant` (memory mostly freed, MCP still reachable). If all projects are somehow closed (e.g., the user manually closes the last window), any MCP tool call without a `project_path` automatically reopens a managed-closed project to restore access.
 
 ### Tool Availability by IDE
 
@@ -334,6 +373,25 @@ The plugin supports **workspace projects** where a single IDE window contains mu
 
 When an error occurs, the response returns `available_projects`. By default this includes workspace sub-projects so AI agents can discover valid module content roots. If you want smaller error payloads, switch **Project list in error responses** to **Compact** in plugin settings to return only top-level project roots.
 
+## Lifecycle Management
+
+When you use the plugin across multiple projects simultaneously — common when an AI agent is working across a monorepo — open projects compete for memory even when they're not being actively used. Lifecycle management handles this automatically.
+
+Projects enroll on their first MCP tool call and are notified via balloon. From that point, transitions happen based on focus and MCP activity:
+
+1. **Focus lost** → after 2 minutes, Power Save Mode on (`background`)
+2. **No MCP calls** → after 2 more minutes, editors close and PSI cache is freed (`dormant`)
+3. **Still idle** → after 10 minutes, project window closes entirely (`closed`)
+4. **Next MCP call** → project reopens automatically, indexes, and responds normally
+
+No changes are needed in existing MCP tools — `ProjectResolver` handles the reopen transparently. The auto-reopen typically takes 5–15 seconds on first open; subsequent opens are faster.
+
+The lifecycle manager never closes the last open managed project: it stays dormant (memory mostly freed, MCP still reachable). If all projects are closed by other means, any tool call automatically reopens one managed project to restore MCP access.
+
+Use `ide_project_status` to see the current state of all projects at a glance, and `ide_lifecycle_log` to see what happened and why — useful when a project closed unexpectedly. Each log event has a `trigger` field: `timer:inactivity`, `timer:close`, `focus_gained`, `mcp_call`, `auto_open`, `user`, etc.
+
+Timing thresholds are configurable in Settings → Index MCP Server → Project Lifecycle Management.
+
 ## Tool Window
 
 The plugin adds an "Index MCP Server" tool window (bottom panel) that shows:
@@ -390,6 +448,12 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Project List in Error Responses | Expanded | Controls `available_projects` detail for invalid/missing `project_path` errors. `Expanded` includes workspace sub-projects; `Compact` returns only top-level project roots |
 | Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
 | Disabled Tools | 7 tools | Per-tool enable/disable toggles. Some tools are disabled by default to keep the tool list focused |
+| **Lifecycle Management** | | |
+| Enable lifecycle management | true | Master toggle for the automatic sleep/wake state machine |
+| Active → Background (minutes) | 2 | Focus-loss grace period before switching to Power Save Mode |
+| Background → Dormant (minutes) | 2 | MCP-idle time before closing editors and freeing PSI caches |
+| Dormant → Closed (minutes) | 10 | Idle time before fully closing the project window |
+| Event log buffer size | 500 | How many events `ide_lifecycle_log` retains in memory (100–10,000) |
 
 ## Requirements
 

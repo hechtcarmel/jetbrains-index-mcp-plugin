@@ -14,6 +14,15 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.EnrollAllProjectsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.GetProjectModesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.LifecycleLogTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ProjectStatusTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseAllProjectsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProjectModesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetLifecycleLogFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetProjectModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
@@ -262,6 +271,17 @@ class ToolRegistry {
         // Editor tools (universal, disabled by default)
         register(GetActiveFileTool())
         register(OpenFileTool())
+
+        // Lifecycle tools
+        register(EnrollAllProjectsTool())
+        register(GetProjectModesTool())
+        register(LifecycleLogTool())
+        register(SetLifecycleLogFileTool())
+        register(ProjectStatusTool())
+        register(ReleaseAllProjectsTool())
+        register(ReleaseProjectTool())
+        register(SetProjectModeTool())
+        register(SetAllProjectModesTool())
 
         LOG.info("Registered universal tools (available in all JetBrains IDEs)")
     }

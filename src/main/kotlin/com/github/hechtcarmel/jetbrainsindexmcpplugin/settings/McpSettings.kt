@@ -38,10 +38,23 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
             "ide_build_project", "ide_close_project", "ide_file_structure", "ide_find_symbol",
             "ide_open_project", "ide_read_file", "ide_get_active_file", "ide_open_file",
             "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin",
-            "ide_set_power_save_mode", "ide_install_plugin", "ide_restart"
+            "ide_set_power_save_mode", "ide_install_plugin", "ide_restart",
+            "ide_enroll_all_projects", "ide_get_project_modes", "ide_lifecycle_log",
+            "ide_set_lifecycle_log_file", "ide_release_all_projects",
+            "ide_release_project", "ide_set_all_project_modes", "ide_set_project_mode"
         ),
         var serverPort: Int = -1, // -1 means use IDE-specific default
-        var serverHost: String = McpConstants.DEFAULT_SERVER_HOST
+        var serverHost: String = McpConstants.DEFAULT_SERVER_HOST,
+        // Lifecycle management
+        var lifecycleEnabled: Boolean = false,
+        var focusToBackgroundMinutes: Int = 2,
+        var backgroundToDormantMinutes: Int = 2,
+        var dormantToClosedMinutes: Int = 10,
+        var lifecycleLogBufferSize: Int = 500,
+        // Set true to write events to mcp-lifecycle.log (also enabled by LOG.isDebugEnabled).
+        // Introduced in the stateless-tools PR; declared here so LifecycleEventLog can read it.
+        var lifecycleLogToFile: Boolean = false,
+        var minimumOpenProjects: Int = 4,
     )
 
     private var state = State()
@@ -79,6 +92,35 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var serverHost: String
         get() = state.serverHost
         set(value) { state.serverHost = value }
+
+    var lifecycleEnabled: Boolean
+        get() = state.lifecycleEnabled
+        set(value) { state.lifecycleEnabled = value }
+
+    var focusToBackgroundMinutes: Int
+        get() = state.focusToBackgroundMinutes
+        set(value) { state.focusToBackgroundMinutes = value }
+
+    var backgroundToDormantMinutes: Int
+        get() = state.backgroundToDormantMinutes
+        set(value) { state.backgroundToDormantMinutes = value }
+
+    var dormantToClosedMinutes: Int
+        get() = state.dormantToClosedMinutes
+        set(value) { state.dormantToClosedMinutes = value }
+
+    var lifecycleLogBufferSize: Int
+        get() = state.lifecycleLogBufferSize
+        set(value) { state.lifecycleLogBufferSize = value }
+
+    var lifecycleLogToFile: Boolean
+        get() = state.lifecycleLogToFile
+        set(value) { state.lifecycleLogToFile = value }
+
+    var minimumOpenProjects: Int
+        get() = state.minimumOpenProjects
+        set(value) { state.minimumOpenProjects = value }
+
 
     fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools
 

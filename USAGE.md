@@ -48,6 +48,26 @@ These tools activate based on available language plugins:
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using the IDE converter *(disabled by default)* |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
+### Project Lifecycle Management Tools
+
+These tools work in all supported JetBrains IDEs and are enabled by default.
+
+| Tool | Description | Default |
+|------|-------------|---------|
+| `ide_project_status` | Combined view of all open and managed projects with mode per row | Enabled |
+| `ide_set_project_mode` | Set a project's lifecycle mode (active/background/dormant/closed) | Disabled |
+| `ide_get_project_modes` | List all managed projects and their current modes | Disabled |
+| `ide_set_all_project_modes` | Set all managed open projects to the same mode | Disabled |
+| `ide_enroll_all_projects` | Enroll all currently open projects in lifecycle management | Disabled |
+| `ide_release_project` | Remove a project from lifecycle management | Disabled |
+| `ide_release_all_projects` | Release all managed projects from lifecycle management at once | Disabled |
+| `ide_lifecycle_log` | Query recent lifecycle events with trigger reasons | Disabled |
+| `ide_set_power_save_mode` | Toggle Power Save Mode directly | Enabled |
+| `ide_close_project` | Close a project window | Enabled |
+| `ide_open_project` | Open a project by path and wait for indexing | Enabled |
+| `ide_install_plugin` | Install a plugin zip into the IDE | Enabled |
+| `ide_restart` | Restart the IDE | Enabled |
+
 ---
 
 ## Table of Contents
@@ -84,6 +104,20 @@ These tools activate based on available language plugins:
   - [ide_find_implementations](#ide_find_implementations)
   - [ide_find_super_methods](#ide_find_super_methods)
   - [ide_file_structure](#ide_file_structure)
+- [Project Lifecycle Management](#project-lifecycle-management)
+  - [ide_project_status](#ide_project_status)
+  - [ide_set_project_mode](#ide_set_project_mode)
+  - [ide_get_project_modes](#ide_get_project_modes)
+  - [ide_set_all_project_modes](#ide_set_all_project_modes)
+  - [ide_release_project](#ide_release_project)
+  - [ide_release_all_projects](#ide_release_all_projects)
+  - [ide_enroll_all_projects](#ide_enroll_all_projects)
+  - [ide_lifecycle_log](#ide_lifecycle_log)
+  - [ide_set_power_save_mode](#ide_set_power_save_mode)
+  - [ide_close_project](#ide_close_project)
+  - [ide_open_project](#ide_open_project)
+  - [ide_install_plugin](#ide_install_plugin)
+  - [ide_restart](#ide_restart)
 - [Java-Specific Refactoring Tools](#java-specific-refactoring-tools)
   - [ide_convert_java_to_kotlin](#ide_convert_java_to_kotlin)
   - [ide_refactor_safe_delete](#ide_refactor_safe_delete)
@@ -2078,3 +2112,260 @@ Before calling index-dependent tools, you can check the index status:
 ```
 
 If `isDumbMode` is `true`, wait and retry later.
+
+---
+
+## Project Lifecycle Management
+
+When working across multiple projects simultaneously, idle ones consume memory unnecessarily. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity. Projects enroll on first MCP use and auto-reopen when targeted by an MCP call — existing tools require no changes.
+
+**Lifecycle modes:**
+
+| Mode | Power Save | Editors | PSI Cache | Memory |
+|------|-----------|---------|-----------|--------|
+| `active` | off | open | loaded | full |
+| `background` | on | open | loaded | reduced |
+| `dormant` | on | closed | released via GC | low |
+| `closed` | — | — | freed | none (auto-reopens on next MCP call) |
+
+---
+
+### ide_project_status
+
+Combined snapshot of every open project and every managed project.
+
+**Parameters:** `project_path` (optional routing hint)
+
+**Returns:** `projects` array (name, path, open, managed, mode per row) and `summary` object (total, open, managed, open_not_managed, managed_closed counts).
+
+```json
+{ "name": "ide_project_status", "arguments": {} }
+```
+
+---
+
+### ide_set_project_mode
+
+Set a project's lifecycle mode explicitly.
+
+**Parameters:**
+- `mode` (required): `active`, `background`, `dormant`, or `closed`
+- `project_path` (optional)
+
+```json
+{ "name": "ide_set_project_mode", "arguments": { "mode": "background" } }
+```
+
+Setting `closed` fully closes the project window. The project auto-reopens on the next MCP call targeting it.
+
+---
+
+### ide_get_project_modes
+
+List all managed projects and their current modes.
+
+**Parameters:** `project_path` (optional)
+
+**Returns:** `managed_projects` array (name, path, mode) and `total` count. Includes projects currently closed by the lifecycle manager.
+
+```json
+{ "name": "ide_get_project_modes", "arguments": {} }
+```
+
+---
+
+### ide_set_all_project_modes
+
+Set all currently open managed projects to the same mode at once.
+
+**Parameters:**
+- `mode` (required): `active`, `background`, or `dormant` — `closed` is not accepted (closing all projects would make MCP unreachable)
+- `project_path` (optional)
+
+```json
+{ "name": "ide_set_all_project_modes", "arguments": { "mode": "background" } }
+```
+
+---
+
+### ide_release_project
+
+Remove a project from lifecycle management, restoring full IDE behaviour (Power Save off, no auto-close).
+
+**Parameters:** `project_path` (optional)
+
+```json
+{ "name": "ide_release_project", "arguments": {} }
+```
+
+Calling on an unmanaged project succeeds with a "not managed" note — safe to call idempotently.
+
+Accepts an optional `path` parameter to release a closed managed project without needing it to be open.
+
+---
+
+### ide_release_all_projects
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Release every managed project (including closed ones) from lifecycle management at once. Also disables Power Save Mode globally.
+
+**Parameters:** `project_path` (optional routing hint)
+
+```json
+{ "name": "ide_release_all_projects", "arguments": {} }
+```
+
+---
+
+### ide_enroll_all_projects
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Enroll every currently open project in lifecycle management. Projects already managed are skipped.
+
+**Parameters:** `project_path` (optional routing hint)
+
+```json
+{ "name": "ide_enroll_all_projects", "arguments": {} }
+```
+
+---
+
+### ide_lifecycle_log
+
+Query recent lifecycle events from the in-memory ring buffer (default 500 entries, configurable in Settings).
+
+**Parameters:**
+- `limit` (optional, default 50): how many events to return, newest first
+- `project` (optional): path substring filter — only events for matching projects
+- `project_path` (optional): routing hint
+
+**Returns:** `events` array, `log_file` path (always), `buffered` count.
+
+```json
+{ "name": "ide_lifecycle_log", "arguments": { "limit": 20, "project": "engine" } }
+```
+
+**Event fields:** `timestamp`, `project`, `path`, `event`, `from` (mode), `to` (mode), `trigger`.
+
+**Trigger values:**
+
+| Trigger | Meaning |
+|---------|---------|
+| `focus_gained` | User switched to this project window |
+| `focus_lost` | User switched away; focus timer started |
+| `timer:focus` | Focus timer fired → background |
+| `timer:inactivity` | Inactivity timer fired → dormant |
+| `timer:close` | Dormant timer fired → closed |
+| `mcp_call` | MCP tool call triggered this |
+| `auto_open` | Lifecycle manager reopened a closed project |
+| `user` | User action in the IDE |
+
+**Enabling file output:** The ring buffer is always active. File writes (`mcp-lifecycle.log` in the IDE log directory) require either using `ide_set_lifecycle_log_file` (see below) or enabling IntelliJ debug logging. No restart needed. The file is readable directly even when no project is open.
+
+---
+
+### ide_set_lifecycle_log_file
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Enable or disable writing lifecycle events to the persistent log file on disk (`mcp-lifecycle.log`, written alongside `idea.log`). The in-memory ring buffer queried by `ide_lifecycle_log` is always active regardless of this setting.
+
+Use this for tail -f monitoring or post-mortem analysis when no MCP connection is available.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | boolean | Yes | `true` to start writing to the log file, `false` to stop |
+| `project_path` | string | No | Routing hint when multiple projects are open |
+
+**Example:**
+
+```json
+{
+  "name": "ide_set_lifecycle_log_file",
+  "arguments": {
+    "enabled": true
+  }
+}
+```
+
+**Example Response:**
+
+```
+Lifecycle log file enabled. Events are being written to: /Users/you/Library/Logs/JetBrains/IntelliJIdea2026.1/mcp-lifecycle.log
+```
+
+---
+
+### ide_set_power_save_mode
+
+Toggle Power Save Mode directly.
+
+**Parameters:**
+- `enabled` (required): `true` or `false`
+- `project_path` (optional)
+
+```json
+{ "name": "ide_set_power_save_mode", "arguments": { "enabled": true } }
+```
+
+Power Save Mode suspends background inspections and code analysis while leaving the index and all MCP operations fully functional.
+
+---
+
+### ide_close_project
+
+Close an open project window and free its memory.
+
+**Parameters:** `project_path` (optional — defaults to the active project)
+
+```json
+{ "name": "ide_close_project", "arguments": {} }
+```
+
+The project can be reopened via Recent Projects or `ide_open_project`.
+
+---
+
+### ide_open_project
+
+Open a project by filesystem path and block until indexing completes, so subsequent MCP tool calls succeed immediately.
+
+**Parameters:**
+- `path` (required): filesystem path of the project directory
+- `project_path` (optional): routing hint — requires at least one project already open
+
+```json
+{ "name": "ide_open_project", "arguments": { "path": "/Users/dev/myproject" } }
+```
+
+---
+
+### ide_install_plugin
+
+Install a plugin zip into the IDE, replacing any existing version. A restart is required to load the updated plugin.
+
+**Parameters:**
+- `path` (optional): explicit path to a `.zip` file. If omitted, auto-detects `build/distributions/*.zip` in the current project — useful when developing the plugin itself.
+- `project_path` (optional)
+
+```json
+{ "name": "ide_install_plugin", "arguments": {} }
+```
+
+Typical workflow: `./gradlew buildPlugin` → `ide_install_plugin` → `ide_restart`.
+
+---
+
+### ide_restart
+
+Restart the IDE. Terminates the MCP connection immediately — no further tool calls should be made after calling this.
+
+**Parameters:** `project_path` (optional)
+
+```json
+{ "name": "ide_restart", "arguments": {} }
+```

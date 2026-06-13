@@ -14,6 +14,8 @@ import kotlinx.serialization.json.JsonObject
 class CloseProjectTool : AbstractMcpTool() {
 
     override val requiresPsiSync = false
+    // Closing a project is infrastructure — enrolling-then-closing would be nonsensical.
+    override val participatesInLifecycle = false
 
     override val name = "ide_close_project"
 

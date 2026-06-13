@@ -43,6 +43,17 @@ object ToolNames {
     const val OPEN_PROJECT = "ide_open_project"
     const val SET_POWER_SAVE_MODE = "ide_set_power_save_mode"
 
+    // Lifecycle management
+    const val ENROLL_ALL_PROJECTS = "ide_enroll_all_projects"
+    const val GET_PROJECT_MODES = "ide_get_project_modes"
+    const val LIFECYCLE_LOG = "ide_lifecycle_log"
+    const val LIFECYCLE_LOG_FILE = "ide_set_lifecycle_log_file"
+    const val PROJECT_STATUS = "ide_project_status"
+    const val RELEASE_ALL_PROJECTS = "ide_release_all_projects"
+    const val RELEASE_PROJECT = "ide_release_project"
+    const val SET_ALL_PROJECT_MODES = "ide_set_all_project_modes"
+    const val SET_PROJECT_MODE = "ide_set_project_mode"
+
     /**
      * All known tool names, sorted alphabetically.
      * Keep this list in sync when adding or removing tool name constants.
@@ -53,6 +64,7 @@ object ToolNames {
         CLOSE_PROJECT,
         CONVERT_JAVA_TO_KOTLIN,
         DIAGNOSTICS,
+        ENROLL_ALL_PROJECTS,
         FILE_STRUCTURE,
         FIND_CLASS,
         FIND_DEFINITION,
@@ -62,19 +74,27 @@ object ToolNames {
         FIND_SUPER_METHODS,
         FIND_SYMBOL,
         GET_ACTIVE_FILE,
+        GET_PROJECT_MODES,
         INDEX_STATUS,
         INSTALL_PLUGIN,
+        LIFECYCLE_LOG,
         REFACTOR_MOVE,
         OPEN_FILE,
         OPEN_PROJECT,
         OPTIMIZE_IMPORTS,
+        PROJECT_STATUS,
         READ_FILE,
         REFACTOR_RENAME,
         REFACTOR_SAFE_DELETE,
         REFORMAT_CODE,
+        RELEASE_ALL_PROJECTS,
+        RELEASE_PROJECT,
         RESTART_IDE,
         SEARCH_TEXT,
+        SET_ALL_PROJECT_MODES,
+        LIFECYCLE_LOG_FILE,
         SET_POWER_SAVE_MODE,
+        SET_PROJECT_MODE,
         SYNC_FILES,
         TYPE_HIERARCHY
     )

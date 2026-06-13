@@ -542,5 +542,19 @@ Only update `pluginVersion` in `gradle.properties` when the user explicitly asks
 
 ---
 
+## Smoke Test Protocol
+
+After any `./gradlew buildPlugin` → install → restart cycle, offer to run the smoke
+test at `docs/smoke-test-protocol.md`. It covers HTTP-level behaviour, tool registration,
+and end-to-end paths that the automated test suite cannot catch.
+
+**Offer the smoke test when changes touch:** HTTP transport (`KtorMcpServer.kt`,
+`JsonRpcHandler.kt`), tool registration (`ToolRegistry.kt`, `McpServerService.kt`),
+or any tool covered by the protocol.
+
+**Skip for:** documentation-only, test-only, or `gradle.properties` version-bump changes.
+
+---
+
 **Template Source**: [JetBrains IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - Never run platform tests on your own

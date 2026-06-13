@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.settings
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.intellij.icons.AllIcons
@@ -52,6 +53,16 @@ class McpSettingsConfigurable : Configurable {
     private var responseFormatComboBox: ComboBox<McpSettings.ResponseFormat>? = null
     private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
+
+    // Lifecycle UI fields
+    private var lifecycleEnabledCheckBox: JBCheckBox? = null
+    private var focusToBackgroundSpinner: JSpinner? = null
+    private var backgroundToDormantSpinner: JSpinner? = null
+    private var dormantToClosedSpinner: JSpinner? = null
+    private var lifecycleLogBufferSizeSpinner: JSpinner? = null
+    private var lifecycleLogToFileCheckBox: JBCheckBox? = null
+    private var minimumOpenProjectsSpinner: JSpinner? = null
+    private var managedProjectsContent: JPanel? = null
 
     private var lastHostValidation: ValidationInfo? = null
     private var hostValidationErrorLabel: JBLabel? = null
@@ -129,6 +140,7 @@ class McpSettingsConfigurable : Configurable {
         }
 
         val availableToolsPanel = createToolsPanel()
+        val lifecyclePanel = createLifecyclePanel()
 
         panel = FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel(McpBundle.message("settings.serverHost") + ":"), serverHostInputRow, 1, false)
@@ -139,12 +151,166 @@ class McpSettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel(McpBundle.message("settings.responseFormat") + ":"), responseFormatComboBox!!, 1, false)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
+            .addComponent(JBLabel(McpBundle.message("lifecycle.section.title")), 5)
+            .addComponent(lifecyclePanel, 1)
+            .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
             .addComponent(availableToolsPanel, 5)
             .addComponentFillVertically(JPanel(), 0)
             .panel
 
         return panel!!
+    }
+
+    private fun createLifecyclePanel(): JComponent {
+        val settings = McpSettings.getInstance()
+        lifecycleEnabledCheckBox = JBCheckBox(McpBundle.message("lifecycle.enabled.label"), settings.lifecycleEnabled)
+        focusToBackgroundSpinner = JSpinner(SpinnerNumberModel(settings.focusToBackgroundMinutes, 1, 60, 1))
+        backgroundToDormantSpinner = JSpinner(SpinnerNumberModel(settings.backgroundToDormantMinutes, 1, 60, 1))
+        dormantToClosedSpinner = JSpinner(SpinnerNumberModel(settings.dormantToClosedMinutes, 1, 120, 1))
+        lifecycleLogBufferSizeSpinner = JSpinner(SpinnerNumberModel(settings.lifecycleLogBufferSize, 100, 10000, 100))
+        lifecycleLogToFileCheckBox = JBCheckBox(McpBundle.message("lifecycle.logToFile.label"), settings.lifecycleLogToFile)
+        minimumOpenProjectsSpinner = JSpinner(SpinnerNumberModel(settings.minimumOpenProjects, 1, 20, 1))
+
+        return FormBuilder.createFormBuilder()
+            .addComponent(lifecycleEnabledCheckBox!!)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.focusToBackground.label")), focusToBackgroundSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.backgroundToDormant.label")), backgroundToDormantSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.dormantToClosed.label")), dormantToClosedSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.minimumOpenProjects.label")), minimumOpenProjectsSpinner!!, 1, false)
+            .addLabeledComponent(JBLabel(McpBundle.message("lifecycle.logBufferSize.label")), lifecycleLogBufferSizeSpinner!!, 1, false)
+            .addComponent(lifecycleLogToFileCheckBox!!)
+            .addComponent(createManagedProjectsPanel())
+            .panel
+    }
+
+    private fun createManagedProjectsPanel(): JComponent {
+        val outer = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
+
+        outer.add(JBLabel(McpBundle.message("lifecycle.managed.label")).apply {
+            border = JBUI.Borders.emptyTop(8)
+        })
+
+        val modeService = runCatching { ProjectModeService.getInstance() }.getOrNull()
+        if (modeService == null) {
+            outer.add(JBLabel(McpBundle.message("lifecycle.managed.unavailable")).apply { foreground = JBColor.GRAY })
+            return outer
+        }
+
+        val buttonRow = JPanel(FlowLayout(FlowLayout.LEFT, 0, 4)).apply {
+            val enrollAll = com.intellij.ui.components.JBLabel(McpBundle.message("lifecycle.enrollAll.button")).apply {
+                foreground = JBColor.BLUE
+                cursor = java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)
+                border = JBUI.Borders.empty(0, 0, 0, 8)
+            }
+            enrollAll.addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                    val open = com.intellij.openapi.project.ProjectManager.getInstance().openProjects.toList()
+                    modeService.enrollAll(open)
+                    refreshManagedProjectsPanel()
+                }
+            })
+            val releaseAll = com.intellij.ui.components.JBLabel(McpBundle.message("lifecycle.releaseAll.button")).apply {
+                foreground = JBColor.RED
+                cursor = java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)
+            }
+            releaseAll.addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                    modeService.releaseAll()
+                    refreshManagedProjectsPanel()
+                }
+            })
+            add(enrollAll)
+            add(releaseAll)
+        }
+        outer.add(buttonRow)
+
+        val content = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
+        managedProjectsContent = content
+        refreshManagedProjectsPanel()
+
+        val scroll = javax.swing.JScrollPane(content).apply {
+            border = javax.swing.BorderFactory.createEmptyBorder()
+            preferredSize = java.awt.Dimension(preferredSize.width, 150)
+            verticalScrollBarPolicy = javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        }
+        outer.add(scroll)
+        return outer
+    }
+
+    private fun refreshManagedProjectsPanel() {
+        val content = managedProjectsContent ?: return
+        val modeService = runCatching { ProjectModeService.getInstance() }.getOrNull() ?: return
+
+        content.removeAll()
+
+        val openProjects = com.intellij.openapi.project.ProjectManager.getInstance().openProjects
+            .filter { !it.isDefault }
+            .associateBy { it.basePath ?: "" }
+        val managedModes = modeService.getAllManagedModes()
+
+        val allPaths = (openProjects.keys + managedModes.keys).filter { it.isNotEmpty() }.toSortedSet()
+
+        if (allPaths.isEmpty()) {
+            content.add(JBLabel(McpBundle.message("lifecycle.managed.none")).apply { foreground = JBColor.GRAY })
+        } else {
+            for (path in allPaths) {
+                val openProject = openProjects[path]
+                val mode = managedModes[path]
+                val isManaged = mode != null
+                val isClosed = mode == com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode.CLOSED
+                val name = openProject?.name ?: path.substringAfterLast("/")
+
+                val row = JPanel(FlowLayout(FlowLayout.LEFT, 4, 1))
+
+                val checkbox = JBCheckBox("", isManaged).apply {
+                    isEnabled = openProject != null || isManaged
+                    addActionListener {
+                        if (isSelected) {
+                            if (openProject != null) modeService.enroll(openProject)
+                        } else {
+                            modeService.release(path)
+                        }
+                        refreshManagedProjectsPanel()
+                    }
+                }
+                row.add(checkbox)
+
+                val nameLabel = JBLabel(name).apply {
+                    if (isClosed || openProject == null) foreground = JBColor.GRAY
+                    toolTipText = path
+                }
+                row.add(nameLabel)
+
+                val modeText = when {
+                    mode != null -> "  [${mode.name.lowercase()}]"
+                    else -> "  [not managed]"
+                }
+                row.add(JBLabel(modeText).apply { foreground = JBColor.GRAY })
+
+                if (isManaged) {
+                    val xBtn = com.intellij.ui.components.JBLabel("✕").apply {
+                        foreground = JBColor.RED
+                        cursor = java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)
+                        toolTipText = "Release from lifecycle management"
+                        border = JBUI.Borders.empty(0, 4, 0, 0)
+                    }
+                    xBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
+                        override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                            modeService.release(path)
+                            refreshManagedProjectsPanel()
+                        }
+                    })
+                    row.add(xBtn)
+                }
+
+                content.add(row)
+            }
+        }
+
+        content.revalidate()
+        content.repaint()
     }
 
     private fun createToolsPanel(): JComponent {
@@ -183,7 +349,14 @@ class McpSettingsConfigurable : Configurable {
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges ||
             availableProjectsModeComboBox?.selectedItem != settings.availableProjectsMode ||
-            responseFormatComboBox?.selectedItem != settings.responseFormat) {
+            responseFormatComboBox?.selectedItem != settings.responseFormat ||
+            lifecycleEnabledCheckBox?.isSelected != settings.lifecycleEnabled ||
+            focusToBackgroundSpinner?.value != settings.focusToBackgroundMinutes ||
+            backgroundToDormantSpinner?.value != settings.backgroundToDormantMinutes ||
+            dormantToClosedSpinner?.value != settings.dormantToClosedMinutes ||
+            lifecycleLogBufferSizeSpinner?.value != settings.lifecycleLogBufferSize ||
+            lifecycleLogToFileCheckBox?.isSelected != settings.lifecycleLogToFile ||
+            minimumOpenProjectsSpinner?.value != settings.minimumOpenProjects) {
             return true
         }
 
@@ -243,6 +416,14 @@ class McpSettingsConfigurable : Configurable {
         settings.responseFormat =
             responseFormatComboBox?.selectedItem as? McpSettings.ResponseFormat
                 ?: McpSettings.ResponseFormat.JSON
+
+        settings.lifecycleEnabled = lifecycleEnabledCheckBox?.isSelected ?: true
+        settings.focusToBackgroundMinutes = focusToBackgroundSpinner?.value as? Int ?: 2
+        settings.backgroundToDormantMinutes = backgroundToDormantSpinner?.value as? Int ?: 2
+        settings.dormantToClosedMinutes = dormantToClosedSpinner?.value as? Int ?: 10
+        settings.lifecycleLogBufferSize = lifecycleLogBufferSizeSpinner?.value as? Int ?: 500
+        settings.lifecycleLogToFile = lifecycleLogToFileCheckBox?.isSelected ?: false
+        settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
 
         val disabledTools = mutableSetOf<String>()
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -338,6 +519,14 @@ class McpSettingsConfigurable : Configurable {
         isHostValidationPending = false
         lastHostValidation = null
 
+        lifecycleEnabledCheckBox?.isSelected = settings.lifecycleEnabled
+        focusToBackgroundSpinner?.value = settings.focusToBackgroundMinutes
+        backgroundToDormantSpinner?.value = settings.backgroundToDormantMinutes
+        dormantToClosedSpinner?.value = settings.dormantToClosedMinutes
+        lifecycleLogBufferSizeSpinner?.value = settings.lifecycleLogBufferSize
+        lifecycleLogToFileCheckBox?.isSelected = settings.lifecycleLogToFile
+        minimumOpenProjectsSpinner?.value = settings.minimumOpenProjects
+
         for ((toolName, checkbox) in toolCheckBoxes) {
             checkbox.isSelected = settings.isToolEnabled(toolName)
         }
@@ -428,6 +617,14 @@ class McpSettingsConfigurable : Configurable {
         availableProjectsModeComboBox = null
         responseFormatComboBox = null
         toolCheckBoxes.clear()
+        lifecycleEnabledCheckBox = null
+        focusToBackgroundSpinner = null
+        backgroundToDormantSpinner = null
+        dormantToClosedSpinner = null
+        lifecycleLogBufferSizeSpinner = null
+        lifecycleLogToFileCheckBox = null
+        minimumOpenProjectsSpinner = null
+        managedProjectsContent = null
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
     }

@@ -73,7 +73,17 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.RESTART_IDE,
             ToolNames.CLOSE_PROJECT,
             ToolNames.OPEN_PROJECT,
-            ToolNames.SET_POWER_SAVE_MODE
+            ToolNames.SET_POWER_SAVE_MODE,
+            // Lifecycle management
+            ToolNames.ENROLL_ALL_PROJECTS,
+            ToolNames.GET_PROJECT_MODES,
+            ToolNames.LIFECYCLE_LOG,
+            ToolNames.LIFECYCLE_LOG_FILE,
+            ToolNames.PROJECT_STATUS,
+            ToolNames.RELEASE_ALL_PROJECTS,
+            ToolNames.RELEASE_PROJECT,
+            ToolNames.SET_ALL_PROJECT_MODES,
+            ToolNames.SET_PROJECT_MODE
         )
 
         for (name in expectedNames) {

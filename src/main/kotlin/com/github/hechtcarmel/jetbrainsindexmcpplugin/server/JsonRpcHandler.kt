@@ -7,10 +7,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
@@ -43,6 +46,10 @@ class JsonRpcHandler @JvmOverloads constructor(
     ): String? {
         val request = try {
             json.decodeFromString<JsonRpcRequest>(jsonString)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.warn("Failed to parse JSON-RPC request", e)
             return json.encodeToString(createErrorResponse(code = JsonRpcErrorCodes.PARSE_ERROR, message = ErrorMessages.PARSE_ERROR))
@@ -58,6 +65,10 @@ class JsonRpcHandler @JvmOverloads constructor(
 
         val response = try {
             routeRequest(request, protocolVersion)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.error("Error processing request: ${request.method}", e)
             createErrorResponse(request.id, JsonRpcErrorCodes.INTERNAL_ERROR, e.message ?: "Unknown error")
@@ -121,7 +132,7 @@ class JsonRpcHandler @JvmOverloads constructor(
         // Extract optional project_path from arguments
         val projectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
 
-        val projectResult = projectResolver.resolve(projectPath)
+        val projectResult = projectResolver.resolveOrOpen(projectPath)
         if (projectResult.isError) {
             return JsonRpcResponse(
                 id = request.id,
@@ -163,6 +174,22 @@ class JsonRpcHandler @JvmOverloads constructor(
                 id = request.id,
                 result = json.encodeToJsonElement(result)
             )
+        } catch (e: IndexNotReadyException) {
+            // Dumb mode is expected during indexing — log at debug, not error.
+            val duration = System.currentTimeMillis() - startTime
+            LOG.debug("Tool $toolName called while IDE is indexing: ${e.message}")
+            updateHistorySafely(project = project, commandEntry = commandEntry,
+                status = CommandStatus.ERROR, result = e.message, duration = duration)
+            return JsonRpcResponse(
+                id = request.id,
+                error = JsonRpcError(code = -32603, message = e.message ?: ErrorMessages.INDEX_NOT_READY)
+            )
+        } catch (e: ProcessCanceledException) {
+            // IntelliJ control-flow exception (e.g. project disposed mid-call) — must not be
+            // logged with LOG.error; rethrow so the coroutine machinery handles it cleanly.
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val duration = System.currentTimeMillis() - startTime
             LOG.error("Tool execution failed: $toolName", e)
@@ -190,6 +217,10 @@ class JsonRpcHandler @JvmOverloads constructor(
     private fun recordHistorySafely(project: Project, commandEntry: CommandEntry) {
         try {
             recordHistory(project, commandEntry)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.warn("Failed to record command history for ${commandEntry.toolName}", e)
         }
@@ -204,6 +235,10 @@ class JsonRpcHandler @JvmOverloads constructor(
     ) {
         try {
             updateHistory(project, commandEntry.id, status, result, duration)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LOG.warn("Failed to update command history for ${commandEntry.toolName}", e)
         }

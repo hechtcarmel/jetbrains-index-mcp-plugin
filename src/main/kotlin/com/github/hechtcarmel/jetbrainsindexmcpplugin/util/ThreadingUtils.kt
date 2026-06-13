@@ -7,10 +7,7 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 object ThreadingUtils {
 
@@ -54,22 +51,6 @@ object ThreadingUtils {
         exception?.let { throw it }
         @Suppress("UNCHECKED_CAST")
         return result as T
-    }
-
-    suspend fun <T> runWhenSmart(
-        project: Project,
-        action: () -> T
-    ): T {
-        return suspendCancellableCoroutine { continuation ->
-            DumbService.getInstance(project).runWhenSmart {
-                try {
-                    val result = ReadAction.compute<T, Throwable>(action)
-                    continuation.resume(result)
-                } catch (e: Exception) {
-                    continuation.resumeWithException(e)
-                }
-            }
-        }
     }
 
     fun isDumbMode(project: Project): Boolean {

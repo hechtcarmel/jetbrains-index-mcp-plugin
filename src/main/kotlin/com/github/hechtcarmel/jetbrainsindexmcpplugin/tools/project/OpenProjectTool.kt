@@ -24,6 +24,10 @@ import kotlin.coroutines.resume
 class OpenProjectTool : AbstractMcpTool() {
 
     override val requiresPsiSync = false
+    // Opening a project is infrastructure — it should not auto-enroll it in lifecycle
+    // management. Enrollment happens on the first real semantic tool call (find references,
+    // diagnostics, etc.) after the project is open, which signals genuine intent to work on it.
+    override val participatesInLifecycle = false
 
     override val name = "ide_open_project"
 
@@ -33,6 +37,10 @@ class OpenProjectTool : AbstractMcpTool() {
         Blocks until the IDE is ready for code intelligence on the opened project,
         so subsequent MCP tool calls against the new project will succeed immediately.
         If the project is already open, returns successfully right away.
+
+        This tool does not enroll the project in lifecycle management. Lifecycle enrollment
+        happens automatically on the first real semantic tool call (find references,
+        diagnostics, refactoring, etc.) after the project is open — not on open/close itself.
 
         Requires at least one project to already be open (needed as the JSON-RPC context).
 

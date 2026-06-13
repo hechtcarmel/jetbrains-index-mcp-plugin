@@ -3,6 +3,50 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added — Project lifecycle management
+
+Automatic sleep/wake management for IntelliJ projects used as MCP servers. When multiple
+projects are open simultaneously, idle ones consume memory unnecessarily and leave editors
+open for no reason. Lifecycle management addresses this with a four-state machine driven
+by window focus and MCP activity.
+
+**States:** `active` (full IDE, Power Save off) → `background` (Power Save on, MCP
+functional) → `dormant` (editors closed, PSI caches freed, index retained) → `closed`
+(project fully closed). Projects enroll automatically on first MCP use and auto-reopen
+transparently when an MCP tool targets a closed project — callers see normal results
+after a short indexing delay, with no changes required in existing tools.
+
+- **`ide_set_project_mode`** — explicitly set a managed project's lifecycle mode (`active`, `background`, `dormant`, `closed`).
+- **`ide_get_project_modes`** — list all MCP-managed projects and their current modes, including those we closed.
+- **`ide_project_status`** — combined snapshot: every open project and every managed project in one table, with open/managed/mode per row.
+- **`ide_release_project`** — unenroll a project, restoring full IDE behaviour and disabling Power Save Mode. Accepts an optional `path` argument to release a closed managed project without needing it to be open.
+- **`ide_set_all_project_modes`** — set all managed projects to the same mode at once (active, background, or dormant).
+- **`ide_enroll_all_projects`** — enroll every currently open project in lifecycle management at once; already-managed projects are skipped.
+- **`ide_release_all_projects`** — release every managed project (including closed ones) from lifecycle management at once.
+- **`ide_set_lifecycle_log_file`** — enable or disable writing lifecycle events to the persistent log file on disk (`mcp-lifecycle.log`, written alongside `idea.log`). The in-memory ring buffer is always active regardless. *(disabled by default)*
+- **Lifecycle settings** — configurable timing thresholds (focus→background, background→dormant, dormant→closed) and a master enable/disable toggle in Settings → Index MCP Server.
+- **Interactive project list in Settings** — the lifecycle settings panel now shows all known projects (open and closed managed) with a checkbox per project (checked = enrolled), an X button to release individual projects, and "Enroll All Open" / "Release All" buttons. Changes take effect immediately without clicking Apply.
+- **"MCP: Open Project" action** — searchable popup (Cmd+Shift+A) listing managed projects by state; selecting one opens or wakes it.
+- **"MCP: Show Project States" action** — opens the lifecycle settings panel from the keyboard.
+
+**Enrollment on semantic use, not on open/close** — `ide_open_project` and `ide_close_project` are infrastructure tools and do not trigger lifecycle enrollment. Enrollment happens on the first real semantic tool call (find references, diagnostics, refactoring, etc.) after a project is open.
+
+**MCP availability guarantee** — the lifecycle manager never closes the last open managed project. When only one managed project remains open and its close timer fires, it is kept in `dormant` state instead.
+
+See `docs/lifecycle-management.md` for design rationale, API notes, and threading details.
+
+### Added — Lifecycle event log
+
+- **`ide_lifecycle_log`** — query recent lifecycle events from an in-memory ring buffer. Records every state transition, project open/close, focus change, timer firing, and MCP-triggered wake for all IntelliJ projects (not just managed ones). Each event includes a `trigger` field that identifies the cause: `timer:focus`, `timer:inactivity`, `timer:close`, `focus_gained`, `focus_lost`, `mcp_call`, `auto_open`, or `user`. Parameters: `limit` (default 50), `project` (path substring filter). Response includes `log_file` — the path to a persistent log file. No restart required.
+- **Event log buffer size** — configurable in Settings → Index MCP Server → Lifecycle (default 500, range 100–10,000).
+
+See `docs/lifecycle-log.md` for design rationale and the trigger taxonomy.
+
+### Fixed
+- `IndexNotReadyException` from `ide_diagnostics` and other tools now logged at DEBUG instead of ERROR when the IDE index is not ready.
+- Rethrow `ProcessCanceledException` instead of logging as ERROR when a project is disposed mid-call.
+- MCP server watchdog restarts the server if it stops unexpectedly between tool calls.
+- Detect compiled elements before rename to avoid assertion crash in `ide_refactor_rename`.
 
 ## [4.22.0] - 2026-06-12
 ### Added

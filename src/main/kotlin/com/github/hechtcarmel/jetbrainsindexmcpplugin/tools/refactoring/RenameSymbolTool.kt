@@ -9,6 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiCompiledElement
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
@@ -40,6 +41,11 @@ class RenameSymbolTool : AbstractMcpTool() {
 
     companion object {
         private val LOG = logger<RenameSymbolTool>()
+
+        /** Exposed for testing — builds the error message returned when the target is a compiled element. */
+        fun buildCompiledElementErrorMessage(elementName: String?, path: String): String =
+            "Cannot rename: '$elementName' is defined in a compiled class file ($path), not in editable source. " +
+            "Make sure the cursor is positioned on a symbol defined in source code within this project."
     }
 
     override val name = "ide_refactor_rename"
@@ -223,6 +229,16 @@ class RenameSymbolTool : AbstractMcpTool() {
                 oldName = "",
                 error = "No renameable symbol found at the specified position"
             )
+
+        // Reject compiled elements early — RenameProcessor constructor asserts on them.
+        if (namedElement is PsiCompiledElement) {
+            val loc = namedElement.containingFile?.virtualFile?.path ?: "unknown location"
+            return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = buildCompiledElementErrorMessage(namedElement.name, loc)
+            )
+        }
 
         val oldName = namedElement.name
             ?: return RenameValidation(
