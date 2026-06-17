@@ -5,6 +5,7 @@
 ## [Unreleased]
 ### Fixed
 - Build failures that only report compiler output now return diagnostics instead of an empty error list when possible.
+- Plugin install/update now requires an IDE restart to avoid dynamic unload verifier failures.
 
 ## [4.23.0] - 2026-06-13
 ### Added — Project lifecycle management
