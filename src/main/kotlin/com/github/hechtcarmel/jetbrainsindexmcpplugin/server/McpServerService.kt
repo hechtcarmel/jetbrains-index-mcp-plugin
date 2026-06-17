@@ -80,7 +80,11 @@ class McpServerService(
         // Self-initialize asynchronously so the server starts even if postStartupActivity
         // doesn't fire (see issue #73). initialize() is idempotent (@Synchronized + isInitialized
         // guard), so the redundant call from McpServerStartupActivity is a safe no-op.
-        coroutineScope.launch { initialize() }
+        if (shouldStartServer()) {
+            coroutineScope.launch { initialize() }
+        } else {
+            LOG.info("Skipping MCP Server auto-start in unit/headless environment")
+        }
     }
 
     @Synchronized
@@ -91,13 +95,22 @@ class McpServerService(
 
         toolRegistry.registerBuiltInTools()
 
-        val settings = McpSettings.getInstance()
-        val port = settings.serverPort
-        val host = settings.serverHost
         isInitialized = true
-        startServer(host, port)
+        val startServer = shouldStartServer()
+        if (startServer) {
+            val settings = McpSettings.getInstance()
+            val port = settings.serverPort
+            val host = settings.serverHost
+            startServer(host, port)
+            LOG.info("MCP Server Service initialized with Ktor CIO server")
+        } else {
+            LOG.info("Initialized MCP tool metadata without starting server in unit/headless environment")
+        }
+    }
 
-        LOG.info("MCP Server Service initialized with Ktor CIO server")
+    private fun shouldStartServer(): Boolean {
+        val application = ApplicationManager.getApplication()
+        return !application.isUnitTestMode && !application.isHeadlessEnvironment
     }
 
     /**

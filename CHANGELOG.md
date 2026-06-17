@@ -3,9 +3,11 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+
+## [4.23.2] - 2026-06-14
 ### Fixed
 - Build failures that only report compiler output now return diagnostics instead of an empty error list when possible.
-- Plugin install/update now requires an IDE restart to avoid dynamic unload verifier failures.
+- Plugin install/update now requires an IDE restart and verifier-only headless runs no longer start the MCP server.
 
 ## [4.23.0] - 2026-06-13
 ### Added — Project lifecycle management

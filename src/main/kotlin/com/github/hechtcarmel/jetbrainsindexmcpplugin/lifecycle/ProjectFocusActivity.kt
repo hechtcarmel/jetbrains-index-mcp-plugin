@@ -12,10 +12,16 @@ import java.awt.event.WindowEvent
 class ProjectFocusActivity : ProjectActivity {
 
     override suspend fun execute(project: Project) {
+        val application = ApplicationManager.getApplication()
+        if (application.isUnitTestMode || application.isHeadlessEnvironment) {
+            LOG.info("Skipping project focus lifecycle activity in unit/headless environment")
+            return
+        }
+
         // Attach the focus listener via invokeLater so the frame is available.
         // If the frame is still null (headless/test env or very early startup),
         // retry exactly once — no infinite loop.
-        ApplicationManager.getApplication().invokeLater {
+        application.invokeLater {
             registerFocusListener(project, retry = true)
         }
         val modeService = ProjectModeService.getInstance()
