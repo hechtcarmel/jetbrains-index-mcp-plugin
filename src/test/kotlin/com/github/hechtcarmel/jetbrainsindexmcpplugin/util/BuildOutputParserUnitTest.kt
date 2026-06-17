@@ -76,6 +76,28 @@ class BuildOutputParserUnitTest : TestCase() {
         assertNull(messages[0].column)
     }
 
+    fun testParsesCMakeContinuationLinesAsMessage() {
+        val output = """
+            CMake Error at CMakeLists.txt:12 (target_link_libraries):
+              Cannot specify link libraries for target "foo" which is not built by this project.
+              Call Stack (most recent call first):
+                src/CMakeLists.txt:7 (include)
+        """.trimIndent()
+
+        val messages = BuildOutputParser.parse(output)
+
+        assertEquals(1, messages.size)
+        assertEquals("ERROR", messages[0].category)
+        assertEquals(
+            "Cannot specify link libraries for target \"foo\" which is not built by this project.\n" +
+                "Call Stack (most recent call first):\n" +
+                "src/CMakeLists.txt:7 (include)",
+            messages[0].message
+        )
+        assertEquals("CMakeLists.txt", messages[0].file)
+        assertEquals(12, messages[0].line)
+    }
+
     fun testDeduplicatesRepeatedCompilerLines() {
         val output = """
             /repo/src/main.cpp:7:5: error: use of undeclared identifier 'x'

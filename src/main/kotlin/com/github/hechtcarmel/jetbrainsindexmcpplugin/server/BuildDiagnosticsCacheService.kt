@@ -75,7 +75,7 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             addBuildEventMessage(message)
         }
 
-        val failures = BuildListenerUtils.extractFailureMessages(event, project)
+        val failures = BuildListenerUtils.extractFailureMessages(event)
         if (failures.isNotEmpty()) {
             addFailureMessages(failures)
         }

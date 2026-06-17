@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
-import com.intellij.openapi.project.Project
-import io.mockk.mockk
 import junit.framework.TestCase
 import java.lang.reflect.Proxy
 
@@ -25,7 +23,7 @@ class BuildListenerUtilsUnitTest : TestCase() {
         }
         val finishEvent = finishEventWithResult(failureResult)
 
-        val messages = BuildListenerUtils.extractFailureMessages(finishEvent, mockk<Project>(relaxed = true))
+        val messages = BuildListenerUtils.extractFailureMessages(finishEvent)
 
         assertEquals(1, messages.size)
         assertEquals("ERROR", messages[0].category)
@@ -59,10 +57,7 @@ class BuildListenerUtilsUnitTest : TestCase() {
             }
         }
 
-        val messages = BuildListenerUtils.extractFailureMessages(
-            finishEventWithResult(failureResult),
-            mockk<Project>(relaxed = true)
-        )
+        val messages = BuildListenerUtils.extractFailureMessages(finishEventWithResult(failureResult))
 
         assertEquals(listOf("top level failure", "root cause"), messages.map { it.message })
     }
@@ -72,10 +67,7 @@ class BuildListenerUtilsUnitTest : TestCase() {
             defaultProxyValue(methodName)
         }
 
-        val messages = BuildListenerUtils.extractFailureMessages(
-            finishEventWithResult(eventResult),
-            mockk<Project>(relaxed = true)
-        )
+        val messages = BuildListenerUtils.extractFailureMessages(finishEventWithResult(eventResult))
 
         assertTrue(messages.isEmpty())
     }

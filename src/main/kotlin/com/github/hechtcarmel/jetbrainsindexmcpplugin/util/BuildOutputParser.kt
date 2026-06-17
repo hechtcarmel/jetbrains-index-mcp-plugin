@@ -22,15 +22,31 @@ object BuildOutputParser {
         relativizePath: (String) -> String? = { it }
     ): List<BuildMessage> {
         val messages = linkedSetOf<BuildMessage>()
-        for (line in output.lineSequence()) {
-            val trimmed = line.trim()
-            if (trimmed.isEmpty()) continue
+        val lines = output.lines()
+        var index = 0
+        while (index < lines.size) {
+            val trimmed = lines[index].trim()
+            if (trimmed.isEmpty()) {
+                index++
+                continue
+            }
 
             val message = parseMsvc(trimmed, relativizePath)
                 ?: parseClang(trimmed, relativizePath)
-                ?: parseCMake(trimmed, relativizePath)
-                ?: continue
-            messages.add(message)
+            if (message != null) {
+                messages.add(message)
+                index++
+                continue
+            }
+
+            val cmakeMessage = parseCMake(lines, index, relativizePath)
+            if (cmakeMessage != null) {
+                messages.add(cmakeMessage.message)
+                index = cmakeMessage.nextIndex
+                continue
+            }
+
+            index++
         }
         return messages.toList()
     }
@@ -74,25 +90,54 @@ object BuildOutputParser {
     }
 
     private fun parseCMake(
-        line: String,
+        lines: List<String>,
+        index: Int,
         relativizePath: (String) -> String?
-    ): BuildMessage? {
+    ): ParsedMessage? {
+        val line = lines[index].trim()
         val match = cmakePattern.matchEntire(line) ?: return null
         val command = match.groupValues[4].trim()
         val details = match.groupValues[5].trim()
+        val continuation = collectCMakeContinuation(lines, index + 1)
         val message = when {
+            continuation.lines.isNotEmpty() -> (listOf(details).filter { it.isNotBlank() } + continuation.lines)
+                .joinToString("\n")
             details.isNotBlank() -> details
             command.isNotBlank() -> command
             else -> "CMake ${match.groupValues[1]}"
         }
-        return BuildMessage(
-            category = category(match.groupValues[1]),
-            message = message,
-            file = relativize(match.groupValues[2], relativizePath),
-            line = match.groupValues[3].toIntOrNull(),
-            column = null
+        return ParsedMessage(
+            message = BuildMessage(
+                category = category(match.groupValues[1]),
+                message = message,
+                file = relativize(match.groupValues[2], relativizePath),
+                line = match.groupValues[3].toIntOrNull(),
+                column = null
+            ),
+            nextIndex = continuation.nextIndex
         )
     }
+
+    private fun collectCMakeContinuation(lines: List<String>, startIndex: Int): CMakeContinuation {
+        val continuationLines = mutableListOf<String>()
+        var index = startIndex
+        while (index < lines.size) {
+            val line = lines[index]
+            if (line.isBlank() || line.firstOrNull()?.isWhitespace() != true) break
+
+            val trimmed = line.trim()
+            if (isDiagnosticLine(trimmed)) break
+
+            continuationLines.add(trimmed)
+            index++
+        }
+        return CMakeContinuation(continuationLines, index)
+    }
+
+    private fun isDiagnosticLine(line: String): Boolean =
+        msvcPattern.matchEntire(line) != null ||
+            clangPattern.matchEntire(line) != null ||
+            cmakePattern.matchEntire(line) != null
 
     private fun category(value: String): String =
         if (value.contains("warning", ignoreCase = true)) "WARNING" else "ERROR"
@@ -101,4 +146,14 @@ object BuildOutputParser {
         path.trim().replace('\\', '/').let { normalizedPath ->
             relativizePath(normalizedPath) ?: normalizedPath
         }
+
+    private data class ParsedMessage(
+        val message: BuildMessage,
+        val nextIndex: Int
+    )
+
+    private data class CMakeContinuation(
+        val lines: List<String>,
+        val nextIndex: Int
+    )
 }

@@ -212,7 +212,7 @@ object BuildListenerUtils {
         }
     }
 
-    fun extractFailureMessages(event: Any, _project: Project): List<BuildMessage> {
+    fun extractFailureMessages(event: Any): List<BuildMessage> {
         val finishClass = finishEventClass ?: return emptyList()
         val failureClass = failureResultClass ?: return emptyList()
         if (!finishClass.isInstance(event)) return emptyList()

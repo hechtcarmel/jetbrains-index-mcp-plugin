@@ -18,7 +18,7 @@ class BuildProjectResultSelectorUnitTest : TestCase() {
     }
 
     fun testFailedBuildWithCurrentCompilerMessagesReturnsCurrentMessages() {
-        val current = listOf(BuildMessage("ERROR", "existing compiler message"))
+        val current = listOf(BuildMessage("ERROR", "existing compiler message", file = "src/Main.kt"))
         val fallback = listOf(BuildMessage("ERROR", "fallback message"))
 
         val messages = BuildProjectResultSelector.selectMessages(
@@ -30,6 +30,25 @@ class BuildProjectResultSelectorUnitTest : TestCase() {
         )
 
         assertEquals(current, messages)
+    }
+
+    fun testFailedBuildWithGenericErrorAddsParsedCompilerDiagnostics() {
+        val current = listOf(BuildMessage("ERROR", "Build failed"))
+
+        val messages = BuildProjectResultSelector.selectMessages(
+            buildFailed = true,
+            currentMessages = current,
+            failureMessages = emptyList(),
+            rawOutput = "D:/Project/app/src/VideoInfo.cpp:42:13: error: use of undeclared identifier 'foo'",
+            relativizePath = { it.removePrefix("D:/Project/app/") }
+        )
+
+        assertEquals(2, messages.size)
+        assertEquals(current.single(), messages[0])
+        assertEquals(
+            BuildMessage("ERROR", "use of undeclared identifier 'foo'", "src/VideoInfo.cpp", 42, 13),
+            messages[1]
+        )
     }
 
     fun testFailedBuildWithWarningsOnlyAddsFallbackError() {

@@ -233,7 +233,7 @@ class BuildProjectTool : AbstractMcpTool() {
                 messages.add(buildMessage)
             }
 
-            failureMessages.addAll(BuildListenerUtils.extractFailureMessages(event, project))
+            failureMessages.addAll(BuildListenerUtils.extractFailureMessages(event))
 
             val text = BuildListenerUtils.extractRawOutput(event)
             if (text != null && rawOutput.length < MAX_RAW_OUTPUT_CHARS) {

@@ -12,7 +12,7 @@ internal object BuildProjectResultSelector {
         rawOutput: String,
         relativizePath: (String) -> String?
     ): List<BuildMessage> {
-        if (!buildFailed || currentMessages.hasErrors()) {
+        if (!buildFailed || currentMessages.hasPositionedErrors()) {
             return currentMessages
         }
 
@@ -40,4 +40,7 @@ internal object BuildProjectResultSelector {
 
     private fun List<BuildMessage>.hasErrors(): Boolean =
         any { it.category == "ERROR" }
+
+    private fun List<BuildMessage>.hasPositionedErrors(): Boolean =
+        any { it.category == "ERROR" && !it.file.isNullOrBlank() }
 }
