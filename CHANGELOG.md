@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Fixed
+- Build failures that only report compiler output now return diagnostics instead of an empty error list when possible.
 
 ## [4.23.0] - 2026-06-13
 ### Added — Project lifecycle management

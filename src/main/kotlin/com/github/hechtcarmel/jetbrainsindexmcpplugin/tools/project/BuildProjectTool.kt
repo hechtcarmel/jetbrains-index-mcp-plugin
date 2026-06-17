@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildProjectResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
@@ -102,6 +103,7 @@ class BuildProjectTool : AbstractMcpTool() {
 
         // Build events (Gradle/Maven/universal via BuildViewManager - fallback)
         val buildEventMessages = Collections.synchronizedList(mutableListOf<BuildMessage>())
+        val failureMessages = Collections.synchronizedList(mutableListOf<BuildMessage>())
         val buildEventRawOutput = StringBuffer()
 
         val connection = project.messageBus.connect()
@@ -115,7 +117,13 @@ class BuildProjectTool : AbstractMcpTool() {
 
         subscribeToCompilerMessages(project, connection, compilerMessages, compilerRawOutput, includeRawOutput)
         val parentDisposable = Disposer.newDisposable("BuildProjectTool-parent")
-        val buildEventsDisposable = subscribeToBuildEvents(project, parentDisposable, buildEventMessages, buildEventRawOutput, includeRawOutput)
+        val buildEventsDisposable = subscribeToBuildEvents(
+            project,
+            parentDisposable,
+            buildEventMessages,
+            failureMessages,
+            buildEventRawOutput
+        )
 
         try {
             val promise = taskManager.run(context, task)
@@ -136,9 +144,10 @@ class BuildProjectTool : AbstractMcpTool() {
 
             val durationMs = System.currentTimeMillis() - startTime
             val timedOut = result == null
+            val success = if (timedOut) false else !result!!.hasErrors() && !result.isAborted
 
             // Prefer JPS compiler messages if available, fall back to build events
-            val allMessages = if (compilerMessages.isNotEmpty()) compilerMessages else buildEventMessages
+            val currentMessages = if (compilerMessages.isNotEmpty()) compilerMessages else buildEventMessages
             val rawOutputStr = if (includeRawOutput) {
                 when {
                     compilerRawOutput.isNotEmpty() -> compilerRawOutput.toString()
@@ -147,16 +156,25 @@ class BuildProjectTool : AbstractMcpTool() {
                 }
             } else null
 
-            val truncated = allMessages.size > MAX_BUILD_MESSAGES
-            val messages = synchronized(allMessages) {
-                if (truncated) ArrayList(allMessages.subList(0, MAX_BUILD_MESSAGES)) else ArrayList(allMessages)
+            val selectedMessages = BuildProjectResultSelector.selectMessages(
+                buildFailed = !success,
+                currentMessages = snapshot(currentMessages),
+                failureMessages = snapshot(failureMessages),
+                rawOutput = buildEventRawOutput.toString(),
+                relativizePath = { path -> ProjectUtils.getRelativePath(project, path) }
+            )
+            val truncated = selectedMessages.size > MAX_BUILD_MESSAGES
+            val messages = if (truncated) {
+                selectedMessages.take(MAX_BUILD_MESSAGES)
+            } else {
+                selectedMessages
             }
             BuildDiagnosticsCacheService.getInstance(project).recordBuildResult(messages)
-            val errorCount = messages.count { it.category == "ERROR" }.takeIf { allMessages.isNotEmpty() }
-            val warningCount = messages.count { it.category == "WARNING" }.takeIf { allMessages.isNotEmpty() }
+            val errorCount = messages.count { it.category == "ERROR" }.takeIf { selectedMessages.isNotEmpty() }
+            val warningCount = messages.count { it.category == "WARNING" }.takeIf { selectedMessages.isNotEmpty() }
 
             return createJsonResult(BuildProjectResult(
-                success = if (timedOut) false else !result!!.hasErrors() && !result.isAborted,
+                success = success,
                 aborted = timedOut || result?.isAborted == true,
                 errors = errorCount,
                 warnings = warningCount,
@@ -206,8 +224,8 @@ class BuildProjectTool : AbstractMcpTool() {
         project: Project,
         parentDisposable: Disposable,
         messages: MutableList<BuildMessage>,
-        rawOutput: StringBuffer,
-        includeRawOutput: Boolean
+        failureMessages: MutableList<BuildMessage>,
+        rawOutput: StringBuffer
     ): Disposable? {
         return BuildListenerUtils.subscribeToBuildProgressListener(project, parentDisposable) { _, event ->
             val buildMessage = BuildListenerUtils.extractBuildMessage(event, project)
@@ -215,14 +233,17 @@ class BuildProjectTool : AbstractMcpTool() {
                 messages.add(buildMessage)
             }
 
-            if (includeRawOutput) {
-                val text = BuildListenerUtils.extractRawOutput(event)
-                if (text != null && rawOutput.length < MAX_RAW_OUTPUT_CHARS) {
-                    rawOutput.append(text)
-                }
+            failureMessages.addAll(BuildListenerUtils.extractFailureMessages(event, project))
+
+            val text = BuildListenerUtils.extractRawOutput(event)
+            if (text != null && rawOutput.length < MAX_RAW_OUTPUT_CHARS) {
+                rawOutput.append(text)
             }
         }
     }
+
+    private fun snapshot(messages: MutableList<BuildMessage>): List<BuildMessage> =
+        synchronized(messages) { ArrayList(messages) }
 
     private fun subscribeToCompilerMessages(
         project: Project,

@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildOutputParser
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
@@ -17,14 +19,17 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
     companion object {
         private val LOG = logger<BuildDiagnosticsCacheService>()
         private const val MAX_CACHED_MESSAGES = 500
+        private const val MAX_RAW_OUTPUT_CHARS = 100_000
 
         fun getInstance(project: Project): BuildDiagnosticsCacheService =
             project.getService(BuildDiagnosticsCacheService::class.java)
     }
 
     private var buildEventMessages = AtomicReference<List<BuildMessage>>(emptyList())
+    private var failureMessages = AtomicReference<List<BuildMessage>>(emptyList())
     private var compilerMessages = AtomicReference<List<BuildMessage>>(emptyList())
     private var publishedMessages = AtomicReference<List<BuildMessage>>(emptyList())
+    private val buildRawOutput = AtomicReference("")
     private val buildTimestamp = AtomicLong(0L)
     private val currentBuildId = AtomicReference<Any?>(null)
     private val initialized = AtomicBoolean(false)
@@ -43,6 +48,8 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             val messages = BuildListenerUtils.extractCompilerMessages(compileContext, project)
             if (currentBuildId.get() == null) {
                 buildEventMessages.set(emptyList())
+                failureMessages.set(emptyList())
+                buildRawOutput.set("")
             }
             compilerMessages.set(messages.take(MAX_CACHED_MESSAGES))
             publishActiveMessages()
@@ -56,8 +63,10 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
         if (previousBuildId == null || previousBuildId != buildId) {
             currentBuildId.set(buildId)
             buildEventMessages.set(emptyList())
+            failureMessages.set(emptyList())
             compilerMessages.set(emptyList())
             publishedMessages.set(emptyList())
+            buildRawOutput.set("")
             buildTimestamp.set(0L)
         }
 
@@ -66,9 +75,19 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             addBuildEventMessage(message)
         }
 
+        val failures = BuildListenerUtils.extractFailureMessages(event, project)
+        if (failures.isNotEmpty()) {
+            addFailureMessages(failures)
+        }
+
+        val rawOutput = BuildListenerUtils.extractRawOutput(event)
+        if (rawOutput != null) {
+            appendRawOutput(rawOutput)
+        }
+
         val eventClassName = event.javaClass.simpleName
         if (eventClassName.contains("Finish") || eventClassName.contains("Success") || eventClassName.contains("Failure")) {
-            publishActiveMessages()
+            publishActiveMessages(BuildListenerUtils.isFailureResultEvent(event))
         }
     }
 
@@ -82,9 +101,36 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
         }
     }
 
-    private fun publishActiveMessages() {
-        val activeMessages = compilerMessages.get().ifEmpty { buildEventMessages.get() }
-        publishedMessages.set(activeMessages)
+    private fun addFailureMessages(messages: List<BuildMessage>) {
+        failureMessages.updateAndGet { existing ->
+            if (existing.size >= MAX_CACHED_MESSAGES) {
+                existing
+            } else {
+                (existing + messages).take(MAX_CACHED_MESSAGES)
+            }
+        }
+    }
+
+    private fun appendRawOutput(text: String) {
+        buildRawOutput.updateAndGet { existing ->
+            if (existing.length >= MAX_RAW_OUTPUT_CHARS) {
+                existing
+            } else {
+                (existing + text).take(MAX_RAW_OUTPUT_CHARS)
+            }
+        }
+    }
+
+    private fun publishActiveMessages(buildFailed: Boolean = false) {
+        val currentMessages = compilerMessages.get().ifEmpty { buildEventMessages.get() }
+        val activeMessages = when {
+            currentMessages.isNotEmpty() || !buildFailed -> currentMessages
+            failureMessages.get().isNotEmpty() -> failureMessages.get()
+            else -> BuildOutputParser.parse(buildRawOutput.get()) { path ->
+                ProjectUtils.getRelativePath(project, path)
+            }
+        }
+        publishedMessages.set(activeMessages.take(MAX_CACHED_MESSAGES))
         buildTimestamp.set(System.currentTimeMillis())
     }
 
@@ -108,7 +154,9 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
 
     override fun dispose() {
         buildEventMessages.set(emptyList())
+        failureMessages.set(emptyList())
         compilerMessages.set(emptyList())
         publishedMessages.set(emptyList())
+        buildRawOutput.set("")
     }
 }
