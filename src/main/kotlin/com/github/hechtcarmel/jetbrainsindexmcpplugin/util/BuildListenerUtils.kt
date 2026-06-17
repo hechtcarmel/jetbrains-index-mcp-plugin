@@ -28,6 +28,12 @@ object BuildListenerUtils {
     private val outputEventClass: Class<*>? by lazy {
         try { Class.forName("com.intellij.build.events.OutputBuildEvent") } catch (_: ClassNotFoundException) { null }
     }
+    private val finishEventClass: Class<*>? by lazy {
+        try { Class.forName("com.intellij.build.events.FinishEvent") } catch (_: ClassNotFoundException) { null }
+    }
+    private val failureResultClass: Class<*>? by lazy {
+        try { Class.forName("com.intellij.build.events.FailureResult") } catch (_: ClassNotFoundException) { null }
+    }
 
     /**
      * Subscribes to Gradle/Maven build events via [com.intellij.build.BuildProgressListener].
@@ -192,6 +198,79 @@ object BuildListenerUtils {
             if (text.isNullOrBlank()) null else text
         } catch (_: Exception) { null }
     }
+
+    fun isFailureResultEvent(event: Any): Boolean {
+        val finishClass = finishEventClass ?: return false
+        val failureClass = failureResultClass ?: return false
+        if (!finishClass.isInstance(event)) return false
+
+        return try {
+            val result = event.javaClass.getMethod("getResult").invoke(event)
+            result != null && failureClass.isInstance(result)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun extractFailureMessages(event: Any): List<BuildMessage> {
+        val finishClass = finishEventClass ?: return emptyList()
+        val failureClass = failureResultClass ?: return emptyList()
+        if (!finishClass.isInstance(event)) return emptyList()
+
+        return try {
+            val result = event.javaClass.getMethod("getResult").invoke(event)
+            if (result == null || !failureClass.isInstance(result)) return emptyList()
+
+            val failures = result.javaClass.getMethod("getFailures").invoke(result) as? Iterable<*>
+                ?: return emptyList()
+            val messages = linkedSetOf<BuildMessage>()
+            for (failure in failures) {
+                collectFailureMessages(failure, messages, 0)
+                if (messages.size >= 50) break
+            }
+            messages.toList()
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract build failure messages", e)
+            emptyList()
+        }
+    }
+
+    private fun collectFailureMessages(
+        failure: Any?,
+        messages: MutableSet<BuildMessage>,
+        depth: Int
+    ) {
+        if (failure == null || depth > 8 || messages.size >= 50) return
+
+        val message = invokeString(failure, "getMessage")
+        val description = invokeString(failure, "getDescription")
+        val text = listOfNotNull(message, description)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString("\n")
+
+        if (text.isNotBlank()) {
+            messages.add(BuildMessage(category = "ERROR", message = text))
+        }
+
+        val causes = try {
+            failure.javaClass.getMethod("getCauses").invoke(failure) as? Iterable<*>
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        for (cause in causes) {
+            collectFailureMessages(cause, messages, depth + 1)
+            if (messages.size >= 50) break
+        }
+    }
+
+    private fun invokeString(target: Any, methodName: String): String? =
+        try {
+            target.javaClass.getMethod(methodName).invoke(target) as? String
+        } catch (_: Exception) {
+            null
+        }
 
     /**
      * Extracts ERROR and WARNING messages from a CompileContext.

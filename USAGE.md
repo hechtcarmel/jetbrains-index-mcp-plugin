@@ -738,7 +738,7 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
   "warnings": 2,
   "buildMessages": [
     {
-      "severity": "ERROR",
+      "category": "ERROR",
       "message": "Unresolved reference: fooBar",
       "file": "src/main/kotlin/com/example/App.kt",
       "line": 15,
