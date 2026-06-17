@@ -26,6 +26,17 @@ class BuildOutputParserUnitTest : TestCase() {
         assertNull(messages[1].column)
     }
 
+    fun testNormalizesWindowsBackslashesBeforeRelativizing() {
+        val output = "D:\\Project\\app\\src\\VideoInfo.cpp(42,13): error C2065: 'foo': undeclared identifier"
+
+        val messages = BuildOutputParser.parse(output) { path ->
+            if (path == "D:/Project/app/src/VideoInfo.cpp") "src/VideoInfo.cpp" else null
+        }
+
+        assertEquals(1, messages.size)
+        assertEquals("src/VideoInfo.cpp", messages.single().file)
+    }
+
     fun testParsesClangStylePathsWithWindowsDriveLetters() {
         val output = "D:/Project/app/src/VideoInfo.cpp:42:13: error: use of undeclared identifier 'foo'"
 

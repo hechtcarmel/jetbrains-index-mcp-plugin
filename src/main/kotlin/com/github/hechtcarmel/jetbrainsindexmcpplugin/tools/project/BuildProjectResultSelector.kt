@@ -12,18 +12,32 @@ internal object BuildProjectResultSelector {
         rawOutput: String,
         relativizePath: (String) -> String?
     ): List<BuildMessage> {
-        if (!buildFailed || currentMessages.isNotEmpty()) {
+        if (!buildFailed || currentMessages.hasErrors()) {
             return currentMessages
         }
 
-        if (failureMessages.isNotEmpty()) {
-            return failureMessages
-        }
+        val fallbackMessages = fallbackMessages(failureMessages, rawOutput, relativizePath)
+        if (fallbackMessages.isEmpty()) return currentMessages
 
-        if (rawOutput.isBlank()) {
-            return emptyList()
+        if (currentMessages.isNotEmpty() && !fallbackMessages.hasErrors()) {
+            return currentMessages
         }
-
-        return BuildOutputParser.parse(rawOutput, relativizePath)
+        return (currentMessages + fallbackMessages).distinct()
     }
+
+    private fun fallbackMessages(
+        failureMessages: List<BuildMessage>,
+        rawOutput: String,
+        relativizePath: (String) -> String?
+    ): List<BuildMessage> {
+        val parsedMessages = if (rawOutput.isBlank()) {
+            emptyList()
+        } else {
+            BuildOutputParser.parse(rawOutput, relativizePath)
+        }
+        return (parsedMessages + failureMessages).distinct()
+    }
+
+    private fun List<BuildMessage>.hasErrors(): Boolean =
+        any { it.category == "ERROR" }
 }

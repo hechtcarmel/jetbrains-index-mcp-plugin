@@ -98,5 +98,7 @@ object BuildOutputParser {
         if (value.contains("warning", ignoreCase = true)) "WARNING" else "ERROR"
 
     private fun relativize(path: String, relativizePath: (String) -> String?): String =
-        relativizePath(path.trim()) ?: path.trim()
+        path.trim().replace('\\', '/').let { normalizedPath ->
+            relativizePath(normalizedPath) ?: normalizedPath
+        }
 }

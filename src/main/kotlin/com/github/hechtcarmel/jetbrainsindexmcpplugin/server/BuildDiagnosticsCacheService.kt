@@ -1,8 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectResultSelector
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildOutputParser
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
@@ -123,13 +123,15 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
 
     private fun publishActiveMessages(buildFailed: Boolean = false) {
         val currentMessages = compilerMessages.get().ifEmpty { buildEventMessages.get() }
-        val activeMessages = when {
-            currentMessages.isNotEmpty() || !buildFailed -> currentMessages
-            failureMessages.get().isNotEmpty() -> failureMessages.get()
-            else -> BuildOutputParser.parse(buildRawOutput.get()) { path ->
+        val activeMessages = BuildProjectResultSelector.selectMessages(
+            buildFailed = buildFailed,
+            currentMessages = currentMessages,
+            failureMessages = failureMessages.get(),
+            rawOutput = buildRawOutput.get(),
+            relativizePath = { path ->
                 ProjectUtils.getRelativePath(project, path)
             }
-        }
+        )
         publishedMessages.set(activeMessages.take(MAX_CACHED_MESSAGES))
         buildTimestamp.set(System.currentTimeMillis())
     }

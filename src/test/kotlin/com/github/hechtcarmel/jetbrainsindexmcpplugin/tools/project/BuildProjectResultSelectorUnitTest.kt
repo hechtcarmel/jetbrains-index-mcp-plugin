@@ -32,18 +32,49 @@ class BuildProjectResultSelectorUnitTest : TestCase() {
         assertEquals(current, messages)
     }
 
-    fun testFailedEmptyBuildPrefersFailureMessages() {
+    fun testFailedBuildWithWarningsOnlyAddsFallbackError() {
+        val current = listOf(BuildMessage("WARNING", "existing warning"))
+        val fallback = listOf(BuildMessage("ERROR", "build failed"))
+
+        val messages = BuildProjectResultSelector.selectMessages(
+            buildFailed = true,
+            currentMessages = current,
+            failureMessages = fallback,
+            rawOutput = "",
+            relativizePath = { it }
+        )
+
+        assertEquals(listOf(current.single(), fallback.single()), messages)
+    }
+
+    fun testFailedEmptyBuildUsesFailureMessagesWhenRawOutputHasNoCompilerDiagnostics() {
         val failure = listOf(BuildMessage("ERROR", "finish failure"))
 
         val messages = BuildProjectResultSelector.selectMessages(
             buildFailed = true,
             currentMessages = emptyList(),
             failureMessages = failure,
-            rawOutput = "/repo/src/main.cpp:7:5: error: fallback output",
+            rawOutput = "FAILED: build stopped without a compiler location",
             relativizePath = { it }
         )
 
         assertEquals(failure, messages)
+    }
+
+    fun testFailedEmptyBuildPrefersParsedCompilerDiagnosticsOverGenericFailureMessages() {
+        val failure = listOf(BuildMessage("ERROR", "build failed"))
+
+        val messages = BuildProjectResultSelector.selectMessages(
+            buildFailed = true,
+            currentMessages = emptyList(),
+            failureMessages = failure,
+            rawOutput = "/repo/src/main.cpp:7:5: error: use of undeclared identifier 'x'",
+            relativizePath = { it.removePrefix("/repo/") }
+        )
+
+        assertEquals(2, messages.size)
+        assertEquals(BuildMessage("ERROR", "use of undeclared identifier 'x'", "src/main.cpp", 7, 5), messages[0])
+        assertEquals(failure.single(), messages[1])
     }
 
     fun testFailedEmptyBuildParsesRecognizedFallbackOutput() {
