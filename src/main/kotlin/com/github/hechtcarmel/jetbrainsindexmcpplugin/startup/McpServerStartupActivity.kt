@@ -20,7 +20,9 @@ class McpServerStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         LOG.info("MCP Server startup activity executing for project: ${project.name}")
 
-        if (ApplicationManager.getApplication().isUnitTestMode) {
+        val application = ApplicationManager.getApplication()
+        if (application.isUnitTestMode || application.isHeadlessEnvironment) {
+            LOG.info("Skipping MCP Server startup activity in unit/headless environment")
             return
         }
 
