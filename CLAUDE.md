@@ -342,11 +342,12 @@ Tests are split into two categories to optimize execution time:
 # Run all tests
 ./gradlew test
 
-# Run only fast unit tests (recommended for quick feedback)
+# Run only fast unit tests — use this locally (< 30s, no IDE needed)
 ./gradlew test --tests "*UnitTest*"
 
-# Run only platform tests
-./gradlew test --tests "*Test" --tests "!*UnitTest*"
+# Platform tests — DO NOT run locally; they require full IntelliJ Platform
+# initialization and hang on headless machines. Let CI run these.
+# ./gradlew test --tests "*Test" --tests "!*UnitTest*"
 
 # Run specific test class
 ./gradlew test --tests "McpPluginUnitTest"
@@ -527,32 +528,21 @@ VirtualFileManager   // Virtual file system
 
 ## Contributing / PR Checklist
 
-Every PR **must** include:
+**Every PR — without exception — must comply with [CONTRIBUTING.md](CONTRIBUTING.md).**
+Read it before writing a single line of code. It is the authoritative guide for this repo.
 
-1. **CHANGELOG.md update** — Add an entry under `## [Unreleased]` following [Keep a Changelog](https://keepachangelog.com) format. Use sections: `Added`, `Changed`, `Fixed`, `Removed`, `Breaking`
-2. Follow existing code patterns and use `SchemaBuilder` for new tool schemas
-3. Add tests for new functionality
-4. Update this documentation (`CLAUDE.md`) for any structural or architectural changes
-5. Run `./gradlew test` to verify all tests pass (do NOT run platform tests yourself)
+Before pushing, run the pre-push validation script to catch common mistakes automatically:
 
-Only update `pluginVersion` in `gradle.properties` when the user explicitly asks to update the version. When requested, follow [SemVer](https://semver.org):
-- **Patch** (3.x.**Y**): Bug fixes, internal refactoring with no behavior change
-- **Minor** (3.**Y**.0): New features, new tools, protocol improvements
-- **Major** (**Y**.0.0): Breaking changes to tool schemas, transport, or client configuration
+```bash
+./scripts/check-pr.sh
+```
 
----
-
-## Smoke Test Protocol
-
-After any `./gradlew buildPlugin` → install → restart cycle, offer to run the smoke
-test at `docs/smoke-test-protocol.md`. It covers HTTP-level behaviour, tool registration,
-and end-to-end paths that the automated test suite cannot catch.
-
-**Offer the smoke test when changes touch:** HTTP transport (`KtorMcpServer.kt`,
-`JsonRpcHandler.kt`), tool registration (`ToolRegistry.kt`, `McpServerService.kt`),
-or any tool covered by the protocol.
-
-**Skip for:** documentation-only, test-only, or `gradle.properties` version-bump changes.
+Quick summary of the non-negotiables:
+1. `CHANGELOG.md` — empty `[Unreleased]` section (maintainer adds the release entry)
+2. No `.idea/gradle.xml`, no `scripts/build-install.sh`, no `docs/pr-*.md`
+3. New tools: registered in `ToolNames`, `McpSettings.disabledTools`, `ToolRegistry`, and all six doc locations (`README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`, `tools-reference.md`, `ToolNames.ALL` sorted)
+4. No `@Internal` API, no `ModalityState.NON_MODAL` (deprecated)
+5. Unit tests pass: `./gradlew test --tests "*UnitTest*"` (never run full `./gradlew test` locally)
 
 ---
 
