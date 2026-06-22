@@ -70,6 +70,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE,
             ToolNames.INSTALL_PLUGIN,
+            ToolNames.RELOAD_PROJECT,
             ToolNames.RESTART_IDE,
             ToolNames.CLOSE_PROJECT,
             ToolNames.OPEN_PROJECT,

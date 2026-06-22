@@ -253,6 +253,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_diagnostics` | Analyze file problems with fresh editor diagnostics for open files or public batch diagnostics for closed files, plus optional build/test results; intentions are best-effort |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |
+| `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` *(disabled by default)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |

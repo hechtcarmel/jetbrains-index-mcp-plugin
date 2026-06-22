@@ -107,6 +107,7 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
         persistedState.closedProjectPaths.remove(path)
         modes.remove(path)
         cancelAllAlarms(path)
+        disposeAlarms(path)
         LifecycleEventLog.getInstance().log(
             LifecycleEventLog.Entry(project = name, path = path, event = "release", trigger = "mcp_call")
         )
@@ -239,6 +240,15 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
         inactivityAlarms[path]?.cancelAllRequests()
     }
 
+    /** Cancel and dispose alarms for a path, removing them from the maps entirely.
+     *  Call on permanent release/close — getOrPut will create fresh ones if re-enrolled.
+     *  Plain [cancelAllAlarms] should be used for transient state changes (ACTIVE→BACKGROUND)
+     *  where alarms will be rescheduled shortly after. */
+    private fun disposeAlarms(path: String) {
+        focusAlarms.remove(path)?.let { runCatching { Disposer.dispose(it) } }
+        inactivityAlarms.remove(path)?.let { runCatching { Disposer.dispose(it) } }
+    }
+
     fun wasClosedByUs(path: String): Boolean = persistedState.closedProjectPaths.contains(path)
 
     /** Updates the registry without touching an open project window — used when re-registering after restart. */
@@ -300,6 +310,7 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
 
     private fun onClosed(project: Project, path: String, previous: ProjectMode, trigger: String) {
         cancelAllAlarms(path)
+        disposeAlarms(path)
 
         // Never close below the minimum. Rather than rescheduling the alarm (which hammers
         // the log every 10 min), add to pendingClose and wait for an event-driven flush.

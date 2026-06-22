@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **`ide_reload_project`** — request a refresh of linked external build systems (Maven, Gradle, or both). Use after modifying build files so IntelliJ picks up the updated model before diagnostics or builds. Only linked (previously imported) systems are refreshed; returns an error if nothing was scheduled. *(disabled by default)*
 
 ## [4.23.2] - 2026-06-14
 ### Fixed

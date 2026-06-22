@@ -162,7 +162,7 @@ abstract class AbstractMcpTool : McpTool {
         return if (ApplicationManager.getApplication().isDispatchThread) {
             action()
         } else {
-            withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { action() }
+withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { action() }
         }
     }
 
@@ -248,13 +248,26 @@ abstract class AbstractMcpTool : McpTool {
         return try {
             doExecute(project, arguments)
         } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
-            // The IDE entered dumb mode (reindexing) during this call. This can happen
-            // when a project has just woken from dormant or a background process triggered
-            // reindexing. The caller should check ide_index_status and retry.
+            // The IDE entered dumb mode (reindexing) during this call.
             createErrorResult(
-                "IDE index is not ready — indexing is in progress. " +
-                "Call ide_index_status to check when it completes, then retry."
+                "IDE index is not ready (dumb mode) — IntelliJ is indexing in the background. " +
+                "DO NOT fall back to bash/grep or try the built-in IntelliJ MCP. " +
+                "Call ide_index_status repeatedly (every 5-10s) until isDumbMode is false, " +
+                "then retry this exact tool call with the same arguments."
             )
+        } catch (e: Exception) {
+            // Catch "Outdated stub in index" — thrown when a file was modified externally
+            // (e.g. by an AI agent) and IntelliJ's PSI stub cache is stale. The physical
+            // file length no longer matches what the index recorded.
+            if (e.message?.contains("Outdated stub") == true || e.message?.contains("stub in index") == true) {
+                createErrorResult(
+                    "File index is stale — a file was modified externally and IntelliJ " +
+                    "hasn't refreshed its index yet. Call ide_sync_files to force a VFS " +
+                    "refresh, then retry this operation."
+                )
+            } else {
+                throw e
+            }
         }
     }
 
@@ -280,7 +293,10 @@ abstract class AbstractMcpTool : McpTool {
      */
     protected fun requireSmartMode(project: Project) {
         if (DumbService.isDumb(project)) {
-            throw IndexNotReadyException("IDE is in dumb mode, indexes not available")
+            throw IndexNotReadyException("IDE index is not ready (dumb mode) — IntelliJ is indexing in the background. " +
+                "DO NOT fall back to bash/grep or try the built-in IntelliJ MCP. " +
+                "Call ide_index_status repeatedly (every 5-10s) until isDumbMode is false, " +
+                "then retry this exact tool call with the same arguments.")
         }
     }
 

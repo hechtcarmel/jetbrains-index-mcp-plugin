@@ -509,6 +509,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.PROJECT_STATUS,
             ToolNames.RELEASE_ALL_PROJECTS,
             ToolNames.RELEASE_PROJECT,
+            ToolNames.RELOAD_PROJECT,
             ToolNames.SET_ALL_PROJECT_MODES,
             ToolNames.SET_PROJECT_MODE
         )

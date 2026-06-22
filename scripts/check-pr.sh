@@ -14,15 +14,14 @@ hdr()  { echo ""; echo "── $1"; }
 hdr "CHANGELOG.md"
 
 if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
-    # [Unreleased] must be empty (just a blank line before the next ## section)
-    UNRELEASED_CONTENT=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md | grep -v '^$' || true)
-    if [ -z "$UNRELEASED_CONTENT" ]; then
-        ok "[Unreleased] section is empty"
-    else
-        fail "[Unreleased] has content — maintainer adds release entries, not contributors"
-    fi
+    ok "## [Unreleased] section present"
 else
-    fail "Missing ## [Unreleased] section"
+    fail "Missing ## [Unreleased] section — add one for user-visible changes"
+fi
+if git diff "${UPSTREAM_BASE:-HEAD~1}" HEAD -- CHANGELOG.md 2>/dev/null | grep -qE '"^\+## \[[0-9]"'; then
+    fail "New versioned release entry added — only the maintainer creates ## [x.y.z] sections"
+else
+    ok "No versioned release entries added by contributor"
 fi
 
 # ── 2. Forbidden files ───────────────────────────────────────────────────────

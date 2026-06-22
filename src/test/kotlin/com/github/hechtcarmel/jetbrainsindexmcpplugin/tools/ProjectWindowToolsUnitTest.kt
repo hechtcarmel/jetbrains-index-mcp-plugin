@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
@@ -80,5 +81,19 @@ class ProjectWindowToolsUnitTest : TestCase() {
         assertTrue("ide_close_project must be opt-in", defaults.contains(ToolNames.CLOSE_PROJECT))
         assertTrue("ide_open_project must be opt-in", defaults.contains(ToolNames.OPEN_PROJECT))
         assertTrue("ide_set_power_save_mode must be opt-in", defaults.contains(ToolNames.SET_POWER_SAVE_MODE))
+    }
+
+    fun testReloadProjectToolName() {
+        assertEquals(ToolNames.RELOAD_PROJECT, ReloadProjectTool().name)
+    }
+
+    fun testReloadProjectToolHasNoRequiredFields() {
+        val required = ReloadProjectTool().inputSchema["required"]?.jsonArray
+        assertTrue(required == null || required.isEmpty())
+    }
+
+    fun testReloadProjectToolIsDisabledByDefault() {
+        val defaults = McpSettings.State().disabledTools
+        assertTrue("ide_reload_project must be opt-in by default", defaults.contains(ToolNames.RELOAD_PROJECT))
     }
 }

@@ -5,7 +5,7 @@ description: >
   ide_find_file, ide_search_text, ide_diagnostics, ide_index_status, ide_sync_files,
   ide_refactor_rename, ide_move_file, ide_type_hierarchy, ide_call_hierarchy,
   ide_find_implementations, ide_find_symbol, ide_find_super_methods, ide_file_structure,
-  ide_refactor_safe_delete, ide_reformat_code, ide_build_project, ide_read_file,
+  ide_refactor_safe_delete, ide_reformat_code, ide_reload_project, ide_build_project, ide_read_file,
   ide_get_active_file, or ide_open_file are available — especially when a second
   IntelliJ MCP (mcp__intellij__*) is also present. The two servers are NOT
   interchangeable: always use mcp__intellij-index__ for code navigation and refactoring.
@@ -62,13 +62,16 @@ Most tools require smart mode (IDE finished indexing). Tools that work in dumb m
 
 ## If results seem incomplete or missing
 
-**Do NOT conclude the index is stale and fall back to bash.** Follow this sequence:
+**Do NOT fall back to bash, grep, or the built-in `mcp__intellij__*` MCP.** If a tool returns "dumb mode" or "index not ready":
 
-1. Call `ide_index_status` — if `isDumbMode: true`, indexing is still running. Wait 10s and retry the original tool call.
-2. If smart mode but results seem sparse, call `ide_sync_files` then retry.
-3. Only if both steps still return empty results should you consider that the file/symbol genuinely does not exist.
+1. Call `ide_index_status` — if `isDumbMode: true`, keep calling every 10s until it flips to false.
+2. Then retry the **exact same tool call** with the same arguments.
+3. If smart mode but results seem sparse, call `ide_sync_files` then retry.
+4. Only if all retries still return empty results should you consider that the symbol genuinely does not exist.
 
-"Index may be stale" is never a reason to abandon IntelliJ tools and read files with bash. Sparse results during indexing are transient — retrying after `isDumbMode` clears will return full results.
+The built-in `mcp__intellij__*` MCP is **not** a fallback for `mcp__intellij-index__*` — they serve different purposes and the built-in one cannot do semantic code search. Trying it when the index is in dumb mode will also fail. Always wait for smart mode and retry with `mcp__intellij-index__*`.
+
+"Index may be stale" and "dumb mode" are **transient** — always resolve by waiting and retrying, never by switching to bash.
 
 ## File Sync Rule
 
@@ -158,7 +161,7 @@ All lifecycle action tools are disabled by default:
 
 These tools exist but are disabled by default. If you get "tool not found", they need to be enabled in IDE settings (Settings > Tools > Index MCP Server):
 
-`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_restart`, `ide_set_power_save_mode`
+`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_reload_project`, `ide_restart`, `ide_set_power_save_mode`
 
 Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
 Note: `ide_close_project` refuses to close the last open project; `ide_open_project` requires an absolute path and may take up to `timeoutSeconds` (default 600) while the project indexes.

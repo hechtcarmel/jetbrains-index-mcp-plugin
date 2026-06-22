@@ -138,6 +138,8 @@ class OpenProjectTool : AbstractMcpTool() {
      */
     private suspend fun awaitSmartMode(opened: Project): Boolean =
         suspendCancellableCoroutine { continuation ->
+            // nonModal() is the SDK-correct modality for runWhenSmart.
+            // The outer withTimeoutOrNull handles the modal-dialog case without needing any().
             ApplicationManager.getApplication().invokeLater({
                 if (!opened.isDisposed) {
                     DumbService.getInstance(opened).runWhenSmart {

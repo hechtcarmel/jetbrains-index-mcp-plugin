@@ -22,6 +22,7 @@ object ToolNames {
     const val INDEX_STATUS = "ide_index_status"
     const val SYNC_FILES = "ide_sync_files"
     const val BUILD_PROJECT = "ide_build_project"
+    const val RELOAD_PROJECT = "ide_reload_project"
 
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
@@ -89,6 +90,7 @@ object ToolNames {
         REFORMAT_CODE,
         RELEASE_ALL_PROJECTS,
         RELEASE_PROJECT,
+        RELOAD_PROJECT,
         RESTART_IDE,
         SEARCH_TEXT,
         SET_ALL_PROJECT_MODES,

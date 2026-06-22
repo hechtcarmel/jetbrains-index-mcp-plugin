@@ -697,6 +697,34 @@ Force the IDE to synchronize its virtual file system and PSI cache with external
 
 ---
 
+### ide_reload_project
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Force-reload the project build model (Maven, Gradle, or both). Equivalent to clicking **"Reload All Maven Projects"** or **"Reload Gradle Project"** in the IDE.
+
+Use this after modifying `pom.xml`, `build.gradle`, `build.gradle.kts`, `settings.gradle`, or any dependency configuration file so that IntelliJ resolves the updated dependencies before running diagnostics or builds. The reload is asynchronous — IntelliJ resolves dependencies in the background.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Selects the project when multiple are open |
+
+**Example:**
+
+```json
+{ "name": "ide_reload_project", "arguments": {} }
+```
+
+**Example Response:**
+
+```
+Build model reload scheduled for Maven in 'engine'. IntelliJ is resolving dependencies in the background.
+```
+
+---
+
 ### ide_build_project
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server

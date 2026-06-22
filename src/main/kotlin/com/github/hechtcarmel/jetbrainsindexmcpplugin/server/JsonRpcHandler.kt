@@ -163,7 +163,10 @@ class JsonRpcHandler @JvmOverloads constructor(
                 status = if (result.isError) CommandStatus.ERROR else CommandStatus.SUCCESS,
                 result = result.content.firstOrNull()?.let {
                     when (it) {
-                        is ContentBlock.Text -> it.text
+                        // Truncate to 4 KB — history is for display, not replay.
+                        // Large tool responses (find_references on popular classes can be 100 KB+)
+                        // would otherwise accumulate in the per-project history deque and waste heap.
+                        is ContentBlock.Text -> it.text.take(4096)
                         is ContentBlock.Image -> "[Image]"
                     }
                 },

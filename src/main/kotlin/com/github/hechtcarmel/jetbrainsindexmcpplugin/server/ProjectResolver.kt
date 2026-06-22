@@ -22,6 +22,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import java.nio.file.Path
@@ -287,6 +288,21 @@ object ProjectResolver {
             val modeService = runCatching { ProjectModeService.getInstance() }.getOrNull()
             val lifecycleEnabled = runCatching { McpSettings.getInstance().lifecycleEnabled }.getOrDefault(false)
             if (lifecycleEnabled && modeService != null && modeService.wasClosedByUs(normalizedPath)) {
+                if (isMemoryCritical()) {
+                    // Heap is nearly full — loading another project's index would cause OOM.
+                    // Return a clear error so the caller knows to wait rather than trying
+                    // ide_open_project or falling back to bash.
+                    val runtime = Runtime.getRuntime()
+                    val free = runtime.freeMemory() + (runtime.maxMemory() - runtime.totalMemory())
+                    val freePct = (free.toDouble() / runtime.maxMemory() * 100).toInt()
+                    return buildErrorResult(
+                        "Cannot auto-open '$normalizedPath' — JVM heap is critically low ($freePct% free). " +
+                        "IntelliJ is likely GC-thrashing. Wait 30-60 seconds for the lifecycle manager to " +
+                        "close idle projects and free memory, then retry this tool call with the same arguments. " +
+                        "Do NOT try ide_open_project or fall back to bash.",
+                        projectPath
+                    )
+                }
                 LOG.info("Auto-opening closed managed project: $normalizedPath")
                 val project = reopenAndAwaitSmartMode(normalizedPath)
                     ?: run {
@@ -318,6 +334,23 @@ object ProjectResolver {
             ?.filterValues { it == com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode.CLOSED }
             ?.keys?.firstOrNull()
         if (fallbackPath != null) {
+            if (isMemoryCritical()) {
+                val runtime = Runtime.getRuntime()
+                val free = runtime.freeMemory() + (runtime.maxMemory() - runtime.totalMemory())
+                val freePct = (free.toDouble() / runtime.maxMemory() * 100).toInt()
+                return Result(isError = true, errorResult = buildStructuredErrorResult(buildJsonObject {
+                    put("error", ErrorMessages.ERROR_NO_PROJECT_OPEN)
+                    put("message", "No project is open and auto-open is blocked — JVM heap is critically low ($freePct% free). " +
+                        "Wait 30-60 seconds for the lifecycle manager to close idle projects and free memory, " +
+                        "then retry with project_path pointing to the project you need. " +
+                        "Do NOT try ide_open_project or fall back to bash.")
+                    put("managed_closed_projects", buildJsonArray {
+                        modeService?.getAllManagedModes()
+                            ?.filterValues { it == com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode.CLOSED }
+                            ?.keys?.forEach { add(it) }
+                    })
+                }, format = responseFormat()))
+            }
             LOG.info("No open projects and no project_path — auto-opening managed project: $fallbackPath")
             val project = reopenAndAwaitSmartMode(fallbackPath)
             if (project != null) {
@@ -366,20 +399,25 @@ object ProjectResolver {
         // Wait for indexing outside the Mutex so other callers can start opening their own
         // projects in parallel. If the HTTP caller cancels (timeout), still return the project
         // so markReopened is called and the next request succeeds without re-opening.
-        // DumbService.runWhenSmart must be called from non-modal EDT context — calling it
-        // from a pooled thread (ModalityState.ANY) triggers a suppressed-exception warning
-        // in IntelliJ 2026+.
+        //
+        // Use a 120-second timeout: if a modal dialog (e.g. Git "add files?" prompt) appears
+        // during project open, ModalityState.nonModal() blocks indefinitely until the dialog
+        // is dismissed. The timeout lets us return the (already open) project so other MCP
+        // calls are not permanently stuck. The caller can poll ide_index_status to wait for
+        // smart mode before running index-dependent operations.
         runCatching {
-            suspendCancellableCoroutine { continuation ->
-                ApplicationManager.getApplication().invokeLater({
-                    if (!project.isDisposed) {
-                        DumbService.getInstance(project).runWhenSmart {
-                            if (!continuation.isCompleted) continuation.resume(Unit)
+            withTimeoutOrNull(120_000L) {
+                suspendCancellableCoroutine { continuation ->
+                    ApplicationManager.getApplication().invokeLater({
+                        if (!project.isDisposed) {
+                            DumbService.getInstance(project).runWhenSmart {
+                                if (!continuation.isCompleted) continuation.resume(Unit)
+                            }
+                        } else {
+                            continuation.cancel()
                         }
-                    } else {
-                        continuation.cancel()
-                    }
-                }, ModalityState.nonModal())
+                    }, ModalityState.nonModal())
+                }
             }
         }
 
@@ -425,4 +463,23 @@ object ProjectResolver {
     private fun responseFormat(): McpSettings.ResponseFormat =
         runCatching { McpSettings.getInstance().responseFormat }
             .getOrDefault(McpSettings.ResponseFormat.JSON)
+
+    /**
+     * Returns true when JVM heap is critically low — less than 10% free.
+     * Auto-opening a project when memory is already exhausted causes OOM: IntelliJ must load
+     * the full project index into an already-saturated heap, which is what caused the freeze.
+     * Callers that return false should propagate the original error so the agent can retry
+     * after memory is freed (e.g. lifecycle closes another project).
+     */
+    private fun isMemoryCritical(): Boolean {
+        val runtime = Runtime.getRuntime()
+        val free = runtime.freeMemory() + (runtime.maxMemory() - runtime.totalMemory())
+        val total = runtime.maxMemory()
+        val freePct = free.toDouble() / total
+        if (freePct < 0.10) {
+            LOG.warn("Skipping auto-open — heap is critically low (${(freePct * 100).toInt()}% free, ${free / 1_048_576} MB)")
+            return true
+        }
+        return false
+    }
 }
