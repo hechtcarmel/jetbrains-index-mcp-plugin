@@ -20,6 +20,9 @@
 - `ide_type_hierarchy` now resolves JavaScript and TypeScript `className` lookups through WebStorm symbol search when JVM-style class lookup is not applicable.
 - Added regression coverage and guidance for overloads, barrels, aliases, `implements`, and derived `as const`/type-driven cases so the JS/TS navigation behavior stays predictable across supported WebStorm queries.
 
+### Fixed
+- Treat lone `language` or `symbol` placeholders as position-mode noise when `ide_find_references` receives a complete file/line/column target.
+
 ## [4.23.2] - 2026-06-14
 ### Fixed
 - Build failures that only report compiler output now return diagnostics instead of an empty error list when possible.
