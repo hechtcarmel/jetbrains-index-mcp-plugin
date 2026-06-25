@@ -505,18 +505,25 @@ abstract class AbstractMcpTool : McpTool {
     /**
      * Resolves whether arguments represent position lookup, symbol lookup, conflict, or missing mode.
      * Blank string fields do not count as present.
+     * A symbol-mode intent requires both `language` and `symbol`; a lone optional field can be a
+     * client/schema placeholder and must not conflict with a complete position lookup.
      */
     protected fun resolveLookupMode(arguments: JsonObject): LookupModeState {
-        val hasSymbol = optionalStringArg(arguments, ParamNames.LANGUAGE) != null ||
-            optionalStringArg(arguments, ParamNames.SYMBOL) != null
-        val hasPosition = optionalStringArg(arguments, ParamNames.FILE) != null ||
-            arguments[ParamNames.LINE]?.jsonPrimitive?.int != null ||
-            arguments[ParamNames.COLUMN]?.jsonPrimitive?.int != null
+        val hasLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
+        val hasSymbol = optionalStringArg(arguments, ParamNames.SYMBOL) != null
+        val hasAnySymbol = hasLanguage || hasSymbol
+        val hasCompleteSymbol = hasLanguage && hasSymbol
+        val hasFile = optionalStringArg(arguments, ParamNames.FILE) != null
+        val hasLine = arguments[ParamNames.LINE]?.jsonPrimitive?.int != null
+        val hasColumn = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int != null
+        val hasAnyPosition = hasFile || hasLine || hasColumn
+        val hasCompletePosition = hasFile && hasLine && hasColumn
 
         return when {
-            hasSymbol && hasPosition -> LookupModeState.CONFLICT
-            hasSymbol -> LookupModeState.SYMBOL
-            hasPosition -> LookupModeState.POSITION
+            hasCompleteSymbol && hasAnyPosition -> LookupModeState.CONFLICT
+            hasCompletePosition -> LookupModeState.POSITION
+            hasAnySymbol -> LookupModeState.SYMBOL
+            hasAnyPosition -> LookupModeState.POSITION
             else -> LookupModeState.MISSING
         }
     }

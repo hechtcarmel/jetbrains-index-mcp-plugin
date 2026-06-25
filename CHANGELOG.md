@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Treat lone `language` or `symbol` placeholders as position-mode noise when `ide_find_references` receives a complete file/line/column target.
+
 ## [4.23.2] - 2026-06-14
 ### Fixed
 - Build failures that only report compiler output now return diagnostics instead of an empty error list when possible.

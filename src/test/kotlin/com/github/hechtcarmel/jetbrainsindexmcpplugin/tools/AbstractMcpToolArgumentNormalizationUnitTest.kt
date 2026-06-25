@@ -87,6 +87,42 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
         )
     }
 
+    fun testLoneLanguageWithCompletePositionUsesPositionMode() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("language", JsonPrimitive("Java"))
+        }
+
+        assertEquals("POSITION", tool.lookupModeNameForTest(arguments))
+    }
+
+    fun testLoneSymbolWithCompletePositionUsesPositionMode() {
+        val arguments = buildJsonObject {
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+            put("symbol", JsonPrimitive("com.example.Main#run()"))
+        }
+
+        assertEquals("POSITION", tool.lookupModeNameForTest(arguments))
+    }
+
+    fun testLoneLanguageWithoutCompletePositionStillRequiresSymbol() {
+        val arguments = buildJsonObject {
+            put("language", JsonPrimitive("Java"))
+        }
+
+        val result = tool.resolveElementForTest(project, arguments)
+
+        assertTrue(result.isFailure)
+        assertEquals(
+            ErrorMessages.missingParamForSymbol("symbol"),
+            result.exceptionOrNull()?.message
+        )
+    }
+
     private fun invokeOptionalStringArg(arguments: JsonObject, name: String): String? {
         val method = findMethod("optionalStringArg")
         return method.invoke(tool, arguments, name) as String?
@@ -122,6 +158,10 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
 
         fun requiredStringForTest(arguments: JsonObject, name: String): Result<String> {
             return requiredStringArg(arguments, name)
+        }
+
+        fun lookupModeNameForTest(arguments: JsonObject): String {
+            return resolveLookupMode(arguments).name
         }
     }
 }
