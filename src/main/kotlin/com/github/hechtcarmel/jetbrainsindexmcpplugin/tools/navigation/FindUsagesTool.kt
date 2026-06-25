@@ -69,8 +69,9 @@ class FindUsagesTool : AbstractMcpTool() {
 
         Example: {"file": "src/UserService.java", "line": 25, "column": 18}
         Example: {"language": "Java", "symbol": "com.example.UserService#findUser(String)", "scope": "project_and_libraries"}
+        Example: {"language": "TypeScript", "symbol": "src/api#default"}
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
-    """.trimIndent()
+        """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()

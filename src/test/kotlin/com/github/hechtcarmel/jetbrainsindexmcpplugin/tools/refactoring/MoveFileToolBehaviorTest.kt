@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiDirectory
@@ -32,6 +33,10 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         val path = Path.of(projectBasePath, relativePath)
         Files.createDirectories(path.parent)
         Files.writeString(path, content)
+        requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(path.toString())) {
+            "Failed to refresh VFS for test file ${path}"
+        }
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
         return path
     }
 
@@ -94,6 +99,7 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
 
         assertTrue("Unsupported PHP semantic moves should fail fast", result.isError)
         assertTrue(textResult(result).contains("semantic PHP move blocked for test"))
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 
     fun testMoveFileToolReportsPhpSemanticBackendWhenSelected() = runBlocking {
@@ -131,6 +137,7 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         assertTrue(message.contains("src/Internal/Foo.php"))
         assertFalse("Source file should be moved away", Files.exists(sourceFile))
         assertTrue("Moved file should exist in target directory", Files.exists(sourceFile.parent.resolve("Internal/Foo.php")))
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 
     fun testMoveFileToolGenericPathNoLongerClaimsReferencesUpdated() = runBlocking {
@@ -148,5 +155,6 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         assertFalse(message.contains("references updated"))
         assertFalse(Files.exists(sourceFile))
         assertTrue(Files.exists(Path.of(requireNotNull(project.basePath), "archive/todo.txt")))
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 }

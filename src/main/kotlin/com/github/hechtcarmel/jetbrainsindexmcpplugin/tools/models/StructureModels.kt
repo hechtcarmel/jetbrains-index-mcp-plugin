@@ -33,7 +33,7 @@ enum class StructureKind {
     // Members
     METHOD, FIELD, PROPERTY, CONSTRUCTOR, CONSTANT, ENUM_CASE,
 
-    // Language-specific
+    // Language-specific (e.g. TypeScript type aliases, PHP includes, Markdown headings)
     FUNCTION, VARIABLE, TYPE_ALIAS, HEADING, INCLUDE,
 
     // Containers

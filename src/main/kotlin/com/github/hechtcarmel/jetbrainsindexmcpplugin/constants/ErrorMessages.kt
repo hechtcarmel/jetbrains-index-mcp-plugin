@@ -7,7 +7,6 @@ object ErrorMessages {
     fun missingRequiredParam(param: String) = "Missing required parameter: $param"
 
     // File errors
-    fun fileNotFound(path: String) = "File not found: $path"
     const val DOCUMENT_NOT_FOUND = "Could not get document for file"
     const val DEFINITION_FILE_NOT_FOUND = "Definition file not found"
 
@@ -38,6 +37,20 @@ object ErrorMessages {
     }
     fun invalidSymbolFormat(symbol: String, examples: List<String>) =
         "Symbol '$symbol' does not match expected format. Examples: ${examples.joinToString(", ")}"
+    private const val JS_TS_ACCEPTED_FORMS =
+        "modulePath#exportName, modulePath#default, modulePath#ClassName.memberName"
+    fun jsTsUnsupportedGrammar(symbol: String) =
+        "unsupported_grammar: Symbol '$symbol' does not match accepted JS/TS symbol forms. Accepted forms: $JS_TS_ACCEPTED_FORMS. Use file+line+column for local symbols, local import aliases, npm/package symbols, unresolved barrel/re-export chains, or any case where the export cannot be resolved from a module-qualified form."
+    fun jsTsNotFound(symbol: String) =
+        "not_found: No declaration found for symbol '$symbol'. If this is a local symbol, alias, npm/package symbol, or unresolved barrel/re-export case, use file+line+column instead."
+    fun jsTsAmbiguousMatch(symbol: String, candidates: List<String>) =
+        "ambiguous_match: Multiple declarations match symbol '$symbol'. Candidates: ${candidates.joinToString(", ")}. If you need an exact local target or the export graph is ambiguous, use file+line+column instead."
+    fun jsTsUnsupportedLanguageCapability(reason: String? = null) =
+        if (reason.isNullOrBlank()) {
+            "unsupported_language_capability: JavaScript/TypeScript symbol resolution is not available in this IDE session. Use file+line+column instead."
+        } else {
+            "unsupported_language_capability: JavaScript/TypeScript symbol resolution is not available in this IDE session. Reason: $reason. Use file+line+column instead."
+        }
     fun typeNotFound(typeFqn: String, projectName: String) =
         "Type '$typeFqn' not found in project '$projectName'"
     fun memberNotFoundInType(memberName: String, typeFqn: String) =
@@ -57,12 +70,8 @@ object ErrorMessages {
     fun msgProjectNotFound(path: String) = "No open project matches the specified path: $path"
     const val MSG_MULTIPLE_PROJECTS = "Multiple projects are open. Please specify 'project_path' parameter with one of the available project paths. For workspace projects, use the sub-project path."
 
-    // Index errors
-    const val INDEX_NOT_READY = "IDE is in dumb mode, indexes not available"
-
     // Tool/method errors
     fun toolNotFound(name: String) = "Tool not found: $name"
-    fun resourceNotFound(uri: String) = "Resource not found: $uri"
     fun methodNotFound(method: String) = "Method not found: $method"
 
     // JSON-RPC errors

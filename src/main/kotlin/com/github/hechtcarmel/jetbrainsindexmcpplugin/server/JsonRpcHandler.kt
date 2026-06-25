@@ -44,8 +44,8 @@ class JsonRpcHandler @JvmOverloads constructor(
         jsonString: String,
         protocolVersion: String
     ): String? {
-        val request = try {
-            json.decodeFromString<JsonRpcRequest>(jsonString)
+        val requestElement = try {
+            json.parseToJsonElement(jsonString)
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: CancellationException) {
@@ -53,6 +53,31 @@ class JsonRpcHandler @JvmOverloads constructor(
         } catch (e: Exception) {
             LOG.warn("Failed to parse JSON-RPC request", e)
             return json.encodeToString(createErrorResponse(code = JsonRpcErrorCodes.PARSE_ERROR, message = ErrorMessages.PARSE_ERROR))
+        }
+
+        val rawRequest = requestElement as? JsonObject
+            ?: return json.encodeToString(createErrorResponse(
+                code = JsonRpcErrorCodes.INVALID_REQUEST,
+                message = "JSON-RPC request must be a JSON object"
+            ))
+
+        validateRequestShape(rawRequest)?.let { errorResponse ->
+            return json.encodeToString(errorResponse)
+        }
+
+        validateToolsCallRequestShape(rawRequest)?.let { errorResponse ->
+            return json.encodeToString(errorResponse)
+        }
+
+        val request = try {
+            json.decodeFromJsonElement<JsonRpcRequest>(rawRequest)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LOG.warn("Failed to decode JSON-RPC request", e)
+            return json.encodeToString(createErrorResponse(code = JsonRpcErrorCodes.INVALID_REQUEST, message = "Malformed JSON-RPC request structure"))
         }
 
         if (request.jsonrpc != "2.0") {
@@ -121,16 +146,47 @@ class JsonRpcHandler @JvmOverloads constructor(
         val params = request.params
             ?: return createErrorResponse(request.id, JsonRpcErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_PARAMS)
 
-        val toolName = params[ParamNames.NAME]?.jsonPrimitive?.contentOrNull
-            ?: return createErrorResponse(request.id, JsonRpcErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_TOOL_NAME)
+        val toolNameElement = params[ParamNames.NAME]
+        val toolName = toolNameElement?.stringContentOrNull()
+        if (toolNameElement != null && toolName == null) {
+            return createErrorResponse(
+                request.id,
+                JsonRpcErrorCodes.INVALID_PARAMS,
+                "tools/call params.name must be a string"
+            )
+        }
+        if (toolName == null) {
+            return createErrorResponse(request.id, JsonRpcErrorCodes.INVALID_PARAMS, ErrorMessages.MISSING_TOOL_NAME)
+        }
 
-        val arguments = params[ParamNames.ARGUMENTS]?.jsonObject ?: JsonObject(emptyMap())
+        val argumentsElement = params[ParamNames.ARGUMENTS]
+        if (argumentsElement != null && argumentsElement !is JsonObject && argumentsElement !is JsonNull) {
+            return createErrorResponse(
+                request.id,
+                JsonRpcErrorCodes.INVALID_PARAMS,
+                "tools/call params.arguments must be a JSON object when present"
+            )
+        }
+
+        val arguments = when (argumentsElement) {
+            null, JsonNull -> JsonObject(emptyMap())
+            is JsonObject -> argumentsElement
+            else -> JsonObject(emptyMap())
+        }
+
+        // Extract optional project_path from arguments
+        val projectPathElement = arguments[ParamNames.PROJECT_PATH]
+        val projectPath = projectPathElement?.stringContentOrNull(allowNullLiteral = true)
+        if (projectPathElement != null && projectPathElement !is JsonNull && projectPath == null) {
+            return createErrorResponse(
+                request.id,
+                JsonRpcErrorCodes.INVALID_PARAMS,
+                "tools/call params.arguments.project_path must be a string when present"
+            )
+        }
 
         val tool = toolRegistry.getTool(toolName)
             ?: return createErrorResponse(request.id, JsonRpcErrorCodes.METHOD_NOT_FOUND, ErrorMessages.toolNotFound(toolName))
-
-        // Extract optional project_path from arguments
-        val projectPath = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.contentOrNull
 
         val projectResult = projectResolver.resolveOrOpen(projectPath)
         if (projectResult.isError) {
@@ -185,7 +241,7 @@ class JsonRpcHandler @JvmOverloads constructor(
                 status = CommandStatus.ERROR, result = e.message, duration = duration)
             return JsonRpcResponse(
                 id = request.id,
-                error = JsonRpcError(code = -32603, message = e.message ?: ErrorMessages.INDEX_NOT_READY)
+                error = JsonRpcError(code = e.errorCode, message = e.message ?: "IDE index is not ready")
             )
         } catch (e: ProcessCanceledException) {
             // IntelliJ control-flow exception (e.g. project disposed mid-call) — must not be
@@ -252,6 +308,65 @@ class JsonRpcHandler @JvmOverloads constructor(
             id = request.id,
             result = JsonObject(emptyMap())
         )
+    }
+
+    private fun validateRequestShape(rawRequest: JsonObject): JsonRpcResponse? {
+        val methodElement = rawRequest["method"] ?: return null
+        val method = methodElement.stringContentOrNull()
+            ?: return createErrorResponse(
+                id = rawRequest["id"],
+                code = JsonRpcErrorCodes.INVALID_REQUEST,
+                message = "JSON-RPC method must be a string"
+            )
+
+        if (method == JsonRpcMethods.TOOLS_CALL) {
+            return null
+        }
+
+        val paramsElement = rawRequest["params"]
+        if (paramsElement != null && paramsElement !is JsonObject && paramsElement !is JsonNull) {
+            return createErrorResponse(
+                id = rawRequest["id"],
+                code = JsonRpcErrorCodes.INVALID_REQUEST,
+                message = "JSON-RPC params must be a JSON object when present"
+            )
+        }
+
+        return null
+    }
+
+    private fun validateToolsCallRequestShape(rawRequest: JsonObject): JsonRpcResponse? {
+        val method = rawRequest["method"]?.stringContentOrNull() ?: return null
+        if (method != JsonRpcMethods.TOOLS_CALL) return null
+
+        val id = rawRequest["id"]
+        val paramsElement = rawRequest["params"]
+        if (paramsElement != null && paramsElement !is JsonObject && paramsElement !is JsonNull) {
+            return createErrorResponse(
+                id = id,
+                code = JsonRpcErrorCodes.INVALID_PARAMS,
+                message = "tools/call params must be a JSON object"
+            )
+        }
+
+        val paramsObject = paramsElement as? JsonObject ?: return null
+        val argumentsElement = paramsObject[ParamNames.ARGUMENTS]
+        if (argumentsElement != null && argumentsElement !is JsonObject && argumentsElement !is JsonNull) {
+            return createErrorResponse(
+                id = id,
+                code = JsonRpcErrorCodes.INVALID_PARAMS,
+                message = "tools/call params.arguments must be a JSON object when present"
+            )
+        }
+
+        return null
+    }
+
+    private fun JsonElement.stringContentOrNull(allowNullLiteral: Boolean = false): String? {
+        if (allowNullLiteral && this is JsonNull) return null
+        val primitive = this as? JsonPrimitive ?: return null
+        if (!primitive.isString) return null
+        return primitive.contentOrNull
     }
 
     private fun createErrorResponse(

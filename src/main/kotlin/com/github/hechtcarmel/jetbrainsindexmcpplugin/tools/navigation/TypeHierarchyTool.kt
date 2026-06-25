@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
@@ -31,6 +32,11 @@ import kotlinx.serialization.json.put
  */
 class TypeHierarchyTool : AbstractMcpTool() {
 
+    companion object {
+        private val JS_TS_LANGUAGE_FILTER = setOf("JavaScript", "TypeScript")
+        private val TYPE_SYMBOL_KINDS = setOf("CLASS", "INTERFACE")
+    }
+
     override val name = "ide_type_hierarchy"
 
     override val description = """
@@ -42,14 +48,14 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
         Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
 
-        Parameters: Either className (e.g., "com.example.MyClass") OR file + line + column. scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
+        Parameters: Either className (e.g., "com.example.MyClass" for Java/PHP-style FQNs or "MyComponent" for JavaScript/TypeScript symbols) OR file + line + column. scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
 
         Example: {"className": "com.example.UserService", "scope": "project_and_libraries"} or {"file": "src/MyClass.java", "line": 10, "column": 14}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .stringProperty("className", "Fully qualified class name (e.g., 'com.example.MyClass' for Java or 'App\\\\Models\\\\User' for PHP). RECOMMENDED - use this if you know the class name.")
+        .stringProperty("className", "Fully qualified class name for JVM/PHP-style languages or simple class/interface name for JavaScript/TypeScript (e.g., 'com.example.MyClass', 'App\\\\Models\\\\User', or 'MyComponent').")
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
@@ -74,7 +80,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
-            val element = resolveTargetElement(project, arguments)
+            val element = resolveTargetElement(project, arguments, scope)
             if (element == null) {
                 val errorMsg = when {
                     className != null -> "Class '$className' not found in project '${project.name}'. Verify the fully qualified name is correct and the class is part of this project."
@@ -111,11 +117,13 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
 
 
-    private fun resolveTargetElement(project: Project, arguments: JsonObject): PsiElement? {
-        // Try className first (Java/Kotlin specific)
+    private fun resolveTargetElement(project: Project, arguments: JsonObject, scope: BuiltInSearchScope): PsiElement? {
+        // Try className first. Direct class lookup covers JVM/PHP-style FQNs; symbol search
+        // fills the same entry point for WebStorm JS/TS class and interface names.
         val className = arguments["className"]?.jsonPrimitive?.content
         if (className != null) {
             return findClassByName(project, className)
+                ?: findJavaScriptOrTypeScriptClassByName(project, className, scope)
         }
 
         // Otherwise use file/line/column (works for all languages)
@@ -124,6 +132,39 @@ class TypeHierarchyTool : AbstractMcpTool() {
         val column = arguments["column"]?.jsonPrimitive?.int ?: return null
 
         return findPsiElement(project, file, line, column)
+    }
+
+    private fun findJavaScriptOrTypeScriptClassByName(
+        project: Project,
+        className: String,
+        scope: BuiltInSearchScope
+    ): PsiElement? {
+        val simpleName = className.substringAfterLast('.').substringAfterLast('#')
+        if (simpleName.isBlank()) return null
+        val isQualifiedRequest = className.contains('.') || className.contains('#')
+
+        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope)
+        val symbols = OptimizedSymbolSearch.search(
+            project = project,
+            pattern = simpleName,
+            scope = searchScope,
+            limit = 50,
+            languageFilter = JS_TS_LANGUAGE_FILTER
+        )
+
+        val match = symbols
+            .filter { it.name == simpleName && it.kind in TYPE_SYMBOL_KINDS }
+            .firstOrNull { symbol ->
+                val qualifiedName = symbol.qualifiedName
+                (!isQualifiedRequest && symbol.qualifiedName == null) ||
+                    qualifiedName == className ||
+                    qualifiedName?.endsWith(".$simpleName") == true
+            }
+            ?: symbols.firstOrNull {
+                !isQualifiedRequest && it.name == simpleName && it.kind in TYPE_SYMBOL_KINDS
+            }
+
+        return match?.let { findPsiElement(project, it.file, it.line, it.column) }
     }
 
     /**

@@ -10,11 +10,18 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.nio.file.Path
 
 class ProjectWindowToolsTest : BasePlatformTestCase() {
 
     private fun resultText(result: ToolCallResult) =
         (result.content.firstOrNull() as? ContentBlock.Text)?.text ?: ""
+
+    private fun missingAbsoluteProjectPath(): String =
+        Path.of(requireNotNull(project.basePath) { "test project must have a basePath" }, "__missing_project_for_open_tool_tests__")
+            .toAbsolutePath()
+            .normalize()
+            .toString()
 
     override fun tearDown() {
         // Restore power save to off so test isolation isn't broken
@@ -100,7 +107,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         val result = OpenProjectTool().execute(
             project,
             buildJsonObject {
-                put("path", "/nonexistent/project/path")
+                put("path", missingAbsoluteProjectPath())
                 put("timeoutSeconds", 0)
             }
         )
@@ -112,7 +119,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
     fun testOpenProjectReturnsErrorForNonExistentPath() = runBlocking {
         val result = OpenProjectTool().execute(
             project,
-            buildJsonObject { put("path", "/nonexistent/project/path") }
+            buildJsonObject { put("path", missingAbsoluteProjectPath()) }
         )
 
         assertTrue(result.isError)

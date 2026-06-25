@@ -38,8 +38,9 @@ class FindDefinitionTool : AbstractMcpTool() {
 
         Example: {"file": "src/Main.java", "line": 15, "column": 10}
         Example: {"language": "Java", "symbol": "com.example.MyClass#processData(String)"}
+        Example: {"language": "JavaScript", "symbol": "src/utils#exportName"}
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
-    """.trimIndent()
+        """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()

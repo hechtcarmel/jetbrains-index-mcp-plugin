@@ -39,8 +39,9 @@ class FindSuperMethodsTool : AbstractMcpTool() {
 
         Example: {"file": "src/UserServiceImpl.java", "line": 25, "column": 10}
         Example: {"language": "Java", "symbol": "com.example.UserServiceImpl#getUser(String)"}
+        Example: {"language": "TypeScript", "symbol": "src/service#UserService.getUser"}
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
-    """.trimIndent()
+        """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()

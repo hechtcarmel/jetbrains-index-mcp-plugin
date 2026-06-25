@@ -390,6 +390,16 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * @return The VirtualFile, or null if not found
      */
     protected fun resolveFile(project: Project, relativePath: String): VirtualFile? {
+        val localFileSystem = LocalFileSystem.getInstance()
+
+        fun findOrRefresh(canonicalPath: String): VirtualFile? {
+            localFileSystem.findFileByPath(canonicalPath)?.let { return it }
+            // Never force a synchronous refresh while holding a read lock; IntelliJ logs
+            // this as an error and the refresh can deadlock on event delivery.
+            if (ApplicationManager.getApplication().isReadAccessAllowed) return null
+            return localFileSystem.refreshAndFindFileByPath(canonicalPath)
+        }
+
         // Absolute paths are validated against project roots before resolving
         if (relativePath.startsWith("/") || relativePath.startsWith("\\")) {
             val canonical = File(relativePath).canonicalPath
@@ -398,7 +408,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
                 canonical.startsWith(File(root).canonicalPath + File.separator)
             }
             if (!withinProject) return null
-            return LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+            return findOrRefresh(canonical)
         }
 
         // Try project basePath first
@@ -406,7 +416,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         if (basePath != null) {
             val canonical = File(basePath, relativePath).canonicalPath
             if (canonical.startsWith(File(basePath).canonicalPath + File.separator)) {
-                val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+                val file = findOrRefresh(canonical)
                 if (file != null) return file
             }
         }
@@ -416,7 +426,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
             if (rootPath != basePath) {
                 val canonical = File(rootPath, relativePath).canonicalPath
                 if (canonical.startsWith(File(rootPath).canonicalPath + File.separator)) {
-                    val file = LocalFileSystem.getInstance().refreshAndFindFileByPath(canonical)
+                    val file = findOrRefresh(canonical)
                     if (file != null) return file
                 }
             }

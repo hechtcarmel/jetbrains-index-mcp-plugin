@@ -58,8 +58,9 @@ class FindImplementationsTool : AbstractMcpTool() {
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
         Example: {"language": "Java", "symbol": "com.example.Repository", "scope": "project_and_libraries"}
+        Example: {"language": "JavaScript", "symbol": "src/interfaces#IRepository"}
         Example: {"language": "PHP", "symbol": "\\App\\Contracts\\Repository"}
-    """.trimIndent()
+        """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()

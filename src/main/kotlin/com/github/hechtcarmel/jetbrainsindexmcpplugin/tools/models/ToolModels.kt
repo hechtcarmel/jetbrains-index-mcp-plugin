@@ -180,7 +180,9 @@ data class RefactoringResult(
     val success: Boolean,
     val affectedFiles: List<String>,
     val changesCount: Int,
-    val message: String
+    val message: String,
+    val warnings: List<String>? = null,
+    val unretargetedImporters: List<String>? = null
 )
 
 
