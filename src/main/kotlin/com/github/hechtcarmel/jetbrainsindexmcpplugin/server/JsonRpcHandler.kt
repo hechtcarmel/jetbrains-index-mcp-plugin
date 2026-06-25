@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryServ
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -187,6 +188,14 @@ class JsonRpcHandler @JvmOverloads constructor(
 
         val tool = toolRegistry.getTool(toolName)
             ?: return createErrorResponse(request.id, JsonRpcErrorCodes.METHOD_NOT_FOUND, ErrorMessages.toolNotFound(toolName))
+
+        if (!McpSettings.getInstance().isToolEnabled(toolName)) {
+            return createErrorResponse(
+                request.id,
+                JsonRpcErrorCodes.INVALID_PARAMS,
+                "Tool '$toolName' is disabled. Enable it in Settings → Index MCP Server → Available Tools."
+            )
+        }
 
         val projectResult = projectResolver.resolveOrOpen(projectPath)
         if (projectResult.isError) {

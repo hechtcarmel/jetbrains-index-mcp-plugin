@@ -22,6 +22,7 @@ object ToolNames {
     const val INDEX_STATUS = "ide_index_status"
     const val SYNC_FILES = "ide_sync_files"
     const val BUILD_PROJECT = "ide_build_project"
+    const val IMPORT_MODULES = "ide_import_modules"
     const val RELOAD_PROJECT = "ide_reload_project"
 
     // Refactoring tools
@@ -76,6 +77,7 @@ object ToolNames {
         FIND_SYMBOL,
         GET_ACTIVE_FILE,
         GET_PROJECT_MODES,
+        IMPORT_MODULES,
         INDEX_STATUS,
         INSTALL_PLUGIN,
         LIFECYCLE_LOG,
