@@ -61,6 +61,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             ToolNames.BUILD_PROJECT,
+            ToolNames.IMPORT_MODULES,
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
             ToolNames.REFACTOR_MOVE,

@@ -35,7 +35,8 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var availableProjectsMode: AvailableProjectsMode = AvailableProjectsMode.EXPANDED,
         var responseFormat: ResponseFormat = ResponseFormat.JSON,
         var disabledTools: MutableSet<String> = mutableSetOf(
-            "ide_build_project", "ide_close_project", "ide_reload_project", "ide_file_structure", "ide_find_symbol",
+            "ide_build_project", "ide_close_project", "ide_import_modules", "ide_reload_project",
+            "ide_file_structure", "ide_find_symbol",
             "ide_open_project", "ide_read_file", "ide_get_active_file", "ide_open_file",
             "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin",
             "ide_set_power_save_mode", "ide_install_plugin", "ide_restart",

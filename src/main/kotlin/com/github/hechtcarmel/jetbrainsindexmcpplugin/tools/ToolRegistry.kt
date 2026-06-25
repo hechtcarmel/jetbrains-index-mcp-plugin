@@ -27,6 +27,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProject
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ImportModulesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.InstallPluginTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RestartIdeTool
@@ -251,6 +252,9 @@ class ToolRegistry {
         register(SyncFilesTool())
         register(BuildProjectTool())
         register(ReloadProjectTool())
+        if (PluginDetectors.maven.isAvailable) {
+            register(ImportModulesTool())
+        }
         register(InstallPluginTool())
         register(RestartIdeTool())
         register(SetPowerSaveModeTool())
