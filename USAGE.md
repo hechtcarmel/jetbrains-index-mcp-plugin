@@ -21,6 +21,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
+| `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
@@ -28,6 +29,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_refactor_rename` | Rename symbol with reference updates (all languages) | Enabled |
 | `ide_move_file` | Move file to new directory with IDE-aware move semantics | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
+| `ide_optimize_imports` | Optimize imports without reformatting code | Disabled |
 
 ### Extended Tools (Language-Aware)
 
@@ -50,7 +52,7 @@ These tools activate based on available language plugins:
 
 ### Project Lifecycle Management Tools
 
-These tools work in all supported JetBrains IDEs and are enabled by default.
+These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 
 | Tool | Description | Default |
 |------|-------------|---------|
@@ -62,6 +64,7 @@ These tools work in all supported JetBrains IDEs and are enabled by default.
 | `ide_release_project` | Remove a project from lifecycle management | Disabled |
 | `ide_release_all_projects` | Release all managed projects from lifecycle management at once | Disabled |
 | `ide_lifecycle_log` | Query recent lifecycle events with trigger reasons | Disabled |
+| `ide_set_lifecycle_log_file` | Enable or disable persistent lifecycle log file writes | Disabled |
 | `ide_set_power_save_mode` | Toggle Power Save Mode directly | Enabled |
 | `ide_close_project` | Close a project window | Enabled |
 | `ide_open_project` | Open a project by path and wait for indexing | Enabled |

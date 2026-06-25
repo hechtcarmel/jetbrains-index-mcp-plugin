@@ -32,6 +32,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Code Diagnostics** - Access errors, warnings, and quick fixes
 - **Index Status** - Check if code intelligence is ready
 - **Sync Files** - Force sync VFS/PSI cache after external file changes
+- **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes (disabled by default)
 - **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
 - **Find Class** - Fast class/interface search by name with camelCase matching
 - **Find File** - Fast file search by name using IDE's file index
@@ -51,7 +52,9 @@ These tools activate based on installed language plugins:
 
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
+- **Move File** - Move files with IDE-aware reference and package updates when supported
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
+- **Optimize Imports** - Remove unused imports and organize imports without reformatting (disabled by default)
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
 - **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
 
@@ -236,7 +239,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **38 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **39 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -266,6 +269,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_refactor_rename` | Rename a symbol or file and update all references across the project (all languages; use `targetType` for explicit file mode) |
 | `ide_move_file` | Move a file to a new directory, applying language-aware reference/package updates when the IDE provides a semantic move backend |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
+| `ide_optimize_imports` | Optimize imports without reformatting code *(disabled by default)* |
 
 ### Extended Tools (Language-Aware)
 
@@ -304,6 +308,7 @@ PHP file structure support requires the PHP plugin and is available in PhpStorm 
 | `ide_release_project` | Unenroll a project from lifecycle management | Disabled |
 | `ide_release_all_projects` | Release every managed project (including closed ones) from lifecycle management | Disabled |
 | `ide_lifecycle_log` | Query recent lifecycle events from a ring buffer; each event has a `trigger` field explaining the cause | Disabled |
+| `ide_set_lifecycle_log_file` | Enable or disable writing lifecycle events to `mcp-lifecycle.log` | Disabled |
 
 **Lifecycle modes** — transitions are automatic, driven by window focus and MCP activity:
 
@@ -324,23 +329,23 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete + Java→Kotlin |
-| Android Studio | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat + safe delete + Java→Kotlin |
-| PyCharm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
-| WebStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
-| GoLand | ✓ 14 tools | ✓ 4 tools | ✓ rename + reformat |
-| RustRover | ✓ 14 tools | ✓ 5 tools | ✓ rename + reformat |
-| PhpStorm | ✓ 14 tools | ✓ 6 tools | ✓ rename + reformat |
+| IntelliJ IDEA | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| Android Studio | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| PyCharm | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| WebStorm | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| GoLand | ✓ 15 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
+| RustRover | ✓ 15 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
+| PhpStorm | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
-| CLion | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
-| DataGrip | ✓ 14 tools | ✓ 2 Markdown tools | ✓ rename + reformat |
+| RubyMine | ✓ 15 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| CLion | ✓ 15 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| DataGrip | ✓ 15 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
-> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. The rename and reformat tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
