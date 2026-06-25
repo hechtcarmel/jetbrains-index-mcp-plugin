@@ -11,6 +11,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.ui.ComboBox
@@ -62,6 +63,7 @@ class McpSettingsConfigurable : Configurable {
     private var lifecycleLogBufferSizeSpinner: JSpinner? = null
     private var lifecycleLogToFileCheckBox: JBCheckBox? = null
     private var minimumOpenProjectsSpinner: JSpinner? = null
+    private var builtinMcpServerDisabledCheckBox: JBCheckBox? = null
     private var managedProjectsContent: JPanel? = null
 
     private var lastHostValidation: ValidationInfo? = null
@@ -151,6 +153,8 @@ class McpSettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel(McpBundle.message("settings.responseFormat") + ":"), responseFormatComboBox!!, 1, false)
             .addComponent(syncPanel, 1)
             .addSeparator(10)
+            .addComponent(createBuiltinMcpPanel(), 1)
+            .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("lifecycle.section.title")), 5)
             .addComponent(lifecyclePanel, 1)
             .addSeparator(10)
@@ -160,6 +164,21 @@ class McpSettingsConfigurable : Configurable {
             .panel
 
         return panel!!
+    }
+
+    private fun createBuiltinMcpPanel(): JComponent {
+        builtinMcpServerDisabledCheckBox = JBCheckBox(
+            McpBundle.message("settings.builtinMcpServer.disabled.label"),
+            isBuiltinMcpDisabledOnDisk()
+        )
+        val noteLabel = JBLabel(McpBundle.message("settings.builtinMcpServer.note")).apply {
+            foreground = JBColor.GRAY
+            font = font.deriveFont(font.size2D - 1f)
+        }
+        return FormBuilder.createFormBuilder()
+            .addComponent(builtinMcpServerDisabledCheckBox!!)
+            .addComponentToRightColumn(noteLabel)
+            .panel
     }
 
     private fun createLifecyclePanel(): JComponent {
@@ -360,6 +379,10 @@ class McpSettingsConfigurable : Configurable {
             return true
         }
 
+        if (builtinMcpServerDisabledCheckBox?.isSelected != isBuiltinMcpDisabledOnDisk()) {
+            return true
+        }
+
         for ((toolName, checkbox) in toolCheckBoxes) {
             if (checkbox.isSelected != settings.isToolEnabled(toolName)) {
                 return true
@@ -424,6 +447,11 @@ class McpSettingsConfigurable : Configurable {
         settings.lifecycleLogBufferSize = lifecycleLogBufferSizeSpinner?.value as? Int ?: 500
         settings.lifecycleLogToFile = lifecycleLogToFileCheckBox?.isSelected ?: false
         settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
+
+        val wantDisabled = builtinMcpServerDisabledCheckBox?.isSelected ?: false
+        if (wantDisabled != isBuiltinMcpDisabledOnDisk()) {
+            applyBuiltinMcpServerState(wantDisabled)
+        }
 
         val disabledTools = mutableSetOf<String>()
         for ((toolName, checkbox) in toolCheckBoxes) {
@@ -526,6 +554,7 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogBufferSizeSpinner?.value = settings.lifecycleLogBufferSize
         lifecycleLogToFileCheckBox?.isSelected = settings.lifecycleLogToFile
         minimumOpenProjectsSpinner?.value = settings.minimumOpenProjects
+        builtinMcpServerDisabledCheckBox?.isSelected = isBuiltinMcpDisabledOnDisk()
 
         for ((toolName, checkbox) in toolCheckBoxes) {
             checkbox.isSelected = settings.isToolEnabled(toolName)
@@ -624,6 +653,7 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogBufferSizeSpinner = null
         lifecycleLogToFileCheckBox = null
         minimumOpenProjectsSpinner = null
+        builtinMcpServerDisabledCheckBox = null
         managedProjectsContent = null
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
@@ -641,7 +671,49 @@ class McpSettingsConfigurable : Configurable {
             McpSettings.ResponseFormat.TOON -> McpBundle.message("settings.responseFormat.toon")
         }
 
+    private fun applyBuiltinMcpServerState(disable: Boolean) {
+        try {
+            val file = java.io.File(PathManager.getConfigPath(), "disabled_plugins.txt")
+            val lines = if (file.exists()) file.readLines().toMutableList() else mutableListOf()
+            if (disable) {
+                if (BUILTIN_MCP_PLUGIN_ID_STRING !in lines) lines.add(BUILTIN_MCP_PLUGIN_ID_STRING)
+            } else {
+                lines.remove(BUILTIN_MCP_PLUGIN_ID_STRING)
+            }
+            file.writeText(lines.joinToString("\n") + "\n")
+        } catch (e: Exception) {
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                ?.createNotification(
+                    McpBundle.message("settings.builtinMcpServer.error.title"),
+                    McpBundle.message("settings.builtinMcpServer.error.content", e.message ?: "unknown error"),
+                    NotificationType.ERROR
+                )
+                ?.notify(null)
+            return
+        }
+
+        val action = if (disable) "Disabled" else "Re-enabled"
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+            ?.createNotification(
+                McpBundle.message("settings.builtinMcpServer.restart.title"),
+                McpBundle.message("settings.builtinMcpServer.restart.content", action),
+                NotificationType.INFORMATION
+            )
+            ?.notify(null)
+    }
+
     companion object {
+        @VisibleForTesting
+        const val BUILTIN_MCP_PLUGIN_ID_STRING = "com.intellij.mcpServer"
+
+        @VisibleForTesting
+        fun isBuiltinMcpDisabledOnDisk(): Boolean {
+            val file = java.io.File(PathManager.getConfigPath(), "disabled_plugins.txt")
+            return file.exists() && file.readLines().any { it.trim() == BUILTIN_MCP_PLUGIN_ID_STRING }
+        }
+
         private val IPV4_PATTERN = Regex("^[0-9.]+\$")
 
         @VisibleForTesting

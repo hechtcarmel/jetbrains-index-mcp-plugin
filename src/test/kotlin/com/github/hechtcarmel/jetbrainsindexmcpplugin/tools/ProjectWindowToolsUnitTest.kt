@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
@@ -95,5 +96,18 @@ class ProjectWindowToolsUnitTest : TestCase() {
     fun testReloadProjectToolIsDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_reload_project must be opt-in by default", defaults.contains(ToolNames.RELOAD_PROJECT))
+    }
+
+    fun testBuiltinMcpPluginIdIsCorrect() {
+        assertEquals("com.intellij.mcpServer", McpSettingsConfigurable.BUILTIN_MCP_PLUGIN_ID_STRING)
+    }
+
+    fun testBuiltinMcpSettingsHasNoPersistedDisabledField() {
+        val state = McpSettings.State()
+        val fields = state::class.java.declaredFields.map { it.name }
+        assertFalse(
+            "McpSettings.State must NOT have builtinMcpServerDisabled — disabled_plugins.txt is the single source of truth",
+            fields.contains("builtinMcpServerDisabled")
+        )
     }
 }

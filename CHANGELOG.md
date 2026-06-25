@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **Disable built-in MCP Server** checkbox in Settings → Index MCP Server. Reduces heap by ~3 GB by disabling the JetBrains built-in MCP Server (`com.intellij.mcpServer`) which has a session leak ([mcp-server-plugin#54](https://github.com/JetBrains/mcp-server-plugin/issues/54)). Can be re-enabled at any time for debugging. Requires restart.
 
 ## [4.24.0] - 2026-06-25
 ### Added
