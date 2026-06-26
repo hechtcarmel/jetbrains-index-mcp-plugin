@@ -68,6 +68,7 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 | `ide_set_power_save_mode` | Toggle Power Save Mode directly | Enabled |
 | `ide_close_project` | Close a project window | Enabled |
 | `ide_open_project` | Open a project by path and wait for indexing | Enabled |
+| `ide_open_workspace` | Scan a root dir for Maven projects, open all in one window | Enabled |
 | `ide_install_plugin` | Install a plugin zip into the IDE | Enabled |
 | `ide_restart` | Restart the IDE | Enabled |
 
