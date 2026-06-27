@@ -33,6 +33,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Index Status** - Check if code intelligence is ready
 - **Sync Files** - Force sync VFS/PSI cache after external file changes
 - **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes (disabled by default)
+- **Import Modules** - Import external Maven project directories as modules for cross-project code intelligence and refactoring (disabled by default)
 - **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
 - **Find Class** - Fast class/interface search by name with camelCase matching
 - **Find File** - Fast file search by name using IDE's file index
@@ -239,7 +240,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **39 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **40 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -257,6 +258,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |
 | `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` *(disabled by default)* |
+| `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
@@ -329,21 +331,21 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
-| Android Studio | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
-| PyCharm | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
-| WebStorm | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
-| GoLand | ✓ 15 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
-| RustRover | ✓ 15 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
-| PhpStorm | ✓ 15 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| IntelliJ IDEA | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| Android Studio | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| PyCharm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| WebStorm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| GoLand | ✓ 16 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
+| RustRover | ✓ 16 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
+| PhpStorm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 15 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
-| CLion | ✓ 15 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
-| DataGrip | ✓ 15 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| RubyMine | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| CLion | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| DataGrip | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
 > **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
@@ -453,7 +455,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Max History Size | 100 | Maximum number of commands to keep in history |
 | Project List in Error Responses | Expanded | Controls `available_projects` detail for invalid/missing `project_path` errors. `Expanded` includes workspace sub-projects; `Compact` returns only top-level project roots |
 | Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
-| Disabled Tools | 7 tools | Per-tool enable/disable toggles. Some tools are disabled by default to keep the tool list focused |
+| Disabled Tools | Tool-specific | Per-tool enable/disable toggles. Disabled tools stay hidden and cannot be called until enabled |
 | **Lifecycle Management** | | |
 | Enable lifecycle management | true | Master toggle for the automatic sleep/wake state machine |
 | Active → Background (minutes) | 2 | Focus-loss grace period before switching to Power Save Mode |

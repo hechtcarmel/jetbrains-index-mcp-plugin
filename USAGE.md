@@ -22,6 +22,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
 | `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
+| `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
@@ -86,6 +87,8 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_diagnostics](#ide_diagnostics)
   - [ide_index_status](#ide_index_status)
   - [ide_sync_files](#ide_sync_files)
+  - [ide_reload_project](#ide_reload_project)
+  - [ide_import_modules](#ide_import_modules)
   - [ide_build_project](#ide_build_project)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
@@ -101,6 +104,7 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_refactor_rename](#ide_refactor_rename)
   - [ide_move_file](#ide_move_file)
   - [ide_reformat_code](#ide_reformat_code)
+  - [ide_optimize_imports](#ide_optimize_imports)
 - [Extended Tools (Language-Aware)](#extended-tools-language-aware)
   - [ide_type_hierarchy](#ide_type_hierarchy)
   - [ide_call_hierarchy](#ide_call_hierarchy)
@@ -753,6 +757,41 @@ Use this after modifying `pom.xml`, `build.gradle`, `build.gradle.kts`, `setting
 
 ```
 Build model reload scheduled for Maven in 'engine'. IntelliJ is resolving dependencies in the background.
+```
+
+---
+
+### ide_import_modules
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Requires**: Maven plugin
+
+Import one or more external Maven project directories as modules into the current IntelliJ window, enabling cross-project code intelligence and refactoring. Already imported module roots are skipped.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `paths` | array of strings | Yes | Absolute directory paths to import. Each directory must contain a `pom.xml`. |
+| `project_path` | string | No | Selects the IntelliJ project window when multiple are open |
+
+**Example:**
+
+```json
+{
+  "name": "ide_import_modules",
+  "arguments": {
+    "paths": ["/Users/dev/casehub/drafthouse", "/Users/dev/casehub/worker"]
+  }
+}
+```
+
+**Example Response:**
+
+```
+Imported 2 module(s):
+  + /Users/dev/casehub/drafthouse
+  + /Users/dev/casehub/worker
 ```
 
 ---

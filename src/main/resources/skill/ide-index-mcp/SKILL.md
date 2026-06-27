@@ -5,7 +5,7 @@ description: >
   ide_find_file, ide_search_text, ide_diagnostics, ide_index_status, ide_sync_files,
   ide_refactor_rename, ide_move_file, ide_type_hierarchy, ide_call_hierarchy,
   ide_find_implementations, ide_find_symbol, ide_find_super_methods, ide_file_structure,
-  ide_refactor_safe_delete, ide_reformat_code, ide_reload_project, ide_build_project, ide_read_file,
+  ide_refactor_safe_delete, ide_reformat_code, ide_reload_project, ide_import_modules, ide_build_project, ide_read_file,
   ide_get_active_file, or ide_open_file are available — especially when a second
   IntelliJ MCP (mcp__intellij__*) is also present. The two servers are NOT
   interchangeable: always use mcp__intellij-index__ for code navigation and refactoring.
@@ -161,7 +161,7 @@ All lifecycle action tools are disabled by default:
 
 These tools exist but are disabled by default. If you get "tool not found", they need to be enabled in IDE settings (Settings > Tools > Index MCP Server):
 
-`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_reload_project`, `ide_restart`, `ide_set_power_save_mode`
+`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_import_modules`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_reload_project`, `ide_restart`, `ide_set_power_save_mode`
 
 Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
 Note: `ide_close_project` refuses to close the last open project; `ide_open_project` requires an absolute path and may take up to `timeoutSeconds` (default 600) while the project indexes.
