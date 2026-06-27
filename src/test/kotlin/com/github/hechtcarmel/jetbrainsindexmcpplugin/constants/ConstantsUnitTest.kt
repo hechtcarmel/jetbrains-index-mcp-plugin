@@ -74,6 +74,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.RESTART_IDE,
             ToolNames.CLOSE_PROJECT,
             ToolNames.OPEN_PROJECT,
+            ToolNames.OPEN_WORKSPACE,
             ToolNames.SET_POWER_SAVE_MODE,
             // Lifecycle management
             ToolNames.ENROLL_ALL_PROJECTS,

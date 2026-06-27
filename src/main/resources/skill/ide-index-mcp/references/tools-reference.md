@@ -440,6 +440,19 @@ Open a file in the editor with optional navigation.
 
 ---
 
+### ide_open_workspace (disabled by default)
+Scan a root directory for Maven projects in immediate subdirectories and open them all in a single IntelliJ window. Creates a temporary aggregator project with symlinks so the Maven reactor resolves inter-module dependencies correctly. Reuses the same workspace directory for repeated calls with the same root path.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | yes | Absolute path to the root directory containing Maven project subdirectories |
+| `timeoutSeconds` | integer | no | Max seconds to wait for opening + indexing (default: 600) |
+| `project_path` | string | no | Project root path (routing context) |
+
+**Returns**: text listing all discovered and imported modules, or error if no Maven projects found.
+
+---
+
 ## Plugin Development Tools
 
 ### ide_install_plugin (disabled by default)

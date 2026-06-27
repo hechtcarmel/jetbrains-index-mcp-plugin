@@ -385,6 +385,7 @@ Tools are organized by IDE availability.
 - `ide_set_power_save_mode` - Enable/disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis while keeping the index and code intelligence operational (disabled by default)
 - `ide_close_project` - Close an open project window and free its memory. Non-blocking; refuses to close the last open project so the MCP server keeps a JSON-RPC context (disabled by default)
 - `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects (disabled by default)
+- `ide_open_workspace` - Scan a root directory for Maven projects and open them all in a single IntelliJ window with full cross-project code intelligence. Creates a temporary aggregator with symlinks. (disabled by default)
 - `ide_install_plugin` - Install a plugin zip into the IDE, replacing any existing version; auto-detects `build/distributions/*.zip` when no path is given (disabled by default)
 - `ide_restart` - Restart the IDE; terminates the MCP connection. Call after `ide_install_plugin` (disabled by default)
 

@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenWorkspaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import junit.framework.TestCase
@@ -95,5 +96,24 @@ class ProjectWindowToolsUnitTest : TestCase() {
     fun testReloadProjectToolIsDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_reload_project must be opt-in by default", defaults.contains(ToolNames.RELOAD_PROJECT))
+    }
+
+    fun testOpenWorkspaceToolName() {
+        assertEquals(ToolNames.OPEN_WORKSPACE, OpenWorkspaceTool().name)
+    }
+
+    fun testOpenWorkspaceToolRequiresPath() {
+        val required = OpenWorkspaceTool().inputSchema["required"]?.jsonArray
+        assertNotNull("schema must have required fields", required)
+        assertTrue("path must be required", required!!.any { it.jsonPrimitive.content == "path" })
+    }
+
+    fun testOpenWorkspaceToolIsDisabledByDefault() {
+        val defaults = McpSettings.State().disabledTools
+        assertTrue("ide_open_workspace must be opt-in by default", defaults.contains(ToolNames.OPEN_WORKSPACE))
+    }
+
+    fun testOpenWorkspaceToolNameInAll() {
+        assertTrue("OPEN_WORKSPACE must be in ToolNames.ALL", ToolNames.ALL.contains(ToolNames.OPEN_WORKSPACE))
     }
 }
