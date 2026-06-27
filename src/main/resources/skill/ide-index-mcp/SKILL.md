@@ -155,13 +155,13 @@ When multiple projects are open simultaneously, the lifecycle manager automatica
 
 All lifecycle action tools are disabled by default:
 
-`ide_enroll_all_projects`, `ide_get_project_modes`, `ide_lifecycle_log`, `ide_release_all_projects`, `ide_release_project`, `ide_set_all_project_modes`, `ide_set_project_mode`
+`ide_enroll_all_projects`, `ide_get_project_modes`, `ide_lifecycle_log`, `ide_release_all_projects`, `ide_release_project`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_project_mode`
 
 ## Disabled-by-Default Tools
 
 These tools exist but are disabled by default. They are omitted from `tools/list`, and direct `tools/call` requests are rejected until the user enables them in IDE settings (Settings > Tools > Index MCP Server):
 
-`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_import_modules`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_reload_project`, `ide_restart`, `ide_set_power_save_mode`
+`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_restart`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`
 
 Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
 Note: `ide_close_project` refuses to close the last open project; `ide_open_project` requires an absolute path and may take up to `timeoutSeconds` (default 600) while the project indexes.

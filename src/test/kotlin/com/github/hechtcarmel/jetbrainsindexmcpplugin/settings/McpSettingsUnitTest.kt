@@ -131,14 +131,19 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
     }
 
-    fun testLoadStateMigratesAllCurrentDefaultDisabledTools() {
+    fun testLoadStatePreservesLegacyExplicitEnablesForOlderDefaultDisabledTools() {
         val settings = McpSettings()
 
         settings.loadState(McpSettings.State(disabledTools = mutableSetOf(), settingsSchemaVersion = 0))
 
-        McpSettings.DEFAULT_DISABLED_TOOLS.forEach { toolName ->
-            assertFalse("$toolName must be disabled after legacy migration", settings.isToolEnabled(toolName))
-        }
+        assertFalse(
+            "${ToolNames.IMPORT_MODULES} must be disabled after legacy migration",
+            settings.isToolEnabled(ToolNames.IMPORT_MODULES)
+        )
+        assertTrue(
+            "${ToolNames.BUILD_PROJECT} was already default-disabled before schema migration and may have been explicitly enabled",
+            settings.isToolEnabled(ToolNames.BUILD_PROJECT)
+        )
     }
 
     fun testLoadStatePreservesCurrentSchemaExplicitEnable() {

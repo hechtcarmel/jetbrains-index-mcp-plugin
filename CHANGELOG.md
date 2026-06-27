@@ -12,7 +12,8 @@
 - Disabled tools are now rejected at `tools/call` time with a clear error message, not just hidden from `tools/list`.
 
 ### Fixed
-- Tools that are disabled by default now stay disabled after plugin upgrades and settings changes, including for users with older saved settings.
+- New tools that are disabled by default now stay disabled after plugin upgrades and settings changes, while preserving existing tool choices from older saved settings.
+- The bundled agent tool reference now includes the project reload and Maven module import tools.
 
 ## [4.24.0] - 2026-06-25
 ### Added

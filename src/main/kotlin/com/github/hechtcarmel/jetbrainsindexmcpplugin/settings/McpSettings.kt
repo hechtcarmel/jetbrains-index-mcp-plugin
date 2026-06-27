@@ -38,9 +38,10 @@ private object ToolSettingsDefaults {
         ToolNames.SET_PROJECT_MODE,
     )
 
-    // Add a migration entry whenever a new tool is added to DEFAULT_DISABLED_TOOLS.
+    // Add only newly introduced default-disabled tools here; old entries are snapshots
+    // so legacy states keep explicit enables for older tools.
     val DEFAULT_DISABLED_TOOL_MIGRATIONS: List<Pair<Int, Set<String>>> = listOf(
-        1 to DEFAULT_DISABLED_TOOLS
+        1 to setOf(ToolNames.IMPORT_MODULES)
     )
 }
 
