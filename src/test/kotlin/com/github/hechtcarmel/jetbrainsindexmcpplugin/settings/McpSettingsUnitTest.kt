@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.settings
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import junit.framework.TestCase
 
 class McpSettingsUnitTest : TestCase() {
@@ -114,6 +115,66 @@ class McpSettingsUnitTest : TestCase() {
 
         assertEquals(75, settings.maxHistorySize)
         assertTrue(settings.syncExternalChanges)
+    }
+
+    fun testDefaultDisabledToolsComeFromSingleConstant() {
+        assertEquals(McpSettings.DEFAULT_DISABLED_TOOLS, McpSettings.State().disabledTools)
+        assertTrue(McpSettings.DEFAULT_DISABLED_TOOLS.contains(ToolNames.IMPORT_MODULES))
+    }
+
+    fun testLoadStateMigratesLegacyDisabledTools() {
+        val settings = McpSettings()
+        val legacyDisabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.IMPORT_MODULES).toMutableSet()
+
+        settings.loadState(McpSettings.State(disabledTools = legacyDisabled, settingsSchemaVersion = 0))
+
+        assertFalse(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+    }
+
+    fun testLoadStateMigratesAllCurrentDefaultDisabledTools() {
+        val settings = McpSettings()
+
+        settings.loadState(McpSettings.State(disabledTools = mutableSetOf(), settingsSchemaVersion = 0))
+
+        McpSettings.DEFAULT_DISABLED_TOOLS.forEach { toolName ->
+            assertFalse("$toolName must be disabled after legacy migration", settings.isToolEnabled(toolName))
+        }
+    }
+
+    fun testLoadStatePreservesCurrentSchemaExplicitEnable() {
+        val settings = McpSettings()
+        val disabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.IMPORT_MODULES).toMutableSet()
+
+        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 1))
+
+        assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+    }
+
+    fun testSetToolEnabledMarksSchemaCurrent() {
+        val settings = McpSettings()
+
+        settings.setToolEnabled(ToolNames.IMPORT_MODULES, true)
+
+        assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+        assertEquals(1, settings.state.settingsSchemaVersion)
+    }
+
+    fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
+        val settings = McpSettings()
+        settings.loadState(McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES, ToolNames.RELOAD_PROJECT),
+            settingsSchemaVersion = 1
+        ))
+
+        settings.updateToolEnabledStates(mapOf(
+            ToolNames.INDEX_STATUS to false,
+            ToolNames.RELOAD_PROJECT to true
+        ))
+
+        assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+        assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
+        assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
+        assertEquals(1, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {

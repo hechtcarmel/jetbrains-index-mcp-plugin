@@ -159,7 +159,7 @@ All lifecycle action tools are disabled by default:
 
 ## Disabled-by-Default Tools
 
-These tools exist but are disabled by default. If you get "tool not found", they need to be enabled in IDE settings (Settings > Tools > Index MCP Server):
+These tools exist but are disabled by default. They are omitted from `tools/list`, and direct `tools/call` requests are rejected until the user enables them in IDE settings (Settings > Tools > Index MCP Server):
 
 `ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_import_modules`, `ide_install_plugin`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_reload_project`, `ide_restart`, `ide_set_power_save_mode`
 

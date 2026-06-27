@@ -11,6 +11,9 @@
 ### Changed
 - Disabled tools are now rejected at `tools/call` time with a clear error message, not just hidden from `tools/list`.
 
+### Fixed
+- Tools that are disabled by default now stay disabled after plugin upgrades and settings changes, including for users with older saved settings.
+
 ## [4.24.0] - 2026-06-25
 ### Added
 - **`ide_reload_project`** refreshes linked Maven and Gradle build models after build-file edits, so diagnostics and builds can see updated dependencies without a manual IDE reload. The tool is disabled by default and reports clearly when no linked build system can be refreshed.

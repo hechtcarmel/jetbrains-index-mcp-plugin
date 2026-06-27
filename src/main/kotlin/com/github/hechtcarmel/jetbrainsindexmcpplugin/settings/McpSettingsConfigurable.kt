@@ -425,13 +425,7 @@ class McpSettingsConfigurable : Configurable {
         settings.lifecycleLogToFile = lifecycleLogToFileCheckBox?.isSelected ?: false
         settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
 
-        val disabledTools = mutableSetOf<String>()
-        for ((toolName, checkbox) in toolCheckBoxes) {
-            if (!checkbox.isSelected) {
-                disabledTools.add(toolName)
-            }
-        }
-        settings.disabledTools = disabledTools
+        settings.updateToolEnabledStates(toolCheckBoxes.mapValues { (_, checkbox) -> checkbox.isSelected })
 
         // Auto-restart server if host/port changed
         if (newHost != oldHost || newPort != oldPort) {

@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.JsonRpcMethods
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcRequest
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import kotlinx.serialization.json.jsonObject
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -11,6 +12,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -65,5 +68,40 @@ class JsonRpcHandlerTest : BasePlatformTestCase() {
 
         val result = response.result!!.jsonObject
         assertNotNull("Result should contain tools array", result["tools"])
+    }
+
+    fun testDisabledToolIsHiddenAndRejected() = runBlocking {
+        val settings = McpSettings.getInstance()
+        val originalDisabled = settings.disabledTools
+        try {
+            settings.setToolEnabled(ToolNames.INDEX_STATUS, false)
+
+            val listRequest = JsonRpcRequest(
+                id = JsonPrimitive(3),
+                method = JsonRpcMethods.TOOLS_LIST
+            )
+            val listResponseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), listRequest))
+            val listResponse = json.decodeFromString<JsonRpcResponse>(listResponseJson!!)
+            val toolNames = listResponse.result!!.jsonObject["tools"]!!.jsonArray
+                .map { it.jsonObject["name"]!!.jsonPrimitive.content }
+            assertFalse(toolNames.contains(ToolNames.INDEX_STATUS))
+
+            val callRequest = JsonRpcRequest(
+                id = JsonPrimitive(4),
+                method = JsonRpcMethods.TOOLS_CALL,
+                params = buildJsonObject {
+                    put("name", ToolNames.INDEX_STATUS)
+                    put("arguments", buildJsonObject { })
+                }
+            )
+            val callResponseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), callRequest))
+            val callResponse = json.decodeFromString<JsonRpcResponse>(callResponseJson!!)
+
+            assertNotNull(callResponse.error)
+            assertEquals(-32602, callResponse.error?.code)
+            assertTrue(callResponse.error?.message?.contains("disabled") == true)
+        } finally {
+            settings.disabledTools = originalDisabled
+        }
     }
 }

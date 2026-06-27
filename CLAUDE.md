@@ -541,9 +541,10 @@ Before pushing, run the pre-push validation script to catch common mistakes auto
 Quick summary of the non-negotiables:
 1. `CHANGELOG.md` — empty `[Unreleased]` section (maintainer adds the release entry)
 2. No `.idea/gradle.xml`, no `scripts/build-install.sh`, no `docs/pr-*.md`
-3. New tools: registered in `ToolNames`, `McpSettings.disabledTools`, `ToolRegistry`, and all six doc locations (`README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`, `tools-reference.md`, `ToolNames.ALL` sorted)
-4. No `@Internal` API, no `ModalityState.NON_MODAL` (deprecated)
-5. Unit tests pass: `./gradlew test --tests "*UnitTest*"` (never run full `./gradlew test` locally)
+3. New tools: registered in `ToolNames`, `ToolRegistry`, and all six doc locations (`README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`, `tools-reference.md`, `ToolNames.ALL` sorted)
+4. New opt-in tools: add to `McpSettings.DEFAULT_DISABLED_TOOLS`, bump the settings schema, and add a migration so existing users also get the tool disabled by default
+5. No `@Internal` API, no `ModalityState.NON_MODAL` (deprecated)
+6. Unit tests pass: `./gradlew test --tests "*UnitTest*"` (never run full `./gradlew test` locally)
 
 ---
 

@@ -80,7 +80,9 @@ Every item is required. CI will catch missing registrations and test count misma
   (compare the complete `ide_*` string character by character:
   `ide_release_all_projects` < `ide_release_project` < `ide_restart` because `all` < `project` < `start`
   lexicographically at position 12). A sort test in `ConstantsUnitTest` will fail if the order is wrong.
-- [ ] Add tool name string to `McpSettings.State.disabledTools` — all new tools are opt-in
+- [ ] Add opt-in tools to `McpSettings.DEFAULT_DISABLED_TOOLS`
+- [ ] Bump `ToolSettingsDefaults.CURRENT_SCHEMA_VERSION` and add a migration entry so users with
+  existing persisted settings also get the new tool disabled by default
 - [ ] Register in `ToolRegistry.registerUniversalTools()` (or the appropriate method)
 
 ### Documentation
@@ -103,7 +105,8 @@ confirm each has an entry: `README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`,
 - [ ] Add unit tests in the appropriate `*UnitTest.kt` file:
   - tool name matches the `ToolNames` constant
   - required fields are present / absent as expected
-  - tool appears in `McpSettings.State.disabledTools`
+  - opt-in tool appears in `McpSettings.DEFAULT_DISABLED_TOOLS`
+  - legacy `McpSettings.State(settingsSchemaVersion = 0)` migration keeps the tool disabled
 - [ ] Update `ConstantsUnitTest.testToolNamesAllContainsEveryConstant` — add the new constant
   and verify `ToolNames.ALL.size` still matches
 - [ ] Update `ToolExecutionIntegrationTest.testAllToolsRegistered` — add the new constant
