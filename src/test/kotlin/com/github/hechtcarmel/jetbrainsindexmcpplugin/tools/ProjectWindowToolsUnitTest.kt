@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ImportModulesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
@@ -95,5 +96,24 @@ class ProjectWindowToolsUnitTest : TestCase() {
     fun testReloadProjectToolIsDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_reload_project must be opt-in by default", defaults.contains(ToolNames.RELOAD_PROJECT))
+    }
+
+    fun testImportModulesToolName() {
+        assertEquals(ToolNames.IMPORT_MODULES, ImportModulesTool().name)
+    }
+
+    fun testImportModulesToolRequiresPaths() {
+        val required = ImportModulesTool().inputSchema["required"]?.jsonArray
+        assertNotNull("schema must have required fields", required)
+        assertTrue("paths must be required", required!!.any { it.jsonPrimitive.content == "paths" })
+    }
+
+    fun testImportModulesToolIsDisabledByDefault() {
+        val defaults = McpSettings.State().disabledTools
+        assertTrue("ide_import_modules must be opt-in by default", defaults.contains(ToolNames.IMPORT_MODULES))
+    }
+
+    fun testImportModulesToolNameInAll() {
+        assertTrue("IMPORT_MODULES must be in ToolNames.ALL", ToolNames.ALL.contains(ToolNames.IMPORT_MODULES))
     }
 }

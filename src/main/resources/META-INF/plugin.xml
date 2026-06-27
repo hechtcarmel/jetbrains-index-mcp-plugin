@@ -132,6 +132,9 @@ for detailed documentation and examples.</p>
     <!-- Optional Markdown support (bundled Markdown plugin) -->
     <depends optional="true" config-file="markdown-features.xml">org.intellij.plugins.markdown</depends>
 
+    <!-- Optional Maven support (bundled in IntelliJ IDEA, used by ide_import_modules) -->
+    <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
+
     <resource-bundle>messages.McpBundle</resource-bundle>
 
     <!-- Declare Kotlin K1/K2 plugin mode compatibility -->

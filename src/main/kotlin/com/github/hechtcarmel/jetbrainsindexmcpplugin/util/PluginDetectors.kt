@@ -48,4 +48,10 @@ object PluginDetectors {
         pluginIds = listOf("org.jetbrains.kotlin"),
         fallbackClass = "org.jetbrains.kotlin.psi.KtFile"
     )
+
+    val maven = PluginDetector(
+        name = "Maven",
+        pluginIds = listOf("org.jetbrains.idea.maven"),
+        fallbackClass = "org.jetbrains.idea.maven.project.MavenProjectsManager"
+    )
 }
