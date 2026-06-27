@@ -1,11 +1,49 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.settings
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
+
+private object ToolSettingsDefaults {
+    const val CURRENT_SCHEMA_VERSION = 1
+
+    val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
+        ToolNames.BUILD_PROJECT,
+        ToolNames.CLOSE_PROJECT,
+        ToolNames.IMPORT_MODULES,
+        ToolNames.RELOAD_PROJECT,
+        ToolNames.FILE_STRUCTURE,
+        ToolNames.FIND_SYMBOL,
+        ToolNames.OPEN_PROJECT,
+        ToolNames.READ_FILE,
+        ToolNames.GET_ACTIVE_FILE,
+        ToolNames.OPEN_FILE,
+        ToolNames.REFORMAT_CODE,
+        ToolNames.OPTIMIZE_IMPORTS,
+        ToolNames.CONVERT_JAVA_TO_KOTLIN,
+        ToolNames.SET_POWER_SAVE_MODE,
+        ToolNames.INSTALL_PLUGIN,
+        ToolNames.RESTART_IDE,
+        ToolNames.ENROLL_ALL_PROJECTS,
+        ToolNames.GET_PROJECT_MODES,
+        ToolNames.LIFECYCLE_LOG,
+        ToolNames.LIFECYCLE_LOG_FILE,
+        ToolNames.RELEASE_ALL_PROJECTS,
+        ToolNames.RELEASE_PROJECT,
+        ToolNames.SET_ALL_PROJECT_MODES,
+        ToolNames.SET_PROJECT_MODE,
+    )
+
+    // Add only newly introduced default-disabled tools here; old entries are snapshots
+    // so legacy states keep explicit enables for older tools.
+    val DEFAULT_DISABLED_TOOL_MIGRATIONS: List<Pair<Int, Set<String>>> = listOf(
+        1 to setOf(ToolNames.IMPORT_MODULES)
+    )
+}
 
 @Service(Service.Level.APP)
 @State(
@@ -34,16 +72,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var syncExternalChanges: Boolean = false,
         var availableProjectsMode: AvailableProjectsMode = AvailableProjectsMode.EXPANDED,
         var responseFormat: ResponseFormat = ResponseFormat.JSON,
-        var disabledTools: MutableSet<String> = mutableSetOf(
-            "ide_build_project", "ide_close_project", "ide_import_modules", "ide_reload_project",
-            "ide_file_structure", "ide_find_symbol",
-            "ide_open_project", "ide_read_file", "ide_get_active_file", "ide_open_file",
-            "ide_reformat_code", "ide_optimize_imports", "ide_convert_java_to_kotlin",
-            "ide_set_power_save_mode", "ide_install_plugin", "ide_restart",
-            "ide_enroll_all_projects", "ide_get_project_modes", "ide_lifecycle_log",
-            "ide_set_lifecycle_log_file", "ide_release_all_projects",
-            "ide_release_project", "ide_set_all_project_modes", "ide_set_project_mode"
-        ),
+        var disabledTools: MutableSet<String> = ToolSettingsDefaults.DEFAULT_DISABLED_TOOLS.toMutableSet(),
         var serverPort: Int = -1, // -1 means use IDE-specific default
         var serverHost: String = McpConstants.DEFAULT_SERVER_HOST,
         // Lifecycle management
@@ -56,6 +85,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         // Introduced in the stateless-tools PR; declared here so LifecycleEventLog can read it.
         var lifecycleLogToFile: Boolean = false,
         var minimumOpenProjects: Int = 4,
+        var settingsSchemaVersion: Int = 0,
     )
 
     private var state = State()
@@ -63,7 +93,25 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     override fun getState(): State = state
 
     override fun loadState(state: State) {
-        this.state = state
+        this.state = migrateState(state)
+    }
+
+    private fun migrateState(loaded: State): State {
+        val disabledTools = loaded.disabledTools.toMutableSet()
+
+        for ((version, tools) in ToolSettingsDefaults.DEFAULT_DISABLED_TOOL_MIGRATIONS) {
+            if (loaded.settingsSchemaVersion < version) {
+                disabledTools.addAll(tools)
+            }
+        }
+
+        return loaded.copy(
+            disabledTools = disabledTools,
+            settingsSchemaVersion = maxOf(
+                loaded.settingsSchemaVersion,
+                ToolSettingsDefaults.CURRENT_SCHEMA_VERSION
+            )
+        )
     }
 
     var maxHistorySize: Int
@@ -84,7 +132,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
 
     var disabledTools: Set<String>
         get() = state.disabledTools.toSet()
-        set(value) { state.disabledTools = value.toMutableSet() }
+        set(value) {
+            state.disabledTools = value.toMutableSet()
+            state.settingsSchemaVersion = ToolSettingsDefaults.CURRENT_SCHEMA_VERSION
+        }
 
     var serverPort: Int
         get() = if (state.serverPort == -1) McpConstants.getDefaultServerPort() else state.serverPort
@@ -131,9 +182,25 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         } else {
             state.disabledTools.add(toolName)
         }
+        state.settingsSchemaVersion = ToolSettingsDefaults.CURRENT_SCHEMA_VERSION
+    }
+
+    fun updateToolEnabledStates(toolStates: Map<String, Boolean>) {
+        val disabledTools = state.disabledTools.toMutableSet()
+        for ((toolName, enabled) in toolStates) {
+            if (enabled) {
+                disabledTools.remove(toolName)
+            } else {
+                disabledTools.add(toolName)
+            }
+        }
+        state.disabledTools = disabledTools
+        state.settingsSchemaVersion = ToolSettingsDefaults.CURRENT_SCHEMA_VERSION
     }
 
     companion object {
+        val DEFAULT_DISABLED_TOOLS: Set<String> get() = ToolSettingsDefaults.DEFAULT_DISABLED_TOOLS
+
         fun getInstance(): McpSettings = service()
     }
 }

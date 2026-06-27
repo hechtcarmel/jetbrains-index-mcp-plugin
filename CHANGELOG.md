@@ -3,11 +3,17 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+
+## [4.25.0] - 2026-06-27
 ### Added
 - **`ide_import_modules`** — import external project directories as Maven modules into the current IntelliJ window for cross-project code intelligence and refactoring. Only available when the Maven plugin is installed. *(disabled by default)*
 
 ### Changed
 - Disabled tools are now rejected at `tools/call` time with a clear error message, not just hidden from `tools/list`.
+
+### Fixed
+- New tools that are disabled by default now stay disabled after plugin upgrades and settings changes, while preserving existing tool choices from older saved settings.
+- The bundled agent tool reference now includes the project reload and Maven module import tools.
 
 ## [4.24.0] - 2026-06-25
 ### Added

@@ -383,6 +383,25 @@ Build project using IDE's build system (JPS, Gradle, Maven).
 **Returns**: `{ success, aborted, errors?, warnings?, buildMessages: [{message, file, line, column, severity}], truncated, rawOutput?, durationMs }`
 Note: `errors`/`warnings` are `null` when no messages were captured (not 0).
 
+### ide_reload_project (disabled by default)
+Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Project root path |
+
+**Returns**: text summary of scheduled Maven/Gradle reloads or skipped unlinked build systems.
+
+### ide_import_modules (disabled by default, Maven plugin only)
+Import one or more external Maven project directories as modules into the current IntelliJ project window. Already imported module roots are skipped.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `paths` | string[] | yes | Absolute directory paths to import; each must contain `pom.xml` |
+| `project_path` | string | no | Project root path |
+
+**Returns**: text summary of imported, skipped, and failed module paths.
+
 ### ide_set_power_save_mode (disabled by default)
 Enable or disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis; the index and code intelligence tools stay functional.
 
