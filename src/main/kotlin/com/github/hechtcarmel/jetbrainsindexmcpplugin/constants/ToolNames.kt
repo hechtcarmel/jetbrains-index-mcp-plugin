@@ -43,6 +43,7 @@ object ToolNames {
     // Project window management
     const val CLOSE_PROJECT = "ide_close_project"
     const val OPEN_PROJECT = "ide_open_project"
+    const val OPEN_WORKSPACE = "ide_open_workspace"
     const val SET_POWER_SAVE_MODE = "ide_set_power_save_mode"
 
     // Lifecycle management
@@ -84,6 +85,7 @@ object ToolNames {
         REFACTOR_MOVE,
         OPEN_FILE,
         OPEN_PROJECT,
+        OPEN_WORKSPACE,
         OPTIMIZE_IMPORTS,
         PROJECT_STATUS,
         READ_FILE,

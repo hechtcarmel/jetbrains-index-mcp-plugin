@@ -457,6 +457,17 @@ Open a file in the editor with optional navigation.
 
 **Returns**: `{ file, opened, message }`
 
+### ide_open_workspace (disabled by default)
+Scan a root directory for Maven projects in immediate subdirectories and open them all in a single IntelliJ window. Creates a temporary aggregator POM with relative module paths. Uses `MavenProjectAsyncBuilder.commitSync()` to wait for Maven import completion before returning.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | yes | Absolute path to root directory containing Maven project subdirectories |
+| `timeoutSeconds` | integer | no | Max seconds to wait for opening + indexing (default: 600) |
+| `project_path` | string | no | Project root path (routing context) |
+
+**Returns**: text listing all discovered modules and content root count, or error if no Maven projects found.
+
 ---
 
 ## Plugin Development Tools

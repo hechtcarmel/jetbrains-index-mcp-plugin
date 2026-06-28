@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **`ide_open_workspace`** — scan a root directory for Maven projects and open them all in a single IntelliJ window with full cross-project code intelligence. Generates a temporary aggregator POM with relative module paths — no symlinks. *(disabled by default)*
 
 ## [4.25.0] - 2026-06-27
 ### Added
