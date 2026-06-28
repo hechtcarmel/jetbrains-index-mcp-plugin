@@ -1,5 +1,6 @@
 package com.jetbrains.python.psi
 
 interface PyFunction : PyElement {
-    fun getName(): String?
+    override fun getName(): String?
+    fun getQualifiedName(): String?
 }

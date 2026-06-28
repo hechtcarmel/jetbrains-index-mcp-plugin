@@ -161,7 +161,15 @@ Some tools support identifying the target element by fully qualified symbol refe
 
 **Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
 
-**Supported languages:** Java, JS, and TS. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+**Supported languages:** Java, JS, TS, and Python. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+
+**Python symbol grammar:** Symbols must be module-qualified (dotted path with ≥2 segments):
+- `pkg.mod.ClassName` — class
+- `pkg.mod.function_name` — module-level function
+- `pkg.mod.ClassName.method_name` — method (resolved via the function index; a method's qualified name is `pkg.mod.ClassName.method`)
+- `pkg.mod.ClassName#member_name` — method, class/instance attribute, or `@property` of the named class
+
+Parameter lists are not supported (Python has no overload-by-signature); bare unqualified names are rejected — use `file` + `line` + `column` for those.
 
 **JS/TS symbol grammar (v1):** Symbols must be module-qualified:
 - `modulePath#exportName` — named export (e.g., `src/utils#formatDate`)

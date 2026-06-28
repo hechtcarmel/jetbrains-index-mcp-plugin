@@ -3,7 +3,7 @@ package com.jetbrains.python.psi
 import com.jetbrains.python.psi.types.TypeEvalContext
 
 interface PyClass : PyElement {
-    fun getName(): String?
+    override fun getName(): String?
     fun getQualifiedName(): String?
     fun getSuperClasses(context: TypeEvalContext?): Array<PyClass>
     fun getAncestorClasses(context: TypeEvalContext?): List<PyClass>
