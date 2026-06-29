@@ -9,7 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.ide.impl.OpenProjectTask
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.module.Module
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
@@ -95,30 +95,35 @@ class OpenWorkspaceTool : AbstractMcpTool() {
 
         val workspaceDir = createWorkspace(rootPath, mavenProjects)
 
-        val existingProject = findOpenProjectByPath(workspaceDir.absolutePath)
-        if (existingProject != null) {
-            return createSuccessResult(
-                "Workspace already open as '${existingProject.name}' with ${mavenProjects.size} modules:\n" +
-                    mavenProjects.joinToString("\n") { "  - ${it.name}" }
-            )
-        }
+        var openedProject: Project? = findOpenProjectByPath(workspaceDir.absolutePath)
+        val alreadyOpen = openedProject != null
 
-        var openedProject: Project? = null
         val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
-            val opened = ProjectManagerEx.getInstanceEx()
-                .openProjectAsync(workspaceDir.toPath(), openTask())
-                ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
-            openedProject = opened
+            val opened = if (alreadyOpen) {
+                openedProject!!
+            } else {
+                val o = ProjectManagerEx.getInstanceEx()
+                    .openProjectAsync(workspaceDir.toPath(), openTask())
+                    ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
+                openedProject = o
+                o
+            }
 
             if (!awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
 
-            val workspaceDirVf = LocalFileSystem.getInstance()
-                .refreshAndFindFileByPath(workspaceDir.absolutePath)
-            if (workspaceDirVf != null) {
-                importMavenProject(opened, workspaceDirVf)
+            val roots = ProjectUtils.getModuleContentRoots(opened)
+            val needsImport = roots.size <= 1
+
+            if (needsImport) {
+                for (moduleDir in mavenProjects) {
+                    val dirVf = LocalFileSystem.getInstance()
+                        .refreshAndFindFileByPath(moduleDir.absolutePath) ?: continue
+                    importMavenModule(opened, dirVf)
+                }
+                if (!awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
             }
 
-            if (awaitSmartMode(opened)) OpenOutcome.READY else OpenOutcome.CLOSED_WHILE_WAITING
+            OpenOutcome.READY
         }
 
         val opened = openedProject
@@ -155,28 +160,28 @@ class OpenWorkspaceTool : AbstractMcpTool() {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun importMavenProject(project: Project, workspaceDirVf: VirtualFile): List<Module>? {
-        val builderClass = try {
-            Class.forName("org.jetbrains.idea.maven.wizards.MavenProjectAsyncBuilder")
+    private fun importMavenModule(project: Project, directoryVf: VirtualFile) {
+        try {
+            val builderClass = Class.forName("org.jetbrains.idea.maven.wizards.MavenProjectAsyncBuilder")
+            val providerClass = Class.forName(
+                "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
+            )
+            val builder = builderClass.getDeclaredConstructor().newInstance()
+            val commitSync = builderClass.getMethod(
+                "commitSync",
+                Project::class.java,
+                VirtualFile::class.java,
+                providerClass
+            )
+            commitSync.invoke(builder, project, directoryVf, null)
         } catch (_: ClassNotFoundException) {
-            return null
+            // Maven plugin not available
         }
-        val providerClass = Class.forName(
-            "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
-        )
-        val builder = builderClass.getDeclaredConstructor().newInstance()
-        val commitSync = builderClass.getMethod(
-            "commitSync",
-            Project::class.java,
-            VirtualFile::class.java,
-            providerClass
-        )
-        return commitSync.invoke(builder, project, workspaceDirVf, null) as? List<Module>
     }
 
     private fun createWorkspace(rootPath: String, mavenProjects: List<File>): File {
         val hash = hashPath(rootPath)
-        val workspaceDir = File(System.getProperty("java.io.tmpdir"), "ide-workspace-$hash")
+        val workspaceDir = File(PathManager.getSystemPath(), "ide-workspaces/ide-workspace-$hash")
         workspaceDir.mkdirs()
 
         val workspacePath = workspaceDir.toPath()
