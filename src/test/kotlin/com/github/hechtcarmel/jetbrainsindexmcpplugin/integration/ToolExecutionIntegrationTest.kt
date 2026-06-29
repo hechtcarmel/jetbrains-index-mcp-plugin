@@ -500,6 +500,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             // Project window management tools
             ToolNames.CLOSE_PROJECT,
             ToolNames.OPEN_PROJECT,
+            ToolNames.OPEN_WORKSPACE,
             ToolNames.SET_POWER_SAVE_MODE,
             // Lifecycle management tools
             ToolNames.ENROLL_ALL_PROJECTS,

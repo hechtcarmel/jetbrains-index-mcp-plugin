@@ -23,6 +23,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
 | `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
+| `ide_open_workspace` | Scan a root dir for Maven projects, open all in one window | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
@@ -89,6 +90,7 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_sync_files](#ide_sync_files)
   - [ide_reload_project](#ide_reload_project)
   - [ide_import_modules](#ide_import_modules)
+  - [ide_open_workspace](#ide_open_workspace)
   - [ide_build_project](#ide_build_project)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
@@ -792,6 +794,54 @@ Import one or more external Maven project directories as modules into the curren
 Imported 2 module(s):
   + /Users/dev/casehub/drafthouse
   + /Users/dev/casehub/worker
+```
+
+---
+
+### ide_open_workspace
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Requires**: Maven plugin
+
+Scan a root directory for Maven projects in immediate subdirectories and open them all in a single IntelliJ window with full cross-project code intelligence. Creates a temporary Maven aggregator POM with relative module paths — no symlinks.
+
+**Use when:**
+- You have a multi-repo setup (e.g., a directory with platform/, engine/, worker/ as separate repos)
+- You need cross-project refactoring (find references, rename, move across repos)
+- You want a single `project_path` for all modules instead of routing between separate projects
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Absolute path to the root directory containing Maven project subdirectories |
+| `timeoutSeconds` | integer | No | Max seconds to wait for opening + indexing (default: 600) |
+| `project_path` | string | No | Selects the JSON-RPC context project when multiple are open |
+
+**Example:**
+
+```json
+{
+  "name": "ide_open_workspace",
+  "arguments": {
+    "path": "/Users/dev/casehub"
+  }
+}
+```
+
+**Example Response:**
+
+```
+Workspace open and ready with 9 modules (42 content roots resolved):
+  - claudony
+  - engine
+  - ledger
+  - platform
+  - qhorus
+  - work
+  - worker
+  - workers
+  - eidos
 ```
 
 ---

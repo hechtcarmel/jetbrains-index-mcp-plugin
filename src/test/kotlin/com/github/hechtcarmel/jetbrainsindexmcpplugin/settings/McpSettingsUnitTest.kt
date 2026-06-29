@@ -161,14 +161,14 @@ class McpSettingsUnitTest : TestCase() {
         settings.setToolEnabled(ToolNames.IMPORT_MODULES, true)
 
         assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
-        assertEquals(1, settings.state.settingsSchemaVersion)
+        assertEquals(2, settings.state.settingsSchemaVersion)
     }
 
     fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
         val settings = McpSettings()
         settings.loadState(McpSettings.State(
             disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES, ToolNames.RELOAD_PROJECT),
-            settingsSchemaVersion = 1
+            settingsSchemaVersion = 2
         ))
 
         settings.updateToolEnabledStates(mapOf(
@@ -179,7 +179,7 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.IMPORT_MODULES))
         assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
         assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
-        assertEquals(1, settings.state.settingsSchemaVersion)
+        assertEquals(2, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {
