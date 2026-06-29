@@ -42,11 +42,11 @@
 <h3>Extended Tools (Language-Aware)</h3>
 <p>These tools activate based on available language plugins:</p>
 <ul>
-    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
-    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
-    <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods (Java, Kotlin, Python, JS/TS, PHP, Rust)</li>
-    <li><b>Find Super Methods</b> - Navigate through method override hierarchies (Java, Kotlin, Python, JS/TS, PHP)</li>
-    <li><b>File Structure</b> - View hierarchical file structure like IDE's Structure view (Java, Kotlin, Python, JS/TS, PHP, Markdown) (disabled by default)</li>
+    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JS/TS, Go, PHP, Ruby, Rust)</li>
+    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JS/TS, Go, PHP, Ruby, Rust)</li>
+    <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods (Java, Kotlin, Python, JS/TS, PHP, Ruby, Rust)</li>
+    <li><b>Find Super Methods</b> - Navigate through method override hierarchies (Java, Kotlin, Python, JS/TS, PHP, Ruby)</li>
+    <li><b>File Structure</b> - View hierarchical file structure like IDE's Structure view (Java, Kotlin, Python, JS/TS, PHP, Ruby, Markdown) (disabled by default)</li>
 </ul>
 
 <h3>Refactoring Tools</h3>
@@ -128,6 +128,8 @@ for detailed documentation and examples.</p>
 
     <!-- Optional Rust support (RustRover, IntelliJ Ultimate with Rust plugin, CLion) -->
     <depends optional="true" config-file="rust-features.xml">com.jetbrains.rust</depends>
+    <!-- Optional Ruby support (RubyMine, IntelliJ IDEA Ultimate with Ruby plugin) -->
+    <depends optional="true" config-file="ruby-features.xml">org.jetbrains.plugins.ruby</depends>
 
     <!-- Optional Markdown support (bundled Markdown plugin) -->
     <depends optional="true" config-file="markdown-features.xml">org.intellij.plugins.markdown</depends>

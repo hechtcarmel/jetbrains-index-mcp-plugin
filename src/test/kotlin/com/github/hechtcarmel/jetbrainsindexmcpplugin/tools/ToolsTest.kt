@@ -272,6 +272,20 @@ class ToolsTest : BasePlatformTestCase() {
         assertTrue("Should error with invalid class", result.isError)
     }
 
+    fun testTypeHierarchyToolRubyMalformedClassNameRoutesThroughRubySymbolHandler() = runBlocking {
+        if (!requireRubyTypeHierarchyCapability("testTypeHierarchyToolRubyMalformedClassNameRoutesThroughRubySymbolHandler")) return@runBlocking
+
+        val tool = TypeHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("className", "userService")
+        })
+
+        assertTrue("Malformed Ruby class symbol should fail deterministically", result.isError)
+        val message = errorText(result)
+        assertTrue("Should route through Ruby symbol handler", message.contains("Unsupported Ruby symbol format:"))
+        assertFalse("Should not fail with generic class lookup message", message.contains("not found in project"))
+    }
+
     fun testCallHierarchyToolMissingParams() = runBlocking {
         val tool = CallHierarchyTool()
 
@@ -1406,6 +1420,20 @@ class ToolsTest : BasePlatformTestCase() {
         } catch (_: ClassNotFoundException) {
             System.err.println("$testName: skipped - JavaScript PSI classes unavailable")
             false
+        }
+    }
+
+    private fun requireRubyTypeHierarchyCapability(testName: String): Boolean {
+        if (!PluginDetectors.ruby.isAvailable) {
+            System.err.println("$testName: skipped - Ruby plugin not available")
+            return false
+        }
+
+        return if (LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("Ruby") == null) {
+            System.err.println("$testName: skipped - Ruby symbol reference handler not registered")
+            false
+        } else {
+            true
         }
     }
 }

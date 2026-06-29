@@ -35,6 +35,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
     companion object {
         private val JS_TS_LANGUAGE_FILTER = setOf("JavaScript", "TypeScript")
         private val TYPE_SYMBOL_KINDS = setOf("CLASS", "INTERFACE")
+        private const val RUBY_LANGUAGE_NAME = "Ruby"
     }
 
     override val name = "ide_type_hierarchy"
@@ -42,7 +43,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Ruby, Rust.
 
         Rust note: className parameter not supported for Rust; use file + line + column instead.
 
@@ -55,7 +56,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .stringProperty("className", "Fully qualified class name for JVM/PHP-style languages or simple class/interface name for JavaScript/TypeScript (e.g., 'com.example.MyClass', 'App\\\\Models\\\\User', or 'MyComponent').")
+        .stringProperty("className", "Fully qualified class name for JVM/PHP-style languages, Ruby class/module name (e.g., 'Services::UserService'), or simple class/interface name for JavaScript/TypeScript (e.g., 'com.example.MyClass', 'App\\\\Models\\\\User', 'Services::UserService', or 'MyComponent').")
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
@@ -80,10 +81,12 @@ class TypeHierarchyTool : AbstractMcpTool() {
         return suspendingReadAction {
             ProgressManager.checkCanceled() // Allow cancellation
 
-            val element = resolveTargetElement(project, arguments, scope)
+            val resolution = resolveTargetElement(project, arguments, scope)
+            val element = resolution.element
             if (element == null) {
                 val errorMsg = when {
-                    className != null -> "Class '$className' not found in project '${project.name}'. Verify the fully qualified name is correct and the class is part of this project."
+                    className != null -> resolution.classNameError
+                        ?: "Class '$className' not found in project '${project.name}'. Verify the fully qualified name is correct and the class is part of this project."
                     file != null -> "No class found at the specified file/line/column position."
                     else -> "Provide either 'className' (e.g., 'com.example.MyClass') or 'file' + 'line' + 'column'."
                 }
@@ -117,21 +120,40 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
 
 
-    private fun resolveTargetElement(project: Project, arguments: JsonObject, scope: BuiltInSearchScope): PsiElement? {
+    private data class TargetResolution(
+        val element: PsiElement?,
+        val classNameError: String? = null,
+    )
+
+    private fun resolveTargetElement(project: Project, arguments: JsonObject, scope: BuiltInSearchScope): TargetResolution {
         // Try className first. Direct class lookup covers JVM/PHP-style FQNs; symbol search
         // fills the same entry point for WebStorm JS/TS class and interface names.
         val className = arguments["className"]?.jsonPrimitive?.content
         if (className != null) {
-            return findClassByName(project, className)
-                ?: findJavaScriptOrTypeScriptClassByName(project, className, scope)
+            findClassByName(project, className)?.let { return TargetResolution(it) }
+            findJavaScriptOrTypeScriptClassByName(project, className, scope)?.let { return TargetResolution(it) }
+
+            val rubyResolution = resolveRubyClassByName(project, className)
+            rubyResolution.getOrNull()?.let { return TargetResolution(it) }
+
+            val rubyError = rubyResolution.exceptionOrNull()?.message
+            return TargetResolution(element = null, classNameError = rubyError)
         }
 
         // Otherwise use file/line/column (works for all languages)
-        val file = arguments["file"]?.jsonPrimitive?.content ?: return null
-        val line = arguments["line"]?.jsonPrimitive?.int ?: return null
-        val column = arguments["column"]?.jsonPrimitive?.int ?: return null
+        val file = arguments["file"]?.jsonPrimitive?.content ?: return TargetResolution(null)
+        val line = arguments["line"]?.jsonPrimitive?.int ?: return TargetResolution(null)
+        val column = arguments["column"]?.jsonPrimitive?.int ?: return TargetResolution(null)
 
-        return findPsiElement(project, file, line, column)
+        return TargetResolution(findPsiElement(project, file, line, column))
+    }
+
+    private fun resolveRubyClassByName(project: Project, className: String): Result<PsiElement?> {
+        val rubyHandler = LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName(RUBY_LANGUAGE_NAME)
+            ?: return Result.success(null)
+
+        return rubyHandler.resolveSymbol(project, className)
+            .map { it as PsiElement }
     }
 
     private fun findJavaScriptOrTypeScriptClassByName(

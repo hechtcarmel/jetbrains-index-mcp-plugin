@@ -201,7 +201,7 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `className` | string | no | FQN (preferred, faster). E.g., `com.example.MyClass` |
+| `className` | string | no | FQN/name (preferred, faster). E.g., `com.example.MyClass` or `Services::UserService` for Ruby. |
 | `file` | string | no | Alternative: project-relative file path. Unlike other read-only navigation tools, `ide_type_hierarchy` file mode does not resolve dependency/library absolute paths or `jar://` URLs. |
 | `line` | integer | no | Required with file |
 | `column` | integer | no | Required with file |
@@ -211,7 +211,7 @@ Get complete type inheritance hierarchy (supertypes and subtypes).
 
 **Provide either** `className` **or** `file`+`line`+`column`.
 **Returns**: `{ element: {name, file, kind, language, supertypes?}, supertypes: [{name, file, kind, language, supertypes?}], subtypes: [{name, file, kind, language, supertypes?}] }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Ruby, Rust.
 
 ### ide_call_hierarchy
 Build call tree showing who calls a method or what a method calls.
