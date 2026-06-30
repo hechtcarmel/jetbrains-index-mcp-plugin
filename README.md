@@ -7,7 +7,7 @@
 A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, enabling AI coding assistants like Claude, Codex, Cursor, and Windsurf to leverage the IDE's powerful indexing and refactoring capabilities.
 
 **Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
-**May work** (untested): RubyMine, CLion, DataGrip
+**May work** (untested): CLion, DataGrip
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
 
@@ -49,7 +49,7 @@ These tools activate based on installed language plugins:
 - **Call Hierarchy** - Trace method/function call relationships
 - **Find Implementations** - Discover interface/abstract implementations
 - **Find Super Methods** - Navigate method override hierarchies
-- **File Structure** - View hierarchical file structure like IDE's Structure view, including PHP Structure View trees and Markdown heading outlines (disabled by default)
+- **File Structure** - View hierarchical file structure like IDE's Structure view, including PHP Structure View trees, Ruby class/module/method trees, and Markdown heading outlines (disabled by default)
 
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
@@ -279,11 +279,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Ruby, Rust |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Ruby, Rust |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Ruby, Rust |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP, Ruby |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Ruby, Markdown |
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
@@ -343,7 +343,7 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| RubyMine | ✓ 16 tools | ✓ Ruby: type hierarchy, call hierarchy, implementations, super methods, file structure + 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 | CLion | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 | DataGrip | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 

@@ -31,6 +31,12 @@ object PluginDetectors {
         fallbackClass = "com.jetbrains.php.lang.psi.elements.PhpClass"
     )
 
+    val ruby = PluginDetector(
+        name = "Ruby",
+        pluginIds = listOf("org.jetbrains.plugins.ruby"),
+        fallbackClass = "org.jetbrains.plugins.ruby.ruby.lang.psi.controlStructures.classes.RClass"
+    )
+
     val rust = PluginDetector(
         name = "Rust",
         pluginIds = listOf("com.jetbrains.rust"),

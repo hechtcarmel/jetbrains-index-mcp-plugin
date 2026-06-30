@@ -1,3 +1,13 @@
+SELECT
+arguments->>'$.language' AS lang,
+arguments->>'$.code' AS script_body,
+COUNT(*) as execution_count
+FROM session_events
+WHERE tool_name = 'ctx_execute'
+GROUP BY script_body
+ORDER BY execution_count DESC;
+
+
 # IDE Index MCP Server - Tool Reference
 
 This document provides detailed documentation for all MCP tools available in the IDE Index MCP Server plugin.
@@ -36,13 +46,13 @@ These tools work in every supported JetBrains IDE:
 
 These tools activate based on available language plugins:
 
-| Tool | Description | Languages |
-|------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
+| Tool                     | Description | Languages |
+|--------------------------|-------------|-----------|
+| `ide_type_hierarchy`     | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
+| `ide_call_hierarchy`     | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_file_structure`     | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
 
 ### Java-Specific Refactoring Tools
 

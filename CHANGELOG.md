@@ -3,6 +3,9 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **Ruby language support** — `ide_type_hierarchy`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`, and `ide_file_structure` now work in RubyMine and IntelliJ IDEA Ultimate with the Ruby plugin. Ruby modules are treated as interface analogues for `ide_find_implementations` and `ide_type_hierarchy` (classes that `include`/`extend` a module appear as implementations). `language+symbol` mode added for Ruby (`UserService`, `UserService#find`, `Services::UserService#find`).
+- RubyMine is now a fully supported IDE (previously listed as "may work, untested").
 
 ## [4.25.0] - 2026-06-27
 ### Added
