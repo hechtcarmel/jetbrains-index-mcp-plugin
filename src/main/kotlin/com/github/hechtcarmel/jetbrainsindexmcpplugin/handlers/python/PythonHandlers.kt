@@ -1066,8 +1066,8 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
  * Python plugin, mirroring the rest of [PythonHandlers].
  */
 class PythonSymbolReferenceHandler(
-    private val findClassByQName: (String, Project) -> PsiNamedElement? = { q, p -> defaultFindClassByQName(q, p) },
-    private val findFunctionsByShortName: (String, Project) -> Collection<PsiNamedElement> = { s, p -> defaultFindFunctionsByShortName(s, p) },
+    private val findClassByQName: (String, Project) -> List<PsiNamedElement> = { q, p -> defaultFindClassByQName(q, p) },
+    private val findFunctionsByShortName: (String, Project) -> List<PsiNamedElement> = { s, p -> defaultFindFunctionsByShortName(s, p) },
     private val findAttributeInClass: (PsiElement, String) -> PsiNamedElement? = { c, n -> defaultFindAttributeInClass(c, n) }
 ) : BasePythonHandler<PsiNamedElement>(), SymbolReferenceHandler {
 
@@ -1086,25 +1086,32 @@ class PythonSymbolReferenceHandler(
             "'pkg.mod.ClassName#attribute_name'"
         )
 
-        // Reflective default: PyClassNameIndex.findByQualifiedName(qName, project, allScope) -> List<PyClass>.
-        // The old findClass(qName, project) was removed (PY-63989); current API filters by qualified name.
-        // Falls back to find(shortName, project, allScope) + getQualifiedName filter if findByQualifiedName is absent.
-        private fun defaultFindClassByQName(qName: String, project: Project): PsiNamedElement? {
-            val indexClass = pythonClassNameIndexClass ?: return null
-            val scope = allScope(project) ?: return null
-            return try {
-                val byQName = indexClass.getMethod(
-                    "findByQualifiedName", String::class.java, Project::class.java, GlobalSearchScope::class.java
-                )
-                ((byQName.invoke(null, qName, project, scope) as? Collection<*>)?.filterIsInstance<PsiNamedElement>()
-                    ?: runFindByShortNameAndFilter(indexClass, qName, project, scope))
-                    .firstOrNull()
-            } catch (e: NoSuchMethodException) {
-                runFindByShortNameAndFilter(indexClass, qName, project, scope).firstOrNull()
-            } catch (e: Exception) {
-                LOG.warn("PyClassNameIndex lookup failed for '$qName': ${e.message}")
-                null
-            }
+        // Reflective default: PyClassNameIndex.findByQualifiedName(qName, project, scope) -> List<PyClass>.
+        // The old findClass(qName, project) was removed (PY-63989). Project scope is searched first so a
+        // project symbol wins over a dependency/SDK/stub with the same qualified path; allScope is the fallback.
+        // Returns ALL matches (project hits first, then allScope-only hits) so the caller can report ambiguity.
+        private fun defaultFindClassByQName(qName: String, project: Project): List<PsiNamedElement> {
+            val indexClass = pythonClassNameIndexClass ?: return emptyList()
+            val projectScope = projectScope(project) ?: return emptyList()
+            val allScope = allScope(project) ?: return emptyList()
+            val projectHits = findByQualifiedNameReflective(indexClass, qName, project, projectScope)
+            if (projectHits.isNotEmpty()) return projectHits
+            return findByQualifiedNameReflective(indexClass, qName, project, allScope)
+        }
+
+        private fun findByQualifiedNameReflective(
+            indexClass: Class<*>, qName: String, project: Project, scope: GlobalSearchScope
+        ): List<PsiNamedElement> = try {
+            val byQName = indexClass.getMethod(
+                "findByQualifiedName", String::class.java, Project::class.java, GlobalSearchScope::class.java
+            )
+            ((byQName.invoke(null, qName, project, scope) as? Collection<*>)?.filterIsInstance<PsiNamedElement>()
+                ?: runFindByShortNameAndFilter(indexClass, qName, project, scope))
+        } catch (e: NoSuchMethodException) {
+            runFindByShortNameAndFilter(indexClass, qName, project, scope)
+        } catch (e: Exception) {
+            LOG.warn("PyClassNameIndex lookup failed for '$qName': ${e.message}")
+            emptyList()
         }
 
         private fun runFindByShortNameAndFilter(
@@ -1118,33 +1125,70 @@ class PythonSymbolReferenceHandler(
             emptyList()
         }
 
-        // Reflective default: PyFunctionNameIndex.find(shortName, project, allScope) -> Collection<PyFunction> (3-arg).
-        private fun defaultFindFunctionsByShortName(shortName: String, project: Project): Collection<PsiNamedElement> {
+        // Reflective default: PyFunctionNameIndex.find(shortName, project, scope) -> Collection<PyFunction> (3-arg),
+        // filtered by getQualifiedName() == qName is done by the caller. Project scope first, allScope fallback,
+        // so a project function wins over a dependency/stub with the same qualified path.
+        private fun defaultFindFunctionsByShortName(shortName: String, project: Project): List<PsiNamedElement> {
             val indexClass = pythonFunctionNameIndexClass ?: return emptyList()
-            val scope = allScope(project) ?: return emptyList()
-            return try {
-                val method = indexClass.getMethod("find", String::class.java, Project::class.java, GlobalSearchScope::class.java)
-                (method.invoke(null, shortName, project, scope) as? Collection<*>).orEmpty()
-                    .filterIsInstance<PsiNamedElement>()
-            } catch (e: NoSuchMethodException) {
-                emptyList()
-            } catch (e: Exception) {
-                LOG.warn("PyFunctionNameIndex.find failed for '$shortName': ${e.message}")
-                emptyList()
-            }
+            val projectScope = projectScope(project) ?: return emptyList()
+            val projectHits = findFunctionsByShortNameReflective(indexClass, shortName, project, projectScope)
+            if (projectHits.isNotEmpty()) return projectHits
+            val allScope = allScope(project) ?: return emptyList()
+            return findFunctionsByShortNameReflective(indexClass, shortName, project, allScope)
         }
 
-        // Reflective default: PyClass members reachable as `Class#name`.
-        // Order: method (findMethodByName, handled by BasePythonHandler.findMethodInClass upstream),
+        private fun findFunctionsByShortNameReflective(
+            indexClass: Class<*>, shortName: String, project: Project, scope: GlobalSearchScope
+        ): List<PsiNamedElement> = try {
+            val method = indexClass.getMethod("find", String::class.java, Project::class.java, GlobalSearchScope::class.java)
+            (method.invoke(null, shortName, project, scope) as? Collection<*>).orEmpty()
+                .filterIsInstance<PsiNamedElement>()
+        } catch (e: NoSuchMethodException) {
+            emptyList()
+        } catch (e: Exception) {
+            LOG.warn("PyFunctionNameIndex.find failed for '$shortName': ${e.message}")
+            emptyList()
+        }
+
+        // Reflective default: PyClass members reachable as `Class#name`, following inheritance (inherited=true).
+        // Order: method (findMethodByName(..., true, context), then multiFindMethodByName(..., true, ...) fallback),
         // class attribute findClassAttribute(String, boolean, TypeEvalContext),
-        // instance attribute findInstanceAttribute(String, boolean) [note: 2-arg, no TypeEvalContext],
-        // @property findProperty(String, boolean, TypeEvalContext) -> Property.getGetter().
+        // instance attribute findInstanceAttribute(String, boolean) [2-arg, no TypeEvalContext],
+        // @property findProperty(String, boolean, TypeEvalContext) -> Property.getGetter() -> Maybe<PyCallable>.valueOrNull(),
+        // nested class findNestedClass(String, boolean).
         private fun defaultFindAttributeInClass(pyClass: PsiElement, name: String): PsiNamedElement? {
             val context = codeAnalysisContextFallback(pyClass.project)
+            findMethodInClassInherited(pyClass, name, context)?.let { return it }
             findClassAttributeReflective(pyClass, name, context)?.let { return it }
             findInstanceAttributeReflective(pyClass, name)?.let { return it }
             findPropertyReflective(pyClass, name, context)?.let { return it }
+            findNestedClassReflective(pyClass, name)?.let { return it }
             return null
+        }
+
+        // Methods with inheritance. BasePythonHandler.findMethodInClass hardcodes inherited=false, which would miss
+        // members declared on a superclass, so this handler resolves methods itself with inherited=true.
+        private fun findMethodInClassInherited(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
+            val contextClass = pythonTypeEvalContextClass ?: return null
+            return try {
+                val method = pyClass.javaClass.getMethod("findMethodByName", String::class.java, java.lang.Boolean.TYPE, contextClass)
+                method.invoke(pyClass, name, true, context) as? PsiNamedElement
+            } catch (e: NoSuchMethodException) {
+                multiFindMethodByNameReflective(pyClass, name, context)
+            } catch (e: Exception) {
+                multiFindMethodByNameReflective(pyClass, name, context)
+            }
+        }
+
+        private fun multiFindMethodByNameReflective(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
+            val contextClass = pythonTypeEvalContextClass ?: return null
+            return try {
+                val method = pyClass.javaClass.getMethod("multiFindMethodByName", String::class.java, java.lang.Boolean.TYPE, contextClass)
+                @Suppress("UNCHECKED_CAST")
+                (method.invoke(pyClass, name, true, context) as? List<*>)?.firstOrNull() as? PsiNamedElement
+            } catch (e: Exception) {
+                null
+            }
         }
 
         private fun findClassAttributeReflective(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
@@ -1175,13 +1219,32 @@ class PythonSymbolReferenceHandler(
             return try {
                 val method = pyClass.javaClass.getMethod("findProperty", String::class.java, java.lang.Boolean.TYPE, contextClass)
                 val property = method.invoke(pyClass, name, true, context) ?: return null
-                val getter = property.javaClass.getMethod("getGetter").invoke(property) ?: return null
+                // Property.getGetter() returns com.jetbrains.python.toolbox.Maybe<PyCallable>; unwrap via valueOrNull().
+                val maybe = property.javaClass.getMethod("getGetter").invoke(property) ?: return null
+                val getter = maybe.javaClass.getMethod("valueOrNull").invoke(maybe) ?: return null
                 getter as? PsiNamedElement
             } catch (e: NoSuchMethodException) {
                 null
             } catch (e: Exception) {
                 null
             }
+        }
+
+        private fun findNestedClassReflective(pyClass: PsiElement, name: String): PsiNamedElement? {
+            return try {
+                val method = pyClass.javaClass.getMethod("findNestedClass", String::class.java, java.lang.Boolean.TYPE)
+                method.invoke(pyClass, name, true) as? PsiNamedElement
+            } catch (e: NoSuchMethodException) {
+                null
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        private fun projectScope(project: Project): GlobalSearchScope? = try {
+            GlobalSearchScope.projectScope(project)
+        } catch (e: Exception) {
+            null
         }
 
         private fun allScope(project: Project): GlobalSearchScope? = try {
@@ -1242,12 +1305,13 @@ class PythonSymbolReferenceHandler(
     private fun resolveByQualifiedName(project: Project, qName: String): Result<PsiNamedElement> {
         val candidates = mutableListOf<PsiNamedElement>()
 
-        findClassByQName(qName, project)?.let { candidates.add(it) }
+        // Class hits come back project-scope-first; functions likewise. Both are already ordered so a project
+        // symbol precedes a dependency/SDK/stub hit with the same qualified path.
+        candidates += findClassByQName(qName, project)
 
         val shortName = qName.substringAfterLast('.')
-        findFunctionsByShortName(shortName, project)
+        candidates += findFunctionsByShortName(shortName, project)
             .filter { getQualifiedName(it) == qName }
-            .forEach { candidates.add(it) }
 
         val distinct = candidates.distinctBy { elementKey(it) }
         return when {
@@ -1264,12 +1328,16 @@ class PythonSymbolReferenceHandler(
         val containerQName = symbol.substring(0, hashIndex)
         val memberName = symbol.substring(hashIndex + 1)
 
-        val pyClass = findClassByQName(containerQName, project)
+        val classes = findClassByQName(containerQName, project)
+        val pyClass = classes.firstOrNull()
             ?: return ErrorMessages.typeNotFound(containerQName, project.name).toArgumentFailure()
+        if (classes.size > 1) {
+            return ErrorMessages.multipleMethodsMatch(
+                containerQName, containerQName, classes.map { describe(it) }
+            ).toArgumentFailure()
+        }
 
-        val method = findMethodInClass(pyClass, memberName)
-        if (method is PsiNamedElement) return Result.success(method)
-
+        // defaultFindAttributeInClass resolves method (inherited=true), class/instance attribute, @property, nested class.
         findAttributeInClass(pyClass, memberName)?.let { return Result.success(it) }
 
         return ErrorMessages.memberNotFoundInType(memberName, containerQName).toArgumentFailure()

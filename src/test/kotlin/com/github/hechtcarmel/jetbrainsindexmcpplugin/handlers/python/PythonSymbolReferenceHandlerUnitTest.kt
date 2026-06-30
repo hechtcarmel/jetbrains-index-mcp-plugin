@@ -58,8 +58,10 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
         functions: Map<String, PsiNamedElement> = emptyMap(),
         attributes: Map<String, PsiNamedElement> = emptyMap()
     ): PythonSymbolReferenceHandler {
-        val classLookup: (String, Project) -> PsiNamedElement? = { qName, _ -> classes[qName] }
-        val functionLookup: (String, Project) -> Collection<PsiNamedElement> = { shortName, _ ->
+        val classLookup: (String, Project) -> List<PsiNamedElement> = { qName, _ ->
+            classes[qName]?.let { listOf(it) } ?: emptyList()
+        }
+        val functionLookup: (String, Project) -> List<PsiNamedElement> = { shortName, _ ->
             functions.entries.filter { it.key.substringAfterLast('.') == shortName }.map { it.value }
         }
         val attrLookup: (PsiElement, String) -> PsiNamedElement? = { _, name -> attributes[name] }
@@ -166,8 +168,10 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
     // ── resolveSymbol: hash member path ────────────────────────────────────────
 
     fun testResolveHashMemberMethodNotFoundOnMockClass() {
-        // findMethodByName is stubbed to null (see mockPyClass) and no attribute is injected,
-        // so the handler must report member-not-found rather than blowing up.
+        // Method resolution now goes through findMethodInClassInherited (inherited=true) which on a mock
+        // throws NoSuchMethodException and falls back to multiFindMethodByName (also failing), then attribute /
+        // property / nested-class lookups all yield null with nothing injected, so the handler reports
+        // member-not-found rather than blowing up. Guards the failure contract.
         val cls = mockPyClass("lib.util.MyClass")
         val r = handler(classes = mapOf("lib.util.MyClass" to cls))
             .resolveSymbol(project, "lib.util.MyClass#method")
@@ -190,6 +194,20 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
         val r = handler().resolveSymbol(project, "lib.util.NoClass#member")
         assertTrue(r.isFailure)
         assertTrue(r.exceptionOrNull()!!.message!!.contains("Type 'lib.util.NoClass' not found"))
+    }
+
+    fun testResolveHashMemberReportsContainerAmbiguity() {
+        // Two classes share the container qName; the #member path must not silently pick one.
+        val a = mockPyClass("lib.util.MyClass", offset = 10)
+        val b = mockPyClass("lib.util.MyClass", offset = 20)
+        val h = PythonSymbolReferenceHandler(
+            findClassByQName = { _, _ -> listOf(a, b) },
+            findFunctionsByShortName = { _, _ -> emptyList() },
+            findAttributeInClass = { _, _ -> null }
+        )
+        val r = h.resolveSymbol(project, "lib.util.MyClass#member")
+        assertTrue(r.isFailure)
+        assertTrue(r.exceptionOrNull()!!.message!!.contains("Multiple"))
     }
 
     // ── resolveSymbol: trimming ────────────────────────────────────────────────
