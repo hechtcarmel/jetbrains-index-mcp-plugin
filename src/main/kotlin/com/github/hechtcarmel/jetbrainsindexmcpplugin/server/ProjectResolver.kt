@@ -85,6 +85,20 @@ object ProjectResolver {
     private val LOG = logger<ProjectResolver>()
     private val json = Json { encodeDefaults = true; prettyPrint = false }
 
+    private val fallbackProjects = java.util.concurrent.ConcurrentHashMap<String, Project>()
+
+    fun onProjectOpened(project: Project) {
+        if (project.isDefault) return
+        val path = project.basePath ?: return
+        LOG.info("ProjectResolver: caching opened project '${project.name}' at $path")
+        fallbackProjects[normalizePath(path)] = project
+    }
+
+    fun onProjectClosed(project: Project) {
+        val path = project.basePath ?: return
+        fallbackProjects.remove(normalizePath(path))
+    }
+
     // Serialises concurrent auto-opens so only one project indexes at a time.
     // Without this, multiple Claude sessions starting simultaneously each trigger
     // resolveOrOpen for their own closed project, causing simultaneous indexing
@@ -102,8 +116,16 @@ object ProjectResolver {
     )
 
     fun resolve(projectPath: String?): Result {
-        val openProjects = ProjectManager.getInstance().openProjects
+        var openProjects = ProjectManager.getInstance().openProjects
             .filter { !it.isDefault }
+
+        if (openProjects.isEmpty() && fallbackProjects.isNotEmpty()) {
+            val cached = fallbackProjects.values.filter { !it.isDisposed }
+            if (cached.isNotEmpty()) {
+                LOG.info("ProjectManager.openProjects empty, using ${cached.size} cached project(s)")
+                openProjects = cached
+            }
+        }
 
         // No projects open
         if (openProjects.isEmpty()) {

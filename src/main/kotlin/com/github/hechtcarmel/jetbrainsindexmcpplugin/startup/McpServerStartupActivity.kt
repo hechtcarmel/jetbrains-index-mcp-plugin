@@ -21,16 +21,14 @@ class McpServerStartupActivity : ProjectActivity {
         LOG.info("MCP Server startup activity executing for project: ${project.name}")
 
         val application = ApplicationManager.getApplication()
-        if (application.isUnitTestMode || application.isHeadlessEnvironment) {
-            LOG.info("Skipping MCP Server startup activity in unit/headless environment")
+        if (application.isUnitTestMode) {
+            LOG.info("Skipping MCP Server startup in unit test mode")
             return
         }
 
         try {
             BuildDiagnosticsCacheService.getInstance(project).initialize()
 
-            // McpServerService self-initializes asynchronously from its constructor (see issue #73).
-            // This call is a redundant safety net — initialize() is idempotent.
             val mcpService = McpServerService.getInstance()
             mcpService.initialize()
             val serverUrl = mcpService.getServerUrl()
@@ -41,27 +39,31 @@ class McpServerStartupActivity : ProjectActivity {
             } else if (serverUrl != null) {
                 LOG.info("MCP Server available at: $serverUrl")
 
-                NotificationGroupManager.getInstance()
-                    .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                    .createNotification(
-                        McpConstants.PLUGIN_NAME,
-                        McpBundle.message("notification.serverStarted", serverUrl),
-                        NotificationType.INFORMATION
-                    )
-                    .notify(project)
+                if (!application.isHeadlessEnvironment) {
+                    NotificationGroupManager.getInstance()
+                        .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                        .createNotification(
+                            McpConstants.PLUGIN_NAME,
+                            McpBundle.message("notification.serverStarted", serverUrl),
+                            NotificationType.INFORMATION
+                        )
+                        .notify(project)
+                }
             }
 
         } catch (e: Exception) {
             LOG.error("Failed to start MCP Server", e)
 
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                .createNotification(
-                    McpConstants.PLUGIN_NAME,
-                    McpBundle.message("notification.serverError", e.message ?: "Unknown error"),
-                    NotificationType.ERROR
-                )
-                .notify(project)
+            if (!application.isHeadlessEnvironment) {
+                NotificationGroupManager.getInstance()
+                    .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                    .createNotification(
+                        McpConstants.PLUGIN_NAME,
+                        McpBundle.message("notification.serverError", e.message ?: "Unknown error"),
+                        NotificationType.ERROR
+                    )
+                    .notify(project)
+            }
         }
     }
 }
