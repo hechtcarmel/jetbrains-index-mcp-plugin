@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Fixed
+- MCP server now starts in headless and remote-dev-server mode. Notification calls are individually guarded for headless. Lifecycle management runs in headless (focus listeners skipped). `preload="true"` ensures server starts before `postStartupActivity`.
 
 ## [4.25.0] - 2026-06-27
 ### Added

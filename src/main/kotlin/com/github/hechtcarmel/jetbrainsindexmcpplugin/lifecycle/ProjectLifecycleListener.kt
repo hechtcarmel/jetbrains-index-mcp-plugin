@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManagerListener
@@ -17,8 +18,13 @@ import com.intellij.openapi.project.ProjectManagerListener
  */
 class ProjectLifecycleListener : ProjectManagerListener {
 
+    override fun projectOpened(project: Project) {
+        ProjectResolver.onProjectOpened(project)
+    }
+
     override fun projectClosing(project: Project) {
         if (project.isDefault) return
+        ProjectResolver.onProjectClosed(project)
         val modeService = runCatching { ProjectModeService.getInstance() }.getOrNull() ?: return
 
         if (modeService.isManaged(project)) {

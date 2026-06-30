@@ -478,6 +478,7 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     private fun normalizePath(path: String) = path.trimEnd('/', '\\').replace('\\', '/')
 
     private fun notify(project: Project, message: String) {
+        if (ApplicationManager.getApplication().isHeadlessEnvironment) return
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Index MCP Server")
             .createNotification(message, NotificationType.INFORMATION)
