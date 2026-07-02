@@ -1067,7 +1067,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
  */
 class PythonSymbolReferenceHandler(
     private val findClassByQName: (String, Project) -> List<PsiNamedElement> = { q, p -> defaultFindClassByQName(q, p) },
-    private val findFunctionsByShortName: (String, Project) -> List<PsiNamedElement> = { s, p -> defaultFindFunctionsByShortName(s, p) },
+    private val findFunctionsByQualifiedName: (String, Project) -> List<PsiNamedElement> = { q, p -> defaultFindFunctionsByQualifiedName(q, p) },
     private val findAttributeInClass: (PsiElement, String) -> PsiNamedElement? = { c, n -> defaultFindAttributeInClass(c, n) }
 ) : BasePythonHandler<PsiNamedElement>(), SymbolReferenceHandler {
 
@@ -1125,28 +1125,42 @@ class PythonSymbolReferenceHandler(
             emptyList()
         }
 
-        // Reflective default: PyFunctionNameIndex.find(shortName, project, scope) -> Collection<PyFunction> (3-arg),
-        // filtered by getQualifiedName() == qName is done by the caller. Project scope first, allScope fallback,
-        // so a project function wins over a dependency/stub with the same qualified path.
-        private fun defaultFindFunctionsByShortName(shortName: String, project: Project): List<PsiNamedElement> {
+        // Reflective default: PyFunctionNameIndex.findByQualifiedName(qName, project, scope) -> List<PyFunction> (filters by
+        // qualified name inside the index call). Project scope first, allScope fallback, so a project function does not
+        // hide a dependency/library function with the same short name but a different qualified path.
+        private fun defaultFindFunctionsByQualifiedName(qName: String, project: Project): List<PsiNamedElement> {
             val indexClass = pythonFunctionNameIndexClass ?: return emptyList()
             val projectScope = projectScope(project) ?: return emptyList()
-            val projectHits = findFunctionsByShortNameReflective(indexClass, shortName, project, projectScope)
+            val projectHits = findFunctionsByQualifiedNameReflective(indexClass, qName, project, projectScope)
             if (projectHits.isNotEmpty()) return projectHits
             val allScope = allScope(project) ?: return emptyList()
-            return findFunctionsByShortNameReflective(indexClass, shortName, project, allScope)
+            return findFunctionsByQualifiedNameReflective(indexClass, qName, project, allScope)
         }
 
-        private fun findFunctionsByShortNameReflective(
-            indexClass: Class<*>, shortName: String, project: Project, scope: GlobalSearchScope
+        private fun findFunctionsByQualifiedNameReflective(
+            indexClass: Class<*>, qName: String, project: Project, scope: GlobalSearchScope
         ): List<PsiNamedElement> = try {
-            val method = indexClass.getMethod("find", String::class.java, Project::class.java, GlobalSearchScope::class.java)
-            (method.invoke(null, shortName, project, scope) as? Collection<*>).orEmpty()
-                .filterIsInstance<PsiNamedElement>()
+            val byQName = indexClass.getMethod(
+                "findByQualifiedName", String::class.java, Project::class.java, GlobalSearchScope::class.java
+            )
+            (byQName.invoke(null, qName, project, scope) as? Collection<*>)?.filterIsInstance<PsiNamedElement>()
+                ?: findFunctionsByShortNameAndFilterReflective(indexClass, qName, project, scope)
         } catch (e: NoSuchMethodException) {
-            emptyList()
+            // Old SDK fallback: PyFunctionNameIndex.find(shortName, project, scope) + getQualifiedName filter.
+            findFunctionsByShortNameAndFilterReflective(indexClass, qName, project, scope)
         } catch (e: Exception) {
-            LOG.warn("PyFunctionNameIndex.find failed for '$shortName': ${e.message}")
+            LOG.warn("PyFunctionNameIndex lookup failed for '$qName': ${e.message}")
+            emptyList()
+        }
+
+        private fun findFunctionsByShortNameAndFilterReflective(
+            indexClass: Class<*>, qName: String, project: Project, scope: GlobalSearchScope
+        ): List<PsiNamedElement> = try {
+            val find = indexClass.getMethod("find", String::class.java, Project::class.java, GlobalSearchScope::class.java)
+            (find.invoke(null, qName.substringAfterLast('.'), project, scope) as? Collection<*>).orEmpty()
+                .filterIsInstance<PsiNamedElement>()
+                .filter { getQualifiedNameReflective(it) == qName }
+        } catch (e: Exception) {
             emptyList()
         }
 
@@ -1305,13 +1319,10 @@ class PythonSymbolReferenceHandler(
     private fun resolveByQualifiedName(project: Project, qName: String): Result<PsiNamedElement> {
         val candidates = mutableListOf<PsiNamedElement>()
 
-        // Class hits come back project-scope-first; functions likewise. Both are already ordered so a project
-        // symbol precedes a dependency/SDK/stub hit with the same qualified path.
+        // Class and function hits come back project-scope-first, filtered by qualified name inside the index call,
+        // so a project symbol does not hide a dependency/library symbol with the same short name but a different qName.
         candidates += findClassByQName(qName, project)
-
-        val shortName = qName.substringAfterLast('.')
-        candidates += findFunctionsByShortName(shortName, project)
-            .filter { getQualifiedName(it) == qName }
+        candidates += findFunctionsByQualifiedName(qName, project)
 
         val distinct = candidates.distinctBy { elementKey(it) }
         return when {

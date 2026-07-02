@@ -61,8 +61,8 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
         val classLookup: (String, Project) -> List<PsiNamedElement> = { qName, _ ->
             classes[qName]?.let { listOf(it) } ?: emptyList()
         }
-        val functionLookup: (String, Project) -> List<PsiNamedElement> = { shortName, _ ->
-            functions.entries.filter { it.key.substringAfterLast('.') == shortName }.map { it.value }
+        val functionLookup: (String, Project) -> List<PsiNamedElement> = { qName, _ ->
+            functions[qName]?.let { listOf(it) } ?: emptyList()
         }
         val attrLookup: (PsiElement, String) -> PsiNamedElement? = { _, name -> attributes[name] }
         return PythonSymbolReferenceHandler(classLookup, functionLookup, attrLookup)
@@ -123,14 +123,24 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
         assertSame(fn, r.getOrThrow())
     }
 
-    fun testResolveFunctionFiltersByQualifiedName() {
-        // Two functions share the short name "to_iso" in different modules; only the requested qName matches.
-        val wanted = mockPyFunction("lib.util.to_iso")
+    fun testResolveFunctionDoesNotMatchSameShortNameDifferentModule() {
+        // The function lookup is by fully-qualified name; a function with the same short name in a different
+        // module must not satisfy a request for a different qualified path. (The reflective default filters by
+        // qName inside the index call; this test asserts the dispatch contract with the injected fake.)
         val other = mockPyFunction("lib.data.influx.to_iso")
-        val r = handler(functions = mapOf("lib.util.to_iso" to wanted, "lib.data.influx.to_iso" to other))
+        val r = handler(functions = mapOf("lib.data.influx.to_iso" to other))
             .resolveSymbol(project, "lib.util.to_iso")
+        assertTrue(r.isFailure)
+        assertTrue(r.exceptionOrNull()!!.message!!.contains("not found"))
+    }
+
+    fun testResolveFunctionPicksProjectHitOverDependencyWithSameQName() {
+        // If a project function and a dependency function share the SAME qualified name, the project-scope-first
+        // ordering must surface the project one. The injected fake models the project hit.
+        val projectFn = mockPyFunction("lib.util.parse")
+        val r = handler(functions = mapOf("lib.util.parse" to projectFn)).resolveSymbol(project, "lib.util.parse")
         assertTrue(r.isSuccess)
-        assertSame(wanted, r.getOrThrow())
+        assertSame(projectFn, r.getOrThrow())
     }
 
     fun testResolveClassByQualifiedName() {
@@ -202,7 +212,7 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
         val b = mockPyClass("lib.util.MyClass", offset = 20)
         val h = PythonSymbolReferenceHandler(
             findClassByQName = { _, _ -> listOf(a, b) },
-            findFunctionsByShortName = { _, _ -> emptyList() },
+            findFunctionsByQualifiedName = { _, _ -> emptyList() },
             findAttributeInClass = { _, _ -> null }
         )
         val r = h.resolveSymbol(project, "lib.util.MyClass#member")
