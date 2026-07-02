@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **Python symbol reference resolution** — `ide_find_definition` and `ide_find_references` now accept the `symbol` + `language` (="Python") entry point, not just `file`/`line`/`column`. A new `PythonSymbolReferenceHandler` resolves fully-qualified Python symbols (`pkg.mod.ClassName`, `pkg.mod.function_name`, `pkg.mod.ClassName.method_name`, `pkg.mod.ClassName#attribute`) to PSI elements via `PyClassNameIndex`/`PyFunctionNameIndex`, so "Python" now appears in the `language` enum for these tools.
 
 ## [4.26.0] - 2026-07-02
 ### Fixed
