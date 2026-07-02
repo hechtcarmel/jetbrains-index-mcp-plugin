@@ -80,7 +80,7 @@ class McpServerService(
         if (shouldStartServer()) {
             coroutineScope.launch { initialize() }
         } else {
-            LOG.info("Skipping MCP Server auto-start in unit/headless environment")
+            LOG.info("Skipping MCP Server auto-start in unit test mode")
         }
     }
 
@@ -101,13 +101,13 @@ class McpServerService(
             startServer(host, port)
             LOG.info("MCP Server Service initialized with Ktor CIO server")
         } else {
-            LOG.info("Initialized MCP tool metadata without starting server in unit/headless environment")
+            LOG.info("Initialized MCP tool metadata without starting server in unit test mode")
         }
     }
 
     private fun shouldStartServer(): Boolean {
         val application = ApplicationManager.getApplication()
-        return !application.isUnitTestMode && !application.isHeadlessEnvironment
+        return !application.isUnitTestMode
     }
 
     /**

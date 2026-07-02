@@ -75,6 +75,7 @@ Unlike simple text-based code analysis, this plugin gives AI assistants access t
 - **True semantic understanding** through the IDE's AST and index
 - **Cross-project reference resolution** that works across files and modules
 - **Multi-language support** - automatically detects and uses language-specific handlers
+- **Headless and remote development support** - starts in regular IDE windows, JetBrains remote development sessions, and headless automation runs
 - **Safe refactoring operations** with automatic reference updates and undo support
 
 Perfect for AI-assisted development workflows where accuracy and safety matter.

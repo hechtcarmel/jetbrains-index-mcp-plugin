@@ -43,19 +43,19 @@ class McpServerServiceTest : BasePlatformTestCase() {
         }
     }
 
-    fun testInitializeDoesNotStartServerInHeadlessOrUnitTestMode() {
+    fun testInitializeDoesNotStartServerInUnitTestMode() {
         val application = ApplicationManager.getApplication()
         assertTrue(
-            "platform tests must run in an IDE command-line environment",
-            application.isHeadlessEnvironment || application.isUnitTestMode
+            "platform tests must run in unit test mode",
+            application.isUnitTestMode
         )
 
         service = McpServerService(testScope)
         service!!.initialize()
 
         assertTrue("service should still initialize tool metadata", service!!.isInitialized)
-        assertFalse("unit/headless initialization must not bind the MCP server port", service!!.isServerRunning())
-        assertNull("unit/headless initialization must not expose a server URL", service!!.getServerUrl())
+        assertFalse("unit test initialization must not bind the MCP server port", service!!.isServerRunning())
+        assertNull("unit test initialization must not expose a server URL", service!!.getServerUrl())
     }
 
     private fun findFreePort(): Int = ServerSocket(0).use { it.localPort }
