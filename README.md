@@ -19,7 +19,7 @@ A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, 
 **Multi-Language Support**
 Advanced tools work across multiple languages based on available plugins:
 - **Java & Kotlin** - IntelliJ IDEA, Android Studio
-- **Python** - PyCharm (all editions), IntelliJ with Python plugin
+- **Python** - PyCharm (all editions), IntelliJ with Python plugin, including symbol-based definition/reference lookup
 - **JavaScript & TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
