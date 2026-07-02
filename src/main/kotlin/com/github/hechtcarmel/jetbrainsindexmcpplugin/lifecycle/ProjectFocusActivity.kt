@@ -13,16 +13,15 @@ class ProjectFocusActivity : ProjectActivity {
 
     override suspend fun execute(project: Project) {
         val application = ApplicationManager.getApplication()
-        if (application.isUnitTestMode || application.isHeadlessEnvironment) {
-            LOG.info("Skipping project focus lifecycle activity in unit/headless environment")
+        if (application.isUnitTestMode) {
+            LOG.info("Skipping project focus lifecycle activity in unit test mode")
             return
         }
 
-        // Attach the focus listener via invokeLater so the frame is available.
-        // If the frame is still null (headless/test env or very early startup),
-        // retry exactly once — no infinite loop.
-        application.invokeLater {
-            registerFocusListener(project, retry = true)
+        if (!application.isHeadlessEnvironment) {
+            application.invokeLater {
+                registerFocusListener(project, retry = true)
+            }
         }
         val modeService = ProjectModeService.getInstance()
         if (McpSettings.getInstance().lifecycleEnabled && modeService.isManaged(project)) {

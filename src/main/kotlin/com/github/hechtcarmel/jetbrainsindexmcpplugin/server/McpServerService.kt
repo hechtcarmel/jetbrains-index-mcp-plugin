@@ -77,9 +77,6 @@ class McpServerService(
     init {
         LOG.info("Initializing MCP Server Service (Protocol: ${McpConstants.MCP_PROTOCOL_VERSION})")
         jsonRpcHandler = JsonRpcHandler(toolRegistry)
-        // Self-initialize asynchronously so the server starts even if postStartupActivity
-        // doesn't fire (see issue #73). initialize() is idempotent (@Synchronized + isInitialized
-        // guard), so the redundant call from McpServerStartupActivity is a safe no-op.
         if (shouldStartServer()) {
             coroutineScope.launch { initialize() }
         } else {
@@ -273,7 +270,9 @@ class McpServerService(
      * Shows an error notification with an action to open settings.
      */
     private fun showErrorNotification(title: String, content: String) {
-        ApplicationManager.getApplication().invokeLater({
+        val application = ApplicationManager.getApplication()
+        if (application.isHeadlessEnvironment) return
+        application.invokeLater({
             NotificationGroupManager.getInstance()
                 .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
