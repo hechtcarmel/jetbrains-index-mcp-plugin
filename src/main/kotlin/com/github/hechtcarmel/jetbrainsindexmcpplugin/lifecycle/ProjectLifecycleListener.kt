@@ -18,10 +18,6 @@ import com.intellij.openapi.project.ProjectManagerListener
  */
 class ProjectLifecycleListener : ProjectManagerListener {
 
-    override fun projectOpened(project: Project) {
-        ProjectResolver.onProjectOpened(project)
-    }
-
     override fun projectClosing(project: Project) {
         if (project.isDefault) return
         ProjectResolver.onProjectClosed(project)

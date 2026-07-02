@@ -143,9 +143,6 @@ for detailed documentation and examples.</p>
     </extensions>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Application-level MCP Server Service -->
-        <applicationService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService" preload="true"/>
-
         <!-- Project-level Command History Service -->
         <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService"/>
 
