@@ -23,6 +23,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
 | `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
+| `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
@@ -89,6 +90,7 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_sync_files](#ide_sync_files)
   - [ide_reload_project](#ide_reload_project)
   - [ide_import_modules](#ide_import_modules)
+  - [ide_open_workspace](#ide_open_workspace)
   - [ide_build_project](#ide_build_project)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
@@ -800,6 +802,58 @@ Import one or more external Maven project directories as modules into the curren
 Imported 2 module(s):
   + /Users/dev/casehub/drafthouse
   + /Users/dev/casehub/worker
+```
+
+---
+
+### ide_open_workspace
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Requires**: Maven plugin
+
+Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven project paths. Creates a temporary aggregator POM with relative module paths.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No* | Root directory to scan for Maven projects (each must contain a `pom.xml`). Mutually exclusive with `modules`. |
+| `modules` | array of strings | No* | Explicit list of absolute paths to Maven project directories. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `timeoutSeconds` | integer | No | Timeout in seconds for opening and indexing (default: 600) |
+| `project_path` | string | No | Selects the IntelliJ project window when multiple are open |
+
+*Either `path` or `modules` must be provided, but not both.
+
+**Example (scan directory):**
+
+```json
+{
+  "name": "ide_open_workspace",
+  "arguments": {
+    "path": "/Users/dev/monorepo"
+  }
+}
+```
+
+**Example (explicit modules):**
+
+```json
+{
+  "name": "ide_open_workspace",
+  "arguments": {
+    "modules": [
+      "/Users/dev/casehub/platform",
+      "/Users/dev/casehub/engine",
+      "/Users/dev/casehub/worker"
+    ]
+  }
+}
+```
+
+**Example Response:**
+
+```
+Workspace opened with 3 Maven projects from /Users/dev/monorepo. IntelliJ is indexing in the background.
 ```
 
 ---
