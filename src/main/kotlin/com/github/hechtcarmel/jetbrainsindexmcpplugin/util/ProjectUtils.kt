@@ -1,13 +1,88 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
+import com.intellij.ide.impl.OpenProjectTask
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
-import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
+import kotlin.coroutines.resume
+
+sealed class MavenImportResult {
+    data class Success(val modules: List<Module>) : MavenImportResult()
+    data object MavenUnavailable : MavenImportResult()
+    data class Failed(val error: String) : MavenImportResult()
+}
 
 object ProjectUtils {
+
+    fun canonicalNormalizedPath(path: String): String {
+        val canonical = runCatching { File(path).canonicalPath }.getOrElse { File(path).absolutePath }
+        return ProjectResolver.normalizePath(canonical)
+    }
+
+    fun findOpenProjectByPath(path: String): Project? {
+        val requested = canonicalNormalizedPath(path)
+        return ProjectManager.getInstance().openProjects.firstOrNull { open ->
+            !open.isDefault && open.basePath?.let { canonicalNormalizedPath(it) } == requested
+        }
+    }
+
+    suspend fun awaitSmartMode(opened: Project): Boolean =
+        suspendCancellableCoroutine { continuation ->
+            ApplicationManager.getApplication().invokeLater({
+                if (!opened.isDisposed) {
+                    DumbService.getInstance(opened).runWhenSmart {
+                        if (continuation.isActive) continuation.resume(true)
+                    }
+                } else {
+                    if (continuation.isActive) continuation.resume(false)
+                }
+            }, ModalityState.nonModal())
+        }
+
+    fun openTask(): OpenProjectTask =
+        OpenProjectTask.build().withForceOpenInNewFrame(true)
+
+    @Suppress("UNCHECKED_CAST")
+    fun importMavenModule(project: Project, directoryVf: VirtualFile): MavenImportResult {
+        val builderClass = try {
+            Class.forName("org.jetbrains.idea.maven.wizards.MavenProjectAsyncBuilder")
+        } catch (_: ClassNotFoundException) {
+            return MavenImportResult.MavenUnavailable
+        }
+        val providerClass = try {
+            Class.forName(
+                "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
+            )
+        } catch (_: ClassNotFoundException) {
+            return MavenImportResult.MavenUnavailable
+        }
+        val builder = builderClass.getDeclaredConstructor().newInstance()
+        val commitSync = builderClass.getMethod(
+            "commitSync",
+            Project::class.java,
+            VirtualFile::class.java,
+            providerClass
+        )
+        return try {
+            val modules = commitSync.invoke(builder, project, directoryVf, null) as? List<Module>
+                ?: emptyList()
+            MavenImportResult.Success(modules)
+        } catch (e: Exception) {
+            val cause = e.cause ?: e
+            MavenImportResult.Failed("Failed to import ${directoryVf.name}: ${cause.message}")
+        }
+    }
 
     fun getRelativePath(project: Project, virtualFile: VirtualFile): String {
         val basePath = project.basePath

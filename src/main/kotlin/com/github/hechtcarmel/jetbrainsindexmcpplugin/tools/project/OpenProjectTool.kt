@@ -1,32 +1,22 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
-import com.intellij.ide.impl.OpenProjectTask
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.project.DumbService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ex.ProjectManagerEx
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.nio.file.Path
-import kotlin.coroutines.resume
 
 class OpenProjectTool : AbstractMcpTool() {
 
     override val requiresPsiSync = false
-    // Opening a project is infrastructure — it should not auto-enroll it in lifecycle
-    // management. Enrollment happens on the first real semantic tool call (find references,
-    // diagnostics, etc.) after the project is open, which signals genuine intent to work on it.
     override val participatesInLifecycle = false
 
     override val name = "ide_open_project"
@@ -82,22 +72,20 @@ class OpenProjectTool : AbstractMcpTool() {
             return createErrorResult("timeoutSeconds must be a positive integer.")
         }
 
-        findOpenProjectByPath(path)?.let {
+        ProjectUtils.findOpenProjectByPath(path)?.let {
             return createSuccessResult("Project '${it.name}' is already open.")
         }
 
-        // Validate before calling openProjectAsync — the platform call hangs indefinitely
-        // in headless/CI environments when the path does not exist.
         val dir = File(path)
         if (!dir.exists()) return createErrorResult("Path does not exist: $path")
         if (!dir.isDirectory) return createErrorResult("Path is not a directory: $path")
 
         var openedProject: Project? = null
         val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
-            val opened = ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), openTask())
+            val opened = ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
                 ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
             openedProject = opened
-            if (awaitSmartMode(opened)) OpenOutcome.READY else OpenOutcome.CLOSED_WHILE_WAITING
+            if (ProjectUtils.awaitSmartMode(opened)) OpenOutcome.READY else OpenOutcome.CLOSED_WHILE_WAITING
         }
 
         return when (outcome) {
@@ -113,8 +101,6 @@ class OpenProjectTool : AbstractMcpTool() {
             null -> {
                 val opened = openedProject
                 if (opened != null && !opened.isDisposed) {
-                    // The project opened but indexing outlasted the timeout — report partial
-                    // success instead of an error so callers know the open itself worked.
                     createSuccessResult(
                         "Project '${opened.name}' is open but still indexing after ${timeoutSeconds}s. " +
                             "Index-dependent tools may fail until indexing completes — check ide_index_status."
@@ -129,42 +115,6 @@ class OpenProjectTool : AbstractMcpTool() {
             }
         }
     }
-
-    /**
-     * Waits on the EDT for [opened] to leave dumb mode.
-     * [DumbService.runWhenSmart] must be scheduled from a non-modal EDT context.
-     *
-     * @return true once smart mode is reached, false if the project was disposed first.
-     */
-    private suspend fun awaitSmartMode(opened: Project): Boolean =
-        suspendCancellableCoroutine { continuation ->
-            // nonModal() is the SDK-correct modality for runWhenSmart.
-            // The outer withTimeoutOrNull handles the modal-dialog case without needing any().
-            ApplicationManager.getApplication().invokeLater({
-                if (!opened.isDisposed) {
-                    DumbService.getInstance(opened).runWhenSmart {
-                        if (continuation.isActive) continuation.resume(true)
-                    }
-                } else {
-                    if (continuation.isActive) continuation.resume(false)
-                }
-            }, ModalityState.nonModal())
-        }
-
-    private fun findOpenProjectByPath(path: String): Project? {
-        val requested = canonicalNormalizedPath(path)
-        return ProjectManager.getInstance().openProjects.firstOrNull { open ->
-            !open.isDefault && open.basePath?.let { canonicalNormalizedPath(it) } == requested
-        }
-    }
-
-    private fun canonicalNormalizedPath(path: String): String {
-        val canonical = runCatching { File(path).canonicalPath }.getOrElse { File(path).absolutePath }
-        return ProjectResolver.normalizePath(canonical)
-    }
-
-    private fun openTask(): OpenProjectTask =
-        OpenProjectTask.build().withForceOpenInNewFrame(true)
 
     companion object {
         private const val DEFAULT_TIMEOUT_SECONDS = 600

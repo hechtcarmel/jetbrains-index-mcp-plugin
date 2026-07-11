@@ -1,32 +1,22 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
-import com.intellij.ide.impl.OpenProjectTask
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.PathManager
-import com.intellij.openapi.module.Module
-import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.vfs.VirtualFile
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import java.io.File
-import java.nio.file.Path
 import java.security.MessageDigest
-import kotlin.coroutines.resume
 
 class OpenWorkspaceTool : AbstractMcpTool() {
 
@@ -111,9 +101,9 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                 return createErrorResult("No valid Maven projects in the provided modules list.")
             }
             mavenProjects = validated
-                .sortedBy { canonicalNormalizedPath(it.absolutePath) }
-                .distinctBy { canonicalNormalizedPath(it.absolutePath) }
-            workspaceHashKey = mavenProjects.joinToString("\n") { canonicalNormalizedPath(it.absolutePath) }
+                .sortedBy { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
+                .distinctBy { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
+            workspaceHashKey = mavenProjects.joinToString("\n") { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
         } else {
             val rootPath = pathArg!!
             if (!File(rootPath).isAbsolute) {
@@ -131,7 +121,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             if (mavenProjects.isEmpty()) {
                 return createErrorResult("No Maven projects found in subdirectories of $rootPath")
             }
-            workspaceHashKey = canonicalNormalizedPath(rootPath)
+            workspaceHashKey = ProjectUtils.canonicalNormalizedPath(rootPath)
         }
 
         val workspaceDir = try {
@@ -143,44 +133,44 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             )
         }
 
-        var openedProject: Project? = findOpenProjectByPath(workspaceDir.absolutePath)
+        var openedProject: Project? = ProjectUtils.findOpenProjectByPath(workspaceDir.absolutePath)
         val alreadyOpen = openedProject != null
-        val expectedRoots = mavenProjects.map { canonicalNormalizedPath(it.absolutePath) }.toSet()
+        val expectedRoots = mavenProjects.map { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }.toSet()
 
         val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
             val opened = if (alreadyOpen) {
                 openedProject!!
             } else {
                 val o = ProjectManagerEx.getInstanceEx()
-                    .openProjectAsync(workspaceDir.toPath(), openTask())
+                    .openProjectAsync(workspaceDir.toPath(), ProjectUtils.openTask())
                     ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
                 openedProject = o
                 o
             }
 
-            if (!awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
+            if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
 
             val actualRoots = ProjectUtils.getModuleContentRoots(opened)
-                .map(::canonicalNormalizedPath).toSet()
-            val missing = mavenProjects.filter { canonicalNormalizedPath(it.absolutePath) !in actualRoots }
+                .map(ProjectUtils::canonicalNormalizedPath).toSet()
+            val missing = mavenProjects.filter { ProjectUtils.canonicalNormalizedPath(it.absolutePath) !in actualRoots }
 
             if (missing.isNotEmpty()) {
                 for (moduleDir in missing) {
                     val dirVf = LocalFileSystem.getInstance()
                         .refreshAndFindFileByPath(moduleDir.absolutePath) ?: continue
-                    when (val result = importMavenModule(opened, dirVf)) {
-                        is ImportResult.MavenUnavailable ->
+                    when (ProjectUtils.importMavenModule(opened, dirVf)) {
+                        is MavenImportResult.MavenUnavailable ->
                             return@withTimeoutOrNull OpenOutcome.MAVEN_UNAVAILABLE
-                        is ImportResult.Failed -> { }
-                        is ImportResult.Success -> { }
+                        is MavenImportResult.Failed -> { }
+                        is MavenImportResult.Success -> { }
                     }
                 }
-                if (!awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
+                if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
             }
 
             val finalRoots = ProjectUtils.getModuleContentRoots(opened)
-                .map(::canonicalNormalizedPath).toSet()
-            val workspaceRoot = canonicalNormalizedPath(workspaceDir.absolutePath)
+                .map(ProjectUtils::canonicalNormalizedPath).toSet()
+            val workspaceRoot = ProjectUtils.canonicalNormalizedPath(workspaceDir.absolutePath)
             val staleRoots = finalRoots.filter { root ->
                 root != workspaceRoot &&
                     root !in expectedRoots &&
@@ -209,9 +199,9 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             }
             OpenOutcome.STALE_MODULES -> {
                 val roots = if (opened != null && !opened.isDisposed) {
-                    ProjectUtils.getModuleContentRoots(opened).map(::canonicalNormalizedPath).toSet()
+                    ProjectUtils.getModuleContentRoots(opened).map(ProjectUtils::canonicalNormalizedPath).toSet()
                 } else emptySet()
-                val wsRoot = canonicalNormalizedPath(workspaceDir.absolutePath)
+                val wsRoot = ProjectUtils.canonicalNormalizedPath(workspaceDir.absolutePath)
                 val stale = roots.filter { root ->
                     root != wsRoot &&
                         root !in expectedRoots &&
@@ -226,7 +216,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             }
             OpenOutcome.IMPORT_INCOMPLETE -> {
                 val roots = if (opened != null && !opened.isDisposed) {
-                    ProjectUtils.getModuleContentRoots(opened).map(::canonicalNormalizedPath).toSet()
+                    ProjectUtils.getModuleContentRoots(opened).map(ProjectUtils::canonicalNormalizedPath).toSet()
                 } else emptySet()
                 val missing = expectedRoots - roots
                 createErrorResult(
@@ -254,43 +244,6 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                     )
                 }
             }
-        }
-    }
-
-    sealed class ImportResult {
-        data class Success(val modules: List<Module>) : ImportResult()
-        data object MavenUnavailable : ImportResult()
-        data class Failed(val error: String) : ImportResult()
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun importMavenModule(project: Project, directoryVf: VirtualFile): ImportResult {
-        val builderClass = try {
-            Class.forName("org.jetbrains.idea.maven.wizards.MavenProjectAsyncBuilder")
-        } catch (_: ClassNotFoundException) {
-            return ImportResult.MavenUnavailable
-        }
-        val providerClass = try {
-            Class.forName(
-                "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
-            )
-        } catch (_: ClassNotFoundException) {
-            return ImportResult.MavenUnavailable
-        }
-        val builder = builderClass.getDeclaredConstructor().newInstance()
-        val commitSync = builderClass.getMethod(
-            "commitSync",
-            Project::class.java,
-            VirtualFile::class.java,
-            providerClass
-        )
-        return try {
-            val modules = commitSync.invoke(builder, project, directoryVf, null) as? List<Module>
-                ?: emptyList()
-            ImportResult.Success(modules)
-        } catch (e: Exception) {
-            val cause = e.cause ?: e
-            ImportResult.Failed("Failed to import ${directoryVf.name}: ${cause.message}")
         }
     }
 
@@ -340,34 +293,6 @@ $moduleEntries
         val bytes = digest.digest(path.toByteArray())
         return bytes.take(8).joinToString("") { "%02x".format(it) }
     }
-
-    private suspend fun awaitSmartMode(opened: Project): Boolean =
-        suspendCancellableCoroutine { continuation ->
-            ApplicationManager.getApplication().invokeLater({
-                if (!opened.isDisposed) {
-                    DumbService.getInstance(opened).runWhenSmart {
-                        if (continuation.isActive) continuation.resume(true)
-                    }
-                } else {
-                    if (continuation.isActive) continuation.resume(false)
-                }
-            }, ModalityState.nonModal())
-        }
-
-    private fun findOpenProjectByPath(path: String): Project? {
-        val requested = canonicalNormalizedPath(path)
-        return ProjectManager.getInstance().openProjects.firstOrNull { open ->
-            !open.isDefault && open.basePath?.let { canonicalNormalizedPath(it) } == requested
-        }
-    }
-
-    private fun canonicalNormalizedPath(path: String): String {
-        val canonical = runCatching { File(path).canonicalPath }.getOrElse { File(path).absolutePath }
-        return ProjectResolver.normalizePath(canonical)
-    }
-
-    private fun openTask(): OpenProjectTask =
-        OpenProjectTask.build().withForceOpenInNewFrame(true)
 
     companion object {
         private const val DEFAULT_TIMEOUT_SECONDS = 600
