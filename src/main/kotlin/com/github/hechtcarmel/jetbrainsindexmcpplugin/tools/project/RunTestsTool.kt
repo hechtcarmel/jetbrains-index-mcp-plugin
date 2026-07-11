@@ -238,7 +238,68 @@ class RunTestsTool : AbstractMcpTool() {
         } ?: return null
 
         return edtAction { createConfigurationFromContext(project, psiElement) }
-            ?.also { runManager.setTemporaryConfiguration(it) }
+            ?.also { config ->
+                if (methodName != null) injectMethodFilter(config, className, methodName)
+                runManager.setTemporaryConfiguration(config)
+            }
+    }
+
+    private fun injectMethodFilter(config: RunnerAndConfigurationSettings, className: String, methodName: String) {
+        val typeName = config.configuration.javaClass.name
+        when {
+            typeName.contains("Gradle") || typeName.contains("ExternalSystem") ->
+                injectGradleMethodFilter(config.configuration, methodName, className)
+            typeName.contains("JUnit") ->
+                injectJUnitMethodFilter(config.configuration, methodName)
+            else ->
+                LOG.debug("No method filter injection for config type: $typeName")
+        }
+    }
+
+    /**
+     * Gradle stores test filters in `taskNames` as discrete entries:
+     *   [":test", "--tests", "\"com.example.ClassName\""]
+     * ConfigurationContext only produces class-level granularity, so we replace the filter value
+     * with `"className.methodName"`.
+     */
+    private fun injectGradleMethodFilter(runConfig: Any, methodName: String, className: String) {
+        try {
+            val settings = runConfig.javaClass.methods.firstOrNull { it.name == "getSettings" }
+                ?.invoke(runConfig) ?: return
+            val getTaskNames = settings.javaClass.methods.firstOrNull { it.name == "getTaskNames" } ?: return
+            val setTaskNames = settings.javaClass.methods.firstOrNull { it.name == "setTaskNames" } ?: return
+
+            @Suppress("UNCHECKED_CAST")
+            val taskNames = (getTaskNames.invoke(settings) as? List<String>)?.toMutableList() ?: return
+            val testsIndex = taskNames.indexOf("--tests")
+            val methodFilter = "\"$className.$methodName\""
+
+            when {
+                testsIndex >= 0 && testsIndex + 1 < taskNames.size -> taskNames[testsIndex + 1] = methodFilter
+                testsIndex >= 0 -> taskNames.add(methodFilter)
+                else -> taskNames.addAll(listOf("--tests", methodFilter))
+            }
+
+            setTaskNames.invoke(settings, taskNames)
+        } catch (e: Exception) {
+            LOG.debug("Could not inject Gradle method filter: ${e.message}")
+        }
+    }
+
+    /**
+     * For Maven projects IntelliJ creates a JUnit run configuration with dedicated fields:
+     *   METHOD_NAME = "methodName", TEST_OBJECT = "method"
+     * ConfigurationContext produces class-level configs, so we set these fields directly.
+     */
+    private fun injectJUnitMethodFilter(runConfig: Any, methodName: String) {
+        try {
+            val data = runConfig.javaClass.methods.firstOrNull { it.name == "getPersistentData" }
+                ?.invoke(runConfig) ?: return
+            data.javaClass.fields.firstOrNull { it.name == "METHOD_NAME" }?.set(data, methodName)
+            data.javaClass.fields.firstOrNull { it.name == "TEST_OBJECT" }?.set(data, "method")
+        } catch (e: Exception) {
+            LOG.debug("Could not inject JUnit method filter: ${e.message}")
+        }
     }
 
     private fun createConfigurationFromContext(
