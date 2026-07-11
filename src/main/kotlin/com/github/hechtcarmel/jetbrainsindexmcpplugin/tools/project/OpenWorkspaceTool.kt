@@ -168,16 +168,24 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                 for (moduleDir in missing) {
                     val dirVf = LocalFileSystem.getInstance()
                         .refreshAndFindFileByPath(moduleDir.absolutePath) ?: continue
-                    val modules = importMavenModule(opened, dirVf)
-                        ?: return@withTimeoutOrNull OpenOutcome.MAVEN_UNAVAILABLE
+                    when (val result = importMavenModule(opened, dirVf)) {
+                        is ImportResult.MavenUnavailable ->
+                            return@withTimeoutOrNull OpenOutcome.MAVEN_UNAVAILABLE
+                        is ImportResult.Failed -> { }
+                        is ImportResult.Success -> { }
+                    }
                 }
                 if (!awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
             }
 
             val finalRoots = ProjectUtils.getModuleContentRoots(opened)
                 .map(::canonicalNormalizedPath).toSet()
-            val staleRoots = finalRoots - expectedRoots -
-                setOf(canonicalNormalizedPath(workspaceDir.absolutePath))
+            val workspaceRoot = canonicalNormalizedPath(workspaceDir.absolutePath)
+            val staleRoots = finalRoots.filter { root ->
+                root != workspaceRoot &&
+                    root !in expectedRoots &&
+                    expectedRoots.none { requested -> root.startsWith("$requested/") }
+            }
             if (!finalRoots.containsAll(expectedRoots)) {
                 OpenOutcome.IMPORT_INCOMPLETE
             } else if (staleRoots.isNotEmpty()) {
@@ -203,11 +211,16 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                 val roots = if (opened != null && !opened.isDisposed) {
                     ProjectUtils.getModuleContentRoots(opened).map(::canonicalNormalizedPath).toSet()
                 } else emptySet()
-                val stale = roots - expectedRoots -
-                    setOf(canonicalNormalizedPath(workspaceDir.absolutePath))
+                val wsRoot = canonicalNormalizedPath(workspaceDir.absolutePath)
+                val stale = roots.filter { root ->
+                    root != wsRoot &&
+                        root !in expectedRoots &&
+                        expectedRoots.none { requested -> root.startsWith("$requested/") }
+                }
                 createErrorResult(
                     "Workspace has ${stale.size} stale module(s) that are no longer in the expected set. " +
-                        "Close and reopen the workspace to remove them.\n" +
+                        "Remove stale modules from IntelliJ's project structure, or delete the " +
+                        "workspace directory and reopen.\n" +
                         "Stale roots:\n" + stale.joinToString("\n") { "  ! $it" }
                 )
             }
@@ -244,16 +257,26 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
     }
 
+    sealed class ImportResult {
+        data class Success(val modules: List<Module>) : ImportResult()
+        data object MavenUnavailable : ImportResult()
+        data class Failed(val error: String) : ImportResult()
+    }
+
     @Suppress("UNCHECKED_CAST")
-    private fun importMavenModule(project: Project, directoryVf: VirtualFile): List<Module>? {
+    private fun importMavenModule(project: Project, directoryVf: VirtualFile): ImportResult {
         val builderClass = try {
             Class.forName("org.jetbrains.idea.maven.wizards.MavenProjectAsyncBuilder")
         } catch (_: ClassNotFoundException) {
-            return null
+            return ImportResult.MavenUnavailable
         }
-        val providerClass = Class.forName(
-            "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
-        )
+        val providerClass = try {
+            Class.forName(
+                "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
+            )
+        } catch (_: ClassNotFoundException) {
+            return ImportResult.MavenUnavailable
+        }
         val builder = builderClass.getDeclaredConstructor().newInstance()
         val commitSync = builderClass.getMethod(
             "commitSync",
@@ -262,9 +285,12 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             providerClass
         )
         return try {
-            commitSync.invoke(builder, project, directoryVf, null) as? List<Module>
-        } catch (_: Exception) {
-            null
+            val modules = commitSync.invoke(builder, project, directoryVf, null) as? List<Module>
+                ?: emptyList()
+            ImportResult.Success(modules)
+        } catch (e: Exception) {
+            val cause = e.cause ?: e
+            ImportResult.Failed("Failed to import ${directoryVf.name}: ${cause.message}")
         }
     }
 
