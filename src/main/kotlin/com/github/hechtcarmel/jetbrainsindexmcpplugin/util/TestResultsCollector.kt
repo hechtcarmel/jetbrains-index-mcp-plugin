@@ -1,12 +1,16 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInfo
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestRunEntry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
+import com.intellij.execution.testframework.sm.runner.states.TestStateInfo.Magnitude
 import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiDocumentManager
 
 data class TestCollectionResult(
     val testResults: List<TestResultInfo>,
@@ -44,6 +48,24 @@ object TestResultsCollector {
             truncated = truncated
         )
     }
+
+    fun collectRunEntries(root: SMTestProxy.SMRootTestProxy): List<TestRunEntry> =
+        root.allTests
+            .filter { it.isLeaf && it !== root }
+            .map { test ->
+                val status = when {
+                    test.isPassed -> TestStatus.PASSED
+                    test.isIgnored -> TestStatus.SKIPPED
+                    test.magnitudeInfo == Magnitude.ERROR_INDEX -> TestStatus.ERROR
+                    else -> TestStatus.FAILED
+                }
+                val suite = test.parent?.name?.takeIf { it.isNotBlank() }
+                TestRunEntry(
+                    name = if (suite != null) "$suite.${test.name}" else test.name,
+                    status = status,
+                    errorMessage = if (status.isFailure) test.errorMessage else null
+                )
+            }
 
     private fun findTestRootProxyAndName(descriptors: List<RunContentDescriptor>): Pair<SMTestProxy.SMRootTestProxy, String?>? {
         for (descriptor in descriptors) {
@@ -133,7 +155,7 @@ object TestResultsCollector {
                 val containingFile = psiElement.containingFile?.virtualFile
                 if (containingFile != null) {
                     file = ProjectUtils.getRelativePath(project, containingFile.path)
-                    val document = com.intellij.psi.PsiDocumentManager.getInstance(project).getDocument(psiElement.containingFile)
+                    val document = PsiDocumentManager.getInstance(project).getDocument(psiElement.containingFile)
                     if (document != null) {
                         line = document.getLineNumber(psiElement.textOffset) + 1
                     }

@@ -7,7 +7,7 @@ description: >
   ide_find_implementations, ide_find_symbol, ide_find_super_methods, ide_file_structure,
   ide_refactor_safe_delete, ide_reformat_code, ide_reload_project, ide_import_modules,
   ide_build_project, ide_read_file, ide_structural_search_replace, ide_change_signature,
-  ide_create_file, ide_get_active_file, or ide_open_file are available — especially when a second
+  ide_create_file, ide_get_active_file, ide_open_file, ide_list_tests, or ide_run_tests are available — especially when a second
   IntelliJ MCP (mcp__intellij__*) is also present. The two servers are NOT
   interchangeable: always use mcp__intellij-index__ for code navigation and refactoring.
 ---
@@ -162,7 +162,7 @@ All lifecycle action tools are disabled by default:
 
 These tools exist but are disabled by default. They are omitted from `tools/list`, and direct `tools/call` requests are rejected until the user enables them in IDE settings (Settings > Tools > Index MCP Server):
 
-`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_restart`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`
+`ide_build_project`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_list_tests`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_restart`, `ide_run_tests`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`
 `ide_build_project`, `ide_change_signature`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_restart`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`, `ide_structural_search_replace`
 `ide_build_project`, `ide_change_signature`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_open_file`, `ide_open_project`, `ide_optimize_imports`, `ide_read_file`, `ide_replace_text_in_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_restart`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`, `ide_structural_search_replace`
 

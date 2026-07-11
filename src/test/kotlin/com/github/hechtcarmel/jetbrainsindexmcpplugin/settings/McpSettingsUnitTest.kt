@@ -168,7 +168,7 @@ class McpSettingsUnitTest : TestCase() {
         val settings = McpSettings()
         settings.loadState(McpSettings.State(
             disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES, ToolNames.RELOAD_PROJECT),
-            settingsSchemaVersion = 2
+            settingsSchemaVersion = 3
         ))
 
         settings.updateToolEnabledStates(mapOf(

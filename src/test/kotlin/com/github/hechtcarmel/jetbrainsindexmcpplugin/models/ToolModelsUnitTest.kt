@@ -354,6 +354,60 @@ class ToolModelsUnitTest : TestCase() {
         }
     }
 
+    // TestRunEntry / TestStatus tests (ide_run_tests)
+
+    fun testTestRunEntryStatusSerializesToLowercaseWireValue() {
+        val expectedWire = mapOf(
+            TestStatus.PASSED to "passed",
+            TestStatus.FAILED to "failed",
+            TestStatus.ERROR to "error",
+            TestStatus.SKIPPED to "skipped"
+        )
+
+        expectedWire.forEach { (status, wire) ->
+            val entry = TestRunEntry(name = "com.example.MyTest.test", status = status, errorMessage = null)
+            val serialized = json.encodeToString(entry)
+
+            assertTrue(
+                "TestStatus.$status should serialize as \"$wire\", got: $serialized",
+                serialized.contains("\"status\":\"$wire\"")
+            )
+            assertEquals(status, json.decodeFromString<TestRunEntry>(serialized).status)
+        }
+    }
+
+    fun testTestStatusIsFailure() {
+        assertTrue(TestStatus.FAILED.isFailure)
+        assertTrue(TestStatus.ERROR.isFailure)
+        assertFalse(TestStatus.PASSED.isFailure)
+        assertFalse(TestStatus.SKIPPED.isFailure)
+    }
+
+    fun testRunTestsResultSerialization() {
+        val result = RunTestsResult(
+            success = false,
+            timedOut = false,
+            exitCode = 1,
+            passed = 1,
+            failed = 1,
+            errors = 0,
+            total = 2,
+            tests = listOf(
+                TestRunEntry("com.example.MyTest.testOk", TestStatus.PASSED),
+                TestRunEntry("com.example.MyTest.testBad", TestStatus.FAILED, "expected true but was false")
+            ),
+            output = "Tests run: 2, Failures: 1\n"
+        )
+
+        val deserialized = json.decodeFromString<RunTestsResult>(json.encodeToString(result))
+
+        assertEquals(2, deserialized.total)
+        assertEquals(TestStatus.PASSED, deserialized.tests[0].status)
+        assertEquals(TestStatus.FAILED, deserialized.tests[1].status)
+        assertEquals("expected true but was false", deserialized.tests[1].errorMessage)
+        assertNull(deserialized.tests[0].errorMessage)
+    }
+
     // TestSummary tests
 
     fun testTestSummarySerialization() {

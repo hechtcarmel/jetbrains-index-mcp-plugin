@@ -263,6 +263,8 @@ These tools work in all supported JetBrains IDEs.
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
 | `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(disabled by default, requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(disabled by default)* |
+| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Class/method **FQN targeting is Java/Kotlin-only**; other languages pass an existing run-config name *(disabled by default)* |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |

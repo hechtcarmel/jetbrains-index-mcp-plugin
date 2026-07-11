@@ -25,6 +25,8 @@ These tools work in every supported JetBrains IDE:
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test frameworks | Disabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
@@ -101,6 +103,8 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_import_modules](#ide_import_modules)
   - [ide_open_workspace](#ide_open_workspace)
   - [ide_build_project](#ide_build_project)
+  - [ide_list_tests](#ide_list_tests)
+  - [ide_run_tests](#ide_run_tests)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
   - [ide_open_file](#ide_open_file)
@@ -921,6 +925,116 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
   ],
   "truncated": false,
   "durationMs": 3200
+}
+```
+
+---
+
+### ide_list_tests
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
+
+**Use when:**
+- Discovering what tests exist before running them
+- Finding the exact FQN of a test class or method to pass to `ide_run_tests`
+- Checking whether a new test file was picked up by the IDE
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+| `file` | string | No | Path to a specific test file relative to project root. If omitted, all test sources are scanned |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_list_tests",
+    "arguments": {}
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "tests": [
+    {
+      "framework": "JUnit4",
+      "className": "McpPluginUnitTest",
+      "methodName": "testToolNamesHaveIdePrefix",
+      "displayName": "McpPluginUnitTest.testToolNamesHaveIdePrefix",
+      "file": "src/test/kotlin/com/example/McpPluginUnitTest.kt",
+      "line": 42
+    }
+  ],
+  "count": 1,
+  "truncated": false
+}
+```
+
+---
+
+### ide_run_tests
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results and console output.
+
+Results are read directly from the IDE's test runner rather than from report files on disk, so they always reflect this run and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
+
+**Language support:** Passing an **existing run configuration name** works for any language/framework. Passing a **class or method FQN** (so the plugin creates the run config for you) is supported **only for Java/Kotlin** — for Python, JS/TS, Go, PHP, or Rust, create/select a run configuration in the IDE and pass its name.
+
+**Use when:**
+- Running a specific test class or method after a code change
+- Verifying that a fix resolves a test failure
+- Getting structured test results without dropping to a terminal
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+| `target` | string | Yes | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo` or `com.example.MyTest.testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
+| `timeoutSeconds` | integer | No | Max seconds to wait for test completion (default: 120) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_run_tests",
+    "arguments": {
+      "target": "com.example.MyTest#testFoo"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "timedOut": false,
+  "exitCode": 0,
+  "passed": 3,
+  "failed": 0,
+  "errors": 0,
+  "total": 3,
+  "tests": [
+    { "name": "com.example.MyTest.testFoo", "status": "passed" },
+    { "name": "com.example.MyTest.testBar", "status": "passed" },
+    { "name": "com.example.MyTest.testBaz", "status": "passed" }
+  ],
+  "output": "Running com.example.MyTest\nTests run: 3, Failures: 0, Errors: 0\n"
 }
 ```
 

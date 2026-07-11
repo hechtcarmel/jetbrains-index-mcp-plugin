@@ -24,6 +24,8 @@ object ToolNames {
     const val BUILD_PROJECT = "ide_build_project"
     const val IMPORT_MODULES = "ide_import_modules"
     const val RELOAD_PROJECT = "ide_reload_project"
+    const val LIST_TESTS = "ide_list_tests"
+    const val RUN_TESTS = "ide_run_tests"
 
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
@@ -90,6 +92,7 @@ object ToolNames {
         INDEX_STATUS,
         INSTALL_PLUGIN,
         LIFECYCLE_LOG,
+        LIST_TESTS,
         REFACTOR_MOVE,
         OPEN_FILE,
         OPEN_PROJECT,
@@ -105,6 +108,7 @@ object ToolNames {
         RELOAD_PROJECT,
         REPLACE_TEXT_IN_FILE,
         RESTART_IDE,
+        RUN_TESTS,
         SEARCH_TEXT,
         SET_ALL_PROJECT_MODES,
         LIFECYCLE_LOG_FILE,

@@ -1245,4 +1245,66 @@ class ToolsUnitTest : TestCase() {
     fun testCreateFileToolIsDisabledByDefault() {
         assertTrue(ToolNames.CREATE_FILE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
+    // ── ide_list_tests tests ───────────────────────────────────────────────────
+
+    fun testListTestsToolSchema() {
+        val tool = com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ListTestsTool()
+
+        assertEquals(ToolNames.LIST_TESTS, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+
+        assertNull("Should not have required array (file is optional)", schema[SchemaConstants.REQUIRED])
+    }
+
+    fun testListTestsToolIsRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val tool = registry.getTool(ToolNames.LIST_TESTS)
+        assertNotNull("ide_list_tests should be registered", tool)
+        assertEquals(ToolNames.LIST_TESTS, tool?.name)
+    }
+
+    // ── ide_run_tests tests ────────────────────────────────────────────────────
+
+    fun testRunTestsToolSchema() {
+        val tool = com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RunTestsTool()
+
+        assertEquals(ToolNames.RUN_TESTS, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+        assertNotNull("Should have target property", properties?.get(ParamNames.TARGET))
+        assertNotNull("Should have timeoutSeconds property", properties?.get(ParamNames.TIMEOUT_SECONDS))
+
+        val required = schema[SchemaConstants.REQUIRED]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertNotNull("Should have required array", required)
+        assertTrue("target should be required", required?.contains(ParamNames.TARGET) == true)
+        assertFalse("project_path should not be required", required?.contains(ParamNames.PROJECT_PATH) == true)
+    }
+
+    fun testRunTestsToolIsRegistered() {
+        val registry = ToolRegistry()
+        registry.registerBuiltInTools()
+
+        val tool = registry.getTool(ToolNames.RUN_TESTS)
+        assertNotNull("ide_run_tests should be registered", tool)
+        assertEquals(ToolNames.RUN_TESTS, tool?.name)
+    }
+
 }

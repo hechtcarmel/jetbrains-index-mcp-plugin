@@ -448,6 +448,27 @@ Build project using IDE's build system (JPS, Gradle, Maven).
 **Returns**: `{ success, aborted, errors?, warnings?, buildMessages: [{message, file, line, column, severity}], truncated, rawOutput?, durationMs }`
 Note: `errors`/`warnings` are `null` when no messages were captured (not 0).
 
+### ide_list_tests (disabled by default)
+List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | For workspace sub-projects |
+| `file` | string | no | Relative path to a specific test file; omit to scan all test sources |
+
+**Returns**: `{ tests: [{framework, className, methodName, displayName, file, line}], count, truncated }`
+
+### ide_run_tests (disabled by default)
+Run tests via the IDE's run configuration infrastructure. Results are read from the IDE's test runner, so they work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Targeting by class/method FQN creates a run config for Java/Kotlin only; for other languages pass an existing run-configuration name. Returns structured pass/fail results.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | For workspace sub-projects |
+| `target` | string | yes | Existing run config name (any language), or a Java/Kotlin class FQN (`com.example.MyTest`) / method FQN (`com.example.MyTest#testFoo`) — FQN forms are Java/Kotlin-only |
+| `timeoutSeconds` | integer | no | Max seconds to wait for test completion (default 120) |
+
+**Returns**: `{ success, timedOut, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?}], output }`
+
 ### ide_reload_project (disabled by default)
 Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.
 

@@ -24,7 +24,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProj
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetLifecycleLogFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetProjectModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ListTestsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RunTestsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ImportModulesTool
@@ -256,7 +258,9 @@ class ToolRegistry {
         register(GetIndexStatusTool())
         register(SyncFilesTool())
         register(BuildProjectTool())
+        register(ListTestsTool())
         register(ReloadProjectTool())
+        register(RunTestsTool())
         if (PluginDetectors.maven.isAvailable) {
             register(ImportModulesTool())
             register(OpenWorkspaceTool())

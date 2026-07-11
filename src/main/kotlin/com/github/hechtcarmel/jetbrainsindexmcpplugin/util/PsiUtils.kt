@@ -13,6 +13,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiQualifiedNamedElement
 import com.intellij.psi.PsiReference
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -287,7 +288,38 @@ object PsiUtils {
         return ancestors.asReversed()
     }
 
-    fun findNamedElement(element: PsiElement): PsiNamedElement? {
+    /**
+     * Reflective accessors, in priority order, that yield a class-like element's fully qualified
+     * name when the platform [PsiQualifiedNamedElement] interface is not implemented.
+     *
+     * - `getFqName` — Kotlin (`KtNamedDeclaration`, returns an `FqName` whose `toString()` is the dotted name).
+     * - `getFQN` — PHP (`PhpClass`, returns a `\Namespace\Class` string).
+     */
+    private val QUALIFIED_NAME_ACCESSORS = listOf("getFqName", "getFQN")
+
+    /**
+     * Best-effort fully qualified name of a class-like [element], across languages.
+     *
+     * Resolution order: the platform [PsiQualifiedNamedElement] interface (Java and any language
+     * implementing it), then the language-specific accessors in [QUALIFIED_NAME_ACCESSORS] via
+     * reflection (so no compile-time dependency on the Kotlin/PHP plugins is required).
+     *
+     * @return the qualified name, or null if none can be derived — callers should fall back to the
+     *   simple name.
+     */
+    fun qualifiedName(element: PsiElement): String? {
+        (element as? PsiQualifiedNamedElement)?.qualifiedName?.takeIf { it.isNotBlank() }?.let { return it }
+
+        for (accessor in QUALIFIED_NAME_ACCESSORS) {
+            val value = runCatching {
+                element.javaClass.getMethod(accessor).invoke(element)?.toString()
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            if (value != null) return value
+        }
+        return null
+    }
+
+    fun findNamedElement(element: PsiElement?): PsiNamedElement? {
         var current: PsiElement? = element
         while (current != null) {
             // Exclude PsiFile - it's too high-level to be a useful "named element" target
