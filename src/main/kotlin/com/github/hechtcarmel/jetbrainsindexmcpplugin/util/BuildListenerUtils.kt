@@ -61,15 +61,23 @@ object BuildListenerUtils {
             val proxy = java.lang.reflect.Proxy.newProxyInstance(
                 listenerClass.classLoader,
                 arrayOf(listenerClass)
-            ) { _, method, args ->
-                if (method.name == "onEvent" && args != null && args.size >= 2) {
-                    val buildId = args[0] ?: return@newProxyInstance null
-                    val event = args[1] ?: return@newProxyInstance null
-                    try {
-                        onEvent(buildId, event)
-                    } catch (_: Exception) { }
+            ) { proxyObj, method, args ->
+                when (method.name) {
+                    "equals" -> proxyObj === args?.get(0)
+                    "hashCode" -> System.identityHashCode(proxyObj)
+                    "toString" -> "BuildProgressListener-proxy"
+                    "onEvent" -> {
+                        if (args != null && args.size >= 2) {
+                            val buildId = args[0] ?: return@newProxyInstance null
+                            val event = args[1] ?: return@newProxyInstance null
+                            try {
+                                onEvent(buildId, event)
+                            } catch (_: Exception) { }
+                        }
+                        null
+                    }
+                    else -> null
                 }
-                null
             }
 
             val addListenerMethod = buildViewManagerClass.methods.find {
@@ -112,12 +120,20 @@ object BuildListenerUtils {
             val proxy = java.lang.reflect.Proxy.newProxyInstance(
                 listenerClass.classLoader,
                 arrayOf(listenerClass)
-            ) { _, method, args ->
-                if (method.name == "compilationFinished" && args != null && args.size >= 4) {
-                    val compileContext = args.getOrNull(3) ?: return@newProxyInstance null
-                    onCompilationFinished(compileContext)
+            ) { proxyObj, method, args ->
+                when (method.name) {
+                    "equals" -> proxyObj === args?.get(0)
+                    "hashCode" -> System.identityHashCode(proxyObj)
+                    "toString" -> "CompilationStatusListener-proxy"
+                    "compilationFinished" -> {
+                        if (args != null && args.size >= 4) {
+                            val compileContext = args.getOrNull(3) ?: return@newProxyInstance null
+                            onCompilationFinished(compileContext)
+                        }
+                        null
+                    }
+                    else -> null
                 }
-                null
             }
 
             val subscribeMethod = connection.javaClass.methods.find {
