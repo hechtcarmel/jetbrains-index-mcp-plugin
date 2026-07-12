@@ -513,6 +513,10 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.SET_ALL_PROJECT_MODES,
             ToolNames.SET_PROJECT_MODE
         )
+        if (PluginDetectors.maven.isAvailable) {
+            expectedTools.add(ToolNames.IMPORT_MODULES)
+            expectedTools.add(ToolNames.OPEN_WORKSPACE)
+        }
         if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
             expectedTools.add(ToolNames.CONVERT_JAVA_TO_KOTLIN)
         }

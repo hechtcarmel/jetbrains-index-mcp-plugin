@@ -410,6 +410,20 @@ Import one or more external Maven project directories as modules into the curren
 
 **Returns**: text summary of imported, skipped, and failed module paths.
 
+### ide_open_workspace (disabled by default, Maven plugin only)
+Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence. Creates a temporary aggregator POM with relative module paths.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | no* | Root directory to scan for Maven projects (each must contain `pom.xml`). Mutually exclusive with `modules`. |
+| `modules` | string[] | no* | Explicit list of absolute paths to Maven project directories. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `timeoutSeconds` | integer | no | Timeout in seconds for opening and indexing (default 600) |
+| `project_path` | string | no | Project root path |
+
+*Either `path` or `modules` must be provided, but not both.
+
+**Returns**: text confirmation with count of Maven projects found and indexing status.
+
 ### ide_set_power_save_mode (disabled by default)
 Enable or disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis; the index and code intelligence tools stay functional.
 

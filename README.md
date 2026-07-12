@@ -34,6 +34,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Sync Files** - Force sync VFS/PSI cache after external file changes
 - **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes (disabled by default)
 - **Import Modules** - Import external Maven project directories as modules for cross-project code intelligence and refactoring (disabled by default)
+- **Open Workspace** - Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence (disabled by default)
 - **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
 - **Find Class** - Fast class/interface search by name with camelCase matching
 - **Find File** - Fast file search by name using IDE's file index

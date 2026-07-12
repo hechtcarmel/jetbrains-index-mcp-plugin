@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeServi
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
 import com.intellij.ide.impl.OpenProjectTask
 import com.intellij.openapi.application.ApplicationManager
@@ -405,7 +406,7 @@ object ProjectResolver {
                 .find { normalizePath(it.basePath ?: "") == normalizePath(path) }
                 ?: withContext(NonCancellable) {
                     try {
-                        ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), openTask())
+                        ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
                     } catch (e: Throwable) {
                         if (e.message?.contains("already opened") == true) {
                             ProjectManager.getInstance().openProjects
@@ -445,9 +446,6 @@ object ProjectResolver {
 
         return project
     }
-
-    private fun openTask(): OpenProjectTask =
-        OpenProjectTask.build().withForceOpenInNewFrame(true)
 
     private fun buildErrorResult(message: String, projectPath: String): Result {
         val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }

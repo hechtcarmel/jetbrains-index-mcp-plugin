@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ImportModulesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenWorkspaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import junit.framework.TestCase
@@ -115,5 +116,32 @@ class ProjectWindowToolsUnitTest : TestCase() {
 
     fun testImportModulesToolNameInAll() {
         assertTrue("IMPORT_MODULES must be in ToolNames.ALL", ToolNames.ALL.contains(ToolNames.IMPORT_MODULES))
+    }
+
+    fun testOpenWorkspaceToolName() {
+        assertEquals(ToolNames.OPEN_WORKSPACE, OpenWorkspaceTool().name)
+    }
+
+    fun testOpenWorkspaceToolHasPathAndModulesParams() {
+        val schema = OpenWorkspaceTool().inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have path property", properties?.get("path"))
+        assertNotNull("Should have modules property", properties?.get("modules"))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+        assertFalse("path should not be required (mutually exclusive with modules)", required.contains("path"))
+        assertFalse("modules should not be required (mutually exclusive with path)", required.contains("modules"))
+        val modulesSchema = properties?.get("modules")?.jsonObject
+        assertEquals("modules should be array type", "array", modulesSchema?.get("type")?.jsonPrimitive?.content)
+        val itemsSchema = modulesSchema?.get("items")?.jsonObject
+        assertEquals("modules items should be string type", "string", itemsSchema?.get("type")?.jsonPrimitive?.content)
+    }
+
+    fun testOpenWorkspaceToolIsDisabledByDefault() {
+        val defaults = McpSettings.State().disabledTools
+        assertTrue("ide_open_workspace must be opt-in by default", defaults.contains(ToolNames.OPEN_WORKSPACE))
+    }
+
+    fun testOpenWorkspaceToolNameInAll() {
+        assertTrue("OPEN_WORKSPACE must be in ToolNames.ALL", ToolNames.ALL.contains(ToolNames.OPEN_WORKSPACE))
     }
 }
