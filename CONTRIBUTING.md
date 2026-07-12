@@ -124,6 +124,123 @@ confirm each has an entry: `README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`,
 
 ---
 
+## Code correctness review — mandatory before every push
+
+The checklist above covers registration and documentation. This section covers
+**code correctness** — the bugs that slip past unit tests because they only
+surface under real threading, real disposal, or real multi-language execution.
+
+These checks exist because the same categories of bugs have appeared in multiple
+PRs. Each item maps to a real production defect. Do not skip items because
+"it looks fine" — trace the actual execution path.
+
+### Threading: trace every `doExecute` to PSI
+
+MCP tool calls arrive on Ktor coroutine worker threads — no read lock, not EDT.
+
+For every code path in your PR that touches PSI:
+
+- [ ] **PSI reads** are inside `suspendingReadAction { }` or `ReadAction.compute { }`
+- [ ] **PSI writes** are inside `edtAction { WriteCommandAction.runWriteCommandAction { } }`
+- [ ] **Processors that manage their own write actions** (e.g., `RenameProcessor.run()`,
+  `Replacer.replaceAll()`) are called on EDT but **not** wrapped in an extra
+  `WriteCommandAction` — double-wrapping deadlocks
+- [ ] **Line/column calculations** that depend on document length happen **inside** the
+  write action, after the edit — not before, when the document was a different length
+
+How to verify: start at `doExecute()`, follow every call that eventually reaches a
+`PsiElement`, `PsiFile`, `Document`, or `PsiManager`. Each one must be in the correct
+threading context. `BasePlatformTestCase` runs on EDT with implicit read access, so
+**tests will not catch threading violations** — you must trace the production path manually.
+
+### Reflection proxies: handle Object methods
+
+Every `Proxy.newProxyInstance` call must handle `equals`, `hashCode`, and `toString`.
+The default return of `null` causes `NullPointerException` when the proxy is stored in
+collections or disposed through `Disposer.dispose()`.
+
+```kotlin
+// ✗ NPE when Disposer calls equals() during removal
+{ _, method, args -> if (method.name == "onEvent") { ... }; null }
+
+// ✓ Safe
+{ proxyObj, method, args ->
+    when (method.name) {
+        "equals" -> proxyObj === args?.get(0)
+        "hashCode" -> System.identityHashCode(proxyObj)
+        "toString" -> "MyListener-proxy"
+        "onEvent" -> { ...; null }
+        else -> null
+    }
+}
+```
+
+- [ ] Every `Proxy.newProxyInstance` in the PR handles `equals`, `hashCode`, `toString`
+- [ ] `grep -rn "Proxy.newProxyInstance" src/main/` — check ALL existing proxies too,
+  not just the ones you added
+
+### Error handling: distinguish "unavailable" from "broken"
+
+When using reflection to access optional plugin APIs, the catch block must distinguish
+`ClassNotFoundException` (plugin not installed — expected, recoverable) from other
+exceptions (plugin present but call failed — unexpected, worth reporting).
+
+```kotlin
+// ✗ Loses error information — caller can't tell if Maven is missing or if import crashed
+return try { ... } catch (_: Exception) { null }
+
+// ✓ Caller can distinguish and report appropriately
+catch (e: ClassNotFoundException) { return PluginUnavailable }
+catch (e: Exception) { return Failed(e.message) }
+```
+
+- [ ] Every `catch (_: Exception)` or `catch (_: Throwable)` — is the error type information
+  actually unneeded, or is it being silently swallowed?
+
+### Sibling consistency: same fix in all language resolvers
+
+When fixing a bug in one language resolver (Java, Kotlin, JavaScript/TypeScript), check
+whether the same pattern exists in sibling implementations.
+
+- [ ] Search for the same method name in `Java*Resolver`, `Kotlin*Resolver`,
+  `JavaScript*Resolver` — does the fix apply to all of them?
+- [ ] Search for the same method name in `Java*Handler`, `Kotlin*Handler`,
+  `Python*Handler`, `JavaScript*Handler`, etc. — same question
+
+### Dead code: trace from interface to all implementations
+
+When removing a caller, check whether the method is still referenced anywhere.
+If not, remove it from the interface and all implementations.
+
+- [ ] Every method removed or added — does the interface still match all implementations?
+- [ ] `ide_find_references` on the method — zero callers means dead code
+
+### Test honesty: conditional skips must be visible
+
+Tests that skip when an optional plugin is absent must use `Assume.assumeTrue()`,
+not early-return. Early-return silently passes — the test appears green but never ran.
+
+```kotlin
+// ✗ Silently passes — CI shows green even though nothing was tested
+if (!pluginAvailable) return
+
+// ✓ CI shows "skipped" — the maintainer knows it didn't run
+Assume.assumeTrue("JavaScript plugin not available", pluginAvailable)
+```
+
+- [ ] Every conditional test skip uses `Assume.assumeTrue`, not `return` or `return@runBlocking`
+
+### Set operations: account for hierarchical containment
+
+When computing set differences on file paths or module roots, check whether the domain
+has parent-child relationships. Plain set subtraction (`A - B`) flags children of
+requested items as "extra".
+
+- [ ] Every set difference on paths — does the code account for nesting?
+  (e.g., `root !in expected && expected.none { root.startsWith("$it/") }`)
+
+---
+
 ## API compliance — the plugin verifier enforces these; CI fails if violated
 
 ### Internal APIs

@@ -166,6 +166,12 @@ These tools exist but are disabled by default. They are omitted from `tools/list
 Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
 Note: `ide_close_project` refuses to close the last open project; `ide_open_project` requires an absolute path and may take up to `timeoutSeconds` (default 600) while the project indexes.
 
+## Enforcing IDE Tool Usage with Hooks
+
+Claude Code hooks can block `grep`, `sed`, `Edit`, and `rm` on source files and redirect agents to the correct IDE tool. This prevents fallback to text-based operations that bypass the index.
+
+See [claude-code-hooks.md](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/blob/main/docs/claude-code-hooks.md) for ready-to-use hook scripts.
+
 ## Detailed Tool Parameters
 
 For complete parameter reference with types, defaults, and return formats, see [tools-reference.md](references/tools-reference.md).
