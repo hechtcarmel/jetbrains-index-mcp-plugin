@@ -7,9 +7,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import com.intellij.execution.ExecutionListener
 import com.intellij.execution.ExecutionManager
+import com.intellij.execution.Location
+import com.intellij.execution.PsiLocation
 import com.intellij.execution.RunManager
 import com.intellij.execution.RunnerAndConfigurationSettings
 import com.intellij.execution.actions.ConfigurationContext
@@ -30,13 +33,13 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiNamedElement
-import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.psi.PsiMethod
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import org.jdom.filter2.Filters.element
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -227,72 +230,19 @@ class RunTestsTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val psiElement = suspendingReadAction {
-            val psiClass = findClassByName(project, className) ?: return@suspendingReadAction null
-            if (methodName == null) {
-                psiClass
-            } else {
-                // Search descendants (not just direct children) so Kotlin methods, which are
-                // nested under a class-body node, are found as well as Java's direct children.
-                PsiTreeUtil.collectElementsOfType(psiClass, PsiNamedElement::class.java)
-                    .firstOrNull { it.name == methodName }
-            }
+            findClassByName(project, className)
+                ?.let { if (methodName == null) it else findMethodElement(it, methodName) }
         } ?: return null
 
         return edtAction {
             val config = createConfigurationFromContext(project, psiElement) ?: return@edtAction null
-            if (methodName != null) injectMethodFilter(config.configuration, className, methodName)
             runManager.setTemporaryConfiguration(config)
             config
         }
     }
 
-    private fun injectMethodFilter(runConfig: RunConfiguration, className: String, methodName: String) {
-        val typeId = runConfig.type.id
-        when {
-            typeId.contains("Gradle") || typeId.contains("ExternalSystem") ->
-                injectGradleMethodFilter(runConfig, className, methodName)
-            typeId == "JUnit" ->
-                injectJUnitMethodFilter(runConfig, methodName)
-            else ->
-                LOG.debug("No method filter injection for config type: $typeId")
-        }
-    }
-
-    // ConfigurationContext only creates class-level Gradle configs; narrow it to a single method via the --tests filter.
-    private fun injectGradleMethodFilter(runConfig: RunConfiguration, className: String, methodName: String) {
-        try {
-            val settings = runConfig.javaClass.methods.firstOrNull { it.name == "getSettings" }?.invoke(runConfig) ?: return
-            val methods = settings.javaClass.methods
-            val getTaskNames = methods.firstOrNull { it.name == "getTaskNames" } ?: return
-            val setTaskNames = methods.firstOrNull { it.name == "setTaskNames" } ?: return
-
-            @Suppress("UNCHECKED_CAST")
-            val taskNames = (getTaskNames.invoke(settings) as? List<String>)?.toMutableList() ?: return
-            val testsIndex = taskNames.indexOf("--tests")
-            val methodFilter = "\"$className.$methodName\""
-
-            when {
-                testsIndex >= 0 && testsIndex + 1 < taskNames.size -> taskNames[testsIndex + 1] = methodFilter
-                testsIndex >= 0 -> taskNames.add(methodFilter)
-                else -> taskNames.addAll(listOf("--tests", methodFilter))
-            }
-
-            setTaskNames.invoke(settings, taskNames)
-        } catch (e: Exception) {
-            LOG.warn("Could not inject Gradle method filter for '$className.$methodName': ${e.message}; running class-scope instead")
-        }
-    }
-
-    // ConfigurationContext only creates class-level JUnit configs; narrow it to a single method via the persistent data fields.
-    private fun injectJUnitMethodFilter(runConfig: RunConfiguration, methodName: String) {
-        try {
-            val data = runConfig.javaClass.methods.firstOrNull { it.name == "getPersistentData" }?.invoke(runConfig) ?: return
-            data.javaClass.fields.firstOrNull { it.name == "METHOD_NAME" }?.set(data, methodName)
-            data.javaClass.fields.firstOrNull { it.name == "TEST_OBJECT" }?.set(data, "method")
-        } catch (e: Exception) {
-            LOG.warn("Could not inject JUnit method filter for '$methodName': ${e.message}; running class-scope instead")
-        }
-    }
+    private fun findMethodElement(psiClass: PsiElement, methodName: String): PsiMethod? =
+        PsiUtils.resolveAsPsiClass(psiClass)?.methods?.firstOrNull { it.name == methodName }
 
     private fun createConfigurationFromContext(
         project: Project,
@@ -300,7 +250,7 @@ class RunTestsTool : AbstractMcpTool() {
     ): RunnerAndConfigurationSettings? {
         val dataContext = SimpleDataContext.builder()
             .add(CommonDataKeys.PROJECT, project)
-            .add(CommonDataKeys.PSI_ELEMENT, psiElement)
+            .add(Location.DATA_KEY, PsiLocation.fromPsiElement(psiElement))
             .build()
         return ConfigurationContext.getFromContext(dataContext, ActionPlaces.UNKNOWN)
             .createConfigurationsFromContext()
