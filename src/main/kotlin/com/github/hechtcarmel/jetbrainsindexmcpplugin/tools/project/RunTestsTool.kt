@@ -238,11 +238,12 @@ class RunTestsTool : AbstractMcpTool() {
             }
         } ?: return null
 
-        return edtAction { createConfigurationFromContext(project, psiElement) }
-            ?.also { config ->
-                if (methodName != null) injectMethodFilter(config.configuration, className, methodName)
-                runManager.setTemporaryConfiguration(config)
-            }
+        return edtAction {
+            val config = createConfigurationFromContext(project, psiElement) ?: return@edtAction null
+            if (methodName != null) injectMethodFilter(config.configuration, className, methodName)
+            runManager.setTemporaryConfiguration(config)
+            config
+        }
     }
 
     private fun injectMethodFilter(runConfig: RunConfiguration, className: String, methodName: String) {
