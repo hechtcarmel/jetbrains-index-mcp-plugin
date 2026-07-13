@@ -353,6 +353,8 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
+For Claude Code users: [hooks](docs/claude-code-hooks.md) that enforce IDE tool usage over bash/grep/sed fallbacks.
+
 ## Multi-Project Support
 
 When multiple projects are open in a single IDE window, you must specify which project to use with the `project_path` parameter:

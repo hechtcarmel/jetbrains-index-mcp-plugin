@@ -75,6 +75,11 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 
 ---
 
+**Claude Code users:** To enforce IDE tool usage and prevent agents from falling back to grep/sed/Edit,
+see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse` hook scripts.
+
+---
+
 ## Table of Contents
 
 - [Common Parameters](#common-parameters)

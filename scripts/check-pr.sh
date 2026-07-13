@@ -109,7 +109,54 @@ if [ -n "$UPSTREAM_BASE" ]; then
     [ -z "$NEW_TOOLS" ] && ok "No new tools added (or none detected)"
 fi
 
-# ── 6. Unit tests ────────────────────────────────────────────────────────────
+# ── 6. Code correctness — proxy safety ───────────────────────────────────────
+hdr "Reflection proxy safety"
+
+PROXY_FILES=$(grep -rln "Proxy.newProxyInstance" src/main/ 2>/dev/null || true)
+if [ -n "$PROXY_FILES" ]; then
+    PROXY_UNSAFE=""
+    for pf in $PROXY_FILES; do
+        if ! grep -q '"equals"' "$pf" 2>/dev/null; then
+            PROXY_UNSAFE="$PROXY_UNSAFE  $pf\n"
+        fi
+    done
+    if [ -n "$PROXY_UNSAFE" ]; then
+        fail "Proxy.newProxyInstance without equals/hashCode/toString handling:"
+        printf "$PROXY_UNSAFE"
+    else
+        ok "All proxies handle equals/hashCode/toString"
+    fi
+else
+    ok "No Proxy.newProxyInstance calls found"
+fi
+
+# ── 7. Code correctness — silent exception swallowing ────────────────────────
+hdr "Exception handling"
+
+if [ -n "$UPSTREAM_BASE" ]; then
+    SILENT_CATCH_NULL=$(git diff "$UPSTREAM_BASE" HEAD -- src/main/ 2>/dev/null | grep -c '^\+.*catch.*(_:.*Exception).*null' || true)
+    SILENT_CATCH_NULL=${SILENT_CATCH_NULL:-0}
+    if [ "$SILENT_CATCH_NULL" -gt 0 ] 2>/dev/null; then
+        fail "$SILENT_CATCH_NULL new catch blocks return null — verify each distinguishes 'unavailable' from 'broken' (CONTRIBUTING.md § Error handling)"
+    else
+        ok "No new catch-and-return-null patterns in diff"
+    fi
+fi
+
+# ── 8. Code correctness — test skip honesty ──────────────────────────────────
+hdr "Test skip honesty"
+
+if [ -n "$UPSTREAM_BASE" ]; then
+    EARLY_RETURN=$(git diff "$UPSTREAM_BASE" HEAD -- src/test/ 2>/dev/null | grep -cE '^\+.*(if.*!.*available|if.*!.*require).*return' || true)
+    EARLY_RETURN=${EARLY_RETURN:-0}
+    if [ "$EARLY_RETURN" -gt 0 ] 2>/dev/null; then
+        fail "$EARLY_RETURN new early-return test skips — use Assume.assumeTrue() instead (CONTRIBUTING.md § Test honesty)"
+    else
+        ok "No early-return test skips in diff"
+    fi
+fi
+
+# ── 9. Unit tests ─────────────────────────────────────────────────────────────
 hdr "Unit tests"
 
 echo "  Running ./gradlew test --tests \"*UnitTest*\" ..."
