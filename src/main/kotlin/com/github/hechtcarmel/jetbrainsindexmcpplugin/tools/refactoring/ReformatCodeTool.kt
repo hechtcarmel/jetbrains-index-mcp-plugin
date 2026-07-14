@@ -10,7 +10,6 @@ import com.intellij.codeInsight.actions.AbstractLayoutCodeProcessor
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.codeInsight.actions.RearrangeCodeProcessor
 import com.intellij.codeInsight.actions.ReformatCodeProcessor
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -92,6 +91,11 @@ class ReformatCodeTool : AbstractMcpTool() {
             if (startLine < 1) return createErrorResult("startLine must be >= 1")
             if (endLine < startLine) return createErrorResult("endLine must be >= startLine")
         }
+
+        // Refresh VFS for the target file to pick up external changes before PSI resolution.
+        // Without this, the stub index can be stale when files are modified by external tools,
+        // causing "Outdated stub in index" errors during import optimization or reformatting.
+        resolveFile(project, file)?.refresh(false, false)
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve file and validate (suspending read action)
