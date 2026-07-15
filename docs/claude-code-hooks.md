@@ -163,35 +163,46 @@ exit 0
 
 **File:** `intellij-first-edit.sh`
 
-This hook intercepts Edit and Write tool calls on source files, redirecting to
-the IDE's structural editing tools which maintain the index.
+This hook intercepts Edit and Write tool calls on source files where IntelliJ
+provides better alternatives. The scope varies by language:
+
+- **Java/Kotlin**: full structural editing (`ide_edit_member`, `ide_insert_member`,
+  `ide_replace_member`) plus refactoring and search
+- **TypeScript/JavaScript**: refactoring (`ide_refactor_rename`, `ide_move_file`)
+  plus search (`ide_find_references`, `ide_replace_text_in_file`) — IntelliJ
+  maintains type-aware references and import tracking
+- **Python**: not blocked — no IDE structural editing support yet
 
 ```bash
 #!/bin/bash
 # PreToolUse hook for Edit/Write: block modifications to source files.
-# IntelliJ MCP owns structural editing. Exceptions:
+# Java/Kotlin: full structural editing (ide_edit_member, ide_insert_member, etc.)
+# JS/TS: refactoring + search (ide_refactor_rename, ide_replace_text_in_file, etc.)
+# Python: not blocked — no IDE structural editing support yet
+# Exceptions:
 # - Write to new files (fallback when ide_create_file unavailable)
-# - Edit with replace_all (find-and-replace — covered by ide_replace_text_in_file
-#   but allowed as fallback for sessions without the tool)
+# - Edit with replace_all (find-and-replace — no MCP tool covers this)
 
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null)
 FILE=$(echo "$INPUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
 REPLACE_ALL=$(echo "$INPUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tool_input',{}).get('replace_all',False))" 2>/dev/null)
 
-if echo "$FILE" | grep -qE '\.(java|kt|ts|tsx|js|jsx|py)$'; then
+if echo "$FILE" | grep -qE '\.(java|kt|ts|tsx|js|jsx)$'; then
   # Allow Write to new files (fallback when ide_create_file unavailable)
   if [ "$TOOL" = "Write" ] && [ ! -f "$FILE" ]; then
     exit 0
   fi
-  # Allow Edit with replace_all (find-and-replace fallback)
+  # Allow Edit with replace_all — find-and-replace within a file.
   if [ "$TOOL" = "Edit" ] && [ "$REPLACE_ALL" = "True" ]; then
     exit 0
   fi
-  echo "BLOCK: Use IntelliJ MCP tools instead of Edit/Write on source files. \
-EXISTING files: ide_edit_member, ide_replace_member, ide_insert_member, ide_replace_text_in_file. \
-NEW files: ide_create_file (preferred) or Write (fallback). \
-REFACTOR: ide_refactor_rename, ide_move_file." >&2
+  # Java/Kotlin have full member editing; JS/TS have refactoring + search
+  if echo "$FILE" | grep -qE '\.(java|kt)$'; then
+    echo "BLOCK: Use IntelliJ MCP tools instead of Edit/Write on source files. EXISTING files: ide_edit_member, ide_replace_member, ide_insert_member. NEW files: ide_create_file (preferred) or Write (fallback for new files only). REFACTOR: ide_refactor_rename, ide_move_file. FIND-AND-REPLACE: ide_replace_text_in_file, or Edit with replace_all: true." >&2
+  else
+    echo "BLOCK: Use IntelliJ MCP tools instead of Edit/Write on JS/TS files. NEW files: ide_create_file (preferred) or Write (fallback for new files only). REFACTOR: ide_refactor_rename, ide_move_file. FIND-AND-REPLACE: ide_replace_text_in_file, or Edit with replace_all: true." >&2
+  fi
   exit 2
 fi
 
@@ -202,8 +213,9 @@ exit 0
 
 | Blocked pattern | IDE alternative |
 |----------------|----------------|
-| `Edit` on existing .java/.kt/.ts file | `ide_edit_member`, `ide_replace_member`, `ide_insert_member` |
-| `Write` to existing source file | `ide_edit_member` or `ide_replace_member` |
+| `Edit` on existing .java/.kt file | `ide_edit_member`, `ide_replace_member`, `ide_insert_member` |
+| `Edit` on existing .ts/.tsx/.js/.jsx file | `ide_replace_text_in_file`, `ide_refactor_rename` |
+| `Write` to existing source file | `ide_create_file` (delete + recreate) or member editing |
 | `Edit` for find-and-replace | `ide_replace_text_in_file` (or `Edit` with `replace_all: true` as fallback) |
 
 ### Exceptions
@@ -226,15 +238,14 @@ effective than prompt instructions because:
 
 ## Customization
 
-Adjust the file extension patterns to match your project. The examples above
-cover Java, Kotlin, TypeScript, JavaScript, and Python. Add or remove extensions
-as needed:
+Adjust the file extension patterns to match your project:
 
-```bash
-# Add Go and Rust
-grep -qE '\.(java|kt|ts|tsx|js|jsx|py|go|rs)$'
-```
+- **Hook 1 (Bash)** covers all source files — grep/sed/mv/rm are wrong for any
+  language when the IDE has search and refactoring tools.
+- **Hook 2 (Edit/Write)** covers `.java`, `.kt`, `.ts`, `.tsx`, `.js`, `.jsx`.
+  Java/Kotlin have full member editing; JS/TS have refactoring and search.
+  Python is excluded — no IDE structural editing support yet. When Python
+  member editing is added, extend the hook to cover `.py`.
 
-Remove patterns you don't need. If you don't use Maven, remove the `mvn` output
-parsing check. If you don't have `ide_replace_text_in_file` (requires plugin
-version with PR #238), the `Edit replace_all` fallback still works.
+If you don't have `ide_replace_text_in_file` (requires plugin version with
+PR #238), the `Edit replace_all` fallback still works.
