@@ -22,8 +22,8 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 
 | Need | Use |
 |------|-----|
-| Code navigation, search, diagnostics, rename, move | `mcp__intellij-index__*` |
-| Build, run, terminal, formatting | `mcp__intellij__*` only |
+| Code navigation, search, diagnostics, rename, move, run/list tests | `mcp__intellij-index__*` |
+| Build, terminal, run non-test processes, formatting beyond code style | `mcp__intellij__*` only |
 
 **Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ — if no project is open, ask the user to open one or use `ide_open_project` (disabled by default; enable in Settings → Index MCP Server).** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
 

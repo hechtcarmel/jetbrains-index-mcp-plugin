@@ -485,6 +485,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.BUILD_PROJECT,
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
+            ToolNames.RUN_TESTS,
             // Refactoring tools
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_MOVE,
@@ -521,6 +522,9 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
         if (PluginDetectors.maven.isAvailable) {
             expectedTools.add(ToolNames.IMPORT_MODULES)
             expectedTools.add(ToolNames.OPEN_WORKSPACE)
+        }
+        if (PluginDetectors.java.isAvailable) {
+            expectedTools.add(ToolNames.LIST_TESTS)
         }
         if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
             expectedTools.add(ToolNames.CONVERT_JAVA_TO_KOTLIN)
