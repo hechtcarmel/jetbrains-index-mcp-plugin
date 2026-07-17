@@ -62,6 +62,10 @@ class ListTestsTool : AbstractMcpTool() {
 
         val filePath = optionalStringArg(arguments, ParamNames.FILE)
 
+        if (filePath != null && resolveFile(project, filePath) == null) {
+            return createErrorResult("File not found: '$filePath'.")
+        }
+
         val tests = suspendingReadAction {
             collectTests(project, frameworks, filePath)
         }
