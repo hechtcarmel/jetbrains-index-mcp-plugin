@@ -244,13 +244,6 @@ class RunTestsTool : AbstractMcpTool() {
             val parts = target.split('#', limit = 2)
             return parts[0] to parts[1].takeIf { it.isNotBlank() }
         }
-        val lastDot = target.lastIndexOf('.')
-        if (lastDot > 0) {
-            val lastSegment = target.substring(lastDot + 1)
-            if (lastSegment.isNotEmpty() && lastSegment[0].isLowerCase()) {
-                return target.substring(0, lastDot) to lastSegment
-            }
-        }
         return target to null
     }
 
