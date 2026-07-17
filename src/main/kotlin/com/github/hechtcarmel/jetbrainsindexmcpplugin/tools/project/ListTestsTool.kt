@@ -17,6 +17,7 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.testIntegration.TestFramework
 import kotlinx.serialization.json.JsonObject
 
@@ -128,8 +129,10 @@ class ListTestsTool : AbstractMcpTool() {
         document: Document,
         relativePath: String
     ): TestEntry? {
-        val framework = frameworks.firstOrNull {
-            runCatching { it.isTestMethod(element) }.getOrDefault(false)
+        val framework = frameworks.firstOrNull { fw ->
+            try { fw.isTestMethod(element) }
+            catch (e: ProcessCanceledException) { throw e }
+            catch (e: Exception) { false }
         } ?: return null
         val methodName = (element as? PsiNamedElement)?.name ?: return null
         val className = findContainingClassName(element) ?: psiFile.name.substringBeforeLast('.')

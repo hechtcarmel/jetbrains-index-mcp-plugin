@@ -30,6 +30,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiElement
@@ -158,6 +159,8 @@ class RunTestsTool : AbstractMcpTool() {
             val handler = try {
                 edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
                 withTimeoutOrNull(PROCESS_START_TIMEOUT) { processHandlerDeferred.await() }
+            } catch (e: ProcessCanceledException) {
+                throw e
             } catch (e: Exception) {
                 return createErrorResult(e.message ?: "Test process failed to start for '$configName'.")
             } ?: return createErrorResult(
