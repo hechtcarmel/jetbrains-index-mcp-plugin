@@ -76,7 +76,7 @@ class RunTestsTool : AbstractMcpTool() {
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 
-        Parameters: project_path (optional), target (required), timeoutSeconds (optional, default 120).
+        Parameters: project_path (required when multiple projects are open), target (required), timeoutSeconds (optional, default 120).
 
         Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
     """.trimIndent()
