@@ -6,10 +6,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import com.intellij.execution.testframework.sm.runner.states.TestStateInfo.Magnitude
+import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+import com.intellij.execution.testframework.sm.runner.ui.SMTestRunnerResultsForm
+import com.intellij.execution.ui.ExecutionConsole
 import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.profiler.ultimate.widget.JavaConsoleWithProfilerWidget
 import com.intellij.psi.PsiDocumentManager
 
 data class TestCollectionResult(
@@ -22,7 +26,6 @@ object TestResultsCollector {
 
     private val LOG = logger<TestResultsCollector>()
     private const val MAX_STACKTRACE_LENGTH = 500
-    private const val SM_CONSOLE_VIEW_CLASS = "com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView"
 
     fun collect(
         project: Project,
@@ -75,17 +78,21 @@ object TestResultsCollector {
         return null
     }
 
-    private fun extractRootProxy(console: Any?): SMTestProxy.SMRootTestProxy? {
+    private fun extractRootProxy(console: ExecutionConsole?): SMTestProxy.SMRootTestProxy? =
+        extractTestRunnerResultsViewer(console)?.root as? SMTestProxy.SMRootTestProxy
+
+    internal fun extractTestRunnerResultsViewer(console: ExecutionConsole?): SMTestRunnerResultsForm? {
         if (console == null) return null
         try {
-            val smConsoleClass = Class.forName(SM_CONSOLE_VIEW_CLASS)
-            if (!smConsoleClass.isInstance(console)) return null
-
-            val resultsViewer = console.javaClass.getMethod("getResultsViewer").invoke(console)
-            val root = resultsViewer.javaClass.getMethod("getRoot").invoke(resultsViewer)
-            return root as? SMTestProxy.SMRootTestProxy
+            if (console is JavaConsoleWithProfilerWidget && console.delegate is SMTRunnerConsoleView) {
+                return (console.delegate as SMTRunnerConsoleView).resultsViewer
+            }
+            if (console is SMTRunnerConsoleView) {
+                return console.resultsViewer
+            }
+            return null
         } catch (e: Exception) {
-            LOG.debug("Failed to extract test root proxy", e)
+            LOG.debug("Failed to extract test results viewer", e)
             return null
         }
     }

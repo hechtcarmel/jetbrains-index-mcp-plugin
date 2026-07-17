@@ -9,23 +9,18 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
-import com.intellij.execution.ExecutionListener
-import com.intellij.execution.ExecutionManager
-import com.intellij.execution.Location
-import com.intellij.execution.PsiLocation
-import com.intellij.execution.RunManager
-import com.intellij.execution.RunnerAndConfigurationSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector.extractTestRunnerResultsViewer
+import com.intellij.execution.*
 import com.intellij.execution.actions.ConfigurationContext
-import com.intellij.execution.configurations.RunConfiguration
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
-import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsAdapter
-import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
+import com.intellij.execution.testframework.sm.runner.ui.TestResultsViewer
+import com.intellij.execution.ui.RunContentManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
@@ -35,13 +30,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
+import com.intellij.util.messages.MessageBusConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import org.jdom.filter2.Filters.element
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -75,7 +69,7 @@ class RunTestsTool : AbstractMcpTool() {
         Returns: success status, exit code, pass/fail/error counts, per-test results, and console output.
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
-        
+
         Parameters:
         - project_path (optional): required when multiple projects are open.
         - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
@@ -126,37 +120,29 @@ class RunTestsTool : AbstractMcpTool() {
         val env = ExecutionEnvironmentBuilder.createOrNull(executor, runConfiguration)?.build()
             ?: return createErrorResult("Could not build execution environment for '$configName'.")
 
+        val output = StringBuilder()
+        val exitCodeDeferred = CompletableDeferred<Int>()
         val processHandlerDeferred = CompletableDeferred<ProcessHandler>()
-        val testCompletionDeferred = CompletableDeferred<Unit>()
-        val testRoot = AtomicReference<SMTestProxy.SMRootTestProxy?>()
+        val testCompletionDeferred = CompletableDeferred<SMTestProxy.SMRootTestProxy?>()
 
-        // The subscription must stay alive until the run finishes so we catch the test-tree events.
+        val processListener = object : ProcessListener {
+            override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
+                // Keep a rolling window of the most recent output — for tests the tail
+                // (failures, stack traces, summary) is the useful part.
+                synchronized(output) {
+                    output.append(event.text)
+                    val overflow = output.length - MAX_OUTPUT_CHARS
+                    if (overflow > 0) output.delete(0, overflow)
+                }
+            }
+
+            override fun processTerminated(event: ProcessEvent) {
+                exitCodeDeferred.complete(event.exitCode)
+            }
+        }
+
         val connection = project.messageBus.connect()
-        connection.subscribe(ExecutionManager.EXECUTION_TOPIC, object : ExecutionListener {
-            override fun processStarted(executorId: String, environment: ExecutionEnvironment, handler: ProcessHandler) {
-                if (environment.runnerAndConfigurationSettings?.name == configName) {
-                    processHandlerDeferred.complete(handler)
-                }
-            }
-
-            override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
-                if (environment.runnerAndConfigurationSettings?.name == configName) {
-                    processHandlerDeferred.completeExceptionally(
-                        IllegalStateException("Test process failed to start for '$configName'.")
-                    )
-                }
-            }
-        })
-        connection.subscribe(SMTRunnerEventsListener.TEST_STATUS, object : SMTRunnerEventsAdapter() {
-            override fun onTestingStarted(testsRoot: SMTestProxy.SMRootTestProxy) {
-                // Only one run is launched per call, so the first root after we subscribe is ours.
-                testRoot.compareAndSet(null, testsRoot)
-            }
-
-            override fun onTestingFinished(testsRoot: SMTestProxy.SMRootTestProxy) {
-                if (testsRoot === testRoot.get()) testCompletionDeferred.complete(Unit)
-            }
-        })
+        connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
 
         try {
             val handler = try {
@@ -170,40 +156,27 @@ class RunTestsTool : AbstractMcpTool() {
                 "Test process did not start within ${PROCESS_START_TIMEOUT.inWholeSeconds} seconds for '$configName'."
             )
 
-            val output = StringBuilder()
-            val exitCodeDeferred = CompletableDeferred<Int>()
-            handler.addProcessListener(object : ProcessListener {
-                override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
-                    // Keep a rolling window of the most recent output — for tests the tail
-                    // (failures, stack traces, summary) is the useful part.
-                    synchronized(output) {
-                        output.append(event.text)
-                        val overflow = output.length - MAX_OUTPUT_CHARS
-                        if (overflow > 0) output.delete(0, overflow)
-                    }
-                }
-
-                override fun processTerminated(event: ProcessEvent) {
-                    exitCodeDeferred.complete(event.exitCode)
+            val runContentDescriptor = RunContentManager.getInstance(project).allDescriptors.find { it.processHandler === handler }
+            val resultsViewer = extractTestRunnerResultsViewer(runContentDescriptor?.executionConsole)
+            resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
+                override fun onTestingFinished(sender: TestResultsViewer) {
+                    testCompletionDeferred.complete(sender.testsRootNode.root)
                 }
             })
 
             val exitCode = withTimeoutOrNull(timeout) { exitCodeDeferred.await() }
             if (exitCode == null) {
-                // Timed out: don't leave the test process running in the background.
                 handler.destroyProcess()
             }
 
-            // If this is a Service Message-based test runner (JUnit/TestNG/Gradle/Maven), let the tree finalize before we read it.
-            // Skip the wait when no tree was produced (non-SM runner).
-            val root = testRoot.get()
-            if (root != null) {
+            val smRoot = resultsViewer?.let {
                 withTimeoutOrNull(TEST_TREE_FINALIZE_TIMEOUT) { testCompletionDeferred.await() }
-            } else {
-                LOG.debug("No test tree was produced for this run; returning empty structured results.")
+            }
+            if (smRoot == null) {
+                LOG.debug("No SM test tree for '$configName'; returning empty structured results.")
             }
 
-            val tests = root?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
+            val tests = smRoot?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
             val consoleOutput = synchronized(output) { output.toString() }
             val passed = tests.count { it.status == TestStatus.PASSED }
             val failed = tests.count { it.status == TestStatus.FAILED }
@@ -211,9 +184,9 @@ class RunTestsTool : AbstractMcpTool() {
 
             return createJsonResult(
                 RunTestsResult(
-                    success = exitCode == 0 && failed == 0 && errors == 0 && tests.isNotEmpty(),
+                    success = exitCode == 0 && failed == 0 && errors == 0,
                     timedOut = exitCode == null,
-                    noTestsFound = tests.isEmpty(),
+                    noTestsFound = tests.isEmpty() && exitCode == 0,
                     exitCode = exitCode ?: -1,
                     passed = passed,
                     failed = failed,
@@ -281,5 +254,31 @@ class RunTestsTool : AbstractMcpTool() {
             }
         }
         return target to null
+    }
+
+    private fun MessageBusConnection.completeDeferredOnProcessStarted(
+        env: ExecutionEnvironment,
+        processListener: ProcessListener,
+        processHandlerDeferred: CompletableDeferred<ProcessHandler>,
+        configName: String
+    ) {
+        subscribe(ExecutionManager.EXECUTION_TOPIC, object : ExecutionListener {
+            override fun processStarting(executorId: String, environment: ExecutionEnvironment, handler: ProcessHandler) {
+                if (environment !== env) return
+                handler.addProcessListener(processListener)
+            }
+
+            override fun processStarted(executorId: String, environment: ExecutionEnvironment, handler: ProcessHandler) {
+                if (environment !== env) return
+                processHandlerDeferred.complete(handler)
+            }
+
+            override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
+                if (environment !== env) return
+                processHandlerDeferred.completeExceptionally(
+                    IllegalStateException("Test process failed to start for '$configName'.")
+                )
+            }
+        })
     }
 }
