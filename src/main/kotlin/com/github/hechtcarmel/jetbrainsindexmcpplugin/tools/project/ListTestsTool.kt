@@ -38,8 +38,10 @@ class ListTestsTool : AbstractMcpTool() {
         The className is fully qualified when the language exposes it (e.g. Java, Kotlin, PHP), so it
         can be passed directly to ide_run_tests.
         Note: requires smart mode (IDE indexing must be complete).
-
-        Parameters: project_path (required when multiple projects are open), file (optional — if given, lists only tests in that file; otherwise scans all test sources).
+        
+        Parameters:
+        - project_path (optional): required when multiple projects are open.
+        - file (optional): if given, lists only tests in that file; otherwise scans all test sources.
 
         Example: {} or {"file": "src/test/kotlin/com/example/MyTest.kt"}
     """.trimIndent()

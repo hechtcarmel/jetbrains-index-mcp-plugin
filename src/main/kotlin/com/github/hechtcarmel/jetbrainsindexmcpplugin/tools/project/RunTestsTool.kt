@@ -75,8 +75,11 @@ class RunTestsTool : AbstractMcpTool() {
         Returns: success status, exit code, pass/fail/error counts, per-test results, and console output.
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
-
-        Parameters: project_path (required when multiple projects are open), target (required), timeoutSeconds (optional, default 120).
+        
+        Parameters:
+        - project_path (optional): required when multiple projects are open.
+        - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
+        - timeoutSeconds (optional, default 120): maximum seconds to wait for the test run to complete.
 
         Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
     """.trimIndent()
