@@ -9,9 +9,6 @@
 - **`ide_list_tests`** — List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.)
 - **`ide_run_tests`** — Run a test class or method by FQN using the IDE's run configuration infrastructure; returns structured pass/fail results with console output
 
-### Fixed
-- Unit tests added for `ide_run_tests`/`ide_list_tests` behavioral paths: `parseTarget` logic, `TestStatus.isFailure`, result-field semantics (`success`, `timedOut`, `noTestsFound`), `truncated` boundary at the 500-entry cap, and test-name composition.
-
 ### Added
 - **`ide_open_workspace`** — scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Creates a temporary Maven aggregator POM with relative module paths. Also accepts an explicit `modules` array of absolute paths for ad-hoc workspaces — same module combination (in any order) reuses the cached workspace via SHA-based naming. Only available when the Maven plugin is installed. *(disabled by default)*
 - **`ide_structural_search_replace`** — Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Accepts a `searchPattern` with optional `replacePattern` for search-only or search-and-replace operations. Supports `filePattern` and `scope` filtering. Returns match count, replaced count, and match list. *(disabled by default)* — Java, Kotlin.
