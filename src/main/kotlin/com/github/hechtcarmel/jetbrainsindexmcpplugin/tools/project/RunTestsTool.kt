@@ -49,6 +49,21 @@ class RunTestsTool : AbstractMcpTool() {
         /** Grace period to let the IDE's test tree finalize after the process exits. Normally instant. */
         private val TEST_TREE_FINALIZE_TIMEOUT = 10.seconds
         private const val MAX_OUTPUT_CHARS = 10_000
+
+        /**
+         * Parses a target string into a class name and optional method name.
+         * - `"com.example.MyTest"` → `("com.example.MyTest", null)`
+         * - `"com.example.MyTest#testFoo"` → `("com.example.MyTest", "testFoo")`
+         * - `"com.example.MyTest#"` → `("com.example.MyTest", null)` (blank method)
+         * - `"All Tests"` (no `#`) → `("All Tests", null)` (run-config name passthrough)
+         */
+        internal fun parseTarget(target: String): Pair<String, String?> {
+            if (target.contains('#')) {
+                val parts = target.split('#', limit = 2)
+                return parts[0] to parts[1].takeIf { it.isNotBlank() }
+            }
+            return target to null
+        }
     }
 
     override val name = ToolNames.RUN_TESTS
@@ -237,14 +252,6 @@ class RunTestsTool : AbstractMcpTool() {
             .createConfigurationsFromContext()
             ?.firstOrNull()
             ?.configurationSettings
-    }
-
-    private fun parseTarget(target: String): Pair<String, String?> {
-        if (target.contains('#')) {
-            val parts = target.split('#', limit = 2)
-            return parts[0] to parts[1].takeIf { it.isNotBlank() }
-        }
-        return target to null
     }
 
     private fun MessageBusConnection.completeDeferredOnProcessStarted(

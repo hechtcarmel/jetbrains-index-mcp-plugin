@@ -57,13 +57,18 @@ object TestResultsCollector {
             .filter { it.isLeaf && it !== root }
             .mapNotNull { test ->
                 val status = magnitudeToStatus(test.magnitudeInfo) ?: return@mapNotNull null
-                val suite = test.parent?.name?.takeIf { it.isNotBlank() }
                 TestRunEntry(
-                    name = if (suite != null) "$suite.${test.name}" else test.name,
+                    name = composeName(test.name, test.parent?.name),
                     status = status,
                     errorMessage = if (status.isFailure) test.errorMessage else null
                 )
             }
+
+    /** Composes a test display name from the test name and its optional parent (suite) name. */
+    internal fun composeName(testName: String, parentName: String?): String {
+        val suite = parentName?.takeIf { it.isNotBlank() }
+        return if (suite != null) "$suite.$testName" else testName
+    }
 
     /**
      * Maps a [Magnitude] to a [TestStatus], or null for non-test magnitudes (suites, not-run, in-progress).

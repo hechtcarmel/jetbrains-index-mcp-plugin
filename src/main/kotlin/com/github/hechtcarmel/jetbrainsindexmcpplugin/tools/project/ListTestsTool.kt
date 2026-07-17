@@ -24,7 +24,7 @@ import kotlinx.serialization.json.JsonObject
 class ListTestsTool : AbstractMcpTool() {
 
     companion object {
-        private const val MAX_TESTS = 500
+        internal const val MAX_TESTS = 500
     }
 
     override val name = ToolNames.LIST_TESTS
