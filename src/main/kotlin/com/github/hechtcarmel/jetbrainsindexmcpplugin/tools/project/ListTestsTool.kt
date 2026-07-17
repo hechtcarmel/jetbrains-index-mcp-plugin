@@ -70,8 +70,10 @@ class ListTestsTool : AbstractMcpTool() {
             collectTests(project, frameworks, filePath)
         }
 
+        val truncated = tests.size > MAX_TESTS
+        val page = if (truncated) tests.take(MAX_TESTS) else tests
         return createJsonResult(
-            ListTestsResult(tests = tests, count = tests.size, truncated = tests.size >= MAX_TESTS)
+            ListTestsResult(tests = page, count = page.size, truncated = truncated)
         )
     }
 
@@ -97,7 +99,7 @@ class ListTestsTool : AbstractMcpTool() {
                     val entry = toTestEntry(element, frameworks, psiFile, document, relativePath)
                     if (entry != null) {
                         results.add(entry)
-                        if (results.size >= MAX_TESTS) {
+                        if (results.size > MAX_TESTS) {
                             stopWalking()
                             return
                         }
@@ -116,7 +118,7 @@ class ListTestsTool : AbstractMcpTool() {
                 if (!vf.isDirectory && fileIndex.isInTestSourceContent(vf)) {
                     psiManager.findFile(vf)?.let(::scan)
                 }
-                results.size < MAX_TESTS // keep iterating files until the cap is hit
+                results.size <= MAX_TESTS // keep iterating files until one extra is found
             }
         }
 
