@@ -263,7 +263,6 @@ These tools work in all supported JetBrains IDEs.
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
 | `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(disabled by default, requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
-| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(disabled by default)* |
 | `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Class/method **FQN targeting is Java/Kotlin-only**; other languages pass an existing run-config name *(disabled by default)* |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
@@ -296,10 +295,11 @@ These tools activate based on available language plugins:
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
-### Java-Specific Refactoring Tools
+### Java-Specific Tools
 
 | Tool | Description |
 |------|-------------|
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(disabled by default, requires Java plugin)* |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
 | `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
 

@@ -405,7 +405,8 @@ These activate based on available language plugins (Java, Python, JavaScript/Typ
 - `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
 - `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, Markdown) (disabled by default)
 
-**Java/Kotlin-Only Refactoring Tools:**
+**Java/Kotlin-Only Tools:**
+- `ide_list_tests` - List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.). Optional `file` parameter limits scan to a single file. Returns entries with className, methodName, framework, file path, and line number. Requires Java plugin — the `com.intellij.testFramework` extension point is declared by the Java plugin. (disabled by default)
 - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
 
 **Kotlin Conversion Tools:**

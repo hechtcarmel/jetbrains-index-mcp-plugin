@@ -25,7 +25,6 @@ These tools work in every supported JetBrains IDE:
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
-| `ide_list_tests` | List all test methods/classes discovered by the IDE's test frameworks | Disabled |
 | `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
@@ -51,10 +50,11 @@ These tools activate based on available language plugins:
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
 | `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
 
-### Java-Specific Refactoring Tools
+### Java-Specific Tools
 
 | Tool | Description |
 |------|-------------|
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test frameworks *(disabled by default)* |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using the IDE converter *(disabled by default)* |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
@@ -103,7 +103,6 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_import_modules](#ide_import_modules)
   - [ide_open_workspace](#ide_open_workspace)
   - [ide_build_project](#ide_build_project)
-  - [ide_list_tests](#ide_list_tests)
   - [ide_run_tests](#ide_run_tests)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
@@ -144,7 +143,8 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_open_project](#ide_open_project)
   - [ide_install_plugin](#ide_install_plugin)
   - [ide_restart](#ide_restart)
-- [Java-Specific Refactoring Tools](#java-specific-refactoring-tools)
+- [Java-Specific Tools](#java-specific-tools)
+  - [ide_list_tests](#ide_list_tests)
   - [ide_convert_java_to_kotlin](#ide_convert_java_to_kotlin)
   - [ide_refactor_safe_delete](#ide_refactor_safe_delete)
 - [Error Handling](#error-handling)
@@ -933,6 +933,7 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 ### ide_list_tests
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Availability**: Requires Java plugin — only available in **IntelliJ IDEA** and **Android Studio** (uses the `com.intellij.testFramework` extension point declared by the Java plugin)
 
 List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
 
@@ -2481,7 +2482,7 @@ PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDE
 
 ---
 
-## Java-Specific Refactoring Tools
+## Java-Specific Tools
 
 These tools require the Java plugin and are only available in **IntelliJ IDEA** and **Android Studio**.
 
