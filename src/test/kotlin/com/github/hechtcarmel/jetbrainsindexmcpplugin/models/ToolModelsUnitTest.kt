@@ -387,6 +387,7 @@ class ToolModelsUnitTest : TestCase() {
         val result = RunTestsResult(
             success = false,
             timedOut = false,
+            noTestsFound = false,
             exitCode = 1,
             passed = 1,
             failed = 1,

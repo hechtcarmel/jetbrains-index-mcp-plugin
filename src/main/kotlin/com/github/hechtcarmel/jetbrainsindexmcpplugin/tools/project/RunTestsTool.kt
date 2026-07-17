@@ -205,15 +205,19 @@ class RunTestsTool : AbstractMcpTool() {
 
             val tests = root?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
             val consoleOutput = synchronized(output) { output.toString() }
+            val passed = tests.count { it.status == TestStatus.PASSED }
+            val failed = tests.count { it.status == TestStatus.FAILED }
+            val errors = tests.count { it.status == TestStatus.ERROR }
 
             return createJsonResult(
                 RunTestsResult(
-                    success = exitCode == 0,
+                    success = exitCode == 0 && failed == 0 && errors == 0 && tests.isNotEmpty(),
                     timedOut = exitCode == null,
+                    noTestsFound = tests.isEmpty(),
                     exitCode = exitCode ?: -1,
-                    passed = tests.count { it.status == TestStatus.PASSED },
-                    failed = tests.count { it.status == TestStatus.FAILED },
-                    errors = tests.count { it.status == TestStatus.ERROR },
+                    passed = passed,
+                    failed = failed,
+                    errors = errors,
                     total = tests.size,
                     tests = tests,
                     output = consoleOutput

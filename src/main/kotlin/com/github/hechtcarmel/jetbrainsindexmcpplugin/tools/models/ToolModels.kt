@@ -384,6 +384,7 @@ data class TestRunEntry(
 data class RunTestsResult(
     val success: Boolean,
     val timedOut: Boolean,
+    val noTestsFound: Boolean,
     val exitCode: Int,
     val passed: Int,
     val failed: Int,
