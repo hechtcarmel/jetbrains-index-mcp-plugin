@@ -55,13 +55,8 @@ object TestResultsCollector {
     fun collectRunEntries(root: SMTestProxy.SMRootTestProxy): List<TestRunEntry> =
         root.allTests
             .filter { it.isLeaf && it !== root }
-            .map { test ->
-                val status = when {
-                    test.isPassed -> TestStatus.PASSED
-                    test.isIgnored -> TestStatus.SKIPPED
-                    test.magnitudeInfo == Magnitude.ERROR_INDEX -> TestStatus.ERROR
-                    else -> TestStatus.FAILED
-                }
+            .mapNotNull { test ->
+                val status = magnitudeToStatus(test.magnitudeInfo) ?: return@mapNotNull null
                 val suite = test.parent?.name?.takeIf { it.isNotBlank() }
                 TestRunEntry(
                     name = if (suite != null) "$suite.${test.name}" else test.name,
@@ -69,6 +64,21 @@ object TestResultsCollector {
                     errorMessage = if (status.isFailure) test.errorMessage else null
                 )
             }
+
+    /**
+     * Maps a [Magnitude] to a [TestStatus], or null for non-test magnitudes (suites, not-run, in-progress).
+     *
+     * In 2025.3, [Magnitude.isPassed] returns true for both [Magnitude.SKIPPED_INDEX] and
+     * [Magnitude.COMPLETE_INDEX], so we map directly from magnitude to avoid misclassification.
+     * [Magnitude.COMPLETE_INDEX] (suite completion) returns null so suite nodes are excluded.
+     */
+    internal fun magnitudeToStatus(magnitude: Magnitude): TestStatus? = when (magnitude) {
+        Magnitude.SKIPPED_INDEX, Magnitude.IGNORED_INDEX -> TestStatus.SKIPPED
+        Magnitude.PASSED_INDEX -> TestStatus.PASSED
+        Magnitude.ERROR_INDEX -> TestStatus.ERROR
+        Magnitude.FAILED_INDEX -> TestStatus.FAILED
+        else -> null
+    }
 
     private fun findTestRootProxyAndName(descriptors: List<RunContentDescriptor>): Pair<SMTestProxy.SMRootTestProxy, String?>? {
         for (descriptor in descriptors) {
