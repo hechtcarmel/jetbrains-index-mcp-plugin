@@ -396,8 +396,7 @@ class ToolModelsUnitTest : TestCase() {
             tests = listOf(
                 TestRunEntry("com.example.MyTest.testOk", TestStatus.PASSED),
                 TestRunEntry("com.example.MyTest.testBad", TestStatus.FAILED, "expected true but was false")
-            ),
-            output = "Tests run: 2, Failures: 1\n"
+            )
         )
 
         val deserialized = json.decodeFromString<RunTestsResult>(json.encodeToString(result))

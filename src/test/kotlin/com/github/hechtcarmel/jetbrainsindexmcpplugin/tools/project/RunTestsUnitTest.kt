@@ -87,7 +87,7 @@ class RunTestsUnitTest : TestCase() {
         val result = RunTestsResult(
             success = false, timedOut = true, noTestsFound = false,
             exitCode = -1, passed = 0, failed = 0, errors = 0,
-            total = 0, tests = emptyList(), output = ""
+            total = 0, tests = emptyList()
         )
         assertTrue(result.timedOut)
         assertEquals(-1, result.exitCode)
@@ -125,8 +125,7 @@ class RunTestsUnitTest : TestCase() {
                 TestRunEntry("Suite.testA", TestStatus.PASSED),
                 TestRunEntry("Suite.testB", TestStatus.PASSED),
                 TestRunEntry("Suite.testC", TestStatus.FAILED, "expected true but was false")
-            ),
-            output = "Test output here"
+            )
         )
         val decoded = json.decodeFromString<RunTestsResult>(json.encodeToString(result))
         assertEquals(result, decoded)
@@ -213,8 +212,7 @@ class RunTestsUnitTest : TestCase() {
         failed = failed,
         errors = errors,
         total = total,
-        tests = tests,
-        output = ""
+        tests = tests
     )
 
     private fun makeTestEntry(index: Int) = TestEntry(

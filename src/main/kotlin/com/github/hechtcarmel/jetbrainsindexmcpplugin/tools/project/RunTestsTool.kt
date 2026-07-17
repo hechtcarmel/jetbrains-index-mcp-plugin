@@ -48,7 +48,6 @@ class RunTestsTool : AbstractMcpTool() {
 
         /** Grace period to let the IDE's test tree finalize after the process exits. Normally instant. */
         private val TEST_TREE_FINALIZE_TIMEOUT = 10.seconds
-        private const val MAX_OUTPUT_CHARS = 10_000
 
         /**
          * Parses a target string into a class name and optional method name.
@@ -79,7 +78,7 @@ class RunTestsTool : AbstractMcpTool() {
         Creating a run config from a class/method FQN is supported only for Java/Kotlin. For other
         languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
 
-        Returns: success status, exit code, pass/fail/error counts, per-test results, and console output.
+        Returns: success status, exit code, pass/fail/error counts, and per-test results.
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 
@@ -133,22 +132,11 @@ class RunTestsTool : AbstractMcpTool() {
         val env = ExecutionEnvironmentBuilder.createOrNull(executor, runConfiguration)?.build()
             ?: return createErrorResult("Could not build execution environment for '$configName'.")
 
-        val output = StringBuilder()
         val exitCodeDeferred = CompletableDeferred<Int>()
         val processHandlerDeferred = CompletableDeferred<ProcessHandler>()
         val testCompletionDeferred = CompletableDeferred<SMTestProxy.SMRootTestProxy?>()
 
         val processListener = object : ProcessListener {
-            override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
-                // Keep a rolling window of the most recent output — for tests the tail
-                // (failures, stack traces, summary) is the useful part.
-                synchronized(output) {
-                    output.append(event.text)
-                    val overflow = output.length - MAX_OUTPUT_CHARS
-                    if (overflow > 0) output.delete(0, overflow)
-                }
-            }
-
             override fun processTerminated(event: ProcessEvent) {
                 exitCodeDeferred.complete(event.exitCode)
             }
@@ -190,7 +178,6 @@ class RunTestsTool : AbstractMcpTool() {
             }
 
             val tests = smRoot?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
-            val consoleOutput = synchronized(output) { output.toString() }
             val passed = tests.count { it.status == TestStatus.PASSED }
             val failed = tests.count { it.status == TestStatus.FAILED }
             val errors = tests.count { it.status == TestStatus.ERROR }
@@ -205,8 +192,7 @@ class RunTestsTool : AbstractMcpTool() {
                     failed = failed,
                     errors = errors,
                     total = tests.size,
-                    tests = tests,
-                    output = consoleOutput
+                    tests = tests
                 )
             )
         } finally {

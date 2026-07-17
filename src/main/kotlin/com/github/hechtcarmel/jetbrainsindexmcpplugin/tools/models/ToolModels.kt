@@ -390,8 +390,7 @@ data class RunTestsResult(
     val failed: Int,
     val errors: Int,
     val total: Int,
-    val tests: List<TestRunEntry>,
-    val output: String
+    val tests: List<TestRunEntry>
 )
 
 // ide_search_text output
