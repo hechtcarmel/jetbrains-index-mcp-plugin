@@ -27,8 +27,6 @@ class ListTestsTool : AbstractMcpTool() {
         private const val MAX_TESTS = 500
     }
 
-    override val requiresPsiSync: Boolean = false
-
     override val name = ToolNames.LIST_TESTS
 
     override val description = """

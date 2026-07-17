@@ -51,8 +51,6 @@ class RunTestsTool : AbstractMcpTool() {
         private const val MAX_OUTPUT_CHARS = 10_000
     }
 
-    override val requiresPsiSync: Boolean = false
-
     override val name = ToolNames.RUN_TESTS
 
     override val description = """
