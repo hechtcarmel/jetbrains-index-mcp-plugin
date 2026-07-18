@@ -5,6 +5,10 @@
 ## [Unreleased]
 ### Added
 - **`ide_open_workspace`** — scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Creates a temporary Maven aggregator POM with relative module paths. Also accepts an explicit `modules` array of absolute paths for ad-hoc workspaces — same module combination (in any order) reuses the cached workspace via SHA-based naming. Only available when the Maven plugin is installed. *(disabled by default)*
+- **`ide_structural_search_replace`** — Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Accepts a `searchPattern` with optional `replacePattern` for search-only or search-and-replace operations. Supports `filePattern` and `scope` filtering. Returns match count, replaced count, and match list. *(disabled by default)* — Java, Kotlin.
+- **`ide_change_signature`** — Change a method's signature (name, return type, visibility, parameters) with automatic caller updates using IntelliJ's Change Signature refactoring. Accepts `file` + `line` + `column` to identify the method, plus optional `newName`, `newReturnType`, `newVisibility`, and `newParameters` array. Supports `generateDelegate` to preserve binary compatibility. *(disabled by default)* — Java.
+- **`ide_replace_text_in_file`** — Find and replace text (literal or regex) in a file through IntelliJ's Document API. Changes are immediately indexed. Use for mechanical text substitutions that don't need structural refactoring. *(disabled by default)*
+- **`ide_create_file`** — Create a new source file through IntelliJ's VFS, immediately indexed and available for all IDE tools without needing `ide_sync_files`. Use instead of the Write tool for `.java`, `.kt`, `.ts`, `.tsx` files. *(disabled by default)*
 
 ## [4.27.0] - 2026-07-02
 ### Added

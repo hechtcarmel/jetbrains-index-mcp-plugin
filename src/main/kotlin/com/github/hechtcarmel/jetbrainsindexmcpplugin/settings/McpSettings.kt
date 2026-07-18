@@ -9,7 +9,7 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 
 private object ToolSettingsDefaults {
-    const val CURRENT_SCHEMA_VERSION = 2
+    const val CURRENT_SCHEMA_VERSION = 3
 
     val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
         ToolNames.BUILD_PROJECT,
@@ -37,13 +37,18 @@ private object ToolSettingsDefaults {
         ToolNames.RELEASE_PROJECT,
         ToolNames.SET_ALL_PROJECT_MODES,
         ToolNames.SET_PROJECT_MODE,
+        ToolNames.CHANGE_SIGNATURE,
+        ToolNames.CREATE_FILE,
+        ToolNames.REPLACE_TEXT_IN_FILE,
+        ToolNames.STRUCTURAL_SEARCH_REPLACE,
     )
 
     // Add only newly introduced default-disabled tools here; old entries are snapshots
     // so legacy states keep explicit enables for older tools.
     val DEFAULT_DISABLED_TOOL_MIGRATIONS: List<Pair<Int, Set<String>>> = listOf(
         1 to setOf(ToolNames.IMPORT_MODULES),
-        2 to setOf(ToolNames.OPEN_WORKSPACE)
+        2 to setOf(ToolNames.OPEN_WORKSPACE),
+        3 to setOf(ToolNames.CHANGE_SIGNATURE, ToolNames.CREATE_FILE, ToolNames.REPLACE_TEXT_IN_FILE, ToolNames.STRUCTURAL_SEARCH_REPLACE),
     )
 }
 

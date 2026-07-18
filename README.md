@@ -242,7 +242,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **40 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **45 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -261,6 +261,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |
 | `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` *(disabled by default)* |
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
+| `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(disabled by default, requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
@@ -274,6 +275,10 @@ These tools work in all supported JetBrains IDEs.
 | `ide_move_file` | Move a file to a new directory, applying language-aware reference/package updates when the IDE provides a semantic move backend |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
 | `ide_optimize_imports` | Optimize imports without reformatting code *(disabled by default)* |
+| `ide_structural_search_replace` | Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine (Java, Kotlin) *(disabled by default)* |
+| `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ — use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files *(disabled by default)* |
+| `ide_replace_text_in_file` | Find and replace text in a file using IntelliJ's Document API — changes immediately visible to index and PSI without `ide_sync_files` *(disabled by default)* |
+| `ide_change_signature` | Change method signature with automatic caller updates (Java only) *(disabled by default)* |
 
 ### Extended Tools (Language-Aware)
 

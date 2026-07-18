@@ -353,6 +353,63 @@ Reformat code per project style (.editorconfig, IDE settings). Equivalent to Ctr
 
 **Returns**: `{ success, affectedFiles, changesCount, message }`
 
+### ide_structural_search_replace (disabled by default)
+Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Search-only when `replacePattern` is omitted.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `searchPattern` | string | yes | Structural search pattern using IntelliJ SSR syntax |
+| `replacePattern` | string | no | Replacement pattern. Omit for search-only |
+| `filePattern` | string | no | IntelliJ file mask, e.g. `*.java`, `*.kt` |
+| `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ matchCount, replacedCount, matches: [{ file, line, matchedText }] }`
+**Languages**: Java, Kotlin.
+
+### ide_change_signature (disabled by default)
+Change method signature (name, return type, visibility, parameters) with automatic caller updates.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Relative file path containing the method |
+| `line` | integer | yes | 1-based line of the method |
+| `column` | integer | yes | 1-based column on the method name |
+| `newName` | string | no | New method name (unchanged if omitted) |
+| `newReturnType` | string | no | New return type (unchanged if omitted) |
+| `newVisibility` | string | no | `public`, `protected`, `private`, or `package-local` (unchanged if omitted) |
+| `newParameters` | array | no | Array of `{ oldIndex, name, type, defaultValue }`. Use `oldIndex: -1` for new params |
+| `generateDelegate` | boolean | no | Generate delegate with old signature (default false) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, file, message, affectedFiles, changesCount }`
+**Language**: Java only.
+
+### ide_create_file (disabled by default)
+Create a new source file with content, immediately indexed by IntelliJ. The file is created through IntelliJ's VFS, so it is instantly available for `ide_find_references`, `ide_refactor_rename`, `ide_edit_member`, and all other IDE tools without needing `ide_sync_files`. Use this instead of the Write tool for creating `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. The file must not already exist.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Path to the new file relative to project root. File must not already exist. |
+| `content` | string | yes | The file content to write |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, file, message }`
+
+### ide_replace_text_in_file (disabled by default)
+Find and replace text in a file using IntelliJ's Document API. Performs plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to the index, PSI, and all other IDE tools without needing `ide_sync_files`. Use this for mechanical text substitutions — e.g., replacing a method call wrapper, updating import paths, or renaming a local pattern. For structural refactoring (renaming symbols across the project), use `ide_refactor_rename` instead.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Path to the file relative to project root |
+| `searchText` | string | yes | Text to find. Treated as literal unless `regex` is true |
+| `replaceText` | string | yes | Replacement text. Supports regex group references (`$1`, `$2`) when `regex` is true |
+| `regex` | boolean | no | Treat `searchText` as a regular expression. Default false |
+| `caseSensitive` | boolean | no | Case-sensitive matching. Default true |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, file, replacements, message }`
+
 ---
 
 ## Project Tools

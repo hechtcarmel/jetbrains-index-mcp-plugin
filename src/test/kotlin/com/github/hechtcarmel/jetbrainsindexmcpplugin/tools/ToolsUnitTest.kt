@@ -21,11 +21,16 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHiera
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.CreateFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceTextInFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.StructuralSearchReplaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.isExcludedPath
 import io.mockk.every
@@ -1164,4 +1169,80 @@ class ToolsUnitTest : TestCase() {
         assertFalse("root file should not be excluded",   isExcludedPath("README.md"))
     }
 
+    // SSR and Change Signature tools
+
+
+    fun testReplaceTextInFileToolSchema() {
+        val tool = ReplaceTextInFileTool()
+        assertEquals("ide_replace_text_in_file", tool.name)
+        val schema = tool.inputSchema
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull("Should have properties", properties)
+        assertNotNull("Should have searchText", properties?.get("searchText"))
+        assertNotNull("Should have replaceText", properties?.get("replaceText"))
+        assertNotNull("Should have file", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have regex", properties?.get(ParamNames.REGEX))
+        assertNotNull("Should have caseSensitive", properties?.get(ParamNames.CASE_SENSITIVE))
+    }
+
+    fun testReplaceTextInFileToolDisabledByDefault() {
+        assertTrue(
+            "ide_replace_text_in_file should be disabled by default",
+            McpSettings.DEFAULT_DISABLED_TOOLS.contains("ide_replace_text_in_file")
+        )
+    }
+
+    fun testStructuralSearchReplaceToolSchema() {
+        val tool = StructuralSearchReplaceTool()
+        assertEquals(ToolNames.STRUCTURAL_SEARCH_REPLACE, tool.name)
+        val schema = tool.inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have searchPattern", properties?.get(ParamNames.SEARCH_PATTERN))
+        assertNotNull("Should have replacePattern", properties?.get(ParamNames.REPLACE_PATTERN))
+        assertNotNull("Should have filePattern", properties?.get(ParamNames.FILE_PATTERN))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("searchPattern should be required", required?.contains(ParamNames.SEARCH_PATTERN) == true)
+        assertFalse("replacePattern should not be required", required?.contains(ParamNames.REPLACE_PATTERN) == true)
+    }
+
+    fun testStructuralSearchReplaceToolIsDisabledByDefault() {
+        assertTrue(ToolNames.STRUCTURAL_SEARCH_REPLACE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    }
+
+    fun testChangeSignatureToolSchema() {
+        val tool = ChangeSignatureTool()
+        assertEquals(ToolNames.CHANGE_SIGNATURE, tool.name)
+        val schema = tool.inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have file", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have line", properties?.get(ParamNames.LINE))
+        assertNotNull("Should have column", properties?.get(ParamNames.COLUMN))
+        assertNotNull("Should have newParameters", properties?.get(ParamNames.NEW_PARAMETERS))
+        assertNotNull("Should have newReturnType", properties?.get(ParamNames.NEW_RETURN_TYPE))
+        assertNotNull("Should have generateDelegate", properties?.get(ParamNames.GENERATE_DELEGATE))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("file should be required", required?.contains(ParamNames.FILE) == true)
+        assertTrue("line should be required", required?.contains(ParamNames.LINE) == true)
+        assertTrue("column should be required", required?.contains(ParamNames.COLUMN) == true)
+    }
+
+    fun testChangeSignatureToolIsDisabledByDefault() {
+        assertTrue(ToolNames.CHANGE_SIGNATURE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    }
+
+    fun testCreateFileToolSchema() {
+        val tool = CreateFileTool()
+        assertEquals(ToolNames.CREATE_FILE, tool.name)
+        val schema = tool.inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have file", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have content", properties?.get("content"))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("file should be required", required?.contains(ParamNames.FILE) == true)
+        assertTrue("content should be required", required?.contains("content") == true)
+    }
+
+    fun testCreateFileToolIsDisabledByDefault() {
+        assertTrue(ToolNames.CREATE_FILE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    }
 }

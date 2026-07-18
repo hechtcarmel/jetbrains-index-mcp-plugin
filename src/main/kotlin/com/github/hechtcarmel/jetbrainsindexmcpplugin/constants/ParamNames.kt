@@ -54,6 +54,16 @@ object ParamNames {
     const val CURSOR = "cursor"
     const val INCLUDE_GENERATED = "includeGenerated"
 
+    // SSR parameters
+    const val SEARCH_PATTERN = "searchPattern"
+    const val REPLACE_PATTERN = "replacePattern"
+
+    // Change signature parameters
+    const val NEW_RETURN_TYPE = "newReturnType"
+    const val NEW_VISIBILITY = "newVisibility"
+    const val NEW_PARAMETERS = "newParameters"
+    const val GENERATE_DELEGATE = "generateDelegate"
+
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
     const val MAX_PREVIEW_LINES = "maxPreviewLines"

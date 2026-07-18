@@ -98,7 +98,26 @@ hdr "New tools disabled by default"
 if [ -n "$UPSTREAM_BASE" ]; then
     NEW_TOOLS=$(git diff "$UPSTREAM_BASE" HEAD -- src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/constants/ToolNames.kt 2>/dev/null \
         | grep '^+.*const val.*= "ide_' | grep -oE '"ide_[^"]+"' | tr -d '"' || true)
-    DISABLED=$(grep -oE '"ide_[^"]+"' src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/settings/McpSettings.kt | tr -d '"' || true)
+    # Resolve disabled tools from McpSettings.kt — supports both literal "ide_..." strings
+    # and ToolNames.CONSTANT references (the current convention).
+    DISABLED=$(python3 - <<'PYEOF'
+import re
+tn_path = "src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/constants/ToolNames.kt"
+ms_path = "src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/settings/McpSettings.kt"
+tn = open(tn_path).read()
+ms = open(ms_path).read()
+vals = {m.group(1): m.group(2) for m in re.finditer(r'const val (\w+) = "(ide_\w+)"', tn)}
+seen = set()
+for m in re.finditer(r'"(ide_\w+)"', ms):
+    seen.add(m.group(1))
+for m in re.finditer(r'ToolNames\.(\w+)', ms):
+    v = vals.get(m.group(1))
+    if v:
+        seen.add(v)
+for t in sorted(seen):
+    print(t)
+PYEOF
+    )
     for tool in $NEW_TOOLS; do
         if echo "$DISABLED" | grep -q "^${tool}$"; then
             ok "$tool is in disabledTools"
