@@ -1034,8 +1034,7 @@ Results are read directly from the IDE's test runner rather than from report fil
     { "name": "com.example.MyTest.testFoo", "status": "passed" },
     { "name": "com.example.MyTest.testBar", "status": "passed" },
     { "name": "com.example.MyTest.testBaz", "status": "passed" }
-  ],
-  "output": "Running com.example.MyTest\nTests run: 3, Failures: 0, Errors: 0\n"
+  ]
 }
 ```
 
