@@ -54,14 +54,16 @@ object TestResultsCollector {
 
     fun collectRunEntries(root: SMTestProxy.SMRootTestProxy): List<TestRunEntry> =
         root.allTests
-            .filter { it.isLeaf && it !== root }
+            .filter { it !== root && it.isLeaf && !it.isSuite && !it.isConfig }
             .mapNotNull { test ->
-                val status = magnitudeToStatus(test.magnitudeInfo) ?: return@mapNotNull null
-                TestRunEntry(
-                    name = composeName(test.name, test.parent?.name),
-                    status = status,
-                    errorMessage = if (status.isFailure) test.errorMessage else null
-                )
+                // TODO: Use `test.magnitudeInfo` once API is stable
+                magnitudeIndexToStatus(test.magnitude)?.let {
+                    TestRunEntry(
+                        name = composeName(test.name, test.parent?.name),
+                        status = it,
+                        errorMessage = if (it.isFailure) test.errorMessage else null
+                    )
+                }
             }
 
     /** Composes a test display name from the test name and its optional parent (suite) name. */
@@ -71,18 +73,21 @@ object TestResultsCollector {
     }
 
     /**
-     * Maps a [Magnitude] to a [TestStatus], or null for non-test magnitudes (suites, not-run, in-progress).
+     * Maps the integer value of [SMTestProxy.getMagnitude] to a [TestStatus], or null for
+     * non-terminal states (not-run, running, terminated).
      *
-     * In 2025.3, [Magnitude.isPassed] returns true for both [Magnitude.SKIPPED_INDEX] and
-     * [Magnitude.COMPLETE_INDEX], so we map directly from magnitude to avoid misclassification.
-     * [Magnitude.COMPLETE_INDEX] (suite completion) returns null so suite nodes are excluded.
+     * Values are obtained from the public [SMTestProxy.getMagnitude] method (which returns
+     * Magnitude.getValue()) to avoid importing the @Internal Magnitude type directly.
+     * Suite nodes (COMPLETE_INDEX = 1, same int as PASSED_INDEX) are excluded upstream in
+     * [collectRunEntries] via isSuite(), so value 1 can be safely mapped to PASSED here.
+     *
      */
-    internal fun magnitudeToStatus(magnitude: Magnitude): TestStatus? = when (magnitude) {
-        Magnitude.SKIPPED_INDEX, Magnitude.IGNORED_INDEX -> TestStatus.SKIPPED
-        Magnitude.PASSED_INDEX -> TestStatus.PASSED
-        Magnitude.ERROR_INDEX -> TestStatus.ERROR
-        Magnitude.FAILED_INDEX -> TestStatus.FAILED
-        else -> null
+    internal fun magnitudeIndexToStatus(index: Int): TestStatus? = when (index) {
+        0, 5 -> TestStatus.SKIPPED  // SKIPPED_INDEX, IGNORED_INDEX
+        1 -> TestStatus.PASSED      // PASSED_INDEX (suites share this value but are filtered upstream)
+        6 -> TestStatus.FAILED      // FAILED_INDEX
+        8 -> TestStatus.ERROR       // ERROR_INDEX
+        else -> null                // NOT_RUN(2), RUNNING(3), TERMINATED(4)
     }
 
     private fun findTestRootProxyAndName(descriptors: List<RunContentDescriptor>): Pair<SMTestProxy.SMRootTestProxy, String?>? {

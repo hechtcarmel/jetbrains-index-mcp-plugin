@@ -1,46 +1,61 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
-import com.intellij.execution.testframework.sm.runner.states.TestStateInfo.Magnitude
 import junit.framework.TestCase
 
+/**
+ * Tests for [TestResultsCollector.magnitudeIndexToStatus].
+ *
+ * Integer values are those returned by the public SMTestProxy.getMagnitude() method
+ * (i.e. Magnitude.getValue()), documented in magnitudeIndexToStatus's KDoc:
+ *   0=SKIPPED, 1=COMPLETE/PASSED, 2=NOT_RUN, 3=RUNNING, 4=TERMINATED, 5=IGNORED, 6=FAILED, 8=ERROR
+ */
 class TestResultsCollectorUnitTest : TestCase() {
 
-    fun testMagnitudePassed() {
-        assertEquals(TestStatus.PASSED, TestResultsCollector.magnitudeToStatus(Magnitude.PASSED_INDEX))
+    fun testPassedIndex() {
+        // PASSED_INDEX = 1
+        assertEquals(TestStatus.PASSED, TestResultsCollector.magnitudeIndexToStatus(1))
     }
 
-    fun testMagnitudeSkipped() {
-        // SKIPPED_INDEX makes isPassed() return true in 2025.3; must map to SKIPPED, not PASSED
-        assertEquals(TestStatus.SKIPPED, TestResultsCollector.magnitudeToStatus(Magnitude.SKIPPED_INDEX))
+    fun testSkippedIndex() {
+        // SKIPPED_INDEX = 0; isPassed() returns true for this in 2025.3, but we map it to SKIPPED
+        assertEquals(TestStatus.SKIPPED, TestResultsCollector.magnitudeIndexToStatus(0))
     }
 
-    fun testMagnitudeIgnored() {
-        assertEquals(TestStatus.SKIPPED, TestResultsCollector.magnitudeToStatus(Magnitude.IGNORED_INDEX))
+    fun testIgnoredIndex() {
+        // IGNORED_INDEX = 5
+        assertEquals(TestStatus.SKIPPED, TestResultsCollector.magnitudeIndexToStatus(5))
     }
 
-    fun testMagnitudeFailed() {
-        assertEquals(TestStatus.FAILED, TestResultsCollector.magnitudeToStatus(Magnitude.FAILED_INDEX))
+    fun testFailedIndex() {
+        // FAILED_INDEX = 6
+        assertEquals(TestStatus.FAILED, TestResultsCollector.magnitudeIndexToStatus(6))
     }
 
-    fun testMagnitudeError() {
-        assertEquals(TestStatus.ERROR, TestResultsCollector.magnitudeToStatus(Magnitude.ERROR_INDEX))
+    fun testErrorIndex() {
+        // ERROR_INDEX = 8
+        assertEquals(TestStatus.ERROR, TestResultsCollector.magnitudeIndexToStatus(8))
     }
 
-    fun testMagnitudeCompleteSuiteReturnsNull() {
-        // COMPLETE_INDEX is suite completion; isPassed() returns true for it, but it is not a test node
-        assertNull(TestResultsCollector.magnitudeToStatus(Magnitude.COMPLETE_INDEX))
+    fun testNotRunReturnsNull() {
+        // NOT_RUN_INDEX = 2
+        assertNull(TestResultsCollector.magnitudeIndexToStatus(2))
     }
 
-    fun testMagnitudeNotRunReturnsNull() {
-        assertNull(TestResultsCollector.magnitudeToStatus(Magnitude.NOT_RUN_INDEX))
+    fun testRunningReturnsNull() {
+        // RUNNING_INDEX = 3
+        assertNull(TestResultsCollector.magnitudeIndexToStatus(3))
     }
 
-    fun testMagnitudeRunningReturnsNull() {
-        assertNull(TestResultsCollector.magnitudeToStatus(Magnitude.RUNNING_INDEX))
+    fun testTerminatedReturnsNull() {
+        // TERMINATED_INDEX = 4
+        assertNull(TestResultsCollector.magnitudeIndexToStatus(4))
     }
 
-    fun testMagnitudeTerminatedReturnsNull() {
-        assertNull(TestResultsCollector.magnitudeToStatus(Magnitude.TERMINATED_INDEX))
+    fun testCompleteSuiteValueMapsToPassedStatusItselfNotNull() {
+        // COMPLETE_INDEX = 1, same int value as PASSED_INDEX.
+        // collectRunEntries excludes suite nodes via isSuite() before calling this function,
+        // so value 1 is unambiguously PASSED at this layer.
+        assertEquals(TestStatus.PASSED, TestResultsCollector.magnitudeIndexToStatus(1))
     }
 }
