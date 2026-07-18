@@ -34,10 +34,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenWorkspac
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RestartIdeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.CreateFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceTextInFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.StructuralSearchReplaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import java.util.concurrent.ConcurrentHashMap
@@ -268,6 +272,12 @@ class ToolRegistry {
         register(MoveFileTool())
         register(ReformatCodeTool())
         register(OptimizeImportsTool())
+
+        // Advanced refactoring tools (universal - disabled by default)
+        register(ReplaceTextInFileTool())
+        register(StructuralSearchReplaceTool())
+        register(ChangeSignatureTool())
+        register(CreateFileTool())
 
         // Fast search tools (universal)
         register(FindClassTool())

@@ -161,7 +161,7 @@ class McpSettingsUnitTest : TestCase() {
         settings.setToolEnabled(ToolNames.IMPORT_MODULES, true)
 
         assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
-        assertEquals(2, settings.state.settingsSchemaVersion)
+        assertEquals(3, settings.state.settingsSchemaVersion)
     }
 
     fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
@@ -179,7 +179,7 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.IMPORT_MODULES))
         assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
         assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
-        assertEquals(2, settings.state.settingsSchemaVersion)
+        assertEquals(3, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {
@@ -259,4 +259,18 @@ class McpSettingsUnitTest : TestCase() {
         // Use a host that definitely shouldn't resolve and has invalid chars for IP
         assertFalse("Invalid hostname should be invalid", McpSettingsConfigurable.isValidHost("invalid_host_name_!@#"))
     }
+
+    fun testLoadStateFromSchema2MigratesSsrToolsToDisabled() {
+        val settings = McpSettings()
+        val oldState = McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES, ToolNames.OPEN_WORKSPACE),
+            settingsSchemaVersion = 2
+        )
+        settings.loadState(oldState)
+        assertFalse("CHANGE_SIGNATURE should be disabled after migration", settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
+        assertFalse("CREATE_FILE should be disabled after migration", settings.isToolEnabled(ToolNames.CREATE_FILE))
+        assertFalse("REPLACE_TEXT_IN_FILE should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_TEXT_IN_FILE))
+        assertFalse("STRUCTURAL_SEARCH_REPLACE should be disabled after migration", settings.isToolEnabled(ToolNames.STRUCTURAL_SEARCH_REPLACE))
+    }
+
 }
