@@ -41,6 +41,11 @@ object ToolNames {
     const val REPLACE_TEXT_IN_FILE = "ide_replace_text_in_file"
     const val STRUCTURAL_SEARCH_REPLACE = "ide_structural_search_replace"
 
+    // Code editing tools
+    const val EDIT_MEMBER = "ide_edit_member"
+    const val INSERT_MEMBER = "ide_insert_member"
+    const val REPLACE_MEMBER = "ide_replace_member"
+
     // Editor tools
     const val GET_ACTIVE_FILE = "ide_get_active_file"
     const val OPEN_FILE = "ide_open_file"
@@ -77,6 +82,7 @@ object ToolNames {
         CONVERT_JAVA_TO_KOTLIN,
         CREATE_FILE,
         DIAGNOSTICS,
+        EDIT_MEMBER,
         ENROLL_ALL_PROJECTS,
         FILE_STRUCTURE,
         FIND_CLASS,
@@ -90,6 +96,7 @@ object ToolNames {
         GET_PROJECT_MODES,
         IMPORT_MODULES,
         INDEX_STATUS,
+        INSERT_MEMBER,
         INSTALL_PLUGIN,
         LIFECYCLE_LOG,
         LIST_TESTS,
@@ -106,6 +113,7 @@ object ToolNames {
         RELEASE_ALL_PROJECTS,
         RELEASE_PROJECT,
         RELOAD_PROJECT,
+        REPLACE_MEMBER,
         REPLACE_TEXT_IN_FILE,
         RESTART_IDE,
         RUN_TESTS,

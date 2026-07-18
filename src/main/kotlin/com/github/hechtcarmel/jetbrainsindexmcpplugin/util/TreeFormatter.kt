@@ -76,7 +76,13 @@ object TreeFormatter {
             " ${node.signature}"
         } else ""
 
-        return "$kind $modifiers${node.name}$signature (line ${node.line})"
+        val lineInfo = if (node.endLine != null && node.endLine != node.line) {
+            "(lines ${node.line}-${node.endLine})"
+        } else {
+            "(line ${node.line})"
+        }
+
+        return "$kind $modifiers${node.name}$signature $lineInfo"
     }
 
     /**

@@ -863,6 +863,14 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
         private val LOG = logger<PythonStructureHandler>()
     }
 
+    private fun getEndLineNumber(project: Project, element: PsiElement): Int? {
+        val file = element.containingFile?.virtualFile ?: return null
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file) ?: return null
+        val endOffset = element.textRange?.endOffset ?: return null
+        if (endOffset <= 0 || endOffset > document.textLength) return null
+        return document.getLineNumber(endOffset - 1) + 1
+    }
+
     override val languageId = "Python"
 
     override fun canHandle(element: PsiElement): Boolean {
@@ -966,6 +974,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
             modifiers = getPythonModifiers(pyClass),
             signature = buildClassSignature(pyClass),
             line = getLineNumber(project, pyClass) ?: 0,
+            endLine = getEndLineNumber(project, pyClass),
             children = children.sortedBy { it.line }
         )
     }
@@ -978,7 +987,8 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
             kind = StructureKind.FUNCTION,
             modifiers = getPythonModifiers(pyFunction),
             signature = buildFunctionSignature(pyFunction),
-            line = getLineNumber(project, pyFunction) ?: 0
+            line = getLineNumber(project, pyFunction) ?: 0,
+            endLine = getEndLineNumber(project, pyFunction)
         )
     }
 

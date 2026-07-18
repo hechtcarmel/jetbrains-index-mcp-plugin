@@ -31,7 +31,8 @@ object IdeStructureViewExtractor {
         val kind: StructureKind,
         val modifiers: List<String> = emptyList(),
         val signature: String? = null,
-        val line: Int? = null
+        val line: Int? = null,
+        val endLine: Int? = null
     )
 
     fun interface Classifier {
@@ -56,6 +57,7 @@ object IdeStructureViewExtractor {
                     elements = model.root.children,
                     classifier = classifier,
                     lineResolver = { value -> resolveLine(project, value) },
+                    endLineResolver = { value -> resolveEndLine(project, value) },
                     maxDepth = maxDepth
                 )
             } finally {
@@ -71,6 +73,7 @@ object IdeStructureViewExtractor {
         elements: Array<out TreeElement>,
         classifier: Classifier,
         lineResolver: (Any?) -> Int? = { null },
+        endLineResolver: (Any?) -> Int? = { null },
         maxDepth: Int = DEFAULT_MAX_DEPTH
     ): List<StructureNode> {
         val visited = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
@@ -79,6 +82,7 @@ object IdeStructureViewExtractor {
                 element = element,
                 classifier = classifier,
                 lineResolver = lineResolver,
+                endLineResolver = endLineResolver,
                 visited = visited,
                 depth = 0,
                 maxDepth = maxDepth
@@ -90,6 +94,7 @@ object IdeStructureViewExtractor {
         element: TreeElement,
         classifier: Classifier,
         lineResolver: (Any?) -> Int?,
+        endLineResolver: (Any?) -> Int?,
         visited: MutableSet<Any>,
         depth: Int,
         maxDepth: Int
@@ -104,6 +109,7 @@ object IdeStructureViewExtractor {
                 element = child,
                 classifier = classifier,
                 lineResolver = lineResolver,
+                endLineResolver = endLineResolver,
                 visited = visited,
                 depth = depth + 1,
                 maxDepth = maxDepth
@@ -122,6 +128,8 @@ object IdeStructureViewExtractor {
             return emptyList()
         }
 
+        val resolvedEndLine = info.endLine ?: endLineResolver(value)
+
         return listOf(
             StructureNode(
                 name = info.name,
@@ -129,6 +137,7 @@ object IdeStructureViewExtractor {
                 modifiers = info.modifiers.distinct(),
                 signature = info.signature?.takeIf { it.isNotBlank() },
                 line = resolvedLine ?: children.firstOrNull()?.line ?: 1,
+                endLine = resolvedEndLine,
                 children = children
             )
         )
@@ -137,5 +146,14 @@ object IdeStructureViewExtractor {
     private fun resolveLine(project: Project, value: Any?): Int? {
         val element = value as? PsiElement ?: return null
         return PsiSourcePosition.line(project, element)
+    }
+
+    private fun resolveEndLine(project: Project, value: Any?): Int? {
+        val element = value as? PsiElement ?: return null
+        val file = element.containingFile?.virtualFile ?: return null
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file) ?: return null
+        val endOffset = element.textRange?.endOffset ?: return null
+        if (endOffset <= 0 || endOffset > document.textLength) return null
+        return document.getLineNumber(endOffset - 1) + 1
     }
 }

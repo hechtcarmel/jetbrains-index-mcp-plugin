@@ -72,6 +72,14 @@ abstract class BaseMarkdownHandler<T> : LanguageHandler<T> {
         return element.textOffset - document.getLineStartOffset(lineNumber) + 1
     }
 
+    protected fun getEndLineNumber(project: Project, element: PsiElement): Int? {
+        val file = element.containingFile?.virtualFile ?: return null
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file) ?: return null
+        val endOffset = element.textRange?.endOffset ?: return null
+        if (endOffset <= 0 || endOffset > document.textLength) return null
+        return document.getLineNumber(endOffset - 1) + 1
+    }
+
     protected fun markdownHeaders(file: PsiFile): List<MarkdownHeader> =
         PsiTreeUtil.findChildrenOfType(file, MarkdownHeader::class.java)
             .sortedBy { it.textOffset }
@@ -87,7 +95,8 @@ class MarkdownStructureHandler : BaseMarkdownHandler<List<StructureNode>>(), Str
             val node = MutableHeadingNode(
                 level = header.level,
                 name = headerName(header),
-                line = getLineNumber(project, header)
+                line = getLineNumber(project, header),
+                endLine = getEndLineNumber(project, header)
             )
 
             while (stack.isNotEmpty() && stack.last().level >= node.level) {
@@ -110,6 +119,7 @@ class MarkdownStructureHandler : BaseMarkdownHandler<List<StructureNode>>(), Str
         val level: Int,
         val name: String,
         val line: Int,
+        val endLine: Int? = null,
         val children: MutableList<MutableHeadingNode> = mutableListOf()
     ) {
         fun toStructureNode(): StructureNode =
@@ -119,6 +129,7 @@ class MarkdownStructureHandler : BaseMarkdownHandler<List<StructureNode>>(), Str
                 modifiers = emptyList(),
                 signature = null,
                 line = line,
+                endLine = endLine,
                 children = children.map { it.toStructureNode() }
             )
     }

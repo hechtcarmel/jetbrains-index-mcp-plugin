@@ -37,6 +37,9 @@ These tools work in every supported JetBrains IDE:
 | `ide_change_signature` | Change method signature with automatic caller updates (Java) | Disabled |
 | `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ | Disabled |
 | `ide_replace_text_in_file` | Find and replace text using IntelliJ's Document API | Disabled |
+| `ide_edit_member` | Replace an entire member declaration (signature + body) with new content (Java, Kotlin) | Disabled |
+| `ide_insert_member` | Insert a new member at a structural position (Java, Kotlin) | Disabled |
+| `ide_replace_member` | Replace method body or field initializer, preserving signature (Java, Kotlin) | Disabled |
 
 ## Extended Tools (Language-Aware)
 
@@ -48,7 +51,7 @@ These tools activate based on available language plugins:
 | `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_file_structure` | Hierarchical file structure with start/end line numbers *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
 
 ### Java-Specific Tools
 
@@ -123,6 +126,9 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_change_signature](#ide_change_signature)
   - [ide_create_file](#ide_create_file)
   - [ide_replace_text_in_file](#ide_replace_text_in_file)
+  - [ide_edit_member](#ide_edit_member)
+  - [ide_insert_member](#ide_insert_member)
+  - [ide_replace_member](#ide_replace_member)
 - [Extended Tools (Language-Aware)](#extended-tools-language-aware)
   - [ide_type_hierarchy](#ide_type_hierarchy)
   - [ide_call_hierarchy](#ide_call_hierarchy)
@@ -1753,6 +1759,18 @@ When `replacePattern` is omitted, the tool performs search-only and returns matc
 - Finding code patterns that text search cannot express (e.g., all calls to a deprecated method with specific argument types)
 - Applying systematic code transformations across the project
 - Migrating API usage patterns
+### ide_edit_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Replace an entire member declaration (signature + body) with new content. The tool locates the member by name, optional parameter count, and optional line number, then replaces the complete declaration.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Rewriting a method signature and body together
+- Replacing a field declaration with a different type or initializer
+- Updating a member where both signature and body need to change
 
 **Parameters:**
 
@@ -1764,6 +1782,15 @@ When `replacePattern` is omitted, the tool performs search-only and returns matc
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 
 **Example Request (search-only):**
+| `file` | string | Yes | Path to the file relative to project root |
+| `class` | string | No | Class name to scope the search (required for inner classes or when the member name is ambiguous) |
+| `member` | string | Yes | Name of the member to replace |
+| `parameterCount` | integer | No | Number of parameters to disambiguate overloaded methods |
+| `line` | integer | No | 1-based line number to disambiguate when multiple members share the same name |
+| `content` | string | Yes | The full replacement declaration (signature + body) |
+| `reformat` | boolean | No | Reformat the replaced code using project code style (default: true) |
+
+**Example Request:**
 
 ```json
 {
@@ -1878,6 +1905,12 @@ Change a method's signature — name, return type, visibility, and parameters �
       "column": 17,
       "newName": "findUserById",
       "newVisibility": "public"
+    "name": "ide_edit_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "member": "findUser",
+      "parameterCount": 1,
+      "content": "public User findUser(String id) {\n    return userRepository.findById(id).orElseThrow(() -> new NotFoundException(id));\n}"
     }
   }
 }
@@ -1896,6 +1929,9 @@ Change a method's signature — name, return type, visibility, and parameters �
     "src/test/java/com/example/UserServiceTest.java"
   ],
   "changesCount": 5
+  "message": "Replaced method 'findUser' entirely",
+  "startLine": 15,
+  "endLine": 18
 }
 ```
 
@@ -1960,6 +1996,18 @@ Use this for mechanical text substitutions — e.g., replacing a method call wra
 - Replacing a deprecated method call pattern across a file
 - Updating import paths or string constants
 - Applying regex-based text transformations
+### ide_insert_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Insert a new member (method, field, inner class, etc.) at a structural position within a class or at the top level of a file.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Adding a new method to a class
+- Adding a new field or constant
+- Inserting a member at a specific position relative to an existing member
 
 **Parameters:**
 
@@ -1970,6 +2018,13 @@ Use this for mechanical text substitutions — e.g., replacing a method call wra
 | `replaceText` | string | Yes | Replacement text. Supports regex group references (`$1`, `$2`) when `regex` is true |
 | `regex` | boolean | No | Treat `searchText` as a regular expression (default: false) |
 | `caseSensitive` | boolean | No | Case-sensitive matching (default: true) |
+| `class` | string | No | Class name to insert into (omit for top-level insertion) |
+| `content` | string | Yes | The full member declaration to insert |
+| `position` | string | No | Where to insert: `before`, `after`, `first`, or `last` (default: `last`) |
+| `anchor` | string | No | Name of an existing member to position relative to (required for `before`/`after`) |
+| `anchorParameterCount` | integer | No | Number of parameters to disambiguate overloaded anchor methods |
+| `anchorLine` | integer | No | 1-based line number to disambiguate the anchor member |
+| `reformat` | boolean | No | Reformat the inserted code using project code style (default: true) |
 
 **Example Request:**
 
@@ -1999,6 +2054,13 @@ Use this for mechanical text substitutions — e.g., replacing a method call wra
       "searchText": "LOG\\.debug\\((.*)\\)",
       "replaceText": "LOG.trace($1)",
       "regex": true
+    "name": "ide_insert_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "class": "UserService",
+      "content": "public void deleteUser(String id) {\n    userRepository.deleteById(id);\n}",
+      "position": "after",
+      "anchor": "findUser"
     }
   }
 }
@@ -2012,6 +2074,66 @@ Use this for mechanical text substitutions — e.g., replacing a method call wra
   "file": "src/main/java/com/example/Service.java",
   "replacements": 3,
   "message": "Replaced 3 occurrence(s) of 'OldHelper.wrap(' in Service.java"
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Inserted member",
+  "startLine": 22,
+  "endLine": 25
+}
+```
+
+---
+
+### ide_replace_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Replace only the body of a method or the initializer of a field, preserving the existing signature. This is safer than `ide_edit_member` when the signature should remain unchanged.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Changing method implementation without altering the signature
+- Updating a field initializer
+- Fixing a bug inside a method body
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `class` | string | No | Class name to scope the search (required for inner classes or when the member name is ambiguous) |
+| `member` | string | Yes | Name of the member whose body/initializer to replace |
+| `parameterCount` | integer | No | Number of parameters to disambiguate overloaded methods |
+| `line` | integer | No | 1-based line number to disambiguate when multiple members share the same name |
+| `content` | string | Yes | The new method body (without braces) or field initializer (without `=` sign) |
+| `reformat` | boolean | No | Reformat the replaced code using project code style (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_replace_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "member": "findUser",
+      "parameterCount": 1,
+      "content": "    log.info(\"Finding user: {}\", id);\n    return userRepository.findById(id).orElseThrow();"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Replaced body of method 'findUser'",
+  "startLine": 16,
+  "endLine": 18
 }
 ```
 
@@ -2476,9 +2598,11 @@ PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDE
 {
   "file": "src/main/kotlin/com/example/UserService.kt",
   "language": "Kotlin",
-  "structure": "interface UserService :15\n  fun findUser(id: String): User :16\n  fun deleteUser(id: String) :17\n\nclass UserServiceImpl :20\n  val repository: UserRepository :21\n  override fun findUser(id: String): User :23\n  override fun deleteUser(id: String) :30\n  private fun validate(id: String) :37"
+  "structure": "interface UserService (lines 15-18)\n  fun findUser(id: String): User (line 16)\n  fun deleteUser(id: String) (line 17)\n\nclass UserServiceImpl (lines 20-42)\n  val repository: UserRepository (line 21)\n  override fun findUser(id: String): User (lines 23-29)\n  override fun deleteUser(id: String) (lines 30-35)\n  private fun validate(id: String) (lines 37-41)"
 }
 ```
+
+**Note:** Each element in the structure output includes both start and end line numbers (e.g., `(lines 42-65)` for multi-line elements, `(line 42)` for single-line elements), making it easy to identify the full extent of each declaration.
 
 ---
 

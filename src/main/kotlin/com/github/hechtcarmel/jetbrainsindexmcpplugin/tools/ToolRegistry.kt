@@ -37,10 +37,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSave
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.CreateFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.EditMemberTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InsertMemberTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceMemberTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceTextInFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.StructuralSearchReplaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
@@ -281,6 +284,11 @@ class ToolRegistry {
         register(StructuralSearchReplaceTool())
         register(ChangeSignatureTool())
         register(CreateFileTool())
+
+        // Code editing tools (universal - uses Document APIs with PSI for location)
+        register(EditMemberTool())
+        register(InsertMemberTool())
+        register(ReplaceMemberTool())
 
         // Fast search tools (universal)
         register(FindClassTool())
