@@ -19,6 +19,7 @@ data class StructureNode(
     val modifiers: List<String>,
     val signature: String?,
     val line: Int,
+    val endLine: Int? = null,
     val children: List<StructureNode> = emptyList()
 )
 

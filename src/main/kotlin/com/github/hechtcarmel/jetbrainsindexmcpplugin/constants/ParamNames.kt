@@ -64,6 +64,17 @@ object ParamNames {
     const val NEW_PARAMETERS = "newParameters"
     const val GENERATE_DELEGATE = "generateDelegate"
 
+    // Code editing parameters
+    const val CLASS = "class"
+    const val MEMBER = "member"
+    const val CONTENT = "content"
+    const val POSITION = "position"
+    const val ANCHOR = "anchor"
+    const val ANCHOR_PARAMETER_COUNT = "anchorParameterCount"
+    const val ANCHOR_LINE = "anchorLine"
+    const val PARAMETER_COUNT = "parameterCount"
+    const val REFORMAT = "reformat"
+
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
     const val MAX_PREVIEW_LINES = "maxPreviewLines"

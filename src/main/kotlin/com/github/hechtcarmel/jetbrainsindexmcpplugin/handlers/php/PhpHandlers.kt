@@ -731,6 +731,14 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
 
     override val languageId = "PHP"
 
+    private fun getEndLineNumber(project: Project, element: PsiElement): Int? {
+        val file = element.containingFile?.virtualFile ?: return null
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file) ?: return null
+        val endOffset = element.textRange?.endOffset ?: return null
+        if (endOffset <= 0 || endOffset > document.textLength) return null
+        return document.getLineNumber(endOffset - 1) + 1
+    }
+
     private val phpNamespaceClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.PhpNamespace") }
     private val phpConstantClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.Constant") }
     private val phpEnumCaseClass by lazy { loadOptionalClass("com.jetbrains.php.lang.psi.elements.PhpEnumCase") }
@@ -757,7 +765,8 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
 
     private data class NamespaceRegion(
         val name: String,
-        val line: Int
+        val line: Int,
+        val endLine: Int? = null
     )
 
     private inner class PhpStructureClassifier : IdeStructureViewExtractor.Classifier {
@@ -798,7 +807,8 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
                     kind = StructureKind.NAMESPACE,
                     modifiers = emptyList(),
                     signature = null,
-                    line = namespace.line
+                    line = namespace.line,
+                    endLine = namespace.endLine
                 )
             }
         }
@@ -817,6 +827,7 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
                 modifiers = emptyList(),
                 signature = null,
                 line = namespace.line,
+                endLine = namespace.endLine,
                 children = namespaceChildren
             )
         }
@@ -834,7 +845,8 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
             .mapNotNull { namespace ->
                 val name = namespaceName(namespace) ?: return@mapNotNull null
                 val line = getLineNumber(project, namespace) ?: return@mapNotNull null
-                NamespaceRegion(name = name, line = line)
+                val endLine = getEndLineNumber(project, namespace)
+                NamespaceRegion(name = name, line = line, endLine = endLine)
             }
             .distinct()
             .sortedBy { it.line }

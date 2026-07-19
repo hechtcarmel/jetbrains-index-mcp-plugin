@@ -496,6 +496,10 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.STRUCTURAL_SEARCH_REPLACE,
             ToolNames.CHANGE_SIGNATURE,
             ToolNames.CREATE_FILE,
+            // Code editing tools
+            ToolNames.EDIT_MEMBER,
+            ToolNames.INSERT_MEMBER,
+            ToolNames.REPLACE_MEMBER,
             // Editor tools
             ToolNames.GET_ACTIVE_FILE,
             ToolNames.OPEN_FILE,

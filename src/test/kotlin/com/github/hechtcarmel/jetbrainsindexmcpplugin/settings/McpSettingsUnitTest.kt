@@ -155,13 +155,25 @@ class McpSettingsUnitTest : TestCase() {
         assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
     }
 
+    fun testLoadStateFromSchema1MigratesCodeEditingToolsToDisabled() {
+        val settings = McpSettings()
+        settings.loadState(McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES),
+            settingsSchemaVersion = 1
+        ))
+
+        assertFalse("EDIT_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.EDIT_MEMBER))
+        assertFalse("INSERT_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.INSERT_MEMBER))
+        assertFalse("REPLACE_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_MEMBER))
+    }
+
     fun testSetToolEnabledMarksSchemaCurrent() {
         val settings = McpSettings()
 
         settings.setToolEnabled(ToolNames.IMPORT_MODULES, true)
 
         assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
-        assertEquals(4, settings.state.settingsSchemaVersion)
+        assertEquals(5, settings.state.settingsSchemaVersion)
     }
 
     fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
@@ -179,7 +191,7 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.IMPORT_MODULES))
         assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
         assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
-        assertEquals(4, settings.state.settingsSchemaVersion)
+        assertEquals(5, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {
@@ -271,6 +283,18 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("CREATE_FILE should be disabled after migration", settings.isToolEnabled(ToolNames.CREATE_FILE))
         assertFalse("REPLACE_TEXT_IN_FILE should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_TEXT_IN_FILE))
         assertFalse("STRUCTURAL_SEARCH_REPLACE should be disabled after migration", settings.isToolEnabled(ToolNames.STRUCTURAL_SEARCH_REPLACE))
+    }
+
+    fun testLoadStateFromSchema3MigratesAstEditingToolsToDisabled() {
+        val settings = McpSettings()
+        val oldState = McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES, ToolNames.OPEN_WORKSPACE),
+            settingsSchemaVersion = 3
+        )
+        settings.loadState(oldState)
+        assertFalse("EDIT_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.EDIT_MEMBER))
+        assertFalse("INSERT_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.INSERT_MEMBER))
+        assertFalse("REPLACE_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_MEMBER))
     }
 
 }

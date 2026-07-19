@@ -2304,6 +2304,14 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
 
     override val languageId = "JavaScript"
 
+    private fun getEndLineNumber(project: Project, element: PsiElement): Int? {
+        val file = element.containingFile?.virtualFile ?: return null
+        val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file) ?: return null
+        val endOffset = element.textRange?.endOffset ?: return null
+        if (endOffset <= 0 || endOffset > document.textLength) return null
+        return document.getLineNumber(endOffset - 1) + 1
+    }
+
     override fun canHandle(element: PsiElement): Boolean {
         return isAvailable() && isJavaScriptLanguage(element)
     }
@@ -2433,6 +2441,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             modifiers = getJavaScriptModifiers(jsClass),
             signature = buildClassSignature(jsClass),
             line = getLineNumber(project, jsClass) ?: 0,
+            endLine = getEndLineNumber(project, jsClass),
             children = children.sortedBy { it.line }
         )
     }
@@ -2444,7 +2453,8 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             kind = StructureKind.METHOD,
             modifiers = getJavaScriptModifiers(jsFunction),
             signature = buildFunctionSignature(jsFunction),
-            line = getLineNumber(project, jsFunction) ?: 0
+            line = getLineNumber(project, jsFunction) ?: 0,
+            endLine = getEndLineNumber(project, jsFunction)
         )
     }
 
@@ -2455,7 +2465,8 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             kind = StructureKind.FUNCTION,
             modifiers = getJavaScriptModifiers(jsFunction),
             signature = buildFunctionSignature(jsFunction),
-            line = getLineNumber(project, jsFunction) ?: 0
+            line = getLineNumber(project, jsFunction) ?: 0,
+            endLine = getEndLineNumber(project, jsFunction)
         )
     }
 
@@ -2466,7 +2477,8 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             kind = StructureKind.VARIABLE,
             modifiers = emptyList(),
             signature = null,
-            line = getLineNumber(project, jsVariable) ?: 0
+            line = getLineNumber(project, jsVariable) ?: 0,
+            endLine = getEndLineNumber(project, jsVariable)
         )
     }
 
@@ -2477,7 +2489,8 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             kind = StructureKind.FIELD,
             modifiers = getJavaScriptModifiers(field),
             signature = null,
-            line = getLineNumber(project, field) ?: 0
+            line = getLineNumber(project, field) ?: 0,
+            endLine = getEndLineNumber(project, field)
         )
     }
 

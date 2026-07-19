@@ -24,10 +24,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesToo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.CreateFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.EditMemberTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InsertMemberTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceMemberTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceTextInFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.StructuralSearchReplaceTool
@@ -1305,6 +1308,60 @@ class ToolsUnitTest : TestCase() {
         val tool = registry.getTool(ToolNames.RUN_TESTS)
         assertNotNull("ide_run_tests should be registered", tool)
         assertEquals(ToolNames.RUN_TESTS, tool?.name)
+    }
+
+    // Code editing tools tests
+
+    fun testEditMemberToolSchema() {
+        val tool = EditMemberTool()
+        assertEquals(ToolNames.EDIT_MEMBER, tool.name)
+        val schema = tool.inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have member property", properties?.get(ParamNames.MEMBER))
+        assertNotNull("Should have content property", properties?.get(ParamNames.CONTENT))
+        assertNotNull("Should have class property", properties?.get(ParamNames.CLASS))
+        assertNotNull("Should have reformat property", properties?.get(ParamNames.REFORMAT))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("file should be required", required?.contains(ParamNames.FILE) == true)
+        assertTrue("member should be required", required?.contains(ParamNames.MEMBER) == true)
+        assertTrue("content should be required", required?.contains(ParamNames.CONTENT) == true)
+        assertFalse("class should not be required", required?.contains(ParamNames.CLASS) == true)
+    }
+
+    fun testInsertMemberToolSchema() {
+        val tool = InsertMemberTool()
+        assertEquals(ToolNames.INSERT_MEMBER, tool.name)
+        val schema = tool.inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have content property", properties?.get(ParamNames.CONTENT))
+        assertNotNull("Should have position property", properties?.get(ParamNames.POSITION))
+        assertNotNull("Should have anchor property", properties?.get(ParamNames.ANCHOR))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("file should be required", required?.contains(ParamNames.FILE) == true)
+        assertTrue("content should be required", required?.contains(ParamNames.CONTENT) == true)
+    }
+
+    fun testReplaceMemberToolSchema() {
+        val tool = ReplaceMemberTool()
+        assertEquals(ToolNames.REPLACE_MEMBER, tool.name)
+        val schema = tool.inputSchema
+        val properties = schema["properties"]?.jsonObject
+        assertNotNull("Should have file property", properties?.get(ParamNames.FILE))
+        assertNotNull("Should have member property", properties?.get(ParamNames.MEMBER))
+        assertNotNull("Should have content property", properties?.get(ParamNames.CONTENT))
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("file should be required", required?.contains(ParamNames.FILE) == true)
+        assertTrue("member should be required", required?.contains(ParamNames.MEMBER) == true)
+        assertTrue("content should be required", required?.contains(ParamNames.CONTENT) == true)
+    }
+
+    fun testCodeEditingToolsAreDisabledByDefault() {
+        val defaultDisabled = McpSettings.DEFAULT_DISABLED_TOOLS
+        assertTrue("ide_edit_member should be disabled by default", ToolNames.EDIT_MEMBER in defaultDisabled)
+        assertTrue("ide_insert_member should be disabled by default", ToolNames.INSERT_MEMBER in defaultDisabled)
+        assertTrue("ide_replace_member should be disabled by default", ToolNames.REPLACE_MEMBER in defaultDisabled)
     }
 
 }

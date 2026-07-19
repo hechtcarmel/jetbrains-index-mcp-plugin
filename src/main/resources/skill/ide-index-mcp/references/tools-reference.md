@@ -242,14 +242,14 @@ Build call tree showing who calls a method or what a method calls.
 **Returns**: `{ element: {name, file, line, column, language}, calls: [{name, file, line, column, language, children: [...]}] }`
 
 ### ide_file_structure (disabled by default)
-Get hierarchical file structure like IDE's Structure panel.
+Get hierarchical file structure like IDE's Structure panel. Each element includes both start and end line numbers (e.g., `(lines 42-65)` for multi-line elements, `(line 42)` for single-line elements).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | string | yes | Relative file path |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, line numbers)
+**Returns**: `{ file, language, structure }` (formatted tree with types, modifiers, signatures, and start/end line numbers)
 **Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
@@ -323,7 +323,7 @@ Move a file to a new directory. Applies language-aware reference, import, and pa
 **Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
 **Supports IDE undo** (Ctrl+Z).
 
-### ide_refactor_safe_delete (Java/Kotlin only)
+### ide_refactor_safe_delete (Java, Kotlin)
 Delete a symbol or file, checking for usages first.
 
 | Parameter | Type | Required | Description |
@@ -409,6 +409,55 @@ Find and replace text in a file using IntelliJ's Document API. Performs plain te
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ success, file, replacements, message }`
+
+### ide_edit_member (disabled by default, Java, Kotlin)
+Replace an entire member declaration (signature + body) with new content.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Relative file path |
+| `class` | string | no | Class name to scope the search |
+| `member` | string | yes | Name of the member to replace |
+| `parameterCount` | integer | no | Parameter count to disambiguate overloads |
+| `line` | integer | no | 1-based line to disambiguate same-name members |
+| `content` | string | yes | Full replacement declaration (signature + body) |
+| `reformat` | boolean | no | Reformat after replacement (default true) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, file, message, startLine, endLine }`
+
+### ide_insert_member (disabled by default, Java, Kotlin)
+Insert a new member at a structural position in a class or file.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Relative file path |
+| `class` | string | no | Class name to insert into (omit for top-level) |
+| `content` | string | yes | Full member declaration to insert |
+| `position` | enum | no | `before`, `after`, `first`, `last` (default `last`) |
+| `anchor` | string | no | Existing member name to position relative to (required for `before`/`after`) |
+| `anchorParameterCount` | integer | no | Parameter count to disambiguate anchor overloads |
+| `anchorLine` | integer | no | 1-based line to disambiguate anchor |
+| `reformat` | boolean | no | Reformat after insertion (default true) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, file, message, startLine, endLine }`
+
+### ide_replace_member (disabled by default, Java, Kotlin)
+Replace a method body or field initializer only, preserving the signature.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Relative file path |
+| `class` | string | no | Class name to scope the search |
+| `member` | string | yes | Name of the member whose body/initializer to replace |
+| `parameterCount` | integer | no | Parameter count to disambiguate overloads |
+| `line` | integer | no | 1-based line to disambiguate same-name members |
+| `content` | string | yes | New method body (without braces) or field initializer (without `=`) |
+| `reformat` | boolean | no | Reformat after replacement (default true) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, file, message, startLine, endLine }`
 
 ---
 
