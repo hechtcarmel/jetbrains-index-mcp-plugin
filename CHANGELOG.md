@@ -3,9 +3,11 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+
+## [4.29.0] - 2026-07-19
 ### Added
-- **`ide_list_tests`** — List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.)
-- **`ide_run_tests`** — Run a test class or method by FQN using the IDE's run configuration infrastructure; returns structured pass/fail results with console output
+- **`ide_list_tests`** — List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(disabled by default)*
+- **`ide_run_tests`** — Run a test class or method by FQN using the IDE's run configuration infrastructure; returns structured pass/fail results *(disabled by default)*
 
 ## [4.28.0] - 2026-07-18
 ### Added

@@ -986,7 +986,7 @@ List all test methods discovered by the IDE's test framework extension points (J
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
-Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results and console output.
+Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages.
 
 Results are read directly from the IDE's test runner rather than from report files on disk, so they always reflect this run and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 
@@ -1002,7 +1002,7 @@ Results are read directly from the IDE's test runner rather than from report fil
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
-| `target` | string | Yes | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo` or `com.example.MyTest.testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
+| `target` | string | Yes | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
 | `timeoutSeconds` | integer | No | Max seconds to wait for test completion (default: 120) |
 
 **Example Request:**
@@ -1025,6 +1025,7 @@ Results are read directly from the IDE's test runner rather than from report fil
 {
   "success": true,
   "timedOut": false,
+  "noTestsFound": false,
   "exitCode": 0,
   "passed": 3,
   "failed": 0,

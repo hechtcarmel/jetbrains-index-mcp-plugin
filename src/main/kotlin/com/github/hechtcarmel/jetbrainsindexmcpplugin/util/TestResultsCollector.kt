@@ -5,15 +5,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestRunEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
-import com.intellij.execution.testframework.sm.runner.states.TestStateInfo.Magnitude
 import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
 import com.intellij.execution.testframework.sm.runner.ui.SMTestRunnerResultsForm
+import com.intellij.execution.ui.ConsoleViewWithDelegate
 import com.intellij.execution.ui.ExecutionConsole
 import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
-import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import com.intellij.profiler.ultimate.widget.JavaConsoleWithProfilerWidget
 import com.intellij.psi.PsiDocumentManager
 
 data class TestCollectionResult(
@@ -24,7 +22,6 @@ data class TestCollectionResult(
 
 object TestResultsCollector {
 
-    private val LOG = logger<TestResultsCollector>()
     private const val MAX_STACKTRACE_LENGTH = 500
 
     fun collect(
@@ -102,19 +99,11 @@ object TestResultsCollector {
         extractTestRunnerResultsViewer(console)?.root as? SMTestProxy.SMRootTestProxy
 
     internal fun extractTestRunnerResultsViewer(console: ExecutionConsole?): SMTestRunnerResultsForm? {
-        if (console == null) return null
-        try {
-            if (console is JavaConsoleWithProfilerWidget && console.delegate is SMTRunnerConsoleView) {
-                return (console.delegate as SMTRunnerConsoleView).resultsViewer
-            }
-            if (console is SMTRunnerConsoleView) {
-                return console.resultsViewer
-            }
-            return null
-        } catch (e: Exception) {
-            LOG.debug("Failed to extract test results viewer", e)
-            return null
-        }
+        // Wrappers like the Ultimate profiler's JavaConsoleWithProfilerWidget expose the real
+        // console via the platform ConsoleViewWithDelegate interface. Never reference such
+        // wrapper classes directly — they are internal, Ultimate-only, and absent in most IDEs.
+        val unwrapped = (console as? ConsoleViewWithDelegate)?.delegate ?: console
+        return (unwrapped as? SMTRunnerConsoleView)?.resultsViewer
     }
 
     private fun computeSummary(leafTests: List<SMTestProxy>, runConfigName: String?): TestSummary {

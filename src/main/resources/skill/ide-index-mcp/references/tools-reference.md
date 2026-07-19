@@ -467,7 +467,7 @@ Run tests via the IDE's run configuration infrastructure. Results are read from 
 | `target` | string | yes | Existing run config name (any language), or a Java/Kotlin class FQN (`com.example.MyTest`) / method FQN (`com.example.MyTest#testFoo`) — FQN forms are Java/Kotlin-only |
 | `timeoutSeconds` | integer | no | Max seconds to wait for test completion (default 120) |
 
-**Returns**: `{ success, timedOut, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?}], output }`
+**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?}] }`
 
 ### ide_reload_project (disabled by default)
 Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.
