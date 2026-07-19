@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -340,6 +341,56 @@ data class OpenFileResult(
     val file: String,
     val opened: Boolean,
     val message: String
+)
+
+// ide_list_tests output
+@Serializable
+data class TestEntry(
+    val framework: String,
+    val className: String,
+    val methodName: String?,
+    val displayName: String,
+    val file: String,
+    val line: Int
+)
+
+@Serializable
+data class ListTestsResult(
+    val tests: List<TestEntry>,
+    val count: Int,
+    val truncated: Boolean
+)
+
+// ide_run_tests output
+@Serializable
+enum class TestStatus {
+    @SerialName("passed") PASSED,
+    @SerialName("failed") FAILED,
+    @SerialName("error") ERROR,
+    @SerialName("skipped") SKIPPED;
+
+    /** Statuses that carry a failure/error message. */
+    val isFailure: Boolean get() = this == FAILED || this == ERROR
+}
+
+@Serializable
+data class TestRunEntry(
+    val name: String,
+    val status: TestStatus,
+    val errorMessage: String? = null
+)
+
+@Serializable
+data class RunTestsResult(
+    val success: Boolean,
+    val timedOut: Boolean,
+    val noTestsFound: Boolean,
+    val exitCode: Int,
+    val passed: Int,
+    val failed: Int,
+    val errors: Int,
+    val total: Int,
+    val tests: List<TestRunEntry>
 )
 
 // ide_search_text output

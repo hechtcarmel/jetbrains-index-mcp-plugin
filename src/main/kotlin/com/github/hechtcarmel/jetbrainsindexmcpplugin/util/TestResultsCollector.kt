@@ -1,12 +1,20 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInfo
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestRunEntry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
+import com.intellij.execution.testframework.sm.runner.states.TestStateInfo.Magnitude
+import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+import com.intellij.execution.testframework.sm.runner.ui.SMTestRunnerResultsForm
+import com.intellij.execution.ui.ExecutionConsole
 import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.profiler.ultimate.widget.JavaConsoleWithProfilerWidget
+import com.intellij.psi.PsiDocumentManager
 
 data class TestCollectionResult(
     val testResults: List<TestResultInfo>,
@@ -18,7 +26,6 @@ object TestResultsCollector {
 
     private val LOG = logger<TestResultsCollector>()
     private const val MAX_STACKTRACE_LENGTH = 500
-    private const val SM_CONSOLE_VIEW_CLASS = "com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView"
 
     fun collect(
         project: Project,
@@ -45,6 +52,44 @@ object TestResultsCollector {
         )
     }
 
+    fun collectRunEntries(root: SMTestProxy.SMRootTestProxy): List<TestRunEntry> =
+        root.allTests
+            .filter { it !== root && it.isLeaf && !it.isSuite && !it.isConfig }
+            .mapNotNull { test ->
+                // TODO: Use `test.magnitudeInfo` once API is stable
+                magnitudeIndexToStatus(test.magnitude)?.let {
+                    TestRunEntry(
+                        name = composeName(test.name, test.parent?.name),
+                        status = it,
+                        errorMessage = if (it.isFailure) test.errorMessage else null
+                    )
+                }
+            }
+
+    /** Composes a test display name from the test name and its optional parent (suite) name. */
+    internal fun composeName(testName: String, parentName: String?): String {
+        val suite = parentName?.takeIf { it.isNotBlank() }
+        return if (suite != null) "$suite.$testName" else testName
+    }
+
+    /**
+     * Maps the integer value of [SMTestProxy.getMagnitude] to a [TestStatus], or null for
+     * non-terminal states (not-run, running, terminated).
+     *
+     * Values are obtained from the public [SMTestProxy.getMagnitude] method (which returns
+     * Magnitude.getValue()) to avoid importing the @Internal Magnitude type directly.
+     * Suite nodes (COMPLETE_INDEX = 1, same int as PASSED_INDEX) are excluded upstream in
+     * [collectRunEntries] via isSuite(), so value 1 can be safely mapped to PASSED here.
+     *
+     */
+    internal fun magnitudeIndexToStatus(index: Int): TestStatus? = when (index) {
+        0, 5 -> TestStatus.SKIPPED  // SKIPPED_INDEX, IGNORED_INDEX
+        1 -> TestStatus.PASSED      // PASSED_INDEX (suites share this value but are filtered upstream)
+        6 -> TestStatus.FAILED      // FAILED_INDEX
+        8 -> TestStatus.ERROR       // ERROR_INDEX
+        else -> null                // NOT_RUN(2), RUNNING(3), TERMINATED(4)
+    }
+
     private fun findTestRootProxyAndName(descriptors: List<RunContentDescriptor>): Pair<SMTestProxy.SMRootTestProxy, String?>? {
         for (descriptor in descriptors) {
             val root = extractRootProxy(descriptor.executionConsole)
@@ -53,17 +98,21 @@ object TestResultsCollector {
         return null
     }
 
-    private fun extractRootProxy(console: Any?): SMTestProxy.SMRootTestProxy? {
+    private fun extractRootProxy(console: ExecutionConsole?): SMTestProxy.SMRootTestProxy? =
+        extractTestRunnerResultsViewer(console)?.root as? SMTestProxy.SMRootTestProxy
+
+    internal fun extractTestRunnerResultsViewer(console: ExecutionConsole?): SMTestRunnerResultsForm? {
         if (console == null) return null
         try {
-            val smConsoleClass = Class.forName(SM_CONSOLE_VIEW_CLASS)
-            if (!smConsoleClass.isInstance(console)) return null
-
-            val resultsViewer = console.javaClass.getMethod("getResultsViewer").invoke(console)
-            val root = resultsViewer.javaClass.getMethod("getRoot").invoke(resultsViewer)
-            return root as? SMTestProxy.SMRootTestProxy
+            if (console is JavaConsoleWithProfilerWidget && console.delegate is SMTRunnerConsoleView) {
+                return (console.delegate as SMTRunnerConsoleView).resultsViewer
+            }
+            if (console is SMTRunnerConsoleView) {
+                return console.resultsViewer
+            }
+            return null
         } catch (e: Exception) {
-            LOG.debug("Failed to extract test root proxy", e)
+            LOG.debug("Failed to extract test results viewer", e)
             return null
         }
     }
@@ -133,7 +182,7 @@ object TestResultsCollector {
                 val containingFile = psiElement.containingFile?.virtualFile
                 if (containingFile != null) {
                     file = ProjectUtils.getRelativePath(project, containingFile.path)
-                    val document = com.intellij.psi.PsiDocumentManager.getInstance(project).getDocument(psiElement.containingFile)
+                    val document = PsiDocumentManager.getInstance(project).getDocument(psiElement.containingFile)
                     if (document != null) {
                         line = document.getLineNumber(psiElement.textOffset) + 1
                     }

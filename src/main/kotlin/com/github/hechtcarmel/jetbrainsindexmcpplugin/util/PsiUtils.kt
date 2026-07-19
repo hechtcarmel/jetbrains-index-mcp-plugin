@@ -8,11 +8,14 @@ import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.toNioPathOrNull
+import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiQualifiedNamedElement
 import com.intellij.psi.PsiReference
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -287,7 +290,38 @@ object PsiUtils {
         return ancestors.asReversed()
     }
 
-    fun findNamedElement(element: PsiElement): PsiNamedElement? {
+    /**
+     * Reflective accessors, in priority order, that yield a class-like element's fully qualified
+     * name when the platform [PsiQualifiedNamedElement] interface is not implemented.
+     *
+     * - `getFqName` — Kotlin (`KtNamedDeclaration`, returns an `FqName` whose `toString()` is the dotted name).
+     * - `getFQN` — PHP (`PhpClass`, returns a `\Namespace\Class` string).
+     */
+    private val QUALIFIED_NAME_ACCESSORS = listOf("getFqName", "getFQN")
+
+    /**
+     * Best-effort fully qualified name of a class-like [element], across languages.
+     *
+     * Resolution order: the platform [PsiQualifiedNamedElement] interface (Java and any language
+     * implementing it), then the language-specific accessors in [QUALIFIED_NAME_ACCESSORS] via
+     * reflection (so no compile-time dependency on the Kotlin/PHP plugins is required).
+     *
+     * @return the qualified name, or null if none can be derived — callers should fall back to the
+     *   simple name.
+     */
+    fun qualifiedName(element: PsiElement): String? {
+        (element as? PsiQualifiedNamedElement)?.qualifiedName?.takeIf { it.isNotBlank() }?.let { return it }
+
+        for (accessor in QUALIFIED_NAME_ACCESSORS) {
+            val value = runCatching {
+                element.javaClass.getMethod(accessor).invoke(element)?.toString()
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            if (value != null) return value
+        }
+        return null
+    }
+
+    fun findNamedElement(element: PsiElement?): PsiNamedElement? {
         var current: PsiElement? = element
         while (current != null) {
             // Exclude PsiFile - it's too high-level to be a useful "named element" target
@@ -317,6 +351,47 @@ object PsiUtils {
      */
     fun getNavigationElement(element: PsiElement): PsiElement {
         return element.navigationElement ?: element
+    }
+
+    // Kotlin PSI classes — loaded lazily to avoid a compile-time dependency on the Kotlin plugin.
+    private val ktClassOrObjectClass: Class<*>? by lazy {
+        runCatching { Class.forName("org.jetbrains.kotlin.psi.KtClassOrObject") }.getOrNull()
+    }
+    private val lightClassUtilsClass: Class<*>? by lazy {
+        runCatching { Class.forName("org.jetbrains.kotlin.asJava.LightClassUtilsKt") }.getOrNull()
+    }
+
+    /**
+     * Returns [element] as a [PsiClass], or null if it cannot be resolved as one.
+     *
+     * Handles both Java [PsiClass] elements directly and Kotlin physical AST nodes
+     * (KtClass / KtObject) by converting them to their light class via `toLightClass`.
+     * The light class implements [PsiClass] and exposes methods, fields, and supers
+     * through the standard Java PSI API.
+     */
+    fun resolveAsPsiClass(element: PsiElement): PsiClass? {
+        if (element is PsiClass) return element
+        val ktClassOrObject = ktClassOrObjectClass ?: return null
+        val lightClassUtils = lightClassUtilsClass ?: return null
+        if (!ktClassOrObject.isInstance(element)) return null
+        return runCatching {
+            lightClassUtils.getMethod("toLightClass", ktClassOrObject).invoke(null, element) as? PsiClass
+        }.getOrNull()
+    }
+
+    /**
+     * Returns the light [PsiMethod] representations of a Kotlin declaration element
+     * (KtNamedFunction, KtPropertyAccessor, KtProperty) via `toLightMethods()`.
+     *
+     * Returns an empty list when the Kotlin plugin is unavailable, the element has no
+     * corresponding JVM method (e.g. a local `val`), or reflection fails.
+     */
+    fun toLightMethods(element: PsiElement): List<PsiMethod> {
+        val lightClassUtils = lightClassUtilsClass ?: return emptyList()
+        @Suppress("UNCHECKED_CAST")
+        return runCatching {
+            lightClassUtils.getMethod("toLightMethods", PsiElement::class.java).invoke(null, element) as? List<PsiMethod>
+        }.getOrNull() ?: emptyList()
     }
 }
 

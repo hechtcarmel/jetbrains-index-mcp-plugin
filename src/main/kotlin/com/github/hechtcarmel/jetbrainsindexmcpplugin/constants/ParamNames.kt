@@ -77,6 +77,9 @@ object ParamNames {
     const val INCLUDE_RAW_OUTPUT = "includeRawOutput"
     const val TIMEOUT_SECONDS = "timeoutSeconds"
 
+    // Test parameters
+    const val TARGET = "target"
+
     // Diagnostics parameters
     const val INCLUDE_BUILD_ERRORS = "includeBuildErrors"
     const val INCLUDE_TEST_RESULTS = "includeTestResults"

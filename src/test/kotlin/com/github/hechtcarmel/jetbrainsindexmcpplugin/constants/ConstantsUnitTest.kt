@@ -65,6 +65,8 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.CHANGE_SIGNATURE,
             ToolNames.CREATE_FILE,
             ToolNames.STRUCTURAL_SEARCH_REPLACE,
+            ToolNames.LIST_TESTS,
+            ToolNames.RUN_TESTS,
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,
             ToolNames.REFACTOR_MOVE,

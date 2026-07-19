@@ -242,7 +242,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **45 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **47 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -263,6 +263,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
 | `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(disabled by default, requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
+| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Class/method **FQN targeting is Java/Kotlin-only**; other languages pass an existing run-config name *(disabled by default)* |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
@@ -294,10 +295,11 @@ These tools activate based on available language plugins:
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
-### Java-Specific Refactoring Tools
+### Java-Specific Tools
 
 | Tool | Description |
 |------|-------------|
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(disabled by default, requires Java plugin)* |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
 | `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
 
@@ -338,21 +340,21 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
-| Android Studio | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
-| PyCharm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
-| WebStorm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
-| GoLand | ✓ 16 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
-| RustRover | ✓ 16 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
-| PhpStorm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| IntelliJ IDEA | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| Android Studio | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| PyCharm | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| WebStorm | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| GoLand | ✓ 25 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
+| RustRover | ✓ 25 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
+| PhpStorm | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
-| CLion | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
-| DataGrip | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| RubyMine | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| CLion | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| DataGrip | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
 > **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 

@@ -9,12 +9,13 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 
 private object ToolSettingsDefaults {
-    const val CURRENT_SCHEMA_VERSION = 3
+    const val CURRENT_SCHEMA_VERSION = 4
 
     val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
         ToolNames.BUILD_PROJECT,
         ToolNames.CLOSE_PROJECT,
         ToolNames.IMPORT_MODULES,
+        ToolNames.LIST_TESTS,
         ToolNames.RELOAD_PROJECT,
         ToolNames.FILE_STRUCTURE,
         ToolNames.FIND_SYMBOL,
@@ -26,6 +27,7 @@ private object ToolSettingsDefaults {
         ToolNames.REFORMAT_CODE,
         ToolNames.OPTIMIZE_IMPORTS,
         ToolNames.CONVERT_JAVA_TO_KOTLIN,
+        ToolNames.RUN_TESTS,
         ToolNames.SET_POWER_SAVE_MODE,
         ToolNames.INSTALL_PLUGIN,
         ToolNames.RESTART_IDE,
@@ -49,6 +51,7 @@ private object ToolSettingsDefaults {
         1 to setOf(ToolNames.IMPORT_MODULES),
         2 to setOf(ToolNames.OPEN_WORKSPACE),
         3 to setOf(ToolNames.CHANGE_SIGNATURE, ToolNames.CREATE_FILE, ToolNames.REPLACE_TEXT_IN_FILE, ToolNames.STRUCTURAL_SEARCH_REPLACE),
+        4 to setOf(ToolNames.LIST_TESTS, ToolNames.RUN_TESTS)
     )
 }
 
