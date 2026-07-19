@@ -353,7 +353,12 @@ object PsiUtils {
         return element.navigationElement ?: element
     }
 
-    // Kotlin PSI classes — loaded lazily to avoid a compile-time dependency on the Kotlin plugin.
+    // Java/Kotlin PSI classes — loaded lazily to avoid a compile-time dependency on those plugins.
+    // PsiClass lives in the Java plugin, not the platform: an `element is PsiClass` check would
+    // throw NoClassDefFoundError in IDEs without it (e.g. PhpStorm resolving a PhpClass here).
+    private val psiClassInterface: Class<*>? by lazy {
+        runCatching { Class.forName("com.intellij.psi.PsiClass") }.getOrNull()
+    }
     private val ktClassOrObjectClass: Class<*>? by lazy {
         runCatching { Class.forName("org.jetbrains.kotlin.psi.KtClassOrObject") }.getOrNull()
     }
@@ -368,9 +373,11 @@ object PsiUtils {
      * (KtClass / KtObject) by converting them to their light class via `toLightClass`.
      * The light class implements [PsiClass] and exposes methods, fields, and supers
      * through the standard Java PSI API.
+     *
+     * Safe to call in IDEs without the Java plugin — returns null instead of touching Java PSI.
      */
     fun resolveAsPsiClass(element: PsiElement): PsiClass? {
-        if (element is PsiClass) return element
+        if (psiClassInterface?.isInstance(element) == true) return element as PsiClass
         val ktClassOrObject = ktClassOrObjectClass ?: return null
         val lightClassUtils = lightClassUtilsClass ?: return null
         if (!ktClassOrObject.isInstance(element)) return null
