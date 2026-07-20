@@ -239,10 +239,11 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         val scTypeDef = findContainingScTypeDefinition(element) ?: return null
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         return TypeHierarchyData(
             element = TypeElementData(
@@ -340,9 +341,10 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         findContainingScFunction(element)?.let { return findMethodImplementations(project, it, searchScope) }
         findContainingScTypeDefinition(element)?.let { return findTypeImplementations(project, it, searchScope) }
@@ -433,11 +435,12 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val visited = mutableSetOf<String>()
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val calls = if (direction == "callers") {
             findCallersRecursive(project, scFunction, depth, visited, searchScope = searchScope)
