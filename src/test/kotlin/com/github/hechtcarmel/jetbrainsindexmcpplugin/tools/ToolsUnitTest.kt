@@ -20,6 +20,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTex
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CreateModuleTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
@@ -1364,4 +1365,29 @@ class ToolsUnitTest : TestCase() {
         assertTrue("ide_replace_member should be disabled by default", ToolNames.REPLACE_MEMBER in defaultDisabled)
     }
 
+
+    // ── ide_create_module tests ────────────────────────────────────────────────
+
+    fun testCreateModuleToolSchema() {
+        val tool = CreateModuleTool()
+        assertEquals(ToolNames.CREATE_MODULE, tool.name)
+        assertNotNull(tool.description)
+
+        val schema = tool.inputSchema
+        assertEquals(SchemaConstants.TYPE_OBJECT, schema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+
+        val properties = schema[SchemaConstants.PROPERTIES]?.jsonObject
+        assertNotNull(properties)
+        assertNotNull("Should have path property", properties?.get("path"))
+        assertNotNull("Should have name property", properties?.get("name"))
+        assertNotNull("Should have excludes property", properties?.get("excludes"))
+        assertNotNull("Should have project_path property", properties?.get(ParamNames.PROJECT_PATH))
+
+        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        assertTrue("path should be required", required?.contains("path") == true)
+    }
+
+    fun testCreateModuleToolIsDisabledByDefault() {
+        assertTrue(ToolNames.CREATE_MODULE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    }
 }

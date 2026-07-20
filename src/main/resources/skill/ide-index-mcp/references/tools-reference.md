@@ -570,6 +570,18 @@ Close an open project window and free its memory. Non-blocking; returns once the
 
 **Returns**: text confirmation, e.g. `Project 'name' is closing.`
 
+### ide_create_module (disabled by default)
+Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | yes | Absolute directory path to add as a module content root |
+| `name` | string | no | Module name (defaults to directory name) |
+| `excludes` | string[] | no | Relative paths to exclude from indexing (e.g., `["node_modules", "dist"]`) |
+| `project_path` | string | no | Target project when multiple are open |
+
+**Returns**: text confirmation with module name, content root path, and count of excluded directories.
+
 ### ide_open_project (disabled by default)
 Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects.
 
