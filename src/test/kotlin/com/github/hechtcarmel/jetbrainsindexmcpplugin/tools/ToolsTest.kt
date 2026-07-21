@@ -673,14 +673,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testSearchTextToolFindsSubstringOfUnderscoreSeparatedToken() = runBlocking {
-        // A YAML file contains `a_word_and_another_word` as one underscore-separated identifier.
-        // Searching for `a_word` (a prefix/substring) must return a match, just as IntelliJ's
-        // own Find in Files dialog does with "In Project".
-        //
-        // The old implementation used PsiSearchHelper.processElementsWithWord, which only matches
-        // whole word tokens from the word index. Because underscores do not split identifiers into
-        // separate tokens, `a_word_and_another_word` is stored as one token — making a prefix
-        // search for `a_word` return zero results.
         myFixture.addFileToProject(
             "infra/alerts.yaml",
             """
