@@ -1,47 +1,29 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.TypeHierarchyTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool.Companion.buildCompiledElementErrorMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.lang.java.JavaLanguage
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiManager
-import com.intellij.psi.PsiMethod
-import com.intellij.psi.PsiTypes
+import com.intellij.psi.*
 import com.intellij.psi.augment.PsiAugmentProvider
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.impl.light.LightMethodBuilder
@@ -49,18 +31,10 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.*
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /**
  * Platform-dependent tests that require IntelliJ Platform indexing.
@@ -697,6 +671,45 @@ class ToolsTest : BasePlatformTestCase() {
 
         assertEquals(listOf("src/CommandRunner.java"), files)
     }
+
+    fun testSearchTextToolFindsSubstringOfUnderscoreSeparatedToken() = runBlocking {
+        // Real-world scenario: a YAML file contains `cmt_jobs_stale_cases` as one
+        // underscore-separated identifier. Searching for `cmt_jobs_stale` (a prefix/substring)
+        // must return a match, just as IntelliJ's own Find in Files dialog does with "In Project".
+        //
+        // The old implementation used PsiSearchHelper.processElementsWithWord, which only matches
+        // whole word tokens from the word index. Because underscores do not split YAML identifiers
+        // into separate tokens, `cmt_jobs_stale_cases` is stored as one token — making a prefix
+        // search for `cmt_jobs_stale` return zero results.
+        myFixture.addFileToProject(
+            "infra/alerts.yaml",
+            """
+            rules:
+              - alert: StuckCases
+                expr: 'max(cmt_jobs_stale_cases{queue="Privacy"}) > 0'
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "cmt_jobs_stale")
+        })
+
+        assertFalse("Search should not return an error", result.isError)
+        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        val matches = resultJson["matches"]!!.jsonArray
+        assertTrue(
+            "Should find 'cmt_jobs_stale' as a substring of 'cmt_jobs_stale_cases' — " +
+                    "matching IDE Find in Files behavior. Got 0 matches.",
+            matches.isNotEmpty()
+        )
+        val files = matches.map { it.jsonObject["file"]!!.jsonPrimitive.content }
+        assertTrue(
+            "Match should be in infra/alerts.yaml, got: $files",
+            files.any { it.endsWith("alerts.yaml") }
+        )
+    }
+
 
     // Intelligence Tools Tests
 
