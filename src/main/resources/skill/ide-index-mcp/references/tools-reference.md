@@ -134,11 +134,11 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 **Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_search_text
-Search for text using IDE's pre-built word index for exact searches or IntelliJ Find in Files for regex searches.
+Search for text using IntelliJ Find in Files. Plain-text queries do substring matching (e.g. `cmt_jobs_stale` finds `cmt_jobs_stale_cases`); regex queries use regular expression matching.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | yes | Text to search for; exact word unless `regex` is true |
+| `query` | string | yes | Text to search for; substring match unless `regex` is true |
 | `regex` | boolean | no | Treat `query` as a regular expression. Default false |
 | `context` | enum | no | `all` (default), `code`, `comments`, `strings` |
 | `caseSensitive` | boolean | no | Default true |

@@ -142,7 +142,7 @@ Omit `paths` to sync the entire project.
 
 8. **Not syncing after external file changes**: After creating files via Write tool, call `ide_sync_files` before searching.
 
-9. **Assuming regex is the default in `ide_search_text`**: Regex requires `"regex": true`; otherwise the tool uses the faster exact-word index.
+9. **Assuming regex is the default in `ide_search_text`**: Regex requires `"regex": true`; otherwise the tool does plain-text substring matching.
 
 10. **Using `ide_find_class` for methods/functions**: It searches classes only. Use `ide_search_text` for a quick word lookup.
 

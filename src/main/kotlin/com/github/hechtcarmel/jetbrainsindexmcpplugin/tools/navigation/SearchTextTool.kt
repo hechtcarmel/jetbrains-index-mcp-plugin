@@ -50,11 +50,9 @@ class SearchTextTool : AbstractMcpTool() {
     override val name = ToolNames.SEARCH_TEXT
 
     override val description = """
-        Search for text using IDE's word index or IntelliJ Find in Files.
+        Search for text using IntelliJ Find in Files.
 
-        Exact searches use a pre-built word index for O(1) lookups instead of scanning all files. Regex searches use IntelliJ's Find in Files path.
-
-        Note: both plain-text and regex searches now use IntelliJ's Find in Files engine, matching the IDE's own search behaviour and supporting substring matching (e.g. "cmt_jobs_stale" finds "cmt_jobs_stale_cases").
+        Searches use IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching so a query like "cmt_jobs_stale" correctly finds "cmt_jobs_stale_cases". Regex searches use the same engine with regular expression matching.
 
         Context filtering: search only in code, comments, or string literals.
         File filtering: pass filePattern with an IntelliJ file mask such as "*.kt" or "*.java,!*Test.java".
@@ -69,7 +67,7 @@ class SearchTextTool : AbstractMcpTool() {
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .stringProperty(ParamNames.QUERY, "Text to search for. Treated as an exact word unless regex is true. Required for fresh search, ignored when cursor is provided.")
+        .stringProperty(ParamNames.QUERY, "Text to search for. Treated as a substring (plain text) or pattern (when regex is true). Required for fresh search, ignored when cursor is provided.")
         .booleanProperty(ParamNames.REGEX, "Treat query as a regular expression. Default: false.")
         .enumProperty(ParamNames.CONTEXT, "Where to search: \"code\", \"comments\", \"strings\", \"all\". Default: \"all\".", listOf("code", "comments", "strings", "all"))
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case sensitive search. Default: true.")

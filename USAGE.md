@@ -17,7 +17,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
 | `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
-| `ide_search_text` | Text search using word index | Enabled |
+| `ide_search_text` | Text search using IntelliJ Find in Files (substring + regex) | Enabled |
 | `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
@@ -527,10 +527,10 @@ Searches for files by name using the IDE's file index.
 
 ### ide_search_text
 
-Searches for text using the IDE's pre-built word index. Significantly faster than file scanning.
+Searches for text using IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching (e.g. `cmt_jobs_stale` finds `cmt_jobs_stale_cases`); regex queries use regular expression matching.
 
 **Use when:**
-- Searching for exact word occurrences across the codebase
+- Searching for text or patterns across the codebase
 - Finding string literals, comments, or code patterns
 - Filtering searches by context (code only, comments only, strings only)
 
@@ -538,7 +538,7 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | Yes | Text to search for; treated as an exact word unless `regex` is `true` |
+| `query` | string | Yes | Text to search for; treated as a substring unless `regex` is `true` |
 | `regex` | boolean | No | Treat `query` as a regular expression (default: false) |
 | `context` | string | No | Where to search: `"code"`, `"comments"`, `"strings"`, or `"all"` (default) |
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
