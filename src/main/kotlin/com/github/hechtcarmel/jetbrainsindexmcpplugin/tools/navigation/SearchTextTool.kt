@@ -34,8 +34,8 @@ import java.util.regex.PatternSyntaxException
  * Text search using IntelliJ Find in Files.
  *
  * All searches (plain-text and regex) use FindInProjectUtil, matching the IDE's own Find in Files
- * behaviour. Plain-text queries do substring matching so a query like "cmt_jobs_stale" correctly
- * finds "cmt_jobs_stale_cases" — unlike the word-index API which only matches complete tokens.
+ * behaviour. Plain-text queries do substring matching so a query like "a_word" correctly
+ * finds "a_word_and_another_word" — unlike the word-index API which only matches complete tokens.
  *
  * Supports context filtering: search only in code, comments, or string literals.
  */
@@ -52,7 +52,7 @@ class SearchTextTool : AbstractMcpTool() {
     override val description = """
         Search for text using IntelliJ Find in Files.
 
-        Searches use IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching so a query like "cmt_jobs_stale" correctly finds "cmt_jobs_stale_cases". Regex searches use the same engine with regular expression matching.
+        Searches use IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching so a query like "a_word" correctly finds "a_word_and_another_word". Regex searches use the same engine with regular expression matching.
 
         Context filtering: search only in code, comments, or string literals.
         File filtering: pass filePattern with an IntelliJ file mask such as "*.kt" or "*.java,!*Test.java".
@@ -121,7 +121,7 @@ class SearchTextTool : AbstractMcpTool() {
         // Always use FindInProjectUtil (mirrors IDE's Find in Files) so that plain-text queries
         // do substring matching rather than whole-word token matching. The word-index API
         // (PsiSearchHelper.processElementsWithWord) only finds complete tokens: a query like
-        // "cmt_jobs_stale" yields zero results when the file contains "cmt_jobs_stale_cases",
+        // "a_word" yields zero results when the file contains "a_word_and_another_word",
         // because underscores are word characters and the whole identifier is one token.
         val findModel = if (regex) {
             try {

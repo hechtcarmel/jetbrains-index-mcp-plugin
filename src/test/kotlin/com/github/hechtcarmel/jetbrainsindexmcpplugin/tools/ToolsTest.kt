@@ -673,33 +673,33 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testSearchTextToolFindsSubstringOfUnderscoreSeparatedToken() = runBlocking {
-        // Real-world scenario: a YAML file contains `cmt_jobs_stale_cases` as one
-        // underscore-separated identifier. Searching for `cmt_jobs_stale` (a prefix/substring)
-        // must return a match, just as IntelliJ's own Find in Files dialog does with "In Project".
+        // A YAML file contains `a_word_and_another_word` as one underscore-separated identifier.
+        // Searching for `a_word` (a prefix/substring) must return a match, just as IntelliJ's
+        // own Find in Files dialog does with "In Project".
         //
         // The old implementation used PsiSearchHelper.processElementsWithWord, which only matches
-        // whole word tokens from the word index. Because underscores do not split YAML identifiers
-        // into separate tokens, `cmt_jobs_stale_cases` is stored as one token — making a prefix
-        // search for `cmt_jobs_stale` return zero results.
+        // whole word tokens from the word index. Because underscores do not split identifiers into
+        // separate tokens, `a_word_and_another_word` is stored as one token — making a prefix
+        // search for `a_word` return zero results.
         myFixture.addFileToProject(
             "infra/alerts.yaml",
             """
             rules:
               - alert: StuckCases
-                expr: 'max(cmt_jobs_stale_cases{queue="Privacy"}) > 0'
+                expr: 'max(a_word_and_another_word) > 0'
             """.trimIndent()
         )
         IndexingTestUtil.waitUntilIndexesAreReady(project)
 
         val result = SearchTextTool().execute(project, buildJsonObject {
-            put("query", "cmt_jobs_stale")
+            put("query", "a_word")
         })
 
         assertFalse("Search should not return an error", result.isError)
         val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
         val matches = resultJson["matches"]!!.jsonArray
         assertTrue(
-            "Should find 'cmt_jobs_stale' as a substring of 'cmt_jobs_stale_cases' — " +
+            "Should find 'a_word' as a substring of 'a_word_and_another_word' — " +
                     "matching IDE Find in Files behavior. Got 0 matches.",
             matches.isNotEmpty()
         )

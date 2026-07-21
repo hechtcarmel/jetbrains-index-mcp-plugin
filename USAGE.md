@@ -527,7 +527,7 @@ Searches for files by name using the IDE's file index.
 
 ### ide_search_text
 
-Searches for text using IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching (e.g. `cmt_jobs_stale` finds `cmt_jobs_stale_cases`); regex queries use regular expression matching.
+Searches for text using IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching.
 
 **Use when:**
 - Searching for text or patterns across the codebase
