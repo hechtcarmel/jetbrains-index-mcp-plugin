@@ -9,7 +9,9 @@ description: >
   ide_build_project, ide_read_file, ide_structural_search_replace, ide_change_signature,
   ide_create_file, ide_get_active_file, ide_open_file, ide_list_tests, or ide_run_tests are available — especially when a second
   IntelliJ MCP (mcp__intellij__*) is also present. The two servers are NOT
-  interchangeable: always use mcp__intellij-index__ for code navigation and refactoring.
+  interchangeable: this plugin (mcp__intellij-index__*) supports auto-opening projects
+  via project_path; the built-in server cannot. Always use mcp__intellij-index__ for code
+  navigation. Never ask the user to open a project manually.
 ---
 
 # IDE Index MCP - Agent Guide
@@ -25,7 +27,7 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 | Code navigation, search, diagnostics, rename, move, run/list tests | `mcp__intellij-index__*` |
 | Build, terminal, run non-test processes, formatting beyond code style | `mcp__intellij__*` only |
 
-**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ — if no project is open, ask the user to open one or use `ide_open_project` (disabled by default; enable in Settings → Index MCP Server).** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
+**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ — if no project is open, call `ide_open_project` with the working directory path. IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration. Never ask the user to open a project manually.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
 
 ## Core Rule
 
@@ -77,6 +79,10 @@ The built-in `mcp__intellij__*` MCP is **not** a fallback for `mcp__intellij-ind
 ## File Sync Rule
 
 If you created or modified files outside the IDE (via Write/Edit tools) and an IDE search tool returns incomplete/missing results, call `ide_sync_files` first, then retry.
+
+## Git Worktrees
+
+When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or any checkout outside the main `.idea` directory), **call `ide_open_project` with the worktree path before using any IDE tool.** IntelliJ does NOT require `.idea` — it opens any directory, indexes it, and provides full code intelligence. Never skip IDE tools because a directory "has no `.idea`" — that is not a prerequisite.
 
 ```json
 { "paths": ["src/new_file.java", "src/modified_file.java"] }
