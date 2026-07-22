@@ -58,6 +58,21 @@ When requested, follow [SemVer](https://semver.org):
 | New tool / new feature | Minor (`x.Y.0`) |
 | Breaking schema / transport change | Major (`X.0.0`) |
 
+### Releasing (maintainer)
+
+Releases are published from GitHub — no manual Marketplace upload:
+
+1. Merge a version-bump PR (`pluginVersion` in `gradle.properties`). Changelog entries may stay
+   in `[Unreleased]` — the release pipeline moves them under the new version.
+2. The Build workflow on `main` creates a draft GitHub Release carrying the pending change notes.
+3. Press **Publish release** on the draft. The Release workflow signs the plugin, publishes it to
+   JetBrains Marketplace, attaches the zip to the release, and — if entries were still in
+   `[Unreleased]` — opens a `Changelog update - x.y.z` PR that moves them; merge it.
+
+Manually moving entries into a `## [x.y.z]` section in the bump PR also works: the pipeline
+detects the existing section and skips the changelog patch/PR. A `-beta.N` version suffix
+published as a GitHub **prerelease** goes to the Marketplace `beta` channel instead of stable.
+
 ---
 
 ## Adding a new tool — complete checklist

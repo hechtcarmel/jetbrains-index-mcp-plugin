@@ -18,7 +18,7 @@ if grep -q "^## \[Unreleased\]" CHANGELOG.md; then
 else
     fail "Missing ## [Unreleased] section — add one for user-visible changes"
 fi
-if git diff "${UPSTREAM_BASE:-HEAD~1}" HEAD -- CHANGELOG.md 2>/dev/null | grep -qE '"^\+## \[[0-9]"'; then
+if git diff "${UPSTREAM_BASE:-HEAD~1}" HEAD -- CHANGELOG.md 2>/dev/null | grep -qE '^\+## \[[0-9]'; then
     fail "New versioned release entry added — only the maintainer creates ## [x.y.z] sections"
 else
     ok "No versioned release entries added by contributor"
