@@ -100,15 +100,21 @@ if echo "$CMD" | grep -qE 'sed\s+-[a-zA-Z]*i' && \
   exit 2
 fi
 
-# python3 bulk replacement → ide_replace_text_in_file
-# Exception: scripts in /tmp/ are development tooling
+# python3 /tmp/ scripts — common hook bypass pattern.
+# Agents write Python scripts to /tmp that do file I/O on source files,
+# circumventing Edit/Write hooks. Block when python3 /tmp/ is the actual
+# command, not just mentioned in a string argument to another command.
+if echo "$CMD" | grep -qE '^python3\s+/tmp/' || \
+   echo "$CMD" | grep -qE '&&\s*python3\s+/tmp/|;\s*python3\s+/tmp/|\|\s*python3\s+/tmp/'; then
+  echo "BLOCK: Do not use python3 /tmp/ scripts to edit source files — this bypasses IntelliJ MCP hooks. Use ide_replace_text_in_file, ide_edit_member, ide_insert_member, or ide_create_file instead." >&2
+  exit 2
+fi
+
+# python3 -c with source file extensions (inline scripts)
 if echo "$CMD" | grep -qE 'python3\s' && \
-   echo "$CMD" | grep -qE '\.java|\.kt|\.ts|\.tsx|\.js|\.jsx|\.py' && \
-   echo "$CMD" | grep -qE 'replace|sub\(|re\.sub'; then
-  if echo "$CMD" | grep -qE 'python3\s+/tmp/'; then
-    exit 0
-  fi
-  echo "BLOCK: Use ide_replace_text_in_file instead of Python bulk replacement on source files." >&2
+   echo "$CMD" | grep -qE '\.java|\.kt|\.ts|\.tsx|\.js|\.jsx' && \
+   echo "$CMD" | grep -qE 'open\(|write\(|replace|sub\(|re\.sub'; then
+  echo "BLOCK: Use IntelliJ MCP tools instead of Python file manipulation on source files." >&2
   exit 2
 fi
 
@@ -146,6 +152,7 @@ exit 0
 | `grep -r "pattern" src/` | `ide_search_text` or `ide_find_references` |
 | `find . -name "*.java" \| xargs grep` | `ide_search_text` |
 | `sed -i 's/old/new/g' File.java` | `ide_replace_text_in_file` or `ide_refactor_rename` |
+| `python3 /tmp/script.py` (hook bypass) | `ide_replace_text_in_file`, `ide_edit_member`, etc. |
 | `python3 script.py` (bulk replace) | `ide_replace_text_in_file` |
 | `mv File.java newdir/` | `ide_move_file` |
 | `cp File.java Copy.java` | IDE refactoring |
@@ -155,7 +162,7 @@ exit 0
 
 - `mv` to `/tmp/` is allowed (backup, not a refactoring)
 - `rm` warns but doesn't block (delete-to-recreate is a valid pattern when a file has errors that prevent IDE tools from working)
-- Python scripts in `/tmp/` are allowed (development tooling)
+- `python3 /tmp/` is **blocked** — agents use this to bypass Edit/Write hooks by writing Python scripts that do file I/O directly
 
 ---
 
