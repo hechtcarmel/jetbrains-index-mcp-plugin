@@ -141,7 +141,11 @@ class SearchTextTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val cursorToken = run {
-            val matches = searchRegex(project, findModel, usageSearchContext, collectLimit)
+            val matches = try {
+                searchRegex(project, findModel, usageSearchContext, collectLimit)
+            } catch (e: PatternSyntaxException) {
+                return createErrorResult("Invalid filePattern mask: ${e.message}")
+            }
             createCursor(
                 project = project,
                 query = query,
@@ -261,13 +265,17 @@ class SearchTextTool : AbstractMcpTool() {
         seenKeys: Set<String>,
         limit: Int
     ): List<PaginationService.SerializedResult> {
-        return searchRegex(project, findModel, searchContext, limit, seenKeys)
-            .map { match ->
-                PaginationService.SerializedResult(
-                    key = "${match.file}:${match.line}",
-                    data = json.encodeToJsonElement(match)
-                )
-            }
+        return try {
+            searchRegex(project, findModel, searchContext, limit, seenKeys)
+                .map { match ->
+                    PaginationService.SerializedResult(
+                        key = "${match.file}:${match.line}",
+                        data = json.encodeToJsonElement(match)
+                    )
+                }
+        } catch (e: PatternSyntaxException) {
+            emptyList()
+        }
     }
 
     private fun searchRegex(
