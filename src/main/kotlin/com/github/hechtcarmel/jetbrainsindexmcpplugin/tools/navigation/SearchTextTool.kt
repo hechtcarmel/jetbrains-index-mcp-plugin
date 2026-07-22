@@ -85,19 +85,7 @@ class SearchTextTool : AbstractMcpTool() {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                SearchTextResult(
-                    matches = items,
-                    totalCount = page.totalCollected,
-                    query = page.metadata["query"] ?: "",
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
-            }
+            return buildPaginatedResult(cursor, pageSize, project)
         }
 
         val query = arguments[ParamNames.QUERY]?.jsonPrimitive?.content
@@ -154,19 +142,7 @@ class SearchTextTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
-            SearchTextResult(
-                matches = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
-        }
+        return buildPaginatedResult(cursorToken, pageSize, project)
     }
 
     private fun createCursor(
@@ -199,6 +175,21 @@ class SearchTextTool : AbstractMcpTool() {
             }
         )
     }
+
+    private suspend fun buildPaginatedResult(cursorToken: String, pageSize: Int?, project: Project): ToolCallResult =
+        buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
+            SearchTextResult(
+                matches = items,
+                totalCount = page.totalCollected,
+                query = page.metadata["query"] ?: "",
+                nextCursor = page.nextCursor,
+                hasMore = page.hasMore,
+                totalCollected = page.totalCollected,
+                offset = page.offset,
+                pageSize = page.pageSize,
+                stale = page.stale
+            )
+        }
 
     private fun parseUsageSearchContext(contextStr: String): Short {
         return when (contextStr.lowercase()) {
