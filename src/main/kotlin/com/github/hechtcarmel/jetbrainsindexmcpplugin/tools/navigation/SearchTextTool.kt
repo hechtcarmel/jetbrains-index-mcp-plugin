@@ -63,7 +63,7 @@ class SearchTextTool : AbstractMcpTool() {
         Returns: matching locations with file, line, column, context snippet, and context type.
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
         Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "Runtime\\.getRuntime\\(\\)\\.exec\\(", "regex": true, "filePattern": "*.java"}
     """.trimIndent()
@@ -74,6 +74,7 @@ class SearchTextTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.REGEX, "Treat query as a regular expression. Default: false.")
         .enumProperty(ParamNames.CONTEXT, "Where to search: \"code\", \"comments\", \"strings\", \"all\". Default: \"all\".", listOf("code", "comments", "strings", "all"))
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case sensitive search. Default: true.")
+        .booleanProperty("wholeWord", "Match whole words only. Default: false (substring match).")
         .stringProperty(ParamNames.FILE_PATTERN, "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
@@ -110,6 +111,7 @@ class SearchTextTool : AbstractMcpTool() {
         val contextStr = arguments[ParamNames.CONTEXT]?.jsonPrimitive?.content ?: "all"
         val caseSensitive = arguments[ParamNames.CASE_SENSITIVE]?.jsonPrimitive?.boolean ?: true
         val regex = arguments[ParamNames.REGEX]?.jsonPrimitive?.boolean ?: false
+        val wholeWord = arguments["wholeWord"]?.jsonPrimitive?.boolean ?: false
         val filePattern = optionalStringArg(arguments, ParamNames.FILE_PATTERN)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
@@ -128,14 +130,14 @@ class SearchTextTool : AbstractMcpTool() {
         // because underscores are word characters and the whole identifier is one token.
         val findModel = if (regex) {
             try {
-                createFindModel(project, query, caseSensitive, filePattern, findSearchContext, isRegex = true)
+                createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = true)
             } catch (e: PatternSyntaxException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             } catch (e: IllegalArgumentException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             }
         } else {
-            createFindModel(project, query, caseSensitive, filePattern, findSearchContext, isRegex = false)
+            createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = false)
         }
 
         requireSmartMode(project)
@@ -233,6 +235,7 @@ class SearchTextTool : AbstractMcpTool() {
         project: Project,
         query: String,
         caseSensitive: Boolean,
+        wholeWord: Boolean,
         filePattern: String?,
         searchContext: FindModel.SearchContext,
         isRegex: Boolean
@@ -241,6 +244,7 @@ class SearchTextTool : AbstractMcpTool() {
             stringToFind = query
             isRegularExpressions = isRegex
             isCaseSensitive = caseSensitive
+            isWholeWordsOnly = wholeWord
             isMultipleFiles = true
             isProjectScope = true
             isFindAll = true
