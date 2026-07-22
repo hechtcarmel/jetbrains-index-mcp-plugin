@@ -246,7 +246,6 @@ class SearchTextTool : AbstractMcpTool() {
             isCaseSensitive = caseSensitive
             isWholeWordsOnly = wholeWord
             isMultipleFiles = true
-            isProjectScope = true
             isFindAll = true
             isMultiline = true
             this.searchContext = searchContext
