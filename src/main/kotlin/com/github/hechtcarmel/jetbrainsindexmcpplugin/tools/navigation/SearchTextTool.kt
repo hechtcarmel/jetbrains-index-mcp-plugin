@@ -28,6 +28,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.PatternSyntaxException
 
 /**
@@ -274,26 +277,30 @@ class SearchTextTool : AbstractMcpTool() {
         limit: Int,
         seenKeys: Set<String> = emptySet()
     ): List<TextMatch> {
-        val results = mutableListOf<TextMatch>()
-        val seenLines = HashSet<String>()
-        seenLines.addAll(seenKeys)
-        val presentation = FindInProjectUtil.setupProcessPresentation(FindInProjectUtil.setupViewPresentation(findModel))
+        val results = ConcurrentLinkedQueue<TextMatch>()
+        val seenLines = ConcurrentHashMap.newKeySet<String>().apply { addAll(seenKeys) }
+        val count = AtomicInteger(0)
+        val presentation =
+            FindInProjectUtil.setupProcessPresentation(FindInProjectUtil.setupViewPresentation(findModel))
 
-        FindInProjectUtil.findUsages(findModel, project, presentation, emptySet<VirtualFile>()) { usageInfo: UsageInfo ->
-            if (results.size >= limit) {
-                return@findUsages false
-            }
+        FindInProjectUtil.findUsages(
+            findModel,
+            project,
+            presentation,
+            emptySet<VirtualFile>()
+        ) { usageInfo: UsageInfo ->
+            if (count.get() >= limit) return@findUsages false
 
             val match = convertToTextMatch(project, usageInfo, searchContext) ?: return@findUsages true
             val lineKey = "${match.file}:${match.line}"
             if (seenLines.add(lineKey)) {
-                results.add(match)
+                if (count.incrementAndGet() <= limit) results.add(match)
             }
 
-            results.size < limit
+            count.get() < limit
         }
 
-        return results
+        return results.toList()
     }
 
     private fun convertToTextMatch(
