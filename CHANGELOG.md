@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Changed
+- **`ide_search_text`** — plain-text queries now use `FindInProjectUtil` (same engine as IDE's Find in Files), enabling true substring matching. Previously, whole-word token matching caused queries like `"a_word"` to miss results in identifiers like `"a_word_and_another_word"`.
 
 ## [4.30.0] - 2026-07-19
 ### Added
