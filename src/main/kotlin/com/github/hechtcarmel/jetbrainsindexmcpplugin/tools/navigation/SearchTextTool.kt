@@ -74,7 +74,7 @@ class SearchTextTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.REGEX, "Treat query as a regular expression. Default: false.")
         .enumProperty(ParamNames.CONTEXT, "Where to search: \"code\", \"comments\", \"strings\", \"all\". Default: \"all\".", listOf("code", "comments", "strings", "all"))
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case sensitive search. Default: true.")
-        .booleanProperty("wholeWord", "Match whole words only. Default: false (substring match).")
+        .booleanProperty(ParamNames.WHOLE_WORD, "Match whole words only. Default: false (substring match).")
         .stringProperty(ParamNames.FILE_PATTERN, "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
