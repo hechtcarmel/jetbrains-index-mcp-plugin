@@ -123,9 +123,11 @@ class SearchTextTool : AbstractMcpTool() {
         } catch (e: PatternSyntaxException) {
             return createErrorResult("Invalid filePattern mask: ${e.message}")
         }
-        val findModel = if (regex) {
+        val isMultiline = !regex && query.contains("\n")
+        val findModel = if (regex || isMultiline) {
             try {
-                createFindModel(project, query, caseSensitive, filePattern, findSearchContext)
+                val effectiveQuery = if (isMultiline) java.util.regex.Pattern.quote(query) else query
+                createFindModel(project, effectiveQuery, caseSensitive, filePattern, findSearchContext)
             } catch (e: PatternSyntaxException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             } catch (e: IllegalArgumentException) {
