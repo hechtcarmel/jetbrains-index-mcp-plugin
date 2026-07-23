@@ -380,6 +380,16 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         }
     }
 
+    protected fun ensureWritable(virtualFile: VirtualFile, filePath: String): ToolCallResult? {
+        if (!virtualFile.isWritable) {
+            return createErrorResult(
+                "File is read-only: $filePath. Check file permissions or VCS lock status. " +
+                "If the file is under version control, ensure it is checked out for editing."
+            )
+        }
+        return null
+    }
+
     /**
      * Resolves a file path to a [VirtualFile].
      * Uses refreshAndFindFileByPath to ensure externally created files are visible.

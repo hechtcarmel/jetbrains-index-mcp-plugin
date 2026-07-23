@@ -63,6 +63,7 @@ class McpSettingsConfigurable : Configurable {
     private var lifecycleLogToFileCheckBox: JBCheckBox? = null
     private var minimumOpenProjectsSpinner: JSpinner? = null
     private var managedProjectsContent: JPanel? = null
+    private var headlessModeCheckBox: JBCheckBox? = null
 
     private var lastHostValidation: ValidationInfo? = null
     private var hostValidationErrorLabel: JBLabel? = null
@@ -139,6 +140,10 @@ class McpSettingsConfigurable : Configurable {
             add(warningRow)
         }
 
+        headlessModeCheckBox = JBCheckBox(McpBundle.message("headless.enabled.label")).apply {
+            toolTipText = McpBundle.message("headless.enabled.tooltip")
+        }
+
         val availableToolsPanel = createToolsPanel()
         val lifecyclePanel = createLifecyclePanel()
 
@@ -150,6 +155,9 @@ class McpSettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel(McpBundle.message("settings.availableProjectsMode") + ":"), availableProjectsModeComboBox!!, 1, false)
             .addLabeledComponent(JBLabel(McpBundle.message("settings.responseFormat") + ":"), responseFormatComboBox!!, 1, false)
             .addComponent(syncPanel, 1)
+            .addSeparator(10)
+            .addComponent(JBLabel(McpBundle.message("headless.section.title")), 5)
+            .addComponent(headlessModeCheckBox!!, 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("lifecycle.section.title")), 5)
             .addComponent(lifecyclePanel, 1)
@@ -356,7 +364,8 @@ class McpSettingsConfigurable : Configurable {
             dormantToClosedSpinner?.value != settings.dormantToClosedMinutes ||
             lifecycleLogBufferSizeSpinner?.value != settings.lifecycleLogBufferSize ||
             lifecycleLogToFileCheckBox?.isSelected != settings.lifecycleLogToFile ||
-            minimumOpenProjectsSpinner?.value != settings.minimumOpenProjects) {
+            minimumOpenProjectsSpinner?.value != settings.minimumOpenProjects ||
+            headlessModeCheckBox?.isSelected != settings.headlessMode) {
             return true
         }
 
@@ -426,6 +435,36 @@ class McpSettingsConfigurable : Configurable {
         settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
 
         settings.updateToolEnabledStates(toolCheckBoxes.mapValues { (_, checkbox) -> checkbox.isSelected })
+
+        // Headless mode toggle
+        val headlessRequested = headlessModeCheckBox?.isSelected ?: false
+        val wasHeadless = settings.headlessMode
+
+        if (headlessRequested && !wasHeadless) {
+            if (!settings.state.headlessDialogDismissed) {
+                val result = com.intellij.openapi.ui.Messages.showOkCancelDialog(
+                    McpBundle.message("headless.dialog.message"),
+                    McpBundle.message("headless.dialog.title"),
+                    "Enable",
+                    "Cancel",
+                    com.intellij.openapi.ui.Messages.getInformationIcon(),
+                    object : com.intellij.openapi.ui.DoNotAskOption.Adapter() {
+                        override fun rememberChoice(isSelected: Boolean, exitCode: Int) {
+                            if (isSelected && exitCode == com.intellij.openapi.ui.Messages.OK) {
+                                settings.state.headlessDialogDismissed = true
+                            }
+                        }
+                    }
+                )
+                if (result != com.intellij.openapi.ui.Messages.OK) {
+                    headlessModeCheckBox?.isSelected = false
+                    return
+                }
+            }
+            HeadlessModeManager.enable()
+        } else if (!headlessRequested && wasHeadless) {
+            HeadlessModeManager.disable()
+        }
 
         // Auto-restart server if host/port changed
         if (newHost != oldHost || newPort != oldPort) {
@@ -520,6 +559,7 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogBufferSizeSpinner?.value = settings.lifecycleLogBufferSize
         lifecycleLogToFileCheckBox?.isSelected = settings.lifecycleLogToFile
         minimumOpenProjectsSpinner?.value = settings.minimumOpenProjects
+        headlessModeCheckBox?.isSelected = settings.headlessMode
 
         for ((toolName, checkbox) in toolCheckBoxes) {
             checkbox.isSelected = settings.isToolEnabled(toolName)
@@ -619,6 +659,7 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogToFileCheckBox = null
         minimumOpenProjectsSpinner = null
         managedProjectsContent = null
+        headlessModeCheckBox = null
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
     }

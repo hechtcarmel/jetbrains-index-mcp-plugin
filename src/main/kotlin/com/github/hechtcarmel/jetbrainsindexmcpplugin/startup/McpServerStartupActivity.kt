@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.HeadlessModeManager
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -33,6 +34,7 @@ class McpServerStartupActivity : ProjectActivity {
 
             val mcpService = McpServerService.getInstance()
             mcpService.initialize()
+            HeadlessModeManager.reapplyIfEnabled()
             val serverUrl = mcpService.getServerUrl()
             val serverError = mcpService.getServerError()
 

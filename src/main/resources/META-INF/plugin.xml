@@ -169,6 +169,10 @@ for detailed documentation and examples.</p>
 
         <!-- Notification Group -->
         <notificationGroup id="Index MCP Server" displayType="BALLOON"/>
+
+        <!-- Headless mode: allow writes to non-project files during MCP operations -->
+        <nonProjectFileWritingAccessExtension
+            implementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpNonProjectFileWritingAccess" />
     </extensions>
 
     <!-- Lifecycle: listener for non-managed project open/close events -->
