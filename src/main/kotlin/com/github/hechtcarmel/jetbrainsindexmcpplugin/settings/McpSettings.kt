@@ -100,6 +100,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         var lifecycleLogToFile: Boolean = false,
         var minimumOpenProjects: Int = 4,
         var settingsSchemaVersion: Int = 0,
+        // Headless mode — suppresses dialogs that block MCP tool execution
+        var headlessMode: Boolean = false,
+        var headlessPreToggleSnapshot: MutableMap<String, String> = mutableMapOf(),
+        var headlessDialogDismissed: Boolean = false,
     )
 
     private var state = State()
@@ -186,6 +190,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
     var minimumOpenProjects: Int
         get() = state.minimumOpenProjects
         set(value) { state.minimumOpenProjects = value }
+
+    var headlessMode: Boolean
+        get() = state.headlessMode
+        set(value) { state.headlessMode = value }
 
 
     fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools

@@ -93,6 +93,7 @@ object ProjectResolver {
         val path = project.basePath ?: return
         LOG.info("ProjectResolver: caching opened project '${project.name}' at $path")
         fallbackProjects[normalizePath(path)] = project
+        com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.HeadlessModeManager.applyProjectSettings(project)
     }
 
     fun onProjectClosed(project: Project) {
