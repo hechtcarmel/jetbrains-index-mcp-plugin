@@ -44,12 +44,19 @@ jobs:
         with:
           cache-read-only: true
 
-      # Update the Unreleased section with the current release note
+      # Move the Unreleased section under the released version. Skipped when CHANGELOG.md
+      # already contains this version's section (entries moved manually in the version-bump PR).
       - name: Patch Changelog
         if: ${{ github.event.release.body != '' }}
         env:
           CHANGELOG: ${{ github.event.release.body }}
         run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          if grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "CHANGELOG.md already contains a [$VERSION] section — skipping patch."
+            exit 0
+          fi
+
           RELEASE_NOTE="./build/tmp/release_note.txt"
           mkdir -p "$(dirname "$RELEASE_NOTE")"
           echo "$CHANGELOG" > $RELEASE_NOTE
@@ -71,12 +78,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload ${{ github.event.release.tag_name }} ./build/distributions/*
 
-      # Create a pull request
+      # Open a PR with the patched CHANGELOG.md (no-op when Patch Changelog was skipped)
       - name: Create Pull Request
-        if: ${{ steps.properties.outputs.changelog != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md unchanged — skipping pull request."
+            exit 0
+          fi
+
           VERSION="${{ github.event.release.tag_name }}"
           BRANCH="changelog-update-$VERSION"
           LABEL="release changelog"

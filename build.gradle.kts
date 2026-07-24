@@ -184,9 +184,10 @@ tasks {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
 
-    publishPlugin {
-        dependsOn(patchChangelog)
-    }
+    // NOTE: publishPlugin intentionally does NOT depend on patchChangelog (upstream template
+    // removed it too). At publish time CHANGELOG.md already contains the version section —
+    // either from the version-bump PR or from the Release workflow's explicit patch step —
+    // and re-patching with an empty [Unreleased] would create a duplicate section.
 
 //    runIde {
 //        jvmArgs("-Xmx20g", "-Xms1g")

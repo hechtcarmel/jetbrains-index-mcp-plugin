@@ -551,7 +551,7 @@ Before pushing, run the pre-push validation script to catch common mistakes auto
 ```
 
 Quick summary of the non-negotiables:
-1. `CHANGELOG.md` — empty `[Unreleased]` section (maintainer adds the release entry)
+1. `CHANGELOG.md` — user-visible changes go under `[Unreleased]`; never add `## [x.y.z]` version sections (created at release time)
 2. No `.idea/gradle.xml`, no `scripts/build-install.sh`, no `docs/pr-*.md`
 3. New tools: registered in `ToolNames`, `ToolRegistry`, and all six doc locations (`README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`, `tools-reference.md`, `ToolNames.ALL` sorted)
 4. New opt-in tools: add to `McpSettings.DEFAULT_DISABLED_TOOLS`, bump the settings schema, and add a migration so existing users also get the tool disabled by default
