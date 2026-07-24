@@ -249,7 +249,19 @@ data class SuperMethodData(
     val column: Int?,
     val isInterface: Boolean,
     val depth: Int,
-    val language: String
+    val language: String,
+    /**
+     * How this parent entered the inheritance / method-lookup chain relative to the
+     * origin method. One of:
+     * - "superclass" — classical single-inheritance parent (default)
+     * - "include"    — Ruby `include Module` mixin (module methods below the class in MRO)
+     * - "prepend"    — Ruby `prepend Module` mixin (module methods above the class in MRO)
+     * - "extend"     — Ruby `extend Module` mixin (class/singleton-method provenance)
+     *
+     * Languages that do not distinguish mixin provenance leave this at the
+     * "superclass" default, so existing producers need no changes.
+     */
+    val via: String = "superclass"
 )
 
 /**
