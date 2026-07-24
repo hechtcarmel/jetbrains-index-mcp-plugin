@@ -62,6 +62,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             ToolNames.BUILD_PROJECT,
+            ToolNames.CREATE_MODULE,
             ToolNames.IMPORT_MODULES,
             ToolNames.CHANGE_SIGNATURE,
             ToolNames.CREATE_FILE,

@@ -22,6 +22,7 @@ object ToolNames {
     const val INDEX_STATUS = "ide_index_status"
     const val SYNC_FILES = "ide_sync_files"
     const val BUILD_PROJECT = "ide_build_project"
+    const val CREATE_MODULE = "ide_create_module"
     const val IMPORT_MODULES = "ide_import_modules"
     const val RELOAD_PROJECT = "ide_reload_project"
     const val LIST_TESTS = "ide_list_tests"
@@ -81,6 +82,7 @@ object ToolNames {
         CLOSE_PROJECT,
         CONVERT_JAVA_TO_KOTLIN,
         CREATE_FILE,
+        CREATE_MODULE,
         DIAGNOSTICS,
         EDIT_MEMBER,
         ENROLL_ALL_PROJECTS,

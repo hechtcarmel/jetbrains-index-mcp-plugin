@@ -483,6 +483,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.DIAGNOSTICS,
             // Project tools
             ToolNames.BUILD_PROJECT,
+            ToolNames.CREATE_MODULE,
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             ToolNames.RUN_TESTS,

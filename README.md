@@ -245,7 +245,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **50 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **51 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -272,6 +272,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
 | `ide_set_power_save_mode` | Enable or disable IDE Power Save Mode — suspends background inspections while keeping the index and all code intelligence operational *(disabled by default)* |
 | `ide_close_project` | Close an open project window and free its memory — refuses to close the last open project *(disabled by default)* |
+| `ide_create_module` | Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.) *(disabled by default)* |
 | `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open *(disabled by default)* |
 | `ide_install_plugin` | Install a plugin zip into the IDE, replacing any existing version — auto-detects `build/distributions/*.zip` when no path is given *(disabled by default)* |
 | `ide_restart` | Restart the IDE — terminates the MCP connection; call after `ide_install_plugin` *(disabled by default)* |

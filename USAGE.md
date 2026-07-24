@@ -24,6 +24,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
+| `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
 | `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
@@ -116,6 +117,7 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
 - [Project Window Management](#project-window-management)
   - [ide_set_power_save_mode](#ide_set_power_save_mode)
   - [ide_close_project](#ide_close_project)
+  - [ide_create_module](#ide_create_module)
   - [ide_open_project](#ide_open_project)
 - [Refactoring Tools](#refactoring-tools)
   - [ide_refactor_rename](#ide_refactor_rename)
@@ -1463,6 +1465,56 @@ Non-blocking: the tool returns as soon as the close is scheduled. Refuses to clo
 
 ```
 Project 'myproject' is closing.
+```
+
+---
+
+### ide_create_module
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
+
+**Use when:**
+- Adding a non-Maven project directory for IDE indexing and code intelligence
+- Enabling search, navigation, and diagnostics for TypeScript or plain directories
+- Excluding directories like `node_modules` or `dist` from indexing
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Absolute directory path to add as a module content root |
+| `name` | string | No | Module name. Defaults to the directory name |
+| `excludes` | string[] | No | Relative paths to exclude from indexing (e.g., `["node_modules", "dist"]`) |
+| `project_path` | string | No | Target project when multiple projects are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_create_module",
+    "arguments": {
+      "path": "/Users/dev/my-frontend",
+      "excludes": ["node_modules", "dist"]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Module 'my-frontend' created with content root: /Users/dev/my-frontend\nExcluded 2 directories"
+    }
+  ]
+}
 ```
 
 ---
@@ -3020,6 +3072,22 @@ Close an open project window and free its memory.
 ```
 
 The project can be reopened via Recent Projects or `ide_open_project`.
+
+---
+
+### ide_create_module
+
+Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). For Maven projects, use `ide_import_modules` instead.
+
+**Parameters:**
+- `path` (required): absolute directory path to add as a module content root
+- `name` (optional): module name (defaults to directory name)
+- `excludes` (optional): relative paths to exclude from indexing (e.g., `["node_modules", "dist"]`)
+- `project_path` (optional)
+
+```json
+{ "name": "ide_create_module", "arguments": { "path": "/Users/dev/my-frontend", "excludes": ["node_modules", "dist"] } }
+```
 
 ---
 
