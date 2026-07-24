@@ -45,13 +45,13 @@ These tools work in every supported JetBrains IDE:
 
 These tools activate based on available language plugins:
 
-| Tool | Description | Languages |
-|------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure with start/end line numbers *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| Tool | Description | Languages                               |
+|------|-------------|-----------------------------------------|
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, Scala |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, Scala |
+| `ide_file_structure` | Hierarchical file structure with start/end line numbers *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala |
 
 ### Java-Specific Tools
 
@@ -1517,7 +1517,7 @@ Project 'myproject' is open and ready.
 
 Renames a symbol or file and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
 
-**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Ruby, and any language with IntelliJ plugin support.
+**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Scala, Ruby, and any language with IntelliJ plugin support.
 
 **Features:**
 - Language-specific name validation (identifier rules, keyword detection)
@@ -2148,6 +2148,7 @@ These tools activate based on available language plugins:
 - **Go** - GoLand, IntelliJ Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
+- **Scala** - IntelliJ IDEA with Scala plugin
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 Navigation tools appear according to installed language plugins. PHP file structure requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
@@ -2361,7 +2362,7 @@ Analyzes method call relationships to find callers or callees.
 
 Finds all concrete implementations of an interface, abstract class, or abstract method.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust (not Go — Go uses implicit interfaces).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust, Scala (not Go — Go uses implicit interfaces).
 
 **Use when:**
 - Locating classes that implement an interface
@@ -2452,7 +2453,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 
 Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP (not Go or Rust — they use composition/traits instead of classical inheritance).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Scala (not Go or Rust — they use composition/traits instead of classical inheritance).
 
 **Use when:**
 - Finding which interface method an implementation overrides
@@ -2563,7 +2564,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Scala.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 

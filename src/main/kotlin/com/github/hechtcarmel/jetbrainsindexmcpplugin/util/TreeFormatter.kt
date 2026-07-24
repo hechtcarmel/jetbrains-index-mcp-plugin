@@ -104,6 +104,10 @@ object TreeFormatter {
             StructureKind.RECORD -> "record"
             StructureKind.OBJECT -> "object"
             StructureKind.TRAIT -> "trait"
+            StructureKind.CASE_CLASS -> "case class"
+            StructureKind.PACKAGE_OBJECT -> "package object"
+            StructureKind.VAL -> "val"
+            StructureKind.VAR -> "var"
             StructureKind.CONSTRUCTOR -> "constructor"
             StructureKind.CONSTANT -> "constant"
             StructureKind.ENUM_CASE -> "enum case"
@@ -121,18 +125,21 @@ object TreeFormatter {
                 normalizedLanguage == "java" -> "method"
                 normalizedLanguage == "python" -> "method"
                 normalizedLanguage == "kotlin" -> "fun"
+                normalizedLanguage == "scala" -> "def"
                 else -> "method"
             }
             StructureKind.FUNCTION -> when {
                 normalizedLanguage == "java" -> "method"
                 normalizedLanguage == "python" -> "def"
                 normalizedLanguage == "kotlin" -> "fun"
+                normalizedLanguage == "scala" -> "def"
                 else -> "function"
             }
             StructureKind.FIELD -> when {
                 normalizedLanguage == "java" -> "field"
                 normalizedLanguage == "python" -> "variable"
                 normalizedLanguage == "kotlin" -> "val"
+                normalizedLanguage == "scala" -> "val"
                 else -> "field"
             }
             StructureKind.PROPERTY -> when {
