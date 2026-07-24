@@ -59,8 +59,15 @@ class CreateFileTool : AbstractMcpTool() {
             return createErrorResult("file must not be empty.")
         }
 
+        val projectPathArg = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.content
         val resolvedBase = resolveBasePath(project, arguments, filePath)
-            ?: return createErrorResult("Project has no base path.")
+            ?: return createErrorResult(
+                if (projectPathArg != null)
+                    "project_path '$projectPathArg' is not inside any known project root or content root. " +
+                    "Register it with ide_create_module first, or use ide_open_project to open it as its own project."
+                else
+                    "Project has no base path."
+            )
 
         val targetFile = File(resolvedBase, filePath).canonicalFile
         val baseCanonical = File(resolvedBase).canonicalFile
@@ -112,6 +119,15 @@ class CreateFileTool : AbstractMcpTool() {
             val canonical = ProjectUtils.canonicalNormalizedPath(projectPath)
             val match = contentRoots.firstOrNull { ProjectUtils.canonicalNormalizedPath(it) == canonical }
             if (match != null) return match
+
+            val knownRoots = contentRoots + listOfNotNull(project.basePath)
+            val insideProject = knownRoots.any { root ->
+                val r = ProjectUtils.canonicalNormalizedPath(root)
+                canonical == r || canonical.startsWith("$r/")
+            }
+            if (insideProject && File(canonical).isDirectory) return canonical
+
+            return null
         }
 
         val basePath = project.basePath ?: return null

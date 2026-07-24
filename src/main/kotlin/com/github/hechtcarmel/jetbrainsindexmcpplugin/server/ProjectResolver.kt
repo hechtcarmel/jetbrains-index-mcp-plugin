@@ -169,10 +169,16 @@ object ProjectResolver {
                 return Result(project = moduleMatch)
             }
 
-            // 3. Match if the given path is a subdirectory of an open project
+            // 3. Match if the given path is a subdirectory of an open project's
+            //    basePath or any of its module content roots (workspace support).
+            //    Uses canonical paths to handle symlinks and traversal.
+            val canonicalPath = ProjectUtils.canonicalNormalizedPath(projectPath)
             val parentMatch = openProjects.find { proj ->
-                val basePath = normalizePath(proj.basePath ?: "")
-                basePath.isNotEmpty() && normalizedPath.startsWith("$basePath/")
+                val roots = listOfNotNull(proj.basePath) + ProjectUtils.getModuleContentRoots(proj)
+                roots.any { root ->
+                    val r = ProjectUtils.canonicalNormalizedPath(root)
+                    r.isNotEmpty() && (canonicalPath == r || canonicalPath.startsWith("$r/"))
+                }
             }
             if (parentMatch != null) {
                 return Result(project = parentMatch)

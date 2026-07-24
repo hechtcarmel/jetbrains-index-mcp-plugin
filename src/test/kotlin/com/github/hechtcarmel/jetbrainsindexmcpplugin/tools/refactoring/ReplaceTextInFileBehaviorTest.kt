@@ -1,15 +1,15 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import java.nio.file.Files
-import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.nio.file.Files
+import java.nio.file.Path
 
 class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
 
@@ -212,5 +212,37 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
         })
 
         assertTrue("Invalid regex should fail", result.isError)
+    }
+
+    fun testReplacePersistsToDiskWithoutExplicitFlush() = runBlocking {
+        writeProjectFile(
+            "src/Persist.java", """
+            public class Persist {
+                String value = "original";
+            }
+        """.trimIndent()
+        )
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/Persist.java")
+            put("searchText", "original")
+            put("replaceText", "replaced")
+        })
+
+        assertFalse("Replace should succeed", result.isError)
+        val payload = parseResult(result)
+        assertEquals(1, payload.replacements)
+
+        val basePath = requireNotNull(project.basePath)
+        val diskContent = java.io.File(basePath, "src/Persist.java").readText()
+        assertTrue(
+            "File on disk must contain 'replaced' without manual flush — " +
+                    "saveDocument must happen outside WriteCommandAction",
+            diskContent.contains("replaced")
+        )
+        assertFalse(
+            "File on disk must not contain 'original' after replacement",
+            diskContent.contains("original")
+        )
     }
 }
