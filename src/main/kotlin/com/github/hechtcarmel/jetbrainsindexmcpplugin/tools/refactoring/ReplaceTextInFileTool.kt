@@ -89,8 +89,13 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
         var relativePath = filePath
 
         suspendingWriteAction(project, "Replace text in $filePath") {
+            virtualFile.refresh(false, false)
             val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-                ?: throw Exception("Cannot get document for $filePath")
+                ?: throw Exception(
+                    "Cannot get document for $filePath — the file may be binary, too large, " +
+                    "or outside IntelliJ's project scope. If this file is in a git worktree, " +
+                    "call ide_open_project with the worktree path first, then call ide_sync_files."
+                )
 
             val text = document.text
 
@@ -121,10 +126,13 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
             if (replacements > 0) {
                 document.setText(newText)
                 PsiDocumentManager.getInstance(project).commitDocument(document)
-                FileDocumentManager.getInstance().saveDocument(document)
             }
 
             relativePath = ProjectUtils.getToolFilePath(project, virtualFile)
+        }
+
+        if (replacements > 0) {
+            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
         }
 
         if (replacements == 0) {

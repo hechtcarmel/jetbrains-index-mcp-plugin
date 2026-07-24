@@ -2,11 +2,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import java.nio.file.Files
-import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.nio.file.Files
+import java.nio.file.Path
 
 class CreateFileBehaviorTest : BasePlatformTestCase() {
 
@@ -76,5 +76,54 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
         assertFalse("Create with nested dirs should succeed", result.isError)
         val basePath = requireNotNull(project.basePath)
         assertTrue("File should exist", Files.exists(Path.of(basePath, "src/deep/nested/path/NewFile.java")))
+    }
+
+    fun testCreateFileWithProjectPathSubdirectoryUsesItAsBase() = runBlocking {
+        val basePath = requireNotNull(project.basePath)
+        val subDir = Path.of(basePath, "module-a")
+        Files.createDirectories(subDir.resolve("src"))
+
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "src/ModuleService.java")
+            put("content", "package src;\npublic class ModuleService {}")
+            put("project_path", subDir.toString())
+        })
+
+        assertFalse(
+            "Create with project_path subdirectory should succeed: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}",
+            result.isError
+        )
+        assertTrue(
+            "File should be created under subdirectory",
+            Files.exists(subDir.resolve("src/ModuleService.java"))
+        )
+        assertFalse(
+            "File should NOT be created directly under project basePath",
+            Files.exists(Path.of(basePath, "src/ModuleService.java"))
+        )
+    }
+
+    fun testCreateFileWithTraversalInProjectPathIsRejected() = runBlocking {
+        val basePath = requireNotNull(project.basePath)
+
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "evil.java")
+            put("content", "public class Evil {}")
+            put("project_path", "$basePath/../../../../../../tmp")
+        })
+
+        assertTrue("Traversal in project_path should be rejected", result.isError)
+        val text = (result.content.singleOrNull() as? ContentBlock.Text)?.text ?: ""
+        assertTrue("Error should mention content root: $text", text.contains("not inside any known project root"))
+    }
+
+    fun testCreateFileWithProjectPathOutsideProjectIsRejected() = runBlocking {
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "evil.java")
+            put("content", "public class Evil {}")
+            put("project_path", "/tmp")
+        })
+
+        assertTrue("project_path outside project should be rejected", result.isError)
     }
 }
