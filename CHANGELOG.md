@@ -6,6 +6,9 @@
 ### Changed
 - **`ide_search_text`** — plain-text queries now use `FindInProjectUtil` (same engine as IDE's Find in Files), enabling true substring matching. Previously, whole-word token matching caused queries like `"a_word"` to miss results in identifiers like `"a_word_and_another_word"`. A new `wholeWord` boolean parameter (default `false`) restores whole-word matching when needed.
 
+### Fixed
+- **`ide_optimize_imports` / `ide_reformat_code`** — refresh the file from disk before resolving PSI, preventing "Outdated stub in index" errors when files were modified by external tools.
+
 ## [4.30.0] - 2026-07-19
 ### Added
 - **`ide_edit_member`** — replace an entire class member declaration (signature + body) by structural name, not text match. Targets by file, class, and member name with optional overload disambiguation. Auto-reformats after editing. Supports Java and Kotlin. *(disabled by default)*
