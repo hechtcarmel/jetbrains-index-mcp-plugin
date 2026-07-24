@@ -698,6 +698,89 @@ class ToolsTest : BasePlatformTestCase() {
         assertEquals(listOf("src/CommandRunner.java"), files)
     }
 
+    fun testSearchTextToolFindsSubstringOfUnderscoreSeparatedToken() = runBlocking {
+        myFixture.addFileToProject(
+            "infra/alerts.yaml",
+            """
+            rules:
+              - alert: StuckCases
+                expr: 'max(a_word_and_another_word) > 0'
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "a_word")
+        })
+
+        assertFalse("Search should not return an error", result.isError)
+        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        val matches = resultJson["matches"]!!.jsonArray
+        assertTrue(
+            "Should find 'a_word' as a substring of 'a_word_and_another_word' — " +
+                    "matching IDE Find in Files behavior. Got 0 matches.",
+            matches.isNotEmpty()
+        )
+        val files = matches.map { it.jsonObject["file"]!!.jsonPrimitive.content }
+        assertTrue(
+            "Match should be in infra/alerts.yaml, got: $files",
+            files.any { it.endsWith("alerts.yaml") }
+        )
+    }
+
+
+    fun testSearchTextToolContextFilterLimitsToComments() = runBlocking {
+        myFixture.addFileToProject(
+            "src/Example.java",
+            """
+            // needle in a comment
+            class Example {
+                String s = "needle in a string";
+                void needle_in_code() {}
+            }
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "needle")
+            put("context", "comments")
+            put("pageSize", 50)
+        })
+
+        assertFalse("Search should succeed", result.isError)
+        val matches = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text)
+            .jsonObject["matches"]!!.jsonArray
+        val contextTypes = matches.map { it.jsonObject["contextType"]!!.jsonPrimitive.content }
+        assertTrue("Should have at least one comment match", contextTypes.any { it == "COMMENT" })
+        assertTrue("Should not return code or string matches", contextTypes.all { it == "COMMENT" })
+    }
+
+    fun testSearchTextToolCaseInsensitivePlainText() = runBlocking {
+        myFixture.addFileToProject(
+            "config/settings.properties",
+            """
+            MaxRetryCount=3
+            max_timeout_seconds=30
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "maxretrycount")
+            put("caseSensitive", false)
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", result.isError)
+        val matches = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text)
+            .jsonObject["matches"]!!.jsonArray
+        assertTrue(
+            "Case-insensitive search for 'maxretrycount' should match 'MaxRetryCount'",
+            matches.isNotEmpty()
+        )
+    }
+
     // Intelligence Tools Tests
 
     fun testGetDiagnosticsToolMissingParams() = runBlocking {

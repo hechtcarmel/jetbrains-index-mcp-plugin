@@ -39,7 +39,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Find Class** - Fast class/interface search by name with camelCase matching
 - **Find File** - Fast file search by name using IDE's file index
 - **Symbol Search** - Find code symbols by name with IntelliJ Go to Symbol matching (disabled by default)
-- **Search Text** - Text search using IDE's pre-built word index
+- **Search Text** - Text search using IntelliJ Find in Files (substring and regex matching)
 - **Read File** - Read file content by path or qualified name, including library sources (disabled by default)
 - **Open File** - Open a file in the editor with optional navigation (disabled by default)
 - **Get Active File** - Get currently active editor file(s) with cursor position (disabled by default)
@@ -258,7 +258,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
 | `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching *(disabled by default)* |
-| `ide_search_text` | Text search using IDE's pre-built word index with context filtering |
+| `ide_search_text` | Text search using IntelliJ Find in Files with context filtering (substring and regex matching) |
 | `ide_diagnostics` | Analyze file problems with fresh editor diagnostics for open files or public batch diagnostics for closed files, plus optional build/test results; intentions are best-effort |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |

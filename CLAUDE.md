@@ -369,7 +369,7 @@ Tools are organized by IDE availability.
 - `ide_find_class` - Search for classes/interfaces by name with camelCase/substring/wildcard matching
 - `ide_find_file` - Search for files by name using IDE's file index
 - `ide_find_symbol` - Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching (disabled by default)
-- `ide_search_text` - Text search using IDE's pre-built word index with context filtering
+- `ide_search_text` - Text search using IntelliJ Find in Files with context filtering (substring matching for plain text, regex matching when enabled)
 - `ide_read_file` - Read file content by path or qualified name, including library/jar sources (disabled by default)
 - `ide_diagnostics` - Unified diagnostics tool: per-file code analysis (errors, warnings, intentions), build output from last build, and test results from open test run tabs. Supports `includeBuildErrors`, `includeTestResults`, `severity` filter, `testResultFilter`, `maxBuildErrors`, `maxTestResults`. The `file` parameter is now optional.
 - `ide_index_status` - Check indexing status (dumb/smart mode)

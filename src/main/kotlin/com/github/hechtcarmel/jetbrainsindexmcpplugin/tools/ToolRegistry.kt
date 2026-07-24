@@ -69,7 +69,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_find_class` - Class search using CLASS_EP_NAME index
  * - `ide_find_file` - File search using FILE_EP_NAME index
  * - `ide_find_symbol` - Search for symbols by name (universal, popup-backed)
- * - `ide_search_text` - Text search using word index
+ * - `ide_search_text` - Text search using IntelliJ Find in Files (substring and regex matching)
  * - `ide_diagnostics` - Analyze code for problems and available intentions
  * - `ide_build_project` - Build project using IDE's build system (disabled by default)
  * - `ide_index_status` - Check indexing status

@@ -15,34 +15,30 @@ import com.intellij.find.impl.FindInProjectUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
-import com.intellij.openapi.util.Condition
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import com.intellij.psi.search.DelegatingGlobalSearchScope
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.PsiSearchHelper
-import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.psi.search.TextOccurenceProcessor
 import com.intellij.psi.search.UsageSearchContext
 import com.intellij.psi.util.PsiModificationTracker
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.usageView.UsageInfo
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.PatternSyntaxException
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Text search using IDE's word index.
+ * Text search using IntelliJ Find in Files.
  *
- * Uses a pre-built word index for exact word matches and IntelliJ Find in Files for regex matches.
+ * All searches (plain-text and regex) use FindInProjectUtil, matching the IDE's own Find in Files
+ * behaviour. Plain-text queries do substring matching so a query like "a_word" correctly
+ * finds "a_word_and_another_word" — unlike the word-index API which only matches complete tokens.
  *
  * Supports context filtering: search only in code, comments, or string literals.
  */
@@ -57,9 +53,9 @@ class SearchTextTool : AbstractMcpTool() {
     override val name = ToolNames.SEARCH_TEXT
 
     override val description = """
-        Search for text using IDE's word index or IntelliJ Find in Files.
+        Search for text using IntelliJ Find in Files.
 
-        Exact searches use a pre-built word index for O(1) lookups instead of scanning all files. Regex searches use IntelliJ's Find in Files path.
+        Searches use IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching so a query like "a_word" correctly finds "a_word_and_another_word". Regex searches use the same engine with regular expression matching.
 
         Context filtering: search only in code, comments, or string literals.
         File filtering: pass filePattern with an IntelliJ file mask such as "*.kt" or "*.java,!*Test.java".
@@ -67,17 +63,18 @@ class SearchTextTool : AbstractMcpTool() {
         Returns: matching locations with file, line, column, context snippet, and context type.
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
         Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "Runtime\\.getRuntime\\(\\)\\.exec\\(", "regex": true, "filePattern": "*.java"}
     """.trimIndent()
 
     override val inputSchema: JsonObject = SchemaBuilder.tool()
         .projectPath()
-        .stringProperty(ParamNames.QUERY, "Text to search for. Treated as an exact word unless regex is true. Required for fresh search, ignored when cursor is provided.")
+        .stringProperty(ParamNames.QUERY, "Text to search for. Treated as a substring (plain text) or pattern (when regex is true). Required for fresh search, ignored when cursor is provided.")
         .booleanProperty(ParamNames.REGEX, "Treat query as a regular expression. Default: false.")
         .enumProperty(ParamNames.CONTEXT, "Where to search: \"code\", \"comments\", \"strings\", \"all\". Default: \"all\".", listOf("code", "comments", "strings", "all"))
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case sensitive search. Default: true.")
+        .booleanProperty(ParamNames.WHOLE_WORD, "Match whole words only. Default: false (substring match).")
         .stringProperty(ParamNames.FILE_PATTERN, "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".")
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
@@ -88,19 +85,7 @@ class SearchTextTool : AbstractMcpTool() {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                SearchTextResult(
-                    matches = items,
-                    totalCount = page.totalCollected,
-                    query = page.metadata["query"] ?: "",
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
-            }
+            return buildPaginatedResult(cursor, pageSize, project)
         }
 
         val query = arguments[ParamNames.QUERY]?.jsonPrimitive?.content
@@ -108,6 +93,7 @@ class SearchTextTool : AbstractMcpTool() {
         val contextStr = arguments[ParamNames.CONTEXT]?.jsonPrimitive?.content ?: "all"
         val caseSensitive = arguments[ParamNames.CASE_SENSITIVE]?.jsonPrimitive?.boolean ?: true
         val regex = arguments[ParamNames.REGEX]?.jsonPrimitive?.boolean ?: false
+        val wholeWord = arguments["wholeWord"]?.jsonPrimitive?.boolean ?: false
         val filePattern = optionalStringArg(arguments, ParamNames.FILE_PATTERN)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
         val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
@@ -118,27 +104,32 @@ class SearchTextTool : AbstractMcpTool() {
 
         val usageSearchContext = parseUsageSearchContext(contextStr)
         val findSearchContext = parseFindSearchContext(contextStr)
-        val fileMaskCondition = try {
-            createFileMaskCondition(filePattern)
-        } catch (e: PatternSyntaxException) {
-            return createErrorResult("Invalid filePattern mask: ${e.message}")
-        }
+
+        // Always use FindInProjectUtil (mirrors IDE's Find in Files) so that plain-text queries
+        // do substring matching rather than whole-word token matching. The word-index API
+        // (PsiSearchHelper.processElementsWithWord) only finds complete tokens: a query like
+        // "a_word" yields zero results when the file contains "a_word_and_another_word",
+        // because underscores are word characters and the whole identifier is one token.
         val findModel = if (regex) {
             try {
-                createFindModel(project, query, caseSensitive, filePattern, findSearchContext)
+                createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = true)
             } catch (e: PatternSyntaxException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             } catch (e: IllegalArgumentException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             }
         } else {
-            null
+            createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = false)
         }
 
         requireSmartMode(project)
 
-        val cursorToken = if (findModel != null) {
-            val matches = searchRegex(project, findModel, usageSearchContext, collectLimit)
+        val cursorToken = run {
+            val matches = try {
+                searchRegex(project, findModel, usageSearchContext, collectLimit)
+            } catch (e: PatternSyntaxException) {
+                return createErrorResult("Invalid filePattern mask: ${e.message}")
+            }
             createCursor(
                 project = project,
                 query = query,
@@ -146,41 +137,12 @@ class SearchTextTool : AbstractMcpTool() {
                 filePattern = filePattern,
                 matches = matches,
                 searchExtender = { seenKeys, limit ->
-                    extendSearchText(project, query, findModel, usageSearchContext, caseSensitive, fileMaskCondition, seenKeys, limit)
+                    extendSearch(project, findModel, usageSearchContext, seenKeys, limit)
                 }
             )
-        } else {
-            suspendingReadAction {
-                val scope = createSearchScope(project, fileMaskCondition)
-                val matches = searchText(project, query, scope, usageSearchContext, caseSensitive, collectLimit)
-                createCursor(
-                    project = project,
-                    query = query,
-                    regex = regex,
-                    filePattern = filePattern,
-                    matches = matches,
-                    searchExtender = { seenKeys, limit ->
-                        suspendingReadAction {
-                            extendSearchText(project, query, null, usageSearchContext, caseSensitive, fileMaskCondition, seenKeys, limit)
-                        }
-                    }
-                )
-            }
         }
 
-        return buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
-            SearchTextResult(
-                matches = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
-        }
+        return buildPaginatedResult(cursorToken, pageSize, project)
     }
 
     private fun createCursor(
@@ -214,6 +176,21 @@ class SearchTextTool : AbstractMcpTool() {
         )
     }
 
+    private suspend fun buildPaginatedResult(cursorToken: String, pageSize: Int?, project: Project): ToolCallResult =
+        buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
+            SearchTextResult(
+                matches = items,
+                totalCount = page.totalCollected,
+                query = page.metadata["query"] ?: "",
+                nextCursor = page.nextCursor,
+                hasMore = page.hasMore,
+                totalCollected = page.totalCollected,
+                offset = page.offset,
+                pageSize = page.pageSize,
+                stale = page.stale
+            )
+        }
+
     private fun parseUsageSearchContext(contextStr: String): Short {
         return when (contextStr.lowercase()) {
             "code" -> UsageSearchContext.IN_CODE
@@ -233,168 +210,54 @@ class SearchTextTool : AbstractMcpTool() {
         }
     }
 
-    private fun createFileMaskCondition(filePattern: String?): Condition<CharSequence>? {
-        val normalized = filePattern?.trim()
-        if (normalized.isNullOrEmpty()) return null
-        return FindInProjectUtil.createFileMaskCondition(normalized)
-    }
-
     private fun createFindModel(
         project: Project,
         query: String,
         caseSensitive: Boolean,
+        wholeWord: Boolean,
         filePattern: String?,
-        searchContext: FindModel.SearchContext
+        searchContext: FindModel.SearchContext,
+        isRegex: Boolean
     ): FindModel {
         return FindModel().apply {
             stringToFind = query
-            isRegularExpressions = true
+            isRegularExpressions = isRegex
             isCaseSensitive = caseSensitive
+            isWholeWordsOnly = wholeWord
             isMultipleFiles = true
-            isProjectScope = true
             isFindAll = true
             isMultiline = true
             this.searchContext = searchContext
             customScope = createFilteredScope(project)
             isCustomScope = true
             fileFilter = filePattern?.trim().orEmpty()
-            compileRegExp()
+            if (isRegex) compileRegExp()
         }
-    }
-
-    private fun searchText(
-        project: Project,
-        word: String,
-        scope: GlobalSearchScope,
-        searchContext: Short,
-        caseSensitive: Boolean,
-        limit: Int
-    ): List<TextMatch> {
-        val results = ConcurrentLinkedQueue<TextMatch>()
-        val seenLines = ConcurrentHashMap.newKeySet<String>()
-        val count = AtomicInteger(0)
-        val helper = PsiSearchHelper.getInstance(project)
-
-        val processor = TextOccurenceProcessor { element, _ ->
-            if (count.get() >= limit) {
-                return@TextOccurenceProcessor false
-            }
-
-            val match = convertToTextMatch(project, element, searchContext)
-            if (match != null) {
-                val lineContainsWord = if (caseSensitive) {
-                    match.context.contains(word)
-                } else {
-                    match.context.contains(word, ignoreCase = true)
-                }
-                if (!lineContainsWord) {
-                    return@TextOccurenceProcessor true
-                }
-
-                val lineKey = "${match.file}:${match.line}"
-                if (seenLines.add(lineKey)) {
-                    val slot = count.incrementAndGet()
-                    if (slot <= limit) {
-                        results.add(match)
-                    }
-                    slot < limit
-                } else {
-                    true
-                }
-            } else {
-                true
-            }
-        }
-
-        helper.processElementsWithWord(
-            processor,
-            scope,
-            word,
-            searchContext,
-            caseSensitive
-        )
-
-        return results.toList()
     }
 
     /**
      * Re-executes the search to collect more results beyond the initial cache.
      * This re-scans from the beginning, skipping already-seen keys — O(total_results) per extension.
-     * This is unavoidable: IntelliJ's search APIs (ReferencesSearch, PsiSearchHelper, etc.)
-     * don't support offset-based iteration or resumption.
+     * This is unavoidable: FindInProjectUtil does not support offset-based resumption.
      */
-    private fun extendSearchText(
+    private fun extendSearch(
         project: Project,
-        word: String,
-        findModel: FindModel?,
+        findModel: FindModel,
         searchContext: Short,
-        caseSensitive: Boolean,
-        fileMaskCondition: Condition<CharSequence>?,
         seenKeys: Set<String>,
         limit: Int
     ): List<PaginationService.SerializedResult> {
-        val scope = createSearchScope(project, fileMaskCondition)
-        if (findModel != null) {
-            return searchRegex(project, findModel, searchContext, limit, seenKeys)
-                .asSequence()
+        return try {
+            searchRegex(project, findModel, searchContext, limit, seenKeys)
                 .map { match ->
                     PaginationService.SerializedResult(
                         key = "${match.file}:${match.line}",
                         data = json.encodeToJsonElement(match)
                     )
                 }
-                .toList()
+        } catch (e: PatternSyntaxException) {
+            emptyList()
         }
-
-        val newResults = ConcurrentLinkedQueue<PaginationService.SerializedResult>()
-        val seenLines = ConcurrentHashMap.newKeySet<String>()
-        seenLines.addAll(seenKeys)
-        val count = AtomicInteger(0)
-        val helper = PsiSearchHelper.getInstance(project)
-
-        val processor = TextOccurenceProcessor { element, _ ->
-            if (count.get() >= limit) {
-                return@TextOccurenceProcessor false
-            }
-
-            val match = convertToTextMatch(project, element, searchContext)
-            if (match != null) {
-                val lineContainsWord = if (caseSensitive) {
-                    match.context.contains(word)
-                } else {
-                    match.context.contains(word, ignoreCase = true)
-                }
-                if (!lineContainsWord) {
-                    return@TextOccurenceProcessor true
-                }
-
-                val lineKey = "${match.file}:${match.line}"
-                if (seenLines.add(lineKey)) {
-                    val slot = count.incrementAndGet()
-                    if (slot <= limit) {
-                        newResults.add(PaginationService.SerializedResult(
-                            key = lineKey,
-                            data = json.encodeToJsonElement(match)
-                        ))
-                    }
-                    slot < limit
-                } else {
-                    true
-                }
-            } else {
-                true
-            }
-        }
-
-        helper.processElementsWithWord(
-            processor,
-            scope,
-            word,
-            searchContext,
-            caseSensitive
-        )
-
-        return newResults.toList()
     }
 
     private fun searchRegex(
@@ -404,26 +267,30 @@ class SearchTextTool : AbstractMcpTool() {
         limit: Int,
         seenKeys: Set<String> = emptySet()
     ): List<TextMatch> {
-        val results = mutableListOf<TextMatch>()
-        val seenLines = HashSet<String>()
-        seenLines.addAll(seenKeys)
-        val presentation = FindInProjectUtil.setupProcessPresentation(FindInProjectUtil.setupViewPresentation(findModel))
+        val results = ConcurrentLinkedQueue<TextMatch>()
+        val seenLines = ConcurrentHashMap.newKeySet<String>().apply { addAll(seenKeys) }
+        val count = AtomicInteger(0)
+        val presentation =
+            FindInProjectUtil.setupProcessPresentation(FindInProjectUtil.setupViewPresentation(findModel))
 
-        FindInProjectUtil.findUsages(findModel, project, presentation, emptySet<VirtualFile>()) { usageInfo: UsageInfo ->
-            if (results.size >= limit) {
-                return@findUsages false
-            }
+        FindInProjectUtil.findUsages(
+            findModel,
+            project,
+            presentation,
+            emptySet<VirtualFile>()
+        ) { usageInfo: UsageInfo ->
+            if (count.get() >= limit) return@findUsages false
 
             val match = convertToTextMatch(project, usageInfo, searchContext) ?: return@findUsages true
             val lineKey = "${match.file}:${match.line}"
             if (seenLines.add(lineKey)) {
-                results.add(match)
+                if (count.incrementAndGet() <= limit) results.add(match)
             }
 
-            results.size < limit
+            count.get() < limit
         }
 
-        return results
+        return results.toList()
     }
 
     private fun convertToTextMatch(
@@ -435,19 +302,6 @@ class SearchTextTool : AbstractMcpTool() {
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return null
         val offset = usageInfo.segment?.startOffset ?: usageInfo.navigationOffset
         return convertToTextMatch(project, psiFile, document, offset, searchContext)
-    }
-
-    private fun convertToTextMatch(
-        project: Project,
-        element: PsiElement,
-        searchContext: Short
-    ): TextMatch? {
-        val containingFile = element.containingFile ?: return null
-        val virtualFile = containingFile.virtualFile ?: return null
-        val relativePath = getRelativePath(project, virtualFile)
-
-        val document = PsiDocumentManager.getInstance(project).getDocument(containingFile) ?: return null
-        return convertToTextMatch(project, containingFile, document, element.textOffset, searchContext, element, relativePath)
     }
 
     private fun convertToTextMatch(
@@ -483,9 +337,6 @@ class SearchTextTool : AbstractMcpTool() {
 
         val contextType = element?.let { resolveActualContextType(it) } ?: "CODE"
 
-        // When a specific context filter is active, skip elements that don't match.
-        // processElementsWithWord may return false positives (e.g., code occurrences
-        // from files that also have the word in a comment).
         if (searchContext != UsageSearchContext.ANY && !matchesRequestedContext(contextType, searchContext)) {
             return null
         }
@@ -503,23 +354,6 @@ class SearchTextTool : AbstractMcpTool() {
         val textLength = psiFile.textLength
         if (textLength <= 0) return null
         return psiFile.findElementAt(offset.coerceIn(0, textLength - 1))
-    }
-
-    private fun createSearchScope(
-        project: Project,
-        fileMaskCondition: Condition<CharSequence>?
-    ): GlobalSearchScope {
-        val baseScope = createFilteredScope(project)
-        if (fileMaskCondition == null) {
-            return baseScope
-        }
-
-        return object : DelegatingGlobalSearchScope(baseScope) {
-            override fun contains(file: VirtualFile): Boolean {
-                if (!super.contains(file)) return false
-                return fileMaskCondition.value(file.nameSequence)
-            }
-        }
     }
 
     private fun resolveActualContextType(element: PsiElement): String {
