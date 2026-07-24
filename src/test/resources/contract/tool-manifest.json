@@ -1,6 +1,6 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 47
+# tools: 48
 
 ## ide_build_project
 description:
@@ -286,6 +286,61 @@ schema:
     [
       "file",
       "content"
+    ],
+    "type": "object"
+  }
+
+## ide_create_module
+description:
+  Add a directory as an IntelliJ module with a content root, enabling code intelligence
+  for non-Maven projects (TypeScript, plain directories, etc.).
+  
+  Use this when ide_import_modules (Maven-only) does not apply. After adding a module,
+  ide_find_references, ide_diagnostics, and other tools will cover files in that directory.
+  
+  For Maven projects, prefer ide_import_modules which sets up the full reactor relationship.
+  For Gradle projects, use ide_open_project to open the Gradle project directly.
+  
+  Parameters:
+  - path (required): absolute directory path to add as a module content root
+  - name (optional): module name, defaults to the directory name
+  - excludes (optional): array of relative directory paths to mark as excluded
+    (e.g. ["node_modules", "dist", ".next"])
+  - project_path (optional): selects which project window to add the module to
+  
+  Example: {"path": "/Users/dev/my-app", "excludes": ["node_modules", "dist"]}
+schema:
+  {
+    "properties":
+    {
+      "excludes":
+      {
+        "description": "Relative directory paths within the module to mark as excluded (e.g. [\"node_modules\", \"dist\"]). Excluded directories are ignored by indexing and code intelligence.",
+        "items":
+        {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "name":
+      {
+        "description": "Module name. Defaults to the directory name if omitted.",
+        "type": "string"
+      },
+      "path":
+      {
+        "description": "Absolute directory path to add as a module content root.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "path"
     ],
     "type": "object"
   }

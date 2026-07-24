@@ -365,7 +365,7 @@ Three tiers, selected by class-name suffix:
      schema into `src/test/resources/contract/tool-manifest.json`. This is the regression net
      for large refactors: one assertion covers every registered tool × every schema property, so
      a dropped `register(...)` call or a mutated parameter type fails here instead of shipping.
-     Scope: 47 of the 50 tools in `ToolNames.ALL` (the three needing the Kotlin or Maven plugin
+     Scope: 48 of the 51 tools in `ToolNames.ALL` (the three needing the Kotlin or Maven plugin
      are covered by set-equality instead), and **inputs only**.
    - `ResultShapeContractUnitTest` snapshots the other half of the client contract — the response
      side — into `src/test/resources/contract/result-shapes.txt`: the wire key set, JSON value
@@ -491,6 +491,7 @@ Tools are organized by IDE availability.
 - `ide_open_file` - Open a file in the editor with optional line/column navigation (disabled by default)
 - `ide_set_power_save_mode` - Enable/disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis while keeping the index and code intelligence operational (disabled by default)
 - `ide_close_project` - Close an open project window and free its memory. Non-blocking; refuses to close the last open project so the MCP server keeps a JSON-RPC context (disabled by default)
+- `ide_create_module` - Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead. (disabled by default)
 - `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects (disabled by default)
 - `ide_install_plugin` - Install a plugin zip into the IDE, replacing any existing version; auto-detects `build/distributions/*.zip` when no path is given (disabled by default)
 - `ide_restart` - Restart the IDE; terminates the MCP connection. Call after `ide_install_plugin` (disabled by default)

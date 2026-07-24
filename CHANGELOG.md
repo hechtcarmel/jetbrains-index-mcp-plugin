@@ -3,6 +3,8 @@
 # IDE Index MCP Server Changelog
 
 ## [Unreleased]
+### Added
+- **`ide_create_module`** — add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions (e.g., `node_modules`, `dist`). For Maven projects, use `ide_import_modules` instead. *(disabled by default)*
 
 ## [5.1.0] - 2026-07-30
 

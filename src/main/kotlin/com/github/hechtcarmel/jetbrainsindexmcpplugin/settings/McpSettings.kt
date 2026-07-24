@@ -9,11 +9,12 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 
 private object ToolSettingsDefaults {
-    const val CURRENT_SCHEMA_VERSION = 5
+    const val CURRENT_SCHEMA_VERSION = 6
 
     val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
         ToolNames.BUILD_PROJECT,
         ToolNames.CLOSE_PROJECT,
+        ToolNames.CREATE_MODULE,
         ToolNames.IMPORT_MODULES,
         ToolNames.LIST_TESTS,
         ToolNames.RELOAD_PROJECT,
@@ -55,7 +56,8 @@ private object ToolSettingsDefaults {
         2 to setOf(ToolNames.OPEN_WORKSPACE),
         3 to setOf(ToolNames.CHANGE_SIGNATURE, ToolNames.CREATE_FILE, ToolNames.REPLACE_TEXT_IN_FILE, ToolNames.STRUCTURAL_SEARCH_REPLACE),
         4 to setOf(ToolNames.LIST_TESTS, ToolNames.RUN_TESTS),
-        5 to setOf(ToolNames.EDIT_MEMBER, ToolNames.INSERT_MEMBER, ToolNames.REPLACE_MEMBER)
+        5 to setOf(ToolNames.EDIT_MEMBER, ToolNames.INSERT_MEMBER, ToolNames.REPLACE_MEMBER),
+        6 to setOf(ToolNames.CREATE_MODULE)
     )
 }
 
