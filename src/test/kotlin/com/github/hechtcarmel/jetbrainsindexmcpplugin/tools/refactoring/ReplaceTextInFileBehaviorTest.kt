@@ -1,45 +1,18 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.intellij.testFramework.IndexingTestUtil
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import java.nio.file.Files
-import java.nio.file.Path
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
+class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun writeProjectFile(relativePath: String, content: String): Path {
-        val basePath = requireNotNull(project.basePath)
-        val path = Path.of(basePath, relativePath)
-        Files.createDirectories(path.parent)
-        Files.writeString(path, content)
-        requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(path.toString())) {
-            "Failed to refresh VFS for test file $path"
-        }
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-        return path
-    }
-
-    private fun readProjectFileVfs(relativePath: String): String {
-        val basePath = requireNotNull(project.basePath)
-        com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments()
-        com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments()
-        val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")
-            ?: return Files.readString(Path.of(basePath, relativePath))
-        val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)
-        return doc?.text ?: String(vf.contentsToByteArray())
-    }
-
-    private fun parseResult(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): ReplaceTextInFileTool.ReplaceTextResult {
-        return json.decodeFromString<ReplaceTextInFileTool.ReplaceTextResult>((result.content.single() as ContentBlock.Text).text)
-    }
+    private fun parseResult(result: ToolCallResult): ReplaceTextInFileTool.ReplaceTextResult =
+        json.decodeFromString(toolText(result))
 
     fun testReplaceLiteralTextMultipleOccurrences() = runBlocking {
         writeProjectFile("src/Caller.java", """
@@ -58,7 +31,7 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("replaceText", "(")
         })
 
-        assertFalse("Replace should succeed: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}", result.isError)
+        assertToolSucceeded("Replace should succeed", result)
         val payload = parseResult(result)
         assertTrue(payload.success)
         assertEquals(3, payload.replacements)
@@ -83,7 +56,7 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("replaceText", "replacement")
         })
 
-        assertFalse(result.isError)
+        assertToolSucceeded("Replace with no match should still succeed", result)
         val payload = parseResult(result)
         assertTrue(payload.success)
         assertEquals(0, payload.replacements)
@@ -106,13 +79,13 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("regex", true)
         })
 
-        assertFalse("Regex replace should succeed", result.isError)
+        assertToolSucceeded("Regex replace should succeed", result)
         val payload = parseResult(result)
         assertEquals(2, payload.replacements)
 
-        val content = readProjectFileVfs("src/Logger.java")
-        assertTrue("Should use trace", content.contains("LOG.trace("))
-        assertFalse("Should not have debug", content.contains("LOG.debug("))
+        assertFileContains("src/Logger.java", "LOG.trace(\"first message\")")
+        assertFileContains("src/Logger.java", "LOG.trace(\"second message\")")
+        assertFileDoesNotContain("src/Logger.java", "LOG.debug(")
     }
 
     fun testReplaceCaseInsensitive() = runBlocking {
@@ -131,12 +104,12 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("caseSensitive", false)
         })
 
-        assertFalse(result.isError)
+        assertToolSucceeded("Case-insensitive replace should succeed", result)
         val payload = parseResult(result)
         assertEquals(3, payload.replacements)
 
         val content = readProjectFileVfs("src/Mixed.java")
-        assertFalse(content.lowercase().contains("todo"))
+        assertFalse("No casing of the old identifier should survive", content.lowercase().contains("todo"))
     }
 
     fun testReplaceEmptySearchTextFails() = runBlocking {
@@ -150,7 +123,8 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("replaceText", "x")
         })
 
-        assertTrue("Empty search should fail", result.isError)
+        assertToolFailed("Empty search should fail", result)
+        assertEquals("searchText must not be empty.", toolText(result))
     }
 
     fun testReplaceIdenticalTextFails() = runBlocking {
@@ -164,7 +138,8 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("replaceText", "Same")
         })
 
-        assertTrue("Identical search/replace should fail", result.isError)
+        assertToolFailed("Identical search/replace should fail", result)
+        assertEquals("searchText and replaceText are identical — nothing to replace.", toolText(result))
     }
 
     fun testReplaceFileNotFound() = runBlocking {
@@ -174,7 +149,8 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("replaceText", "b")
         })
 
-        assertTrue("Missing file should fail", result.isError)
+        assertToolFailed("Missing file should fail", result)
+        assertEquals("File not found: src/DoesNotExist.java", toolText(result))
     }
 
     fun testReplaceTextEscapesNewlines() = runBlocking {
@@ -190,12 +166,12 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("replaceText", "package io.example;\\n\\nimport io.example.TaskStatus;")
         })
 
-        assertFalse("Replace should succeed", result.isError)
+        assertToolSucceeded("Replace should succeed", result)
         val payload = parseResult(result)
         assertEquals(1, payload.replacements)
 
         val content = readProjectFileVfs("src/Imports.java")
-        assertTrue("Should contain import on its own line", content.contains("import io.example.TaskStatus;"))
+        assertTrue("Should contain import on its own line", content.contains("\nimport io.example.TaskStatus;"))
         assertFalse("Should not contain literal backslash-n", content.contains("\\n"))
     }
 
@@ -211,6 +187,10 @@ class ReplaceTextInFileBehaviorTest : BasePlatformTestCase() {
             put("regex", true)
         })
 
-        assertTrue("Invalid regex should fail", result.isError)
+        assertToolFailed("Invalid regex should fail", result)
+        assertTrue(
+            "Error should name the invalid regex: ${toolText(result)}",
+            toolText(result).startsWith("Invalid regex: ")
+        )
     }
 }

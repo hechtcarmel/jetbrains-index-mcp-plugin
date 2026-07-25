@@ -16,13 +16,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResul
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiManager
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -33,12 +31,17 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.Assume
 
 /**
  * Integration tests for tool execution end-to-end.
  * Tests each navigation, intelligence, and project tool with realistic scenarios.
  */
-class ToolExecutionIntegrationTest : BasePlatformTestCase() {
+class ToolExecutionIntegrationTest : McpPlatformTestCase() {
+
+    private companion object {
+        const val DEFINITION_SRC = "definition-src"
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -80,62 +83,58 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
     }
 
     fun testFindDefinitionToolFullElementPreview() = runBlocking {
-        if (DumbService.isDumb(project)) return@runBlocking
+        registerSourceRoot(DEFINITION_SRC)
+        val serviceSource = """
+            package definitionpkg;
 
-        // Use myFixture to properly register files in the project source root.
-        myFixture.addFileToProject("Service.java", """
             public class Service {
                 public void doWork() {
                     System.out.println("done");
                 }
             }
-        """.trimIndent())
-        val callerPsi = myFixture.addFileToProject("Caller.java", """
+        """.trimIndent()
+        val callerSource = """
+            package definitionpkg;
+
             public class Caller {
                 private Service service = new Service();
                 public void call() {
                     service.doWork();
                 }
             }
-        """.trimIndent())
+        """.trimIndent()
+        writeProjectFile("$DEFINITION_SRC/definitionpkg/Service.java", serviceSource)
+        writeProjectFile("$DEFINITION_SRC/definitionpkg/Caller.java", callerSource)
 
-        val document = PsiDocumentManager.getInstance(project).getDocument(callerPsi)
-        assertNotNull("Caller.java should have a document", document)
-        val offset = document!!.text.indexOf("doWork")
-        assertTrue("Should find doWork reference in Caller.java", offset >= 0)
-        val line = document.getLineNumber(offset) + 1
-        val column = offset - document.getLineStartOffset(line - 1) + 1
+        val (callLine, callColumn) = findPosition(callerSource, "doWork")
+        val result = FindDefinitionTool().execute(project, buildJsonObject {
+            put("file", "$DEFINITION_SRC/definitionpkg/Caller.java")
+            put("line", callLine)
+            put("column", callColumn)
+            put("fullElementPreview", true)
+        })
 
-        val tool = FindDefinitionTool()
-        val result = try {
-            tool.execute(project, buildJsonObject {
-                put("file", callerPsi.virtualFile.path)
-                put("line", line)
-                put("column", column)
-                put("fullElementPreview", true)
-            })
-        } catch (e: com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException) {
-            System.err.println("testFindDefinitionToolFullElementPreview: skipped – index not ready")
-            return@runBlocking
-        }
+        assertToolSucceeded("Cross-file definition lookup should succeed", result)
+        val definition = json.decodeFromString<DefinitionResult>(toolText(result))
 
-        if (result.isError) {
-            // In-memory VFS may not expose the file through LocalFileSystem; skip rather than fail.
-            System.err.println("testFindDefinitionToolFullElementPreview: skipped – tool returned error: ${result.content}")
-            return@runBlocking
-        }
-
-        val content = result.content.first() as ContentBlock.Text
-        val definition = json.decodeFromString<DefinitionResult>(content.text)
-
-        if (!definition.file.endsWith("Service.java")) {
-            // Cross-file PSI resolution unavailable in this test environment; skip rather than fail.
-            System.err.println("testFindDefinitionToolFullElementPreview: skipped – definition resolved to ${definition.file}, expected Service.java")
-            return@runBlocking
-        }
-
-        assertTrue("Full preview should include method name", definition.preview.contains("doWork"))
+        val (declarationLine, declarationColumn) = findPosition(serviceSource, "doWork")
+        assertEquals("$DEFINITION_SRC/definitionpkg/Service.java", definition.file)
+        assertEquals("doWork", definition.symbolName)
+        assertEquals(declarationLine, definition.line)
+        assertEquals(declarationColumn, definition.column)
         assertEquals("astPath should contain enclosing class", listOf("Service"), definition.astPath)
+
+        // fullElementPreview must return the declaration verbatim. The default preview returns
+        // surrounding document lines prefixed with "<line>: ", so an exact match is what
+        // distinguishes the two modes.
+        assertEquals(
+            """
+            public void doWork() {
+                    System.out.println("done");
+                }
+            """.trimIndent(),
+            definition.preview
+        )
     }
 
     fun testReadFileToolValidation() = runBlocking {
@@ -209,7 +208,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
     }
 
     fun testFindFileToolPreservesAbsolutePathForLibrarySources() = runBlocking {
-        if (DumbService.isDumb(project)) return@runBlocking
+        Assume.assumeTrue("Index must be ready for library file search", !DumbService.isDumb(project))
 
         val libraryRoot = Files.createTempDirectory("jetbrains-index-mcp-lib")
         val packageDir = Files.createDirectories(libraryRoot.resolve("libpkg"))
@@ -316,7 +315,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
     }
 
     fun testFindUsagesToolFindsProjectUsagesFromLibrarySourcePath() = runBlocking {
-        if (DumbService.isDumb(project)) return@runBlocking
+        Assume.assumeTrue("Index must be ready for library-source usage search", !DumbService.isDumb(project))
 
         val className = "ExternalLib${System.nanoTime().toString().takeLast(8)}"
         val sourceRoot = Files.createTempDirectory("jetbrains-index-mcp-lib-src")
@@ -552,38 +551,6 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             assertNotNull("${definition.name} should have inputSchema", definition.inputSchema)
             assertEquals("${definition.name} inputSchema should be object type",
                 "object", definition.inputSchema["type"]?.toString()?.replace("\"", ""))
-        }
-    }
-
-    // Error Scenario Tests
-
-    fun testToolsHandleNullProject() {
-        // This test verifies tools handle edge cases gracefully
-        val registry = ToolRegistry()
-        registry.registerBuiltInTools()
-
-        registry.getAllTools().forEach { tool ->
-            assertNotNull("${tool.name} should have name", tool.name)
-            assertNotNull("${tool.name} should have description", tool.description)
-            assertNotNull("${tool.name} should have inputSchema", tool.inputSchema)
-        }
-    }
-
-    fun testToolsReturnProperContentBlocks() = runBlocking {
-        val tool = GetIndexStatusTool()
-        val result = tool.execute(project, buildJsonObject { })
-
-        assertFalse("Result should not be error", result.isError)
-        assertTrue("Result should have content", result.content.isNotEmpty())
-
-        result.content.forEach { block ->
-            when (block) {
-                is ContentBlock.Text -> assertNotNull("Text block should have text", block.text)
-                is ContentBlock.Image -> {
-                    assertNotNull("Image block should have data", block.data)
-                    assertNotNull("Image block should have mimeType", block.mimeType)
-                }
-            }
         }
     }
 

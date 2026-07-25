@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -8,7 +8,6 @@ import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.SmartPointerManager
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
@@ -18,26 +17,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-class MoveFileToolBehaviorTest : BasePlatformTestCase() {
+class MoveFileToolBehaviorTest : McpPlatformTestCase() {
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
-    }
-
-    private fun textResult(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String =
-        (result.content.first() as ContentBlock.Text).text
-
-    private fun writeProjectFile(relativePath: String, content: String): Path {
-        val projectBasePath = requireNotNull(project.basePath)
-        val path = Path.of(projectBasePath, relativePath)
-        Files.createDirectories(path.parent)
-        Files.writeString(path, content)
-        requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(path.toString())) {
-            "Failed to refresh VFS for test file ${path}"
-        }
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-        return path
     }
 
     private fun createProjectDirectory(relativePath: String): PsiDirectory {
@@ -58,6 +42,11 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         )
         method.isAccessible = true
         return method.invoke(tool, project, targetDirectory) as? String
+    }
+
+    private fun resultMessage(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String {
+        val resultJson = json.parseToJsonElement(toolText(result)).jsonObject
+        return resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
     }
 
     fun testComposerNamespaceInferenceUsesNestedComposerJson() {
@@ -81,7 +70,7 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
     }
 
     fun testMoveFileToolFailsFastWhenPhpSemanticMoveIsUnsupported() = runBlocking {
-        writeProjectFile("src/Foo.php", "<?php class Foo {}")
+        writeProjectFile("src/Unsupported.php", "<?php class Unsupported {}")
 
         val tool = object : MoveFileTool() {
             override fun selectMoveBackend(
@@ -93,17 +82,19 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
         }
 
         val result = tool.execute(project, buildJsonObject {
-            put("file", "src/Foo.php")
-            put("destination", "src/Internal")
+            put("file", "src/Unsupported.php")
+            put("destination", "src/UnsupportedTarget")
         })
 
-        assertTrue("Unsupported PHP semantic moves should fail fast", result.isError)
-        assertTrue(textResult(result).contains("semantic PHP move blocked for test"))
+        assertToolFailed("Unsupported PHP semantic moves should fail fast", result)
+        assertTrue(toolText(result).contains("semantic PHP move blocked for test"))
+        assertProjectFileExists("src/Unsupported.php")
+        assertProjectFileAbsent("src/UnsupportedTarget/Unsupported.php")
         IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 
     fun testMoveFileToolReportsPhpSemanticBackendWhenSelected() = runBlocking {
-        val sourceFile = writeProjectFile("src/Foo.php", "<?php class Foo {}")
+        writeProjectFile("src/Foo.php", "<?php class Foo {}")
 
         val tool = object : MoveFileTool() {
             override fun selectMoveBackend(
@@ -130,31 +121,80 @@ class MoveFileToolBehaviorTest : BasePlatformTestCase() {
             put("destination", "src/Internal")
         })
 
-        assertFalse("PHP semantic backend test move should succeed", result.isError)
-        val resultJson = json.parseToJsonElement(textResult(result)).jsonObject
-        val message = resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
+        assertToolSucceeded("PHP semantic backend test move should succeed", result)
+        val message = resultMessage(result)
         assertTrue(message.contains("using PhpStorm semantic PHP move"))
         assertTrue(message.contains("src/Internal/Foo.php"))
-        assertFalse("Source file should be moved away", Files.exists(sourceFile))
-        assertTrue("Moved file should exist in target directory", Files.exists(sourceFile.parent.resolve("Internal/Foo.php")))
+        assertProjectFileAbsent("src/Foo.php")
+        assertProjectFileExists("src/Internal/Foo.php")
+        assertFileContains("src/Internal/Foo.php", "class Foo")
         IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 
     fun testMoveFileToolGenericPathNoLongerClaimsReferencesUpdated() = runBlocking {
-        val sourceFile = writeProjectFile("notes/todo.txt", "todo")
+        writeProjectFile("notes/todo.txt", "todo")
 
         val result = MoveFileTool().execute(project, buildJsonObject {
             put("file", "notes/todo.txt")
             put("destination", "archive")
         })
 
-        assertFalse("Generic file move should succeed for plain text files", result.isError)
-        val resultJson = json.parseToJsonElement(textResult(result)).jsonObject
-        val message = resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
+        assertToolSucceeded("Generic file move should succeed for plain text files", result)
+        val message = resultMessage(result)
         assertTrue(message.contains("using IDE file move semantics"))
         assertFalse(message.contains("references updated"))
-        assertFalse(Files.exists(sourceFile))
-        assertTrue(Files.exists(Path.of(requireNotNull(project.basePath), "archive/todo.txt")))
+        assertProjectFileAbsent("notes/todo.txt")
+        assertProjectFileExists("archive/todo.txt")
+        assertFileContains("archive/todo.txt", "todo")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    // Cross-file coverage: the point of moving through the IDE rather than `mv` is that the
+    // moved file's package and every importer are rewritten. A source root is required so the
+    // package can be derived and `ReferencesSearch` can see the importer.
+    fun testJavaMoveUpdatesPackageAndImportInReferencingFile() = runBlocking {
+        registerSourceRoot("move-src")
+        writeProjectFile(
+            "move-src/moveorigin/MovedService.java", """
+            package moveorigin;
+
+            public class MovedService {
+                public String describe() {
+                    return "moved";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "move-src/moveconsumer/ServiceClient.java", """
+            package moveconsumer;
+
+            import moveorigin.MovedService;
+
+            public class ServiceClient {
+                public String describe() {
+                    return new MovedService().describe();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "move-src/moveorigin/MovedService.java")
+            put("destination", "move-src/movetarget")
+        })
+
+        assertToolSucceeded("Java file move should succeed", result)
+        assertTrue(resultMessage(result).contains("move-src/movetarget/MovedService.java"))
+        assertProjectFileAbsent("move-src/moveorigin/MovedService.java")
+        assertProjectFileExists("move-src/movetarget/MovedService.java")
+        assertRenamedInFile("move-src/movetarget/MovedService.java", "package moveorigin;", "package movetarget;")
+        assertRenamedInFile(
+            "move-src/moveconsumer/ServiceClient.java",
+            "moveorigin.MovedService",
+            "movetarget.MovedService"
+        )
+        assertFileContains("move-src/moveconsumer/ServiceClient.java", "new MovedService().describe()")
         IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 }

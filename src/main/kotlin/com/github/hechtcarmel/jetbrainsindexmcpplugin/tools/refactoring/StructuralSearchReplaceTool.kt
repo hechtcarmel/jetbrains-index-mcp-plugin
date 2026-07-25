@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -315,7 +316,28 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
             var count = 0
             edtAction {
                 val replaceAll = replacerClass.getMethod("replaceAll", List::class.java)
-                replaceAll.invoke(replacer, replacements)
+                // Replacer.replaceAll opens its own write action but never a command, and
+                // PomModelImpl rejects any PSI change to physical files outside one. The IDE's
+                // own "Replace All" wraps it the same way, so do not add a nested write action.
+                //
+                // The failure has to be carried out by hand: CommandProcessor.executeCommand
+                // catches Throwable and rethrows only ProcessCanceledException, so without this
+                // a failed replace (read-only file, malformed replacement) would return normally
+                // and be reported as "Replaced N of N match(es)" with nothing written.
+                var failure: Throwable? = null
+                CommandProcessor.getInstance().executeCommand(
+                    project,
+                    {
+                        try {
+                            replaceAll.invoke(replacer, replacements)
+                        } catch (t: Throwable) {
+                            failure = t
+                        }
+                    },
+                    "Structural Replace",
+                    "MCP Refactoring"
+                )
+                failure?.let { throw it }
                 count = replacements.size
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 FileDocumentManager.getInstance().saveAllDocuments()

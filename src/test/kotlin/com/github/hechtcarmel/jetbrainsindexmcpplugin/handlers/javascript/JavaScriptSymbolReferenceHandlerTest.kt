@@ -1,14 +1,14 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiNamedElement
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
 
-class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
+class JavaScriptSymbolReferenceHandlerTest : McpPlatformTestCase() {
 
     private companion object {
         const val FIXTURE_SOURCE_ROOT = "src/test/testData/javascript/webstormIntegration"
@@ -18,9 +18,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     private val handler = JavaScriptSymbolReferenceHandler()
 
     fun testResolveNamedExportSuccess() {
-        if (!requireJsTsCapability("testResolveNamedExportSuccess")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/utils/date.ts",
             """
             export function formatDate(input: string): string {
@@ -37,9 +35,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveDefaultExportSuccess() {
-        if (!requireJsTsCapability("testResolveDefaultExportSuccess")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/App.tsx",
             """
             export default function App() {
@@ -56,9 +52,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveClassMemberSuccess() {
-        if (!requireJsTsCapability("testResolveClassMemberSuccess")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/domain/User.ts",
             """
             export class User {
@@ -77,9 +71,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveNotFoundDeterministicFailure() {
-        if (!requireJsTsCapability("testResolveNotFoundDeterministicFailure")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/utils/date.ts",
             """
             export function formatDate(input: string): string {
@@ -99,9 +91,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
         // This test was previously documenting broken behavior (false ambiguous_match).
         // It now asserts correct behavior: direct-file precedence resolves to foo.ts,
         // not ambiguous_match, when both foo.ts and foo/index.ts export the same name.
-        if (!requireJsTsCapability("testResolveAmbiguousMatchDeterministicFailure")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/utils/format.ts",
             """
             export function formatValue(input: string): string {
@@ -109,7 +99,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
             }
             """.trimIndent()
         )
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/utils/format/index.ts",
             """
             export function formatValue(input: string): string {
@@ -127,8 +117,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveDefaultExportClassForm() {
-        if (!requireJsTsCapability("testResolveDefaultExportClassForm")) return
-
         addWebstormIntegrationFixture("export-default-class.ts")
 
         val result = handler.resolveSymbol(project, fixtureSymbol("export-default-class.ts", "default"))
@@ -139,9 +127,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveDirectFilePrecedenceOverIndex() {
-        if (!requireJsTsCapability("testResolveDirectFilePrecedenceOverIndex")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/utils/format.ts",
             """
             export function formatValue(input: string): string {
@@ -149,7 +135,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
             }
             """.trimIndent()
         )
-        myFixture.addFileToProject(
+        writeProjectFile(
             "src/utils/format/index.ts",
             """
             export function formatValue(input: string): string {
@@ -167,29 +153,29 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveIndexFileWhenDirectNotExists() {
-        if (!requireJsTsCapability("testResolveIndexFileWhenDirectNotExists")) return
-
-        myFixture.addFileToProject(
-            "src/utils/format/index.ts",
+        // Fixtures now live on the real filesystem under a shared light project, so this
+        // "only foo/index.ts exists" scenario needs a directory no other test writes a
+        // sibling foo.ts into.
+        writeProjectFile(
+            "src/indexFallback/format/index.ts",
             """
             export function formatValue(input: string): string {
                 return input.toUpperCase();
             }
             """.trimIndent()
         )
+        assertProjectFileAbsent("src/indexFallback/format.ts")
 
-        val result = handler.resolveSymbol(project, "src/utils/format#formatValue")
+        val result = handler.resolveSymbol(project, "src/indexFallback/format#formatValue")
 
         assertTrue("Should resolve to index file when only foo/index.ts exists (fallback path)", result.isSuccess)
         val element = result.getOrThrow()
         assertNamed(element, "formatValue")
-        assertContainingFileSuffix(element, "src/utils/format/index.ts")
+        assertContainingFileSuffix(element, "src/indexFallback/format/index.ts")
     }
 
     fun testResolveWorkspacePrefixedModulePathUsesProjectRootBeforeNestedContentRoot() {
-        if (!requireJsTsCapability("testResolveWorkspacePrefixedModulePathUsesProjectRootBeforeNestedContentRoot")) return
-
-        myFixture.addFileToProject(
+        writeProjectFile(
             "packages/app/src/user.ts",
             """
             export class User {
@@ -197,7 +183,7 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
             }
             """.trimIndent()
         )
-        myFixture.addFileToProject(
+        writeProjectFile(
             "packages/app/packages/app/src/user.ts",
             """
             export class User {
@@ -205,7 +191,10 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
             }
             """.trimIndent()
         )
-        val nestedContentRoot = myFixture.tempDirFixture.findOrCreateDir("packages/app")
+        val basePath = requireNotNull(project.basePath) { "Project base path is null" }
+        val nestedContentRoot = requireNotNull(
+            LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/packages/app")
+        ) { "Nested content root packages/app was not created on disk" }
         PsiTestUtil.addContentRoot(module, nestedContentRoot)
         IndexingTestUtil.waitUntilIndexesAreReady(project)
 
@@ -221,8 +210,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveOverloadedExportFixtureCoverageHook() {
-        if (!requireJsTsCapability("testResolveOverloadedExportFixtureCoverageHook")) return
-
         addWebstormIntegrationFixture("overloads/overloaded-export.ts")
 
         val result = handler.resolveSymbol(project, fixtureSymbol("overloads/overloaded-export.ts", "getProjectId"))
@@ -235,8 +222,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveRealisticMultiNamedIndexBarrelFixtureCoverageHook() {
-        if (!requireJsTsCapability("testResolveRealisticMultiNamedIndexBarrelFixtureCoverageHook")) return
-
         addWebstormIntegrationFixture("barrels/realistic/config/loader.ts")
         addWebstormIntegrationFixture("barrels/realistic/config/index.ts")
 
@@ -247,8 +232,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveNamedBarrelFixtureCoverageHook() {
-        if (!requireJsTsCapability("testResolveNamedBarrelFixtureCoverageHook")) return
-
         addWebstormIntegrationFixture("barrels/plugin-config.ts")
         addWebstormIntegrationFixture("barrels/named-barrel.ts")
 
@@ -260,8 +243,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveExportStarBarrelFixtureCoverageHook() {
-        if (!requireJsTsCapability("testResolveExportStarBarrelFixtureCoverageHook")) return
-
         addWebstormIntegrationFixture("barrels/plugin-config.ts")
         addWebstormIntegrationFixture("barrels/export-star-barrel.ts")
 
@@ -273,8 +254,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveBarrelFixturesRemainDisambiguatedAcrossSameNamedExports() {
-        if (!requireJsTsCapability("testResolveBarrelFixturesRemainDisambiguatedAcrossSameNamedExports")) return
-
         addWebstormIntegrationFixture("barrels/plugin-config.ts")
         addWebstormIntegrationFixture("barrels/named-barrel.ts")
         addWebstormIntegrationFixture("barrels/unrelated-plugin-config.ts")
@@ -290,8 +269,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
     }
 
     fun testResolveUnsupportedGrammarCoverageHookForFixtureGuidance() {
-        if (!requireJsTsCapability("testResolveUnsupportedGrammarCoverageHookForFixtureGuidance")) return
-
         val symbol = "$FIXTURE_PROJECT_ROOT/overloads/overloaded-export#getProjectId(string)"
         val result = handler.resolveSymbol(project, symbol)
 
@@ -301,10 +278,22 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
         assertTrue("Coverage hook should keep accepted-form guidance visible", message.contains("modulePath#exportName"))
     }
 
+    private var fixtureRootRegistered = false
+
+    /**
+     * Materializes a JS/TS fixture on the real filesystem under the project root.
+     *
+     * The fixture root is registered so JS/TS import and re-export resolution — which the
+     * barrel fixtures depend on — sees the files as project sources.
+     * See [com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase].
+     */
     private fun addWebstormIntegrationFixture(relativePath: String) {
+        if (!fixtureRootRegistered) {
+            registerSourceRoot(FIXTURE_PROJECT_ROOT)
+            fixtureRootRegistered = true
+        }
         val sourcePath = Path.of(FIXTURE_SOURCE_ROOT).resolve(relativePath)
-        val targetPath = "$FIXTURE_PROJECT_ROOT/$relativePath"
-        myFixture.addFileToProject(targetPath, Files.readString(sourcePath))
+        writeProjectFile("$FIXTURE_PROJECT_ROOT/$relativePath", Files.readString(sourcePath))
     }
 
     private fun fixtureSymbol(relativePath: String, exportName: String): String {
@@ -323,20 +312,6 @@ class JavaScriptSymbolReferenceHandlerTest : BasePlatformTestCase() {
             .removeSuffix(".jsx")
             .removeSuffix(".mjs")
             .removeSuffix(".cjs")
-    }
-
-    private fun requireJsTsCapability(testName: String): Boolean {
-        if (!PluginDetectors.javaScript.isAvailable) {
-            System.err.println("$testName: skipped - JavaScript plugin not available")
-            return false
-        }
-        return try {
-            Class.forName("com.intellij.lang.javascript.psi.JSNamedElement")
-            true
-        } catch (_: ClassNotFoundException) {
-            System.err.println("$testName: skipped - JavaScript PSI classes unavailable")
-            false
-        }
     }
 
     private fun assertNamed(element: PsiNamedElement, expected: String) {

@@ -68,16 +68,6 @@ class ProjectWindowToolsUnitTest : TestCase() {
         assertFalse(required.contains("timeoutSeconds"))
     }
 
-    fun testAllToolsInToolNamesAll() {
-        assertTrue(ToolNames.ALL.contains(ToolNames.SET_POWER_SAVE_MODE))
-        assertTrue(ToolNames.ALL.contains(ToolNames.CLOSE_PROJECT))
-        assertTrue(ToolNames.ALL.contains(ToolNames.OPEN_PROJECT))
-    }
-
-    fun testToolNamesAllRemainsAlphabeticallySorted() {
-        assertEquals(ToolNames.ALL.sorted(), ToolNames.ALL)
-    }
-
     fun testProjectWindowToolsAreDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_close_project must be opt-in", defaults.contains(ToolNames.CLOSE_PROJECT))
@@ -114,10 +104,6 @@ class ProjectWindowToolsUnitTest : TestCase() {
         assertTrue("ide_import_modules must be opt-in by default", defaults.contains(ToolNames.IMPORT_MODULES))
     }
 
-    fun testImportModulesToolNameInAll() {
-        assertTrue("IMPORT_MODULES must be in ToolNames.ALL", ToolNames.ALL.contains(ToolNames.IMPORT_MODULES))
-    }
-
     fun testOpenWorkspaceToolName() {
         assertEquals(ToolNames.OPEN_WORKSPACE, OpenWorkspaceTool().name)
     }
@@ -139,9 +125,5 @@ class ProjectWindowToolsUnitTest : TestCase() {
     fun testOpenWorkspaceToolIsDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_open_workspace must be opt-in by default", defaults.contains(ToolNames.OPEN_WORKSPACE))
-    }
-
-    fun testOpenWorkspaceToolNameInAll() {
-        assertTrue("OPEN_WORKSPACE must be in ToolNames.ALL", ToolNames.ALL.contains(ToolNames.OPEN_WORKSPACE))
     }
 }

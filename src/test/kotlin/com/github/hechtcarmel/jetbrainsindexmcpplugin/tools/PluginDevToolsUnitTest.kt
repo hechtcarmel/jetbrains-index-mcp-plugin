@@ -35,25 +35,6 @@ class PluginDevToolsUnitTest : TestCase() {
         assertNotNull(properties?.get("project_path"))
     }
 
-    fun testRestartIdeToolDescriptionWarnsAboutConnectionLoss() {
-        val desc = RestartIdeTool().description
-        assertTrue(
-            "Description must warn that the MCP connection will terminate",
-            desc.contains("terminates", ignoreCase = true) ||
-            desc.contains("connection", ignoreCase = true) ||
-            desc.contains("drop", ignoreCase = true)
-        )
-    }
-
-    fun testToolNamesAllContainsPluginDevTools() {
-        assertTrue(ToolNames.ALL.contains(ToolNames.INSTALL_PLUGIN))
-        assertTrue(ToolNames.ALL.contains(ToolNames.RESTART_IDE))
-    }
-
-    fun testToolNamesAllIsSorted() {
-        assertEquals(ToolNames.ALL.sorted(), ToolNames.ALL)
-    }
-
     fun testPluginDevToolsAreDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_install_plugin must be opt-in", defaults.contains(ToolNames.INSTALL_PLUGIN))

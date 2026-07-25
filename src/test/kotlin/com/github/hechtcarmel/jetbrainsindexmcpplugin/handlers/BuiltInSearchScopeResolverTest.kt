@@ -13,7 +13,7 @@ import kotlinx.serialization.json.put
 import org.jetbrains.jps.model.java.JavaSourceRootType
 import org.jetbrains.jps.model.java.JpsJavaExtensionService
 
-class BuiltInSearchScopeResolverUnitTest : BasePlatformTestCase() {
+class BuiltInSearchScopeResolverTest : BasePlatformTestCase() {
 
     fun testWireValuesAreStable() {
         assertEquals(

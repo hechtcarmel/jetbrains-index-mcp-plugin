@@ -5,9 +5,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.python.PythonSymb
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
-import com.jetbrains.python.psi.PyClass
-import com.jetbrains.python.psi.PyFunction
-import com.jetbrains.python.psi.types.TypeEvalContext
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -19,35 +16,40 @@ import junit.framework.TestCase
 /**
  * Pure (non-fixture) unit tests for [PythonSymbolReferenceHandler].
  *
- * Exercises symbol-format validation and the resolution dispatch logic by
- * injecting fake index lookups, so it runs without a real Python stub index.
+ * Exercises symbol-format validation and the resolution dispatch logic by injecting fake index
+ * lookups, so it runs without a real Python stub index.
  *
- * Mocks [PyFunction]/[PyClass] (not bare [PsiNamedElement]) because
- * [BasePythonHandler.getQualifiedName] resolves the qualified name via
- * reflection on the runtime class (`element.javaClass.getMethod("getQualifiedName")`);
- * the mockk subclass implements the interface method, so the reflective call finds
- * it and returns the stubbed value. Helpers return [PsiNamedElement] so `mapOf`
- * literals infer `Map<String, PsiNamedElement>` directly (`Pair` is invariant).
+ * The fakes are duck-typed against [QualifiedNamedElement], declared here in the test's own
+ * package, because [BasePythonHandler.getQualifiedName] resolves the qualified name reflectively
+ * (`element.javaClass.getMethod("getQualifiedName")`) — a bare [PsiNamedElement] mock has no such
+ * method. Production imports nothing from `com.jetbrains.python`; it is reflection all the way
+ * down, so nothing here needs PyCharm's real types.
+ *
+ * Deliberately NOT declared under `com.jetbrains.python.psi`: [PluginDetectors] probes for
+ * `com.jetbrains.python.psi.PyClass` via `Class.forName`, so a test-tree class at that FQN makes
+ * `PluginDetectors.python.isAvailable` return true in every test and silently registers Python
+ * handlers into a half-stubbed world no shipped IDE can reach.
+ * [PluginDetectorLeakUnitTest] guards against that regression.
  */
 class PythonSymbolReferenceHandlerUnitTest : TestCase() {
+
+    /** Minimal shape [BasePythonHandler]'s reflective qualified-name lookup requires. */
+    private interface QualifiedNamedElement : PsiNamedElement {
+        fun getQualifiedName(): String?
+    }
 
     private val project: Project = mockk(relaxed = true)
 
     private fun mockPyFunction(qName: String, offset: Int = 0): PsiNamedElement =
-        mockk<PyFunction>(relaxed = true) {
-            every { getName() } returns qName.substringAfterLast('.')
-            every { getQualifiedName() } returns qName
-            every { textOffset } returns offset
-            every { containingFile } returns null
-        }
+        mockQualifiedElement(qName, offset)
 
     private fun mockPyClass(qName: String, offset: Int = 0): PsiNamedElement =
-        mockk<PyClass>(relaxed = true) {
+        mockQualifiedElement(qName, offset)
+
+    private fun mockQualifiedElement(qName: String, offset: Int): PsiNamedElement =
+        mockk<QualifiedNamedElement>(relaxed = true) {
             every { getName() } returns qName.substringAfterLast('.')
             every { getQualifiedName() } returns qName
-            every { getAncestorClasses(any<TypeEvalContext>()) } returns emptyList()
-            every { getSuperClasses(any<TypeEvalContext>()) } returns emptyArray()
-            every { findMethodByName(any(), any(), any<TypeEvalContext>()) } returns null
             every { textOffset } returns offset
             every { containingFile } returns null
             every { parent } returns null
@@ -243,29 +245,53 @@ class PythonSymbolReferenceHandlerUnitTest : TestCase() {
         assertNull(cls.getOrNull())
     }
 
-    // ── registration wiring (the PR's core claim) ──────────────────────────────
+    // ── registration wiring ────────────────────────────────────────────────────
 
-    fun testRegistryExposesPythonSymbolReferenceHandler() {
-        // The registry's retrieval filters by isAvailable(), which is false in CI (no Python plugin).
-        // Force PluginDetectors.python.isAvailable so the wiring (register -> schema enum -> dispatch)
-        // can be exercised here. pyClassClass loads the test stub, so isAvailable() flips true.
-        mockkObject(PluginDetectors)
-        val pythonDetector = mockk<PluginDetector>()
-        every { pythonDetector.isAvailable } returns true
-        every { PluginDetectors.python } returns pythonDetector
+    /**
+     * The Python handler cannot be used to test this: `isAvailable()` is
+     * `PluginDetectors.python.isAvailable && pyClassClass != null`, and `pyClassClass` resolves
+     * `com.jetbrains.python.psi.PyClass` reflectively. Making it non-null requires a test class
+     * at that FQN — which is exactly the [PluginDetectorLeakUnitTest] regression.
+     *
+     * The behavior under test is the registry's availability filter, which is language-agnostic,
+     * so fake handlers exercise it directly and cover both branches instead of one.
+     */
+    fun testRegistryAdvertisesOnlyAvailableSymbolReferenceHandlers() {
         LanguageHandlerRegistry.clear()
         try {
-            LanguageHandlerRegistry.registerSymbolReferenceHandler(PythonSymbolReferenceHandler())
-            assertTrue(
-                "'Python' must be advertised as a supported symbol-reference language",
-                LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference().contains("Python")
+            LanguageHandlerRegistry.registerSymbolReferenceHandler(FakeSymbolReferenceHandler("Available", available = true))
+            LanguageHandlerRegistry.registerSymbolReferenceHandler(FakeSymbolReferenceHandler("Unavailable", available = false))
+
+            assertEquals(
+                "only handlers reporting isAvailable() should be advertised",
+                listOf("Available"),
+                LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference()
             )
-            val h = LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("Python")
-            assertNotNull("Python symbol reference handler should be retrievable from the registry", h)
-            assertEquals("Python", h?.languageName)
+            assertNotNull(
+                "an available handler must be retrievable by language name",
+                LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("Available")
+            )
+            assertNull(
+                "an unavailable handler must not be retrievable, even though it is registered",
+                LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("Unavailable")
+            )
+            assertNotNull(
+                "language name matching is case-insensitive",
+                LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("available")
+            )
         } finally {
             LanguageHandlerRegistry.clear()
-            unmockkObject(PluginDetectors)
         }
+    }
+
+    private class FakeSymbolReferenceHandler(
+        override val languageName: String,
+        private val available: Boolean
+    ) : com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolReferenceHandler {
+        override val languageId: String = languageName
+        override fun isAvailable(): Boolean = available
+        override fun canHandle(element: PsiElement): Boolean = false
+        override fun resolveSymbol(project: Project, symbol: String): Result<PsiNamedElement> =
+            Result.failure(UnsupportedOperationException("fake"))
     }
 }

@@ -18,28 +18,10 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class LifecycleUnitTest : TestCase() {
 
-    fun testProjectModeHasExactlyFourStates() {
-        val values = ProjectMode.entries
-        assertEquals(4, values.size)
-        assertTrue(values.contains(ProjectMode.ACTIVE))
-        assertTrue(values.contains(ProjectMode.BACKGROUND))
-        assertTrue(values.contains(ProjectMode.DORMANT))
-        assertTrue(values.contains(ProjectMode.CLOSED))
-    }
-
     fun testStateDefaultsAreEmpty() {
         val state = ProjectModeService.State()
         assertTrue(state.closedProjectPaths.isEmpty())
         assertTrue(state.managedProjectPaths.isEmpty())
-    }
-
-    fun testStateClosedAndManagedAreIndependentSets() {
-        val state = ProjectModeService.State()
-        state.closedProjectPaths.add("/closed/project")
-        state.managedProjectPaths.add("/managed/project")
-
-        assertFalse(state.closedProjectPaths.contains("/managed/project"))
-        assertFalse(state.managedProjectPaths.contains("/closed/project"))
     }
 
     fun testLifecycleSettingsDefaultValues() {
@@ -97,14 +79,6 @@ class LifecycleUnitTest : TestCase() {
         assertEquals(ToolNames.SET_PROJECT_MODE, SetProjectModeTool().name)
     }
 
-    fun testSetProjectModeToolDescriptionMentionsAllModes() {
-        val desc = SetProjectModeTool().description
-        assertTrue(desc.contains("active"))
-        assertTrue(desc.contains("background"))
-        assertTrue(desc.contains("dormant"))
-        assertTrue(desc.contains("closed"))
-    }
-
     fun testSetProjectModeToolModeIsRequired() {
         val schema = SetProjectModeTool().inputSchema
         val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
@@ -120,11 +94,11 @@ class LifecycleUnitTest : TestCase() {
             ?.map { it.jsonPrimitive.content }
 
         assertNotNull("mode must declare an enum constraint", modeEnum)
-        assertEquals(4, modeEnum!!.size)
-        assertTrue(modeEnum.contains("active"))
-        assertTrue(modeEnum.contains("background"))
-        assertTrue(modeEnum.contains("dormant"))
-        assertTrue(modeEnum.contains("closed"))
+        assertEquals(
+            "every ProjectMode must be reachable through the schema enum",
+            ProjectMode.entries.map { it.name.lowercase() }.sorted(),
+            modeEnum!!.sorted()
+        )
     }
 
     fun testSetProjectModeToolProjectPathIsOptional() {
@@ -149,17 +123,6 @@ class LifecycleUnitTest : TestCase() {
     fun testReleaseProjectToolHasNoRequiredFields() {
         val required = ReleaseProjectTool().inputSchema["required"]?.jsonArray
         assertTrue(required == null || required.isEmpty())
-    }
-
-    fun testToolNamesAllContainsLifecycleTools() {
-        assertTrue(ToolNames.ALL.contains(ToolNames.ENROLL_ALL_PROJECTS))
-        assertTrue(ToolNames.ALL.contains(ToolNames.GET_PROJECT_MODES))
-        assertTrue(ToolNames.ALL.contains(ToolNames.LIFECYCLE_LOG))
-        assertTrue(ToolNames.ALL.contains(ToolNames.PROJECT_STATUS))
-        assertTrue(ToolNames.ALL.contains(ToolNames.RELEASE_ALL_PROJECTS))
-        assertTrue(ToolNames.ALL.contains(ToolNames.RELEASE_PROJECT))
-        assertTrue(ToolNames.ALL.contains(ToolNames.SET_ALL_PROJECT_MODES))
-        assertTrue(ToolNames.ALL.contains(ToolNames.SET_PROJECT_MODE))
     }
 
     fun testEnrollAllProjectsToolName() {
@@ -212,14 +175,6 @@ class LifecycleUnitTest : TestCase() {
         assertNotNull("schema must include project", props["project"])
     }
 
-    fun testLifecycleLogToolDescriptionDocumentsKeyTriggers() {
-        val desc = LifecycleLogTool().description
-        assertTrue(desc.contains("timer:inactivity"))
-        assertTrue(desc.contains("mcp_call"))
-        assertTrue(desc.contains("auto_open"))
-        assertTrue(desc.contains("log_file"))
-    }
-
     fun testLifecycleToolNameConstants() {
         assertEquals("ide_enroll_all_projects", ToolNames.ENROLL_ALL_PROJECTS)
         assertEquals("ide_get_project_modes", ToolNames.GET_PROJECT_MODES)
@@ -266,9 +221,4 @@ class LifecycleUnitTest : TestCase() {
         assertTrue(modeEnum.contains("dormant"))
         assertFalse("closed must not be in the enum — CLOSED projects have no Project object", modeEnum.contains("closed"))
     }
-
-    fun testToolNamesAllIsSorted() {
-        assertEquals(ToolNames.ALL.sorted(), ToolNames.ALL)
-    }
-
 }

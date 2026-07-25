@@ -1,0 +1,2461 @@
+# MCP tool manifest — golden snapshot
+# Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
+# tools: 47
+
+## ide_build_project
+description:
+  Build the project using the IDE's build system (supports JPS, Gradle, Maven).
+  Use after making code changes to check for compilation errors.
+  
+  Returns: success status, error/warning counts, and structured build messages with file locations.
+  Note: errors/warnings are null when no compiler messages were captured (e.g. no-op incremental build where nothing was recompiled, or build system without compiler message integration). null does NOT mean 0.
+  
+  When project_path points to a workspace sub-project, that module and its dependencies are built.
+  
+  Parameters: project_path (optional), rebuild (optional, default false), includeRawOutput (optional, default false), timeoutSeconds (optional, must be positive).
+  
+  Example: {} or {"rebuild": true} or {"includeRawOutput": true, "timeoutSeconds": 120}
+schema:
+  {
+    "properties":
+    {
+      "includeRawOutput":
+      {
+        "description": "Include raw build output log in response. Default: false.",
+        "type": "boolean"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "rebuild":
+      {
+        "description": "Full rebuild instead of incremental build. Default: false.",
+        "type": "boolean"
+      },
+      "timeoutSeconds":
+      {
+        "description": "Timeout in seconds. Must be a positive integer. No timeout if omitted.",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_call_hierarchy
+description:
+  Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
+  
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  
+  Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
+  
+  Returns: recursive tree with method signatures, file locations (line/column), and nested call relationships.
+  
+  Target (mutually exclusive):
+  - file + line + column: position-based lookup
+  - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript)
+  
+  Parameters: direction (required): "callers" or "callees". depth (optional, default: 3, max: 5). scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
+  
+  Example: {"file": "src/Service.java", "line": 42, "column": 10, "direction": "callers"}
+  Example: {"language": "Java", "symbol": "com.example.Service#processRequest(String)", "direction": "callers", "scope": "project_and_libraries"}
+  Example: {"language": "JavaScript", "symbol": "src/handlers#processRequest", "direction": "callers"}
+  Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()", "direction": "callers"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "depth":
+      {
+        "description": "How many levels deep to traverse the call hierarchy (default: 3, max: 5)",
+        "type": "integer"
+      },
+      "direction":
+      {
+        "description": "Direction: 'callers' (methods that call this method) or 'callees' (methods this method calls)",
+        "enum":
+        [
+          "callers",
+          "callees"
+        ],
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include callers/callees in generated sources (KSP/Dagger/annotation-processor output). Default: true.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Language of the symbol. Required when using 'symbol' parameter. Currently supported languages: Java, Kotlin, JavaScript, TypeScript.",
+        "enum":
+        [
+          "Java",
+          "Kotlin",
+          "JavaScript",
+          "TypeScript"
+        ],
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      },
+      "symbol":
+      {
+        "description": "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "direction"
+    ],
+    "type": "object"
+  }
+
+## ide_change_signature
+description:
+  Change a method's signature and automatically update all callers, overrides, and implementations.
+  
+  Can modify: method name, return type, visibility, parameters (add, remove, reorder, change types).
+  New parameters get a default value inserted at all call sites.
+  
+  Examples:
+  - Add parameter: {"file": "src/Service.java", "line": 15, "column": 10, "newParameters": [{"oldIndex": 0, "name": "id", "type": "String"}, {"oldIndex": -1, "name": "validate", "type": "boolean", "defaultValue": "true"}]}
+  - Change return type: {"file": "src/Service.java", "line": 15, "column": 10, "newReturnType": "Optional<User>"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to file containing the method. REQUIRED.",
+        "type": "string"
+      },
+      "generateDelegate":
+      {
+        "description": "Generate a delegation method with the old signature. Default: false.",
+        "type": "boolean"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "newName":
+      {
+        "description": "New method name. Omit to keep current name.",
+        "type": "string"
+      },
+      "newParameters":
+      {
+        "description": "New parameter list. Each entry: {oldIndex (int, -1 for new), name (string), type (string), defaultValue (string, optional for new params)}. Omit to keep current parameters.",
+        "items":
+        {
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "newReturnType":
+      {
+        "description": "New return type as a string (e.g., 'void', 'Optional<User>'). Omit to keep current.",
+        "type": "string"
+      },
+      "newVisibility":
+      {
+        "description": "New visibility: 'public', 'protected', 'private', or 'package-private'. Omit to keep current.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file",
+      "line",
+      "column"
+    ],
+    "type": "object"
+  }
+
+## ide_close_project
+description:
+  Close an open project window, freeing its memory and background processes.
+  
+  The project can be reopened via the IDE's Recent Projects list or ide_open_project.
+  This is a non-blocking operation — the tool returns as soon as the close is scheduled.
+  
+  Refuses to close the last open project: the MCP server needs at least one open
+  project to serve requests (including ide_open_project), so open another project
+  before closing this one.
+  
+  Parameters:
+  - project_path (optional): required when multiple projects are open
+  
+  Example: { "project_path": "/Users/dev/myproject" }
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_create_file
+description:
+  Create a new source file with content, immediately indexed by IntelliJ.
+  
+  The file is created through IntelliJ's VFS, so it is instantly available for
+  ide_find_references, ide_refactor_rename, ide_edit_member, and all other IDE tools
+  without needing ide_sync_files.
+  
+  Use this instead of the Write tool for creating .java, .kt, .ts, .tsx, .py files.
+  The file must not already exist.
+  
+  Examples:
+  - {"file": "src/main/java/com/example/NewService.java", "content": "package com.example;\n\npublic class NewService {\n}"}
+  - {"file": "src/utils/helper.ts", "content": "export function helper(): string {\n    return 'help';\n}"}
+schema:
+  {
+    "properties":
+    {
+      "content":
+      {
+        "description": "The file content to write.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Path to the new file relative to project root. REQUIRED. File must not already exist.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file",
+      "content"
+    ],
+    "type": "object"
+  }
+
+## ide_diagnostics
+description:
+  Get code diagnostics from multiple sources: file analysis (errors, warnings, intentions), build output (compiler errors/warnings from last build), and test results (from open test run tabs).
+  
+  Returns: problems with severity and location, available intentions/quick fixes, build errors, and test results with error messages and stack traces.
+  
+  At least one source must be active: provide 'file' for code analysis, 'includeBuildErrors' for build output, or 'includeTestResults' for test results. Can combine all three.
+  
+  File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open.
+  
+  Parameters: file (optional, enables code analysis), line + column (optional, for intentions, requires file), startLine/endLine (optional, requires file), includeBuildErrors (optional), includeTestResults (optional), severity (optional, default 'all'), testResultFilter (optional, default 'failed'), maxBuildErrors (optional, default 100), maxTestResults (optional, default 100).
+  
+  Example: {"file": "src/MyClass.java"} or {"includeBuildErrors": true, "severity": "errors"} or {"file": "src/MyClass.java", "includeBuildErrors": true, "includeTestResults": true}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number for intention lookup. Optional, defaults to 1. Requires file.",
+        "type": "integer"
+      },
+      "endLine":
+      {
+        "description": "Filter problems to end at this line. Optional. Requires file.",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Optional — enables per-file code analysis.",
+        "type": "string"
+      },
+      "includeBuildErrors":
+      {
+        "description": "Include errors/warnings from the last build. Default: false.",
+        "type": "boolean"
+      },
+      "includeTestResults":
+      {
+        "description": "Include test results from open test run tabs. Default: false.",
+        "type": "boolean"
+      },
+      "line":
+      {
+        "description": "1-based line number for intention lookup. Optional, defaults to 1. Requires file.",
+        "type": "integer"
+      },
+      "maxBuildErrors":
+      {
+        "description": "Max build errors to return. Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "maxTestResults":
+      {
+        "description": "Max test results to return. Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "severity":
+      {
+        "description": "Filter by severity across all sources. Default: all.",
+        "enum":
+        [
+          "all",
+          "errors",
+          "warnings"
+        ],
+        "type": "string"
+      },
+      "startLine":
+      {
+        "description": "Filter problems to start from this line. Optional. Requires file.",
+        "type": "integer"
+      },
+      "testResultFilter":
+      {
+        "description": "Filter test results: 'failed' (default) or 'all'.",
+        "enum":
+        [
+          "failed",
+          "all"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_edit_member
+description:
+  Replace an entire member or class declaration with new content.
+  
+  Replaces the complete declaration from the first modifier/annotation through the closing brace.
+  Use for method signature changes, field rewrites, or class/interface declaration changes
+  (adding type parameters, changing extends/implements, adding annotations).
+  
+  To edit a class/interface declaration itself, set member to the class name:
+  {"file": "src/Worker.java", "class": "Worker", "member": "Worker", "content": "public interface Worker<T> extends Runnable { ... }"}
+  
+  The content should be the complete replacement including modifiers, type, name, and body.
+  Auto-reformats the changed range by default.
+  
+  Examples:
+  - {"file": "src/Main.java", "class": "Main", "member": "process", "content": "public void process(String input, boolean validate) {\n    if (validate) check(input);\n}"}
+  - {"file": "src/Config.kt", "class": "Config", "member": "timeout", "content": "val timeout: Duration = Duration.ofSeconds(30)"}
+  - {"file": "src/Service.java", "member": "Service", "content": "public class Service<T> implements Serializable { ... }"}
+schema:
+  {
+    "properties":
+    {
+      "class":
+      {
+        "description": "Class/interface name containing the member. Optional for top-level members (Kotlin).",
+        "type": "string"
+      },
+      "content":
+      {
+        "description": "The complete replacement member declaration including modifiers, type, name, and body.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root. REQUIRED.",
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number of the member (for disambiguation when multiple members share the same name).",
+        "type": "integer"
+      },
+      "member":
+      {
+        "description": "Name of the method, function, field, or property to replace entirely.",
+        "type": "string"
+      },
+      "parameterCount":
+      {
+        "description": "Number of parameters (for disambiguating overloaded methods).",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "reformat":
+      {
+        "description": "Auto-reformat the changed range and optimize imports. Default: true.",
+        "type": "boolean"
+      }
+    },
+    "required":
+    [
+      "file",
+      "member",
+      "content"
+    ],
+    "type": "object"
+  }
+
+## ide_enroll_all_projects
+description:
+  Enroll all currently open projects in MCP lifecycle management.
+  
+  Projects already managed are skipped. Only open projects can be enrolled —
+  closed projects must be opened first (via ide_open_project or auto-open).
+  
+  Parameters:
+  - project_path (optional): Routing hint when multiple projects are open.
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_file_structure
+description:
+  Get the hierarchical structure of a source file (similar to IDE's Structure view).
+  
+  Shows classes, methods, fields, functions, PHP namespaces, constants, enum cases, Markdown headings, and their nesting relationships in a tree format.
+  
+  Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown
+  
+  Returns: Formatted tree string with element types, modifiers, signatures, and line numbers.
+  
+  Parameters: file (required) - Path relative to project root
+  
+  Example: {"file": "src/main/java/com/example/MyClass.java"}
+schema:
+  {
+    "properties":
+    {
+      "file":
+      {
+        "description": "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). REQUIRED.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
+    "type": "object"
+  }
+
+## ide_find_class
+description:
+  Search for classes and interfaces by name. Faster than ide_find_symbol when you only need classes.
+  
+  Matching: camelCase ("USvc" → "UserService"), substring ("Service" → "UserService"), and wildcard ("User*Impl" → "UserServiceImpl").
+  
+  Returns: matching classes with qualified names, file paths, line numbers, and kind (class/interface/enum).
+  
+  Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
+  Parameters: query (required for fresh search), scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+  
+  Example: {"query": "UserService"} or {"query": "U*Impl"} or {"query": "USvc", "scope": "project_and_libraries"}
+schema:
+  {
+    "properties":
+    {
+      "cursor":
+      {
+        "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include classes defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.",
+        "type": "string"
+      },
+      "limit":
+      {
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 25, max: 500.",
+        "type": "integer"
+      },
+      "matchMode":
+      {
+        "description": "How to match the query. Default: \"substring\".",
+        "enum":
+        [
+          "substring",
+          "prefix",
+          "exact"
+        ],
+        "type": "string"
+      },
+      "pageSize":
+      {
+        "description": "Results per page. Default: 25, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "query":
+      {
+        "description": "Search pattern. Supports substring and camelCase matching. Required for fresh search, ignored when cursor is provided.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_find_definition
+description:
+  Navigate to where a symbol is defined (Go to Definition). Use when you see a symbol reference and need to find its declaration—works for classes, methods, variables, imports.
+  
+  Returns: file path, line/column of definition, code preview, and symbol name.
+  
+  Target (mutually exclusive):
+  - file + line + column: position-based lookup
+  - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript)
+  
+  Example: {"file": "src/Main.java", "line": 15, "column": 10}
+  Example: {"language": "Java", "symbol": "com.example.MyClass#processData(String)"}
+  Example: {"language": "JavaScript", "symbol": "src/utils#exportName"}
+  Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
+        "type": "string"
+      },
+      "fullElementPreview":
+      {
+        "description": "If true, returns the complete element code instead of a preview snippet. Optional, defaults to false.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Language of the symbol. Required when using 'symbol' parameter. Currently supported languages: Java, Kotlin, JavaScript, TypeScript.",
+        "enum":
+        [
+          "Java",
+          "Kotlin",
+          "JavaScript",
+          "TypeScript"
+        ],
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "maxPreviewLines":
+      {
+        "description": "Maximum lines for fullElementPreview. Truncates large classes/functions. Default: 50, Max: 500. Only used when fullElementPreview=true.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "symbol":
+      {
+        "description": "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_find_file
+description:
+  Search for files by name. Very fast file lookup using IDE's file index.
+  
+  Matching: camelCase ("USJ" → "UserService.java"), substring ("User" → "UserService.java"), and wildcard ("*Test.kt").
+  
+  Returns: matching files with name, path, and containing directory.
+  
+  Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
+  Parameters: query (required for fresh search), scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+  
+  Example: {"query": "UserService.java"} or {"query": "build.gradle"} or {"query": "BG"} (matches build.gradle)
+schema:
+  {
+    "properties":
+    {
+      "cursor":
+      {
+        "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include files under generated sources (KSP/Dagger/annotation-processor output). Default: false.",
+        "type": "boolean"
+      },
+      "limit":
+      {
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 25, max: 500.",
+        "type": "integer"
+      },
+      "pageSize":
+      {
+        "description": "Results per page. Default: 25, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "query":
+      {
+        "description": "File name pattern. Supports substring and fuzzy matching. Required for fresh search, ignored when cursor is provided.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_find_implementations
+description:
+  Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
+  
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  
+  Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
+  
+  Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
+  
+  Target (mutually exclusive):
+  - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
+  - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript; necessary for fresh search, ignored when cursor is provided)
+  - cursor: pagination cursor from a previous response
+  
+  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+  
+  Example: {"file": "src/Repository.java", "line": 8, "column": 18}
+  Example: {"language": "Java", "symbol": "com.example.Repository", "scope": "project_and_libraries"}
+  Example: {"language": "JavaScript", "symbol": "src/interfaces#IRepository"}
+  Example: {"language": "PHP", "symbol": "\\App\\Contracts\\Repository"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "cursor":
+      {
+        "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include implementations in generated sources (KSP/Dagger/annotation-processor output). Default: false.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Language of the symbol. Required when using 'symbol' parameter. Currently supported languages: Java, Kotlin, JavaScript, TypeScript.",
+        "enum":
+        [
+          "Java",
+          "Kotlin",
+          "JavaScript",
+          "TypeScript"
+        ],
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "pageSize":
+      {
+        "description": "Results per page. Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      },
+      "symbol":
+      {
+        "description": "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_find_references
+description:
+  Find all references to a symbol across the project. Use when you need to understand how a class, method, field, or variable is used before modifying or removing it.
+  
+  Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.).
+  
+  Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
+  
+  Target (mutually exclusive):
+  - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
+  - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript; necessary for fresh search, ignored when cursor is provided)
+  - cursor: pagination cursor from a previous response
+  
+  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+  
+  Example: {"file": "src/UserService.java", "line": 25, "column": 18}
+  Example: {"language": "Java", "symbol": "com.example.UserService#findUser(String)", "scope": "project_and_libraries"}
+  Example: {"language": "TypeScript", "symbol": "src/api#default"}
+  Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "cursor":
+      {
+        "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: true — keeps valid runtime references (Dagger, MapStruct, gRPC, serializers). Set false to drop generated output when it dominates the result set.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Language of the symbol. Required when using 'symbol' parameter. Currently supported languages: Java, Kotlin, JavaScript, TypeScript.",
+        "enum":
+        [
+          "Java",
+          "Kotlin",
+          "JavaScript",
+          "TypeScript"
+        ],
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "maxResults":
+      {
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "pageSize":
+      {
+        "description": "Results per page. Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      },
+      "symbol":
+      {
+        "description": "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_find_super_methods
+description:
+  Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
+  
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP.
+  
+  NOT supported for Rust: Rust uses trait implementations rather than classical inheritance, so there are no "super methods" in the traditional sense. Use ide_find_definition or ide_type_hierarchy instead.
+  
+  Returns: full hierarchy chain from immediate parent (depth=1) to root, with file locations (line/column) and containing class info.
+  
+  Target (mutually exclusive):
+  - file + line + column: position-based lookup (position can be anywhere within the method body)
+  - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript)
+  
+  Example: {"file": "src/UserServiceImpl.java", "line": 25, "column": 10}
+  Example: {"language": "Java", "symbol": "com.example.UserServiceImpl#getUser(String)"}
+  Example: {"language": "TypeScript", "symbol": "src/service#UserService.getUser"}
+  Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
+        "type": "string"
+      },
+      "language":
+      {
+        "description": "Language of the symbol. Required when using 'symbol' parameter. Currently supported languages: Java, Kotlin, JavaScript, TypeScript.",
+        "enum":
+        [
+          "Java",
+          "Kotlin",
+          "JavaScript",
+          "TypeScript"
+        ],
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "symbol":
+      {
+        "description": "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_find_symbol
+description:
+  Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, and functions. Faster and more accurate than grep for code navigation.
+  
+  Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, and Rust; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
+  
+  Matching and ranking follow IntelliJ's Go to Symbol popup, including qualified queries like "BasicSolver.run".
+  
+  Returns: matching symbols with qualified names, file paths, line/column numbers, and kind.
+  
+  Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
+  Parameters: query (required for fresh search), scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), language (optional case-insensitive filter, e.g. "Kotlin"), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+  
+  Example: {"query": "UserService"} or {"query": "find_user", "scope": "project_and_libraries"}
+schema:
+  {
+    "properties":
+    {
+      "cursor":
+      {
+        "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include symbols defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.",
+        "type": "string"
+      },
+      "limit":
+      {
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 25, max: 500.",
+        "type": "integer"
+      },
+      "pageSize":
+      {
+        "description": "Results per page. Default: 25, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "query":
+      {
+        "description": "Search pattern. Matching follows IntelliJ's Go to Symbol popup, including qualified queries. Required for fresh search, ignored when cursor is provided.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_get_active_file
+description:
+  Get the currently active file(s) open in the IDE editor. Returns information about all visible editors including split panes.
+  
+  Returns: list of active files with path, cursor position (line, column), selected text (if any), and language. Empty list when no editors are open.
+  
+  Parameters: project_path (optional, only needed with multiple projects open).
+  
+  Example: {}
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_get_project_modes
+description:
+  List all MCP-managed projects and their current lifecycle mode.
+  
+  Returns each managed project's path, name, and current mode
+  (active, background, dormant, or closed). Use this to decide
+  which projects need waking before starting work, or to audit
+  current memory usage patterns.
+  
+  Parameters:
+  - project_path (optional): only needed when multiple projects are open; does not
+    affect which projects are listed — all managed projects are always returned.
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_index_status
+description:
+  Check if the IDE is ready for code intelligence operations. Use when other tools fail with indexing errors, or to verify IDE readiness before batch operations.
+  
+  Returns: isDumbMode (true = indexing in progress, limited functionality), isIndexing flag. When isDumbMode is true, wait and retry—most tools require indexing to complete.
+  
+  Parameters: project_path (optional, only needed with multiple projects open).
+  
+  Example: {}
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_insert_member
+description:
+  Insert a new class member (method, field, constructor, inner class, etc.) at a structural position.
+  
+  The content should be the complete member declaration including any modifiers, type, name, and body.
+  Auto-reformats the inserted range by default.
+  
+  Position is specified by an anchor member and a relative position (before/after).
+  If no anchor is specified, inserts at the end of the class body (or end of file for top-level).
+  
+  Examples:
+  - {"file": "src/Main.java", "class": "Main", "content": "public String getFullName() {\n    return firstName + \" \" + lastName;\n}", "position": "after", "anchor": "getLastName"}
+  - {"file": "src/Main.java", "class": "Main", "content": "private int age;", "position": "before", "anchor": "getName"}
+  - {"file": "src/utils.kt", "content": "fun helper(): String = \"help\""}
+schema:
+  {
+    "properties":
+    {
+      "anchor":
+      {
+        "description": "Name of an existing member to insert before/after. Required when position is 'before' or 'after'.",
+        "type": "string"
+      },
+      "anchorLine":
+      {
+        "description": "1-based line number of the anchor member (for disambiguation).",
+        "type": "integer"
+      },
+      "anchorParameterCount":
+      {
+        "description": "Number of parameters on the anchor method (for disambiguating overloaded methods).",
+        "type": "integer"
+      },
+      "class":
+      {
+        "description": "Class/interface name to insert into. Optional for top-level members (Kotlin).",
+        "type": "string"
+      },
+      "content":
+      {
+        "description": "The complete member declaration to insert, including modifiers, type, name, and body.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root. REQUIRED.",
+        "type": "string"
+      },
+      "position":
+      {
+        "description": "Where to insert relative to the anchor: 'before', 'after', 'first', or 'last' (default).",
+        "enum":
+        [
+          "before",
+          "after",
+          "first",
+          "last"
+        ],
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "reformat":
+      {
+        "description": "Auto-reformat the inserted range and optimize imports. Default: true.",
+        "type": "boolean"
+      }
+    },
+    "required":
+    [
+      "file",
+      "content"
+    ],
+    "type": "object"
+  }
+
+## ide_install_plugin
+description:
+  Install a plugin into the IDE, replacing any existing version.
+  
+  Locates the plugin zip, removes the previously installed version (if any),
+  and extracts the new version into the IDE plugins directory. A restart is
+  required for the change to take effect — call ide_restart after this tool
+  returns, or ask the user to restart manually.
+  
+  If path is omitted, the tool searches build/distributions/*.zip in the
+  active project directory (the output of ./gradlew buildPlugin). When multiple
+  zip files are found, the most recently modified one is used.
+  
+  Parameters:
+  - path (optional): Absolute path to the plugin zip. Defaults to auto-detection
+    from the active project's build/distributions/ directory.
+  - project_path (optional): Required when multiple projects are open and path
+    is omitted, to identify which project's build output to use.
+schema:
+  {
+    "properties":
+    {
+      "path":
+      {
+        "description": "Absolute path to the plugin zip to install.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_lifecycle_log
+description:
+  Return recent lifecycle events for all projects.
+  
+  Records every state transition, open/close, focus change, timer firing, and MCP-triggered
+  wake in a ring buffer (last 500 events). Events cover all IntelliJ projects, not just
+  managed ones.
+  
+  The same log is written to a file (see log_file in the response) that can be read directly
+  even when no project is open: `cat <log_file>` or `tail -f <log_file>`.
+  
+  Use this to diagnose lifecycle health: understand why a project closed, whether auto-open
+  worked, or which projects are cycling unexpectedly.
+  
+  Event types: open, closed, transition, enroll, release, wake
+  Trigger values: focus_gained, focus_lost, timer:focus, timer:inactivity, timer:close,
+                  mcp_call, auto_open, user
+  
+  Parameters:
+  - limit: Number of recent events to return, newest first (default 50, max 500)
+  - project: Optional path filter — only events for projects whose path contains this string
+  - project_path: Routing hint when multiple projects are open
+schema:
+  {
+    "properties":
+    {
+      "limit":
+      {
+        "description": "Number of recent events to return, newest first (default 50, max 500).",
+        "type": "integer"
+      },
+      "project":
+      {
+        "description": "Optional path filter (substring match against project path).",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_list_tests
+description:
+  List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
+  
+  Returns: list of test entries with className, methodName, file path, and line number.
+  The className is fully qualified when the language exposes it (e.g. Java, Kotlin, PHP), so it
+  can be passed directly to ide_run_tests.
+  Note: requires smart mode (IDE indexing must be complete).
+  
+  Parameters:
+  - project_path (optional): required when multiple projects are open.
+  - file (optional): if given, lists only tests in that file; otherwise scans all test sources.
+  
+  Example: {} or {"file": "src/test/kotlin/com/example/MyTest.kt"}
+schema:
+  {
+    "properties":
+    {
+      "file":
+      {
+        "description": "Path to a specific test file relative to project root. If omitted, lists all tests in the project.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_move_file
+description:
+  Move a file to a new directory using the IDE's refactoring engine. Applies language-aware reference and namespace/package updates when the IDE provides a semantic move backend for that file type.
+  
+  Use when relocating files to maintain correct imports and references.
+  
+  Parameters:
+  - file (REQUIRED): Source file path relative to project root
+  - destination (REQUIRED): Target directory path relative to project root. Created automatically if it doesn't exist.
+  
+  Returns: success status, list of affected files, and result message.
+  
+  Examples:
+  - Move file: {"file": "src/main/java/com/old/MyClass.java", "destination": "src/main/java/com/new"}
+  - Move config file: {"file": "config/old.yml", "destination": "config/archive"}
+schema:
+  {
+    "properties":
+    {
+      "destination":
+      {
+        "description": "Target directory path relative to project root. The file will be moved into this directory. Created automatically if it doesn't exist. REQUIRED.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Path to the source file to move, relative to project root. REQUIRED.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file",
+      "destination"
+    ],
+    "type": "object"
+  }
+
+## ide_open_file
+description:
+  Open a file in the IDE editor, optionally navigating to a specific line and column.
+  
+  Parameters: file (required, relative to project root or absolute), line (optional, 1-based), column (optional, 1-based, requires line), project_path (optional).
+  
+  Example: {"file": "src/Main.kt"} or {"file": "src/Main.kt", "line": 42, "column": 10}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number to navigate to. Requires line to be specified.",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "File path relative to project root, or absolute path.",
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number to navigate to.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
+    "type": "object"
+  }
+
+## ide_open_project
+description:
+  Open a project by filesystem path and wait until indexing is complete.
+  
+  Blocks until the IDE is ready for code intelligence on the opened project,
+  so subsequent MCP tool calls against the new project will succeed immediately.
+  If the project is already open, returns successfully right away.
+  
+  This tool does not enroll the project in lifecycle management. Lifecycle enrollment
+  happens automatically on the first real semantic tool call (find references,
+  diagnostics, refactoring, etc.) after the project is open — not on open/close itself.
+  
+  Requires at least one project to already be open (needed as the JSON-RPC context).
+  
+  Opening a project the IDE has not seen before may show the modal "Trust project?"
+  dialog, which only a human can answer; the call fails after timeoutSeconds if the
+  project has not opened by then.
+  
+  Parameters:
+  - path: absolute filesystem path of the project directory to open (required)
+  - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: 600.
+  - project_path (optional): selects the JSON-RPC context project when multiple are open
+  
+  Example: { "path": "/Users/dev/myproject" }
+schema:
+  {
+    "properties":
+    {
+      "path":
+      {
+        "description": "Absolute filesystem path of the project directory to open.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "timeoutSeconds":
+      {
+        "description": "Maximum seconds to wait for the project to open and finish indexing. Must be a positive integer. Default: 600.",
+        "type": "integer"
+      }
+    },
+    "required":
+    [
+      "path"
+    ],
+    "type": "object"
+  }
+
+## ide_optimize_imports
+description:
+  Optimize imports in a file: remove unused imports and organize remaining imports according to project code style. Equivalent to the IDE's "Optimize Imports" action (Ctrl+Alt+O / Cmd+Opt+O). Does NOT reformat code. Supports undo (Ctrl+Z).
+  
+  Returns: success status, affected file, and description of operation performed.
+  
+  Parameters: file (required).
+  
+  Example: {"file": "src/MyClass.java"}
+schema:
+  {
+    "properties":
+    {
+      "file":
+      {
+        "description": "Path to the file relative to project root",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
+    "type": "object"
+  }
+
+## ide_project_status
+description:
+  Report the status of all known projects in one table.
+  
+  Combines two sources:
+  - Open projects: every project currently loaded in the IDE
+  - Managed projects: projects enrolled in MCP lifecycle management
+  
+  Each row includes whether the project is open, whether it is managed, and
+  its current lifecycle mode (active, background, dormant, closed) when managed.
+  
+  Use this to answer questions like:
+  - Which open projects are not yet enrolled in lifecycle management?
+  - Which managed projects have been closed by the lifecycle manager?
+  - What is the current state of every project at a glance?
+  
+  Parameters:
+  - project_path (optional): routing hint, required when multiple projects are open.
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_read_file
+description:
+  File lookup: by file path (relative, absolute, jar path with !/or jar://) or qualifiedName (e.g., java.util.ArrayList).
+  Best for library/dependency Java sources (jars/external libs). For project files, prefer native tools; enable only when needed.
+  
+  Returns: file content (full or line range) with metadata (language, lineCount, start/end, isLibraryFile).
+  
+  Parameters: file or qualifiedName (one required), startLine (optional), endLine (optional).
+  
+  Examples: {"file": "src/main/java/MyClass.java"} or {"qualifiedName": "java.util.ArrayList"} or {"file": "MyClass.java", "startLine": 10, "endLine": 20}
+schema:
+  {
+    "properties":
+    {
+      "endLine":
+      {
+        "description": "Ending line number (1-based, inclusive).",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "File path (relative, absolute, jar path with jar!/, or jar:// URL).",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "qualifiedName":
+      {
+        "description": "Fully qualified class name (e.g., java.util.ArrayList).",
+        "type": "string"
+      },
+      "startLine":
+      {
+        "description": "Starting line number (1-based, inclusive).",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_refactor_rename
+description:
+  Rename a symbol or file and update all references across the project. Use instead of find-and-replace for safe, semantic renaming that handles all usages correctly. Supports undo (Ctrl+Z).
+  
+  Two modes:
+  - **Symbol rename** (`targetType="symbol"`, file + line + column + newName): Rename a symbol at a specific position. `line` and `column` are 1-based and must be provided.
+  - **File rename** (`targetType="file"`, file + newName): Rename the file itself. Any placeholder `line`/`column` values are ignored for mode selection. Works for all file types including binary files (images, etc.). Especially useful for Android resource files (.webp, .png, .xml in res/) where it updates all resource references across the project.
+  
+  Backward compatibility: if `targetType` is omitted, null/null line+column still means file rename; provided line+column still means symbol rename.
+  
+  Automatically renames related elements: getters/setters, overriding methods, constructor parameters ↔ fields, test classes.
+  
+  When renaming a method that overrides a base method, the `overrideStrategy` parameter controls behavior:
+  - "rename_base" (default): Automatically renames the base method and all overrides. No dialog shown.
+  - "rename_only_current": Renames only the current method, leaving the base and other overrides unchanged.
+  - "ask": Shows the IDE's built-in dialog to let the user choose interactively.
+  
+  The `relatedRenamingStrategy` parameter controls automatic renaming of related symbols (e.g., same-named properties on unrelated classes, getters/setters, test classes, variables):
+  - "all" (default): Automatically rename all related symbols. Current behavior.
+  - "none": Rename only the targeted symbol. Skip all automatic related renames.
+  - "accessors_and_tests": Only rename getters/setters and test classes/methods. Skip variables, inheritors, overloads, and parameters on unrelated classes.
+  - "ask": Show the IDE dialog for each related rename for interactive choice.
+  
+  Returns: affected files list and change count. Modifies source files.
+  
+  Parameters: file + newName (required). targetType is optional; line + column are only needed for symbol rename. overrideStrategy + relatedRenamingStrategy (optional).
+  
+  Examples:
+  - Symbol rename: {"file": "src/UserService.java", "targetType": "symbol", "line": 15, "column": 18, "newName": "CustomerService"}
+  - File rename: {"file": "res/mipmap-hdpi/ic_launcher.webp", "targetType": "file", "newName": "ic_app_icon.webp"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number. Required for symbol rename; omit for file rename unless `targetType=file`.",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root. REQUIRED.",
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number. Required for symbol rename; omit for file rename unless `targetType=file`.",
+        "type": "integer"
+      },
+      "newName":
+      {
+        "description": "The new name for the symbol or file. REQUIRED. For file renames, include the file extension (e.g., 'new_name.webp').",
+        "type": "string"
+      },
+      "overrideStrategy":
+      {
+        "description": "Strategy when renaming a method that overrides a base method. 'rename_base' (default): rename the base method and all overrides automatically. 'rename_only_current': rename only the current method. 'ask': show the IDE dialog for interactive choice.",
+        "enum":
+        [
+          "rename_base",
+          "rename_only_current",
+          "ask"
+        ],
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "relatedRenamingStrategy":
+      {
+        "description": "Strategy for automatic renaming of related symbols (same-named properties, getters/setters, test classes, variables). 'all' (default): automatically rename all related symbols. 'none': rename only the targeted symbol, skip all automatic related renames. 'accessors_and_tests': only rename getters/setters and test classes/methods. 'ask': show the IDE dialog for each related rename for interactive choice.",
+        "enum":
+        [
+          "all",
+          "none",
+          "accessors_and_tests",
+          "ask"
+        ],
+        "type": "string"
+      },
+      "targetType":
+      {
+        "description": "What to rename: 'symbol' (requires 1-based line+column) or 'file' (renames the file itself and ignores placeholder line/column values). If omitted, legacy behavior applies.",
+        "enum":
+        [
+          "symbol",
+          "file"
+        ],
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file",
+      "newName"
+    ],
+    "type": "object"
+  }
+
+## ide_refactor_safe_delete
+description:
+  Delete a symbol or file safely by first checking for usages. Use when removing code to avoid breaking references.
+  
+  Modes:
+  - target_type='symbol' (default): Delete the symbol at line/column (REQUIRED: file, line, column).
+    If position is whitespace/comment, returns nearby symbol suggestions.
+  - target_type='file': Delete the entire file (REQUIRED: file only).
+    Only succeeds if no symbols have external usages. Internal call chains don't block deletion.
+  
+  Behavior: If usages exist and force=false, returns the usage list instead of deleting.
+  Use force=true to delete anyway (may break compilation).
+  
+  Returns: success status and affected files, OR blocking usages list, OR nearby symbol suggestions.
+  
+  Examples:
+  - Symbol: {"file": "src/OldClass.java", "line": 10, "column": 14}
+  - Symbol with force: {"file": "src/OldClass.java", "line": 10, "column": 14, "force": true}
+  - File: {"file": "src/UnusedUtils.java", "target_type": "file"}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number. REQUIRED when target_type='symbol' (default).",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root. REQUIRED.",
+        "type": "string"
+      },
+      "force":
+      {
+        "default": false,
+        "description": "Force deletion even if usages exist. Default: false. Use with caution!",
+        "type": "boolean"
+      },
+      "line":
+      {
+        "description": "1-based line number where the symbol is located. REQUIRED when target_type='symbol' (default).",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "target_type":
+      {
+        "default": "symbol",
+        "description": "What to delete: 'symbol' (default, requires line+column) or 'file' (deletes entire file if no external usages).",
+        "enum":
+        [
+          "symbol",
+          "file"
+        ],
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
+    "type": "object"
+  }
+
+## ide_reformat_code
+description:
+  Reformat code in a file according to the project's code style settings (.editorconfig, IDE code style). Equivalent to the IDE's "Reformat Code" action (Ctrl+Alt+L / Cmd+Opt+L). Supports undo (Ctrl+Z).
+  
+  By default also optimizes imports and rearranges code members. Use optimizeImports=false and rearrangeCode=false to only reformat whitespace/indentation.
+  
+  Respects: .editorconfig, project code style, language-specific formatting rules.
+  
+  Returns: success status, affected file, and description of operations performed.
+  
+  Parameters: file (required), startLine/endLine (optional range), optimizeImports (default: true), rearrangeCode (default: true).
+  
+  Example: {"file": "src/MyClass.java"}
+  Example: {"file": "src/MyClass.java", "startLine": 10, "endLine": 50, "optimizeImports": false}
+schema:
+  {
+    "properties":
+    {
+      "endLine":
+      {
+        "description": "End line for partial formatting (1-based). If provided, startLine is also required.",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to the file relative to project root",
+        "type": "string"
+      },
+      "optimizeImports":
+      {
+        "description": "Optimize imports (remove unused, organize). Default: true.",
+        "type": "boolean"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "rearrangeCode":
+      {
+        "description": "Rearrange code members according to arrangement rules. Default: true.",
+        "type": "boolean"
+      },
+      "startLine":
+      {
+        "description": "Start line for partial formatting (1-based). If provided, endLine is also required.",
+        "type": "integer"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
+    "type": "object"
+  }
+
+## ide_release_all_projects
+description:
+  Release every managed project from MCP lifecycle management at once.
+  
+  Works on all managed projects including those currently closed by the lifecycle
+  manager. Power Save Mode is disabled after all releases complete.
+  
+  Parameters:
+  - project_path (optional): Routing hint when multiple projects are open.
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_release_project
+description:
+  Release a project from MCP lifecycle management, returning full control to the user.
+  
+  Accepts an optional path parameter to release a project that is currently closed by
+  the lifecycle manager — the project does not need to be open.
+  
+  After release:
+  - Power Save Mode is disabled
+  - All lifecycle timers are cancelled
+  - The project is no longer auto-slept or auto-closed by MCP
+  - Open projects remain open with full IntelliJ capabilities
+  
+  Use ide_release_all_projects to release every managed project at once.
+  
+  Parameters:
+  - path (optional): Filesystem path of a closed managed project to release by path.
+    If omitted, releases the project resolved by project_path (must be open).
+  - project_path (optional): Routing hint when multiple projects are open.
+schema:
+  {
+    "properties":
+    {
+      "path":
+      {
+        "description": "Filesystem path of a closed managed project to release. Omit to release the routed project.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_reload_project
+description:
+  Force-reload the project's build model (Maven, Gradle, or both).
+  
+  Equivalent to clicking "Reload All Maven Projects" or "Reload Gradle Project"
+  in the IDE. Use this after modifying pom.xml, build.gradle, build.gradle.kts,
+  settings.gradle, or any dependency configuration file so that IntelliJ resolves
+  the updated dependencies before running diagnostics or builds.
+  
+  Only reloads build systems that are actually linked in IntelliJ — if a pom.xml
+  exists but the Maven project was never imported, it reports that and skips it.
+  
+  The reload is scheduled asynchronously — IntelliJ resolves dependencies in the
+  background. On large projects allow 10-30 seconds before calling ide_build_project
+  or ide_diagnostics.
+  
+  Parameters:
+  - project_path (optional): selects the project when multiple are open
+  
+  Example: { }
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_replace_member
+description:
+  Replace the body of a method/function or the initializer of a field/property.
+  
+  For methods: replaces the code between { and }. The content should NOT include surrounding braces.
+  For fields/properties: replaces the initializer expression (after =).
+  Auto-reformats the changed range by default.
+  
+  Requires: file (always), member (always). class is optional for top-level members (Kotlin).
+  For overloaded methods, use parameterCount or line to disambiguate.
+  
+  Examples:
+  - {"file": "src/Main.java", "class": "Main", "member": "getName", "content": "return this.name;"}
+  - {"file": "src/Config.kt", "member": "defaultPort", "content": "8080"}
+schema:
+  {
+    "properties":
+    {
+      "class":
+      {
+        "description": "Class/interface name containing the member. Optional for top-level members (Kotlin).",
+        "type": "string"
+      },
+      "content":
+      {
+        "description": "The new body content (without surrounding braces for methods) or new initializer expression.",
+        "type": "string"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root. REQUIRED.",
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number of the member (for disambiguation when multiple members share the same name).",
+        "type": "integer"
+      },
+      "member":
+      {
+        "description": "Name of the method, function, field, or property to replace the body/initializer of.",
+        "type": "string"
+      },
+      "parameterCount":
+      {
+        "description": "Number of parameters (for disambiguating overloaded methods).",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "reformat":
+      {
+        "description": "Auto-reformat the changed range and optimize imports. Default: true.",
+        "type": "boolean"
+      }
+    },
+    "required":
+    [
+      "file",
+      "member",
+      "content"
+    ],
+    "type": "object"
+  }
+
+## ide_replace_text_in_file
+description:
+  Find and replace text in a file using IntelliJ's Document API.
+  
+  Performs plain text or regex replacement through IntelliJ's document model,
+  so changes are immediately visible to the index, PSI, and all other IDE tools
+  without needing ide_sync_files.
+  
+  Use this for mechanical text substitutions across a file — e.g., replacing a
+  method call wrapper, updating import paths, or renaming a local pattern. For
+  structural refactoring (renaming symbols across the project), use
+  ide_refactor_rename instead.
+  
+  Returns the number of replacements made and affected line numbers.
+  
+  Examples:
+  - {"file": "src/Service.java", "searchText": "OldHelper.wrap(", "replaceText": "("}
+  - {"file": "src/config.ts", "searchText": "localhost:3000", "replaceText": "localhost:8080"}
+  - {"file": "src/Utils.java", "searchText": "LOG\\.debug\\((.*)\\)", "replaceText": "LOG.trace($1)", "regex": true}
+schema:
+  {
+    "properties":
+    {
+      "caseSensitive":
+      {
+        "description": "Case-sensitive matching. Default: true.",
+        "type": "boolean"
+      },
+      "file":
+      {
+        "description": "Path to the file relative to project root",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "regex":
+      {
+        "description": "Treat searchText as a regular expression. Default: false.",
+        "type": "boolean"
+      },
+      "replaceText":
+      {
+        "description": "Replacement text. Supports regex group references ($1, $2) when regex is true.",
+        "type": "string"
+      },
+      "searchText":
+      {
+        "description": "Text to find. Treated as literal unless regex is true.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file",
+      "searchText",
+      "replaceText"
+    ],
+    "type": "object"
+  }
+
+## ide_restart
+description:
+  Restart the IDE.
+  
+  WARNING: this terminates the MCP server. The connection to this IDE will
+  drop immediately and no response will be received after the restart is
+  initiated. Call this as a final step — do not expect to execute further
+  tool calls in the same session.
+  
+  Typical use: call ide_install_plugin, then ide_restart.
+  
+  Parameters:
+  - project_path (optional): only needed when multiple projects are open.
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_run_tests
+description:
+  Run tests using the IDE's run configuration infrastructure. Waits for completion and returns results.
+  
+  The target can be:
+  - An existing run configuration name (e.g. "All Tests") — works for ANY language/framework
+  - A fully qualified class name (e.g. "com.example.MyTest") — Java/Kotlin only
+  - A class and method separated by '#' (e.g. "com.example.MyTest#testFoo") — Java/Kotlin only
+  
+  Creating a run config from a class/method FQN is supported only for Java/Kotlin. For other
+  languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
+  
+  Returns: success status, exit code, pass/fail/error counts, and per-test results.
+  Results are read directly from the IDE's test runner, so they reflect this run (not stale report
+  files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
+  
+  Parameters:
+  - project_path (optional): required when multiple projects are open.
+  - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
+  - timeoutSeconds (optional, default 120): maximum seconds to wait for the test run to complete.
+  
+  Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "target":
+      {
+        "description": "Test target: existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).",
+        "type": "string"
+      },
+      "timeoutSeconds":
+      {
+        "description": "Timeout in seconds. Default: 120.",
+        "type": "integer"
+      }
+    },
+    "required":
+    [
+      "target"
+    ],
+    "type": "object"
+  }
+
+## ide_search_text
+description:
+  Search for text using IntelliJ Find in Files.
+  
+  Searches use IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching so a query like "a_word" correctly finds "a_word_and_another_word". Regex searches use the same engine with regular expression matching.
+  
+  Context filtering: search only in code, comments, or string literals.
+  File filtering: pass filePattern with an IntelliJ file mask such as "*.kt" or "*.java,!*Test.java".
+  
+  Returns: matching locations with file, line, column, context snippet, and context type.
+  
+  Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
+  Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+  
+  Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "Runtime\\.getRuntime\\(\\)\\.exec\\(", "regex": true, "filePattern": "*.java"}
+schema:
+  {
+    "properties":
+    {
+      "caseSensitive":
+      {
+        "description": "Case sensitive search. Default: true.",
+        "type": "boolean"
+      },
+      "context":
+      {
+        "description": "Where to search: \"code\", \"comments\", \"strings\", \"all\". Default: \"all\".",
+        "enum":
+        [
+          "code",
+          "comments",
+          "strings",
+          "all"
+        ],
+        "type": "string"
+      },
+      "cursor":
+      {
+        "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
+        "type": "string"
+      },
+      "filePattern":
+      {
+        "description": "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".",
+        "type": "string"
+      },
+      "limit":
+      {
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "pageSize":
+      {
+        "description": "Results per page. Default: 100, max: 500.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "query":
+      {
+        "description": "Text to search for. Treated as a substring (plain text) or pattern (when regex is true). Required for fresh search, ignored when cursor is provided.",
+        "type": "string"
+      },
+      "regex":
+      {
+        "description": "Treat query as a regular expression. Default: false.",
+        "type": "boolean"
+      },
+      "wholeWord":
+      {
+        "description": "Match whole words only. Default: false (substring match).",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_set_all_project_modes
+description:
+  Set the lifecycle mode for every currently managed open project at once.
+  
+  CLOSED projects are skipped — they have no open Project object and cannot
+  be transitioned directly. Use ide_open_project or ide_set_project_mode on
+  a specific project to bring a closed project back first.
+  
+  When multiple projects are open, supply any one of them as project_path to
+  satisfy the JSON-RPC resolver. The mode is applied to all managed open
+  projects regardless of which project is specified.
+  
+  Parameters:
+  - mode: Target mode for all managed open projects (active, background, dormant)
+  - project_path (optional): Routing hint required when multiple projects are open;
+    does not limit which projects are affected.
+schema:
+  {
+    "properties":
+    {
+      "mode":
+      {
+        "description": "Target mode: active, background, or dormant. (closed is not supported — use ide_set_project_mode per project.)",
+        "enum":
+        [
+          "active",
+          "background",
+          "dormant"
+        ],
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "mode"
+    ],
+    "type": "object"
+  }
+
+## ide_set_lifecycle_log_file
+description:
+  Enable or disable writing lifecycle events to the log file on disk.
+  
+  The in-memory ring buffer (queryable via ide_lifecycle_log) is always active
+  regardless of this setting. This controls whether events are also appended to
+  the persistent log file alongside idea.log, allowing tail -f monitoring and
+  post-mortem analysis even when no MCP connection is available.
+  
+  File output is also enabled automatically when IntelliJ's debug logger is active
+  for the lifecycle category (Help → Diagnostic Tools → Debug Log Settings,
+  add #com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle).
+  
+  Parameters:
+  - enabled (required): true to start writing to the log file, false to stop
+  - project_path (optional): routing hint when multiple projects are open
+  
+  Example: { "enabled": true }
+schema:
+  {
+    "properties":
+    {
+      "enabled":
+      {
+        "description": "true to write events to the log file, false to stop.",
+        "type": "boolean"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "enabled"
+    ],
+    "type": "object"
+  }
+
+## ide_set_power_save_mode
+description:
+  Enable or disable Power Save Mode for the IDE.
+  
+  Power Save Mode suspends background inspections, on-the-fly code analysis, and
+  auto-import suggestions, reducing CPU and memory usage. The index and all code
+  intelligence operations (find usages, refactoring, navigation) remain fully functional.
+  
+  The setting is IDE-wide: it affects every open project, regardless of which
+  project serves as the JSON-RPC context.
+  
+  Useful when a project is open but not being actively edited — for example, when
+  running searches or refactoring across multiple open projects.
+  
+  Parameters:
+  - enabled: true to enable Power Save Mode, false to disable it
+  - project_path (optional): selects the JSON-RPC context project when multiple are open
+  
+  Example: { "enabled": true }
+schema:
+  {
+    "properties":
+    {
+      "enabled":
+      {
+        "description": "true to enable Power Save Mode, false to disable it.",
+        "type": "boolean"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "enabled"
+    ],
+    "type": "object"
+  }
+
+## ide_set_project_mode
+description:
+  Set the lifecycle mode for a specific managed project.
+  
+  Modes:
+  - active: Full IntelliJ capabilities. Power Save OFF. Use before code review or active editing.
+  - background: Power Save ON, index and MCP fully functional. Inspections and highlighting off.
+    Default mode when MCP is working. Transitions here automatically after focus is lost.
+  - dormant: Power Save ON, editors closed, PSI caches dropped. Index stays loaded.
+    MCP calls auto-wake to background. Transitions here after 2 min of MCP inactivity.
+  - closed: Project fully closed. All memory freed. Auto-reopens on next MCP call (5-15s delay).
+    Transitions here after 10 min of MCP inactivity.
+  
+  Use ide_set_all_project_modes to apply a mode to every managed project at once.
+  
+  Parameters:
+  - mode: Target mode (active, background, dormant, closed)
+  - project_path: Required when multiple projects are open.
+schema:
+  {
+    "properties":
+    {
+      "mode":
+      {
+        "description": "Target mode: active, background, dormant, or closed.",
+        "enum":
+        [
+          "active",
+          "background",
+          "dormant",
+          "closed"
+        ],
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "mode"
+    ],
+    "type": "object"
+  }
+
+## ide_structural_search_replace
+description:
+  Search for code patterns using IntelliJ's structural search, optionally replacing matches.
+  
+  Uses AST-aware pattern matching — not text regex. Patterns use $variable$ syntax
+  for wildcards that match any expression, statement, or type.
+  
+  Search-only mode (no replacePattern): returns all matches with file locations.
+  Replace mode: applies the replacement pattern to all matches and returns the count.
+  
+  Examples:
+  - Search: {"searchPattern": "System.out.println($arg$)"}
+  - Replace: {"searchPattern": "new Sync($fn$)", "replacePattern": "new Sync<>(Map.class, $fn$)", "filePattern": "*.java"}
+schema:
+  {
+    "properties":
+    {
+      "filePattern":
+      {
+        "description": "File mask filter (e.g., '*.java', '*.kt'). Default: '*.java'.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "replacePattern":
+      {
+        "description": "SSR replacement pattern. If omitted, returns matches without replacing.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      },
+      "searchPattern":
+      {
+        "description": "SSR search pattern. Use $variable$ for wildcards.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "searchPattern"
+    ],
+    "type": "object"
+  }
+
+## ide_sync_files
+description:
+  Force the IDE to synchronize its virtual file system and PSI cache with external file changes. Use when files were created, modified, or deleted outside the IDE (e.g., by coding agents) and other IDE tools report stale results or miss references in recently changed files.
+  call it on-demand only when needed.
+  Parameters: paths (optional array of relative file/directory paths to sync; if omitted, syncs entire project), project_path (optional).
+  Example: {} or {"paths": ["src/main/java/com/example/NewFile.java", "src/main/java/com/example/ModifiedFile.java"]}
+schema:
+  {
+    "properties":
+    {
+      "paths":
+      {
+        "description": "File or directory paths relative to project root to sync. If omitted, syncs the entire project.",
+        "items":
+        {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_type_hierarchy
+description:
+  Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
+  
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  
+  Rust note: className parameter not supported for Rust; use file + line + column instead.
+  
+  Returns: target class info, full supertype chain (recursive), and all subtypes in the project.
+  
+  Parameters: Either className (e.g., "com.example.MyClass" for Java/PHP-style FQNs or "MyComponent" for JavaScript/TypeScript symbols) OR file + line + column. scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files).
+  
+  Example: {"className": "com.example.UserService", "scope": "project_and_libraries"} or {"file": "src/MyClass.java", "line": 10, "column": 14}
+schema:
+  {
+    "properties":
+    {
+      "className":
+      {
+        "description": "Fully qualified class name for JVM/PHP-style languages or simple class/interface name for JavaScript/TypeScript (e.g., 'com.example.MyClass', 'App\\\\Models\\\\User', or 'MyComponent').",
+        "type": "string"
+      },
+      "column":
+      {
+        "description": "1-based column number. Required if using file parameter.",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.",
+        "type": "string"
+      },
+      "includeGenerated":
+      {
+        "description": "Include supertypes/subtypes defined in generated sources (KSP/Dagger/annotation-processor output). Default: true — keep generated types in the hierarchy.",
+        "type": "boolean"
+      },
+      "line":
+      {
+        "description": "1-based line number where the class is defined. Required if using file parameter.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Search scope. Default: project_files.",
+        "enum":
+        [
+          "project_files",
+          "project_and_libraries",
+          "project_production_files",
+          "project_test_files"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }

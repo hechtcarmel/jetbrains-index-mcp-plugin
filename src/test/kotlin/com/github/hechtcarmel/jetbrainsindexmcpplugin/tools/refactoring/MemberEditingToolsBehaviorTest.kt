@@ -1,41 +1,31 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.intellij.testFramework.IndexingTestUtil
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import java.nio.file.Files
-import java.nio.file.Path
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assume
+import java.nio.file.Files
+import java.nio.file.Path
 
-class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
+class MemberEditingToolsBehaviorTest : McpPlatformTestCase() {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun writeProjectFile(relativePath: String, content: String): Path {
-        val basePath = requireNotNull(project.basePath)
-        val path = Path.of(basePath, relativePath)
-        Files.createDirectories(path.parent)
-        Files.writeString(path, content)
-        requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(path.toString())) {
-            "Failed to refresh VFS for test file $path"
-        }
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-        return path
-    }
+    /** Reads off disk, so the assertions also prove the tool flushed its document. */
+    private fun readProjectFile(relativePath: String): String =
+        Files.readString(Path.of(requireNotNull(project.basePath), relativePath))
 
-    private fun readProjectFile(relativePath: String): String {
-        val basePath = requireNotNull(project.basePath)
-        return Files.readString(Path.of(basePath, relativePath))
-    }
+    private fun parseResult(result: ToolCallResult): MemberEditResult =
+        json.decodeFromString(toolText(result))
 
-    private fun parseResult(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): MemberEditResult {
-        return json.decodeFromString<MemberEditResult>((result.content.single() as ContentBlock.Text).text)
-    }
+    private fun parseErrorResult(result: ToolCallResult): MemberErrorResult =
+        json.decodeFromString(toolText(result))
 
     // ── Java: ide_replace_member ──
 
@@ -55,7 +45,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "\n        return a + b + 1;\n    ")
         })
 
-        assertFalse("Replace body should succeed", result.isError)
+        assertToolSucceeded("Replace body should succeed", result)
         val payload = parseResult(result)
         assertTrue(payload.success)
 
@@ -79,7 +69,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "60")
         })
 
-        assertFalse("Replace field initializer should succeed", result.isError)
+        assertToolSucceeded("Replace field initializer should succeed", result)
         val content = readProjectFile("src/Config.java")
         assertTrue("Field should have new value", content.contains("60"))
     }
@@ -98,10 +88,10 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "return;")
         })
 
-        assertTrue("Should fail for missing member", result.isError || run {
-            val text = (result.content.single() as ContentBlock.Text).text
-            text.contains("member_not_found")
-        })
+        val payload = parseErrorResult(result)
+        assertEquals("member_not_found", payload.error)
+        assertEquals("nonExistent", payload.member)
+        assertEquals("Member 'nonExistent' not found in the specified scope.", payload.hint)
     }
 
     fun testJavaReplaceOverloadedMethodDisambiguatesByParameterCount() = runBlocking {
@@ -124,7 +114,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "\n        System.out.println(\"replaced\");\n    ")
         })
 
-        assertFalse("Disambiguated replace should succeed", result.isError)
+        assertToolSucceeded("Disambiguated replace should succeed", result)
         val content = readProjectFile("src/Overloaded.java")
         assertTrue("Single-param method should be replaced", content.contains("replaced"))
         assertTrue("Two-param method should be unchanged", content.contains("s + n"))
@@ -145,9 +135,11 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "return;")
         })
 
-        val text = (result.content.single() as ContentBlock.Text).text
-        assertTrue("Should return ambiguous error", text.contains("ambiguous_member"))
-        assertTrue("Should list candidates", text.contains("candidates"))
+        val payload = parseErrorResult(result)
+        assertEquals("ambiguous_member", payload.error)
+        assertEquals("run", payload.member)
+        assertEquals("Specify parameterCount or line to disambiguate.", payload.hint)
+        assertEquals("Both overloads should be offered", 2, payload.candidates?.size ?: 0)
     }
 
     // ── Java: ide_edit_member ──
@@ -168,7 +160,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public String getFullName() {\n        return \"new\";\n    }")
         })
 
-        assertFalse("Edit member should succeed", result.isError)
+        assertToolSucceeded("Edit member should succeed", result)
         val content = readProjectFile("src/Service.java")
         assertTrue("Should have new method name", content.contains("getFullName"))
         assertFalse("Old method name should be gone", content.contains("getName"))
@@ -190,7 +182,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public void newMethod() {\n        System.out.println(\"inserted\");\n    }")
         })
 
-        assertFalse("Insert should succeed", result.isError)
+        assertToolSucceeded("Insert should succeed", result)
         val content = readProjectFile("src/Base.java")
         assertTrue("Should contain new method", content.contains("newMethod"))
         assertTrue("Should still contain existing method", content.contains("existing"))
@@ -212,7 +204,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("anchor", "gamma")
         })
 
-        assertFalse("Insert before should succeed", result.isError)
+        assertToolSucceeded("Insert before should succeed", result)
         val content = readProjectFile("src/Ordered.java")
         assertTrue("Should contain beta", content.contains("beta"))
         val betaPos = content.indexOf("beta")
@@ -236,7 +228,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("anchor", "first")
         })
 
-        assertFalse("Insert after should succeed", result.isError)
+        assertToolSucceeded("Insert after should succeed", result)
         val content = readProjectFile("src/AfterTest.java")
         val secondPos = content.indexOf("second")
         val firstPos = content.indexOf("first")
@@ -259,8 +251,8 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public void verbose() { }")
         })
 
-        assertFalse("Edit should succeed without IndexOutOfBoundsException: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}", result.isError)
-        val parsed = json.decodeFromString<MemberEditResult>((result.content.single() as ContentBlock.Text).text)
+        assertToolSucceeded("Edit should succeed without IndexOutOfBoundsException", result)
+        val parsed = parseResult(result)
         assertTrue("startLine must be positive", parsed.startLine!! > 0)
         assertTrue("endLine must be >= startLine", parsed.endLine!! >= parsed.startLine!!)
         assertTrue("endLine must not exceed document line count", parsed.endLine!! <= 10)
@@ -269,11 +261,11 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
     // ── Java: ide_file_structure endLine ──
 
     fun testJavaFileStructureIncludesEndLine() = runBlocking {
-        com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry.registerHandlers()
-        if (!com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry.hasStructureHandlers()) {
-            System.err.println("testJavaFileStructureIncludesEndLine: skipped - no structure handlers available")
-            Assume.assumeTrue("Required class not available in test sandbox", false)
-        }
+        LanguageHandlerRegistry.registerHandlers()
+        Assume.assumeTrue(
+            "No file-structure handlers available in this sandbox",
+            LanguageHandlerRegistry.hasStructureHandlers()
+        )
 
         writeProjectFile("src/Structured.java", """
             public class Structured {
@@ -292,23 +284,24 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             }
         """.trimIndent())
 
-        val tool = try {
-            Class.forName("com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool")
-                .getDeclaredConstructor().newInstance() as com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.McpTool
-        } catch (_: Exception) {
-            Assume.assumeTrue("FileStructureTool not available in test sandbox", false)
-            return@runBlocking
-        }
-
-        val result = tool.execute(project, buildJsonObject {
+        val result = FileStructureTool().execute(project, buildJsonObject {
             put("file", "src/Structured.java")
         })
 
-        val text = (result.content.single() as ContentBlock.Text).text
-        assertFalse("File structure should succeed: $text", result.isError)
-        assertTrue("Should contain 'lines' (endLine present): $text", text.contains("lines"))
-        assertTrue("Should contain longMethod", text.contains("longMethod"))
-        assertTrue("Should contain shortMethod", text.contains("shortMethod"))
+        assertToolSucceeded("File structure should succeed", result)
+        val structure = json.decodeFromString<FileStructureResult>(toolText(result)).structure
+
+        val classLine = structure.lines().single { it.contains("Structured") && it.contains("class") }
+        assertTrue("Class should span the whole file, got: $classLine", classLine.endsWith("(lines 1-14)"))
+
+        val longMethodLine = structure.lines().single { it.contains("longMethod") }
+        assertTrue("longMethod should span its body, got: $longMethodLine", longMethodLine.endsWith("(lines 4-9)"))
+
+        val shortMethodLine = structure.lines().single { it.contains("shortMethod") }
+        assertTrue("shortMethod should span its body, got: $shortMethodLine", shortMethodLine.endsWith("(lines 11-13)"))
+
+        val fieldLine = structure.lines().single { it.contains("count") }
+        assertTrue("Single-line field should report one line, got: $fieldLine", fieldLine.endsWith("(line 2)"))
     }
 
     // ── Java: error cases ──
@@ -327,10 +320,8 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "return;")
         })
 
-        assertTrue("Should fail for missing class", result.isError || run {
-            val text = (result.content.single() as ContentBlock.Text).text
-            text.contains("not found")
-        })
+        assertToolFailed("Should fail for missing class", result)
+        assertEquals("Class 'NonExistent' not found in file.", toolText(result))
     }
 
     fun testAbstractMethodHasNoBodyToReplace() = runBlocking {
@@ -347,8 +338,12 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "System.out.println(\"hi\");")
         })
 
-        val text = (result.content.single() as ContentBlock.Text).text
-        assertTrue("Should indicate no body", text.contains("no body") || text.contains("ide_edit_member"))
+        assertToolFailed("Abstract method has no body to replace", result)
+        assertEquals(
+            "Member 'process' has no body/initializer to replace. Use ide_edit_member for full replacement.",
+            toolText(result)
+        )
+        assertFileDoesNotContain("src/AbstractService.java", "System.out.println")
     }
 
     fun testFileNotFoundReturnsError() = runBlocking {
@@ -359,7 +354,8 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "return;")
         })
 
-        assertTrue("Should fail for missing file", result.isError)
+        assertToolFailed("Should fail for missing file", result)
+        assertEquals("File not found: src/DoesNotExist.java", toolText(result))
     }
 
     // ── Java: insert without class specified ──
@@ -376,7 +372,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public void added() {}")
         })
 
-        assertFalse("Insert without class should succeed for single-class file", result.isError)
+        assertToolSucceeded("Insert without class should succeed for single-class file", result)
         val content = readProjectFile("src/SingleClass.java")
         assertTrue("Method should be inside the class", content.contains("added"))
         val addedPos = content.indexOf("added")
@@ -395,9 +391,12 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public void ambiguous() {}")
         })
 
-        val text = (result.content.single() as ContentBlock.Text).text
-        assertTrue("Should fail for ambiguous class scope",
-            result.isError || text.contains("not found") || text.contains("Cannot insert"))
+        assertToolFailed("Should fail for ambiguous class scope", result)
+        assertEquals(
+            "Cannot determine insertion point. The file may have multiple classes — specify the 'class' parameter.",
+            toolText(result)
+        )
+        assertFileDoesNotContain("src/MultiClass.java", "ambiguous")
     }
 
     // ── Java: class/interface declaration editing ──
@@ -416,7 +415,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public interface GenericTarget<T> {\n    T process();\n}")
         })
 
-        assertFalse("Edit class declaration should succeed", result.isError)
+        assertToolSucceeded("Edit class declaration should succeed", result)
         val content = readProjectFile("src/GenericTarget.java")
         assertTrue("Should have type parameter", content.contains("GenericTarget<T>"))
         assertTrue("Should have updated method", content.contains("T process()"))
@@ -436,7 +435,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public class ImplTarget implements Runnable {\n    public void run() {}\n}")
         })
 
-        assertFalse("Edit class implements should succeed", result.isError)
+        assertToolSucceeded("Edit class implements should succeed", result)
         val content = readProjectFile("src/ImplTarget.java")
         assertTrue("Should have implements", content.contains("implements Runnable"))
     }
@@ -454,7 +453,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public abstract class TopLevel {\n    public abstract void method();\n}")
         })
 
-        assertFalse("Edit top-level class without class param should succeed", result.isError)
+        assertToolSucceeded("Edit top-level class without class param should succeed", result)
         val content = readProjectFile("src/TopLevel.java")
         assertTrue("Should be abstract", content.contains("abstract class TopLevel"))
     }
@@ -477,7 +476,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "public record RecordTarget(String name, int age, String email) implements Serializable {\n    public String displayName() {\n        return name + \" <\" + email + \">\";\n    }\n}")
         })
 
-        assertFalse("Edit record declaration should succeed: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}", result.isError)
+        assertToolSucceeded("Edit record declaration should succeed", result)
         val content = readProjectFile("src/RecordTarget.java")
         assertTrue("Should have new component", content.contains("String email"))
         assertTrue("Should have implements", content.contains("implements Serializable"))
@@ -505,7 +504,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "\n        value = 99;\n    ")
         })
 
-        assertFalse("Replace static init body should succeed: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}", result.isError)
+        assertToolSucceeded("Replace static init body should succeed", result)
         val content = readProjectFile("src/WithStaticInit.java")
         assertTrue("Should contain new value", content.contains("99"))
         assertFalse("Old value should be gone", content.contains("42"))
@@ -528,7 +527,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("content", "static {\n        label = \"new\";\n        System.out.println(label);\n    }")
         })
 
-        assertFalse("Edit static init should succeed", result.isError)
+        assertToolSucceeded("Edit static init should succeed", result)
         val content = readProjectFile("src/WithStaticInit2.java")
         assertTrue("Should contain new body", content.contains("\"new\""))
         assertTrue("Should contain println", content.contains("System.out.println"))
@@ -556,7 +555,7 @@ class MemberEditingToolsBehaviorTest : BasePlatformTestCase() {
             put("reformat", true)
         })
 
-        assertFalse("Replace with reformat+import optimization should succeed", result.isError)
+        assertToolSucceeded("Replace with reformat+import optimization should succeed", result)
         val payload = parseResult(result)
         assertTrue(payload.success)
     }

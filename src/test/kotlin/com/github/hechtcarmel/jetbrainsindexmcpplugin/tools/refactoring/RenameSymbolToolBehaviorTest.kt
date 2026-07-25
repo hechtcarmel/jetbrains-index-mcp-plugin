@@ -1,37 +1,12 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.testFramework.IndexingTestUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.nio.file.Files
-import java.nio.file.Path
 
-class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
-
-    private fun writeProjectFile(relativePath: String, content: String): Path {
-        val basePath = requireNotNull(project.basePath)
-        val path = Path.of(basePath, relativePath)
-        Files.createDirectories(path.parent)
-        Files.writeString(path, content)
-        requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(path.toString())) {
-            "Failed to refresh VFS for test file ${path}"
-        }
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-        return path
-    }
-
-    private fun readProjectFileVfs(relativePath: String): String {
-        val basePath = requireNotNull(project.basePath)
-        val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")
-            ?: return Files.readString(Path.of(basePath, relativePath))
-        val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)
-        return doc?.text ?: String(vf.contentsToByteArray())
-    }
+class RenameSymbolToolBehaviorTest : McpPlatformTestCase() {
 
     fun testExplicitFileRenameIgnoresMalformedCoordinatesDuringFullToolExecution() = runBlocking {
         writeProjectFile(
@@ -47,14 +22,10 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
             put("newName", "readme-renamed.txt")
         })
 
-        assertFalse(
-            "Explicit file rename should ignore malformed line/column values: ${result.content}",
-            result.isError
-        )
-
-        val basePath = requireNotNull(project.basePath)
-        assertFalse(Files.exists(Path.of(basePath, "docs/readme.txt")))
-        assertTrue(Files.exists(Path.of(basePath, "docs/readme-renamed.txt")))
+        assertToolSucceeded("Explicit file rename should ignore malformed line/column values", result)
+        assertProjectFileAbsent("docs/readme.txt")
+        assertProjectFileExists("docs/readme-renamed.txt")
+        assertFileContains("docs/readme-renamed.txt", "Rename me through file mode.")
     }
 
     // ── Java: symbol rename ──
@@ -80,12 +51,10 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
             put("newName", "getFullName")
         })
 
-        assertFalse(
-            "Java method rename should succeed: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}",
-            result.isError
-        )
-        val text = readProjectFileVfs("src/UserService.java")
-        assertTrue("Method should be renamed in declaration: $text", text.contains("getFullName"))
+        assertToolSucceeded("Java method rename should succeed", result)
+        assertRenamedInFile("src/UserService.java", "getDisplayName", "getFullName")
+        assertFileContains("src/UserService.java", "public String getFullName()")
+        assertFileContains("src/UserService.java", "return getFullName();")
     }
 
     fun testJavaRenameFieldUpdatesReferencesWithinFile() = runBlocking {
@@ -107,10 +76,11 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
             put("newName", "total")
         })
 
-        val payload = (result.content.singleOrNull() as? ContentBlock.Text)?.text ?: ""
-        assertFalse("Java field rename should succeed: $payload", result.isError)
-        val text = readProjectFileVfs("src/FieldRenameTarget.java")
-        assertTrue("Field declaration should use new name: $text", text.contains("int total"))
+        assertToolSucceeded("Java field rename should succeed", result)
+        assertFileContains("src/FieldRenameTarget.java", "public int total = 0;")
+        assertFileContains("src/FieldRenameTarget.java", "total = total + 1;")
+        assertFileDoesNotContain("src/FieldRenameTarget.java", "int count")
+        assertFileDoesNotContain("src/FieldRenameTarget.java", "count = count")
     }
 
     fun testJavaRenameClassRenamesFile() = runBlocking {
@@ -129,9 +99,11 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
             put("newName", "NewName")
         })
 
-        assertFalse("Java class rename should succeed", result.isError)
-        val text = readProjectFileVfs("src/NewName.java")
-        assertTrue("Class declaration updated: $text", text.contains("class NewName"))
+        assertToolSucceeded("Java class rename should succeed", result)
+        assertProjectFileAbsent("src/OldName.java")
+        assertProjectFileExists("src/NewName.java")
+        assertFileContains("src/NewName.java", "public class NewName {")
+        assertFileDoesNotContain("src/NewName.java", "OldName")
     }
 
     fun testJavaRenameParameterUpdatesUsagesInBody() = runBlocking {
@@ -152,9 +124,93 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
             put("newName", "rawValue")
         })
 
-        assertFalse("Java parameter rename should succeed", result.isError)
-        val text = readProjectFileVfs("src/Processor.java")
-        assertTrue("Parameter should be renamed in signature: $text", text.contains("String rawValue"))
-        assertTrue("Usage in body should be updated", text.contains("rawValue.trim()"))
+        assertToolSucceeded("Java parameter rename should succeed", result)
+        assertFileContains("src/Processor.java", "public String process(String rawValue)")
+        assertFileContains("src/Processor.java", "return rawValue.trim();")
+        assertFileDoesNotContain("src/Processor.java", "input")
+    }
+
+    // ── Java: cross-file symbol rename ──
+    //
+    // Cross-file reference updating is the whole point of routing a rename through the IDE
+    // index, so the referencing file — not just the declaring one — carries the assertions.
+    // A source root is required for `ReferencesSearch` to see the second file at all.
+
+    fun testJavaRenameMethodUpdatesCallSiteInAnotherFile() = runBlocking {
+        registerSourceRoot("cross-method-src")
+        writeProjectFile(
+            "cross-method-src/crossmethod/Greeter.java", """
+            package crossmethod;
+
+            public class Greeter {
+                public String getDisplayName() {
+                    return "name";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "cross-method-src/crossmethod/GreeterClient.java", """
+            package crossmethod;
+
+            public class GreeterClient {
+                public String describe(Greeter greeter) {
+                    return greeter.getDisplayName();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "cross-method-src/crossmethod/Greeter.java")
+            put("line", 4)
+            put("column", 19)
+            put("newName", "getFullName")
+        })
+
+        assertToolSucceeded("Cross-file Java method rename should succeed", result)
+        assertRenamedInFile("cross-method-src/crossmethod/Greeter.java", "getDisplayName", "getFullName")
+        assertRenamedInFile("cross-method-src/crossmethod/GreeterClient.java", "getDisplayName", "getFullName")
+        assertFileContains("cross-method-src/crossmethod/GreeterClient.java", "return greeter.getFullName();")
+    }
+
+    fun testJavaRenameClassUpdatesReferencingFileAndRenamesSourceFile() = runBlocking {
+        registerSourceRoot("cross-class-src")
+        writeProjectFile(
+            "cross-class-src/crossclass/LegacyReport.java", """
+            package crossclass;
+
+            public class LegacyReport {
+                public String title() {
+                    return "report";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "cross-class-src/crossclass/ReportPrinter.java", """
+            package crossclass;
+
+            public class ReportPrinter {
+                public String print(LegacyReport source) {
+                    return source.title();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "cross-class-src/crossclass/LegacyReport.java")
+            put("line", 3)
+            put("column", 14)
+            put("newName", "ArchivedReport")
+        })
+
+        assertToolSucceeded("Cross-file Java class rename should succeed", result)
+        assertProjectFileAbsent("cross-class-src/crossclass/LegacyReport.java")
+        assertProjectFileExists("cross-class-src/crossclass/ArchivedReport.java")
+        assertFileContains("cross-class-src/crossclass/ArchivedReport.java", "public class ArchivedReport {")
+        assertRenamedInFile("cross-class-src/crossclass/ReportPrinter.java", "LegacyReport", "ArchivedReport")
+        assertFileContains("cross-class-src/crossclass/ReportPrinter.java", "public String print(ArchivedReport source)")
     }
 }

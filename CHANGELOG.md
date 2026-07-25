@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_structural_search_replace`** — replace mode failed with `Must not change PSI outside command or undo-transparent action` on every invocation that matched at least one element in a project file, applying no edits. `Replacer.replaceAll` opens its own write action but no command, which `PomModelImpl` requires for changes to physical files; replacements are now wrapped in a command, matching the IDE's own Replace All. Search-only mode was unaffected.
+- **`ide_find_definition`, `ide_find_references`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`** — symbol mode (`language` + `symbol`) returned `not_found` for `module#default` when the file used `export default function f() {}` or `export default class C {}`, the two most common default-export forms. Default-export detection probed a non-existent `isDefaultExport()` accessor; it now uses `isExportedWithDefault()`, which is where the modifier actually lives when there is no `ES6ExportDefault*` wrapper node. Affects both JavaScript and TypeScript.
+- **TypeScript overload resolution** — TypeScript functions were never recognised as function-like, because detection matched on the class name containing `JSFunction` and `TypeScriptFunctionImpl` does not. As a result, resolving an overloaded exported TypeScript function by symbol returned `ambiguous_match`, and `ide_call_hierarchy` seeded from an overload signature reported the empty declaration (no callees, under-reported callers) instead of normalising to the implementation. Detection now tests against the `JSFunction` interface.
+
 ## [4.31.0] - 2026-07-25
 
 ### Changed

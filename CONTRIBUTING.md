@@ -10,22 +10,36 @@ Follow every rule here before opening a pull request.
 ### Local feedback loop (run these yourself)
 
 ```bash
-./gradlew test --tests "*UnitTest*"   # fast unit tests, no IDE needed (< 30 s)
-./gradlew runIde                       # launch sandboxed IDE with plugin installed
-./scripts/check-pr.sh                  # pre-push validation — run before every push
+./gradlew test -Ptier=unit   # fast headless tier, no IntelliJ Platform (~20 s)
+./gradlew test               # everything, platform tests included (~40 s)
+./gradlew runIde             # launch sandboxed IDE with plugin installed
+./scripts/check-pr.sh        # pre-push validation — run before every push
 ```
 
-### CI / maintainer-only (do not run locally unless explicitly asked)
+Run the full suite before pushing. Platform tests are part of your local loop, not a
+CI-only luxury — they are where tool behavior is actually verified.
+
+### CI / maintainer-only
 
 ```bash
-./gradlew test               # includes platform tests — times out on headless machines
-./gradlew build              # depends on ./gradlew test, same issue
-./gradlew runPluginVerifier  # Marketplace compatibility check — run in CI
+./gradlew build          # full build + tests + plugin artifact
+./gradlew verifyPlugin   # Marketplace compatibility check
 ```
 
-`./gradlew test` registers `TestFrameworkType.Platform` via `build.gradle.kts`, which means
-it includes platform tests that require a full IntelliJ Platform environment. Running it
-locally hangs on headless machines. Stick to `--tests "*UnitTest*"` for local iteration.
+### Notes on the test commands
+
+`-Ptier=unit` / `-Ptier=platform` exist because Gradle's `--tests` flag has **no negation
+operator** and OR-combines repeated occurrences. Earlier revisions of this file documented
+`--tests "*Test" --tests "!*UnitTest*"` for "platform tests only"; that command silently ran
+the entire suite, because `*Test` already matches every `*UnitTest` class and `!*UnitTest*` is
+a literal pattern matching nothing.
+
+This file also used to claim the platform tests "time out on headless machines." That was never
+substantiated: CI runs `./gradlew check` on `ubuntu-latest` with no xvfb and no `DISPLAY`, and
+the full suite completes locally in about 40 seconds. Run them.
+
+The task is `verifyPlugin`, not `runPluginVerifier` — the latter does not exist under the
+IntelliJ Platform Gradle Plugin 2.x used here.
 
 ---
 

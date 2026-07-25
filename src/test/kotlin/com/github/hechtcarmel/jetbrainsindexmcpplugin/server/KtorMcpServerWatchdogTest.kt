@@ -2,11 +2,15 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorSseSessionManager
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import java.net.BindException
+import java.net.InetAddress
+import java.net.ServerSocket
 
 /**
  * Platform tests for KtorMcpServer watchdog behaviour.
@@ -14,15 +18,15 @@ import kotlinx.coroutines.cancel
  * Tests that isRunning() correctly reflects actual engine state and that
  * onUnexpectedStop fires only when the stop was not intentional.
  *
- * Uses a fixed test port offset from the production port to avoid conflicts
- * when IntelliJ is running alongside the test suite.
+ * Servers bind port 0 (ephemeral) so the suite can never collide with a running IDE, a parallel
+ * CI job, or one of its own sockets still in TIME_WAIT. The port-in-use case is the exception:
+ * it holds a real socket open for the whole assertion, so the conflict cannot evaporate between
+ * picking the port and Ktor binding it.
  */
 class KtorMcpServerWatchdogTest : BasePlatformTestCase() {
 
     private lateinit var testScope: CoroutineScope
     private var server: KtorMcpServer? = null
-
-    private val testPort = 29280 // offset from production 29170
 
     override fun setUp() {
         super.setUp()
@@ -97,53 +101,30 @@ class KtorMcpServerWatchdogTest : BasePlatformTestCase() {
         )
     }
 
-    fun testStartResultSuccessOnFreePort() {
-        server = makeServer()
-        val result = server!!.start()
-        assertTrue(
-            "start on a free port must return Success, got $result",
-            result is KtorMcpServer.StartResult.Success
-        )
-    }
-
     fun testStartResultPortInUseWhenPortTaken() {
-        // Start first server to occupy the port
-        val first = makeServer()
-        val firstResult = first.start()
-        assertEquals(KtorMcpServer.StartResult.Success, firstResult)
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { occupied ->
+            val blocked = makeServer(port = occupied.localPort)
 
-        try {
-            // Second server on same port must fail — either PortInUse, Error wrapping BindException,
-            // or a thrown CancellationException (Ktor CIO can wrap BindException in a JobCancellation
-            // when the bind fails inside a coroutine). All three outcomes indicate the conflict was
-            // detected; none is StartResult.Success.
-            val second = makeServer()
-            val result = runCatching { second.start() }
-            val startResult = result.getOrNull()
-
-            if (result.isFailure) {
-                // Thrown CancellationException — conflict detected, server did not start
-                val cause = generateSequence(result.exceptionOrNull()) { it.cause }
-                    .any { it is java.net.BindException }
-                assertTrue("exception must be caused by BindException", cause)
-            } else {
-                assertFalse(
-                    "second start on occupied port must not return Success, got $startResult",
-                    startResult is KtorMcpServer.StartResult.Success
-                )
+            // Ktor CIO reports a lost bind in three shapes: StartResult.PortInUse,
+            // StartResult.Error wrapping BindException, or a thrown CancellationException whose
+            // cause chain contains the BindException (bind failed inside the engine coroutine).
+            // All three mean the conflict was detected; none is StartResult.Success.
+            val result = runCatching { blocked.start() }
+            try {
+                if (result.isFailure) {
+                    val bindFailure = generateSequence(result.exceptionOrNull()) { it.cause }
+                        .any { it is BindException }
+                    assertTrue("exception must be caused by BindException", bindFailure)
+                } else {
+                    assertFalse(
+                        "start on occupied port must not return Success, got ${result.getOrNull()}",
+                        result.getOrNull() is KtorMcpServer.StartResult.Success
+                    )
+                }
+            } finally {
+                blocked.stop()
             }
-            second.stop()
-        } finally {
-            first.stop()
         }
-    }
-
-    // ── isRunning() uses engineRunning flag, not just server != null ───────
-
-    fun testIsRunningFalseWhenNeverStarted() {
-        // engineRunning starts as false; server reference is null → false
-        server = makeServer()
-        assertFalse(server!!.isRunning())
     }
 
     fun testMultipleStartStopCycles() {
@@ -160,15 +141,18 @@ class KtorMcpServerWatchdogTest : BasePlatformTestCase() {
 
     // ── Helper ────────────────────────────────────────────────────────────
 
-    private fun makeServer(onUnexpectedStop: (() -> Unit)? = null): KtorMcpServer {
-        val handler = JsonRpcHandler(com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry())
+    private fun makeServer(port: Int = EPHEMERAL_PORT, onUnexpectedStop: (() -> Unit)? = null): KtorMcpServer {
         return KtorMcpServer(
-            port = testPort,
+            port = port,
             host = "127.0.0.1",
-            jsonRpcHandler = handler,
+            jsonRpcHandler = JsonRpcHandler(ToolRegistry()),
             sseSessionManager = KtorSseSessionManager(),
             coroutineScope = testScope,
             onUnexpectedStop = onUnexpectedStop
         )
+    }
+
+    private companion object {
+        private const val EPHEMERAL_PORT = 0
     }
 }

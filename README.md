@@ -557,12 +557,14 @@ Contributions are welcome! Please:
 # Run IDE with plugin installed
 ./gradlew runIde
 
-# Run tests
+# Run tests — everything, ~40s. Use -Ptier=unit for the fast headless tier only.
 ./gradlew test
 
 # Run plugin verification
-./gradlew runPluginVerifier
+./gradlew verifyPlugin
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the test tiers and assertion rules.
 
 ## License
 

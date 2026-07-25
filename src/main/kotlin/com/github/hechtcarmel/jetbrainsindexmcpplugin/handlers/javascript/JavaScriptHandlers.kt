@@ -359,7 +359,23 @@ private fun isExportCandidate(named: PsiNamedElement): Boolean {
     return callBooleanMethod(named, "isExported") == true || callBooleanMethod(named, "isExport") == true
 }
 
+/**
+ * `com.intellij.lang.javascript.psi.JSFunction`, or `null` when no JS/TS plugin is installed.
+ *
+ * Matching on the implementation class name alone is not enough: TypeScript declarations are
+ * backed by `TypeScriptFunctionImpl` / `TypeScriptFunctionExpressionImpl`, whose names contain
+ * neither "JSFunction" nor an `isFunction()` accessor, even though they implement `JSFunction`.
+ */
+private val jsFunctionPsiClass: Class<*>? by lazy {
+    try {
+        Class.forName("com.intellij.lang.javascript.psi.JSFunction")
+    } catch (_: ClassNotFoundException) {
+        null
+    }
+}
+
 private fun isFunctionLike(named: PsiNamedElement): Boolean {
+    if (jsFunctionPsiClass?.isInstance(named) == true) return true
     val className = named.javaClass.name
     if (className.contains("JSFunction")) return true
     return callBooleanMethod(named, "isFunction") == true
@@ -849,12 +865,19 @@ class JavaScriptSymbolReferenceHandler(
         return candidates
     }
 
+    /**
+     * `export default function f() {}` and `export default class C {}` are not wrapped in an
+     * `ES6ExportDefault*` node — the declaration itself carries the modifier, exposed by
+     * `JSElementBase.isExportedWithDefault()`. Only `export default <expression>` produces a
+     * wrapper node.
+     */
     private fun isDefaultExportCandidate(named: PsiNamedElement): Boolean {
         val className = named.javaClass.name
         if (className.contains("ES6ExportDefaultAssignment") || className.contains("ES6ExportDefaultDeclaration")) {
             return true
         }
-        return callBooleanMethod(named, "isDefaultExport") == true
+        return callBooleanMethod(named, "isExportedWithDefault") == true ||
+            callBooleanMethod(named, "isDefaultExport") == true
     }
 
     private fun isClassLike(named: PsiNamedElement): Boolean {
@@ -920,14 +943,8 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
         }
     }
 
-    protected val jsFunctionClass: Class<*>? by lazy {
-        try {
-            Class.forName("com.intellij.lang.javascript.psi.JSFunction")
-        } catch (_: ClassNotFoundException) {
-            LOG.debug("JSFunction not found")
-            null
-        }
-    }
+    protected val jsFunctionClass: Class<*>?
+        get() = jsFunctionPsiClass
 
     protected val jsCallExpressionClass: Class<*>? by lazy {
         try {

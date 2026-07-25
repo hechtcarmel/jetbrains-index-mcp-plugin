@@ -22,7 +22,6 @@ class McpModelsUnitTest : TestCase() {
         val serialized = json.encodeToString<ContentBlock>(textBlock)
         val deserialized = json.decodeFromString<ContentBlock>(serialized)
 
-        assertTrue("Should deserialize to Text block", deserialized is ContentBlock.Text)
         assertEquals("Hello, World!", (deserialized as ContentBlock.Text).text)
         assertTrue("Serialized should contain type discriminator", serialized.contains("\"type\":\"text\""))
     }
@@ -31,10 +30,8 @@ class McpModelsUnitTest : TestCase() {
         val imageBlock = ContentBlock.Image("base64data==", "image/png")
 
         val serialized = json.encodeToString<ContentBlock>(imageBlock)
-        val deserialized = json.decodeFromString<ContentBlock>(serialized)
+        val image = json.decodeFromString<ContentBlock>(serialized) as ContentBlock.Image
 
-        assertTrue("Should deserialize to Image block", deserialized is ContentBlock.Image)
-        val image = deserialized as ContentBlock.Image
         assertEquals("base64data==", image.data)
         assertEquals("image/png", image.mimeType)
         assertTrue("Serialized should contain type discriminator", serialized.contains("\"type\":\"image\""))
@@ -53,176 +50,37 @@ class McpModelsUnitTest : TestCase() {
 
     // ToolCallResult tests
 
-    fun testToolCallResultWithTextContent() {
-        val result = ToolCallResult(
-            content = listOf(ContentBlock.Text("Result text")),
-            isError = false
+    fun testToolCallResultUsesMcpWireKeys() {
+        val serialized = json.encodeToString(
+            ToolCallResult(content = listOf(ContentBlock.Text("Error message")), isError = true)
         )
 
-        val serialized = json.encodeToString(result)
-        val deserialized = json.decodeFromString<ToolCallResult>(serialized)
-
-        assertFalse("isError should be false", deserialized.isError)
-        assertEquals(1, deserialized.content.size)
-        assertTrue(deserialized.content[0] is ContentBlock.Text)
-    }
-
-    fun testToolCallResultWithError() {
-        val result = ToolCallResult(
-            content = listOf(ContentBlock.Text("Error message")),
-            isError = true
-        )
-
-        val serialized = json.encodeToString(result)
-        val deserialized = json.decodeFromString<ToolCallResult>(serialized)
-
-        assertTrue("isError should be true", deserialized.isError)
-    }
-
-    fun testToolCallResultWithMultipleContentBlocks() {
-        val result = ToolCallResult(
-            content = listOf(
-                ContentBlock.Text("Text content"),
-                ContentBlock.Image("imagedata", "image/png")
-            ),
-            isError = false
-        )
-
-        val serialized = json.encodeToString(result)
-        val deserialized = json.decodeFromString<ToolCallResult>(serialized)
-
-        assertEquals(2, deserialized.content.size)
-        assertTrue(deserialized.content[0] is ContentBlock.Text)
-        assertTrue(deserialized.content[1] is ContentBlock.Image)
+        assertTrue("MCP clients read the 'content' array", serialized.contains("\"content\":["))
+        assertTrue("MCP clients read the 'isError' flag", serialized.contains("\"isError\":true"))
     }
 
     // ToolDefinition tests
 
-    fun testToolDefinitionSerialization() {
-        val schema = buildJsonObject {
-            put("type", "object")
-            put("properties", buildJsonObject {
-                put("file", buildJsonObject { put("type", "string") })
-            })
-        }
-
+    fun testToolDefinitionUsesMcpWireKeys() {
         val definition = ToolDefinition(
             name = "test_tool",
             description = "A test tool",
-            inputSchema = schema
+            inputSchema = buildJsonObject { put("type", "object") }
         )
 
         val serialized = json.encodeToString(definition)
-        val deserialized = json.decodeFromString<ToolDefinition>(serialized)
 
-        assertEquals("test_tool", deserialized.name)
-        assertEquals("A test tool", deserialized.description)
-        assertNotNull(deserialized.inputSchema)
-    }
-
-    // ServerInfo tests
-
-    fun testServerInfoSerialization() {
-        val info = ServerInfo(
-            name = "jetbrains-index-mcp",
-            version = "1.0.0",
-            description = "IDE index MCP server"
-        )
-
-        val serialized = json.encodeToString(info)
-        val deserialized = json.decodeFromString<ServerInfo>(serialized)
-
-        assertEquals("jetbrains-index-mcp", deserialized.name)
-        assertEquals("1.0.0", deserialized.version)
-        assertEquals("IDE index MCP server", deserialized.description)
-    }
-
-    fun testServerInfoWithoutDescription() {
-        val info = ServerInfo(
-            name = "test-server",
-            version = "0.1.0"
-        )
-
-        val serialized = json.encodeToString(info)
-        val deserialized = json.decodeFromString<ServerInfo>(serialized)
-
-        assertNull(deserialized.description)
+        assertTrue("tools/list entries expose 'name'", serialized.contains("\"name\":\"test_tool\""))
+        assertTrue("tools/list entries expose 'description'", serialized.contains("\"description\":\"A test tool\""))
+        assertTrue("tools/list entries expose 'inputSchema'", serialized.contains("\"inputSchema\":{"))
     }
 
     // ServerCapabilities tests
 
-    fun testServerCapabilitiesDefaults() {
+    fun testServerCapabilitiesAdvertiseToolsByDefault() {
         val capabilities = ServerCapabilities()
 
-        val serialized = json.encodeToString(capabilities)
-        val deserialized = json.decodeFromString<ServerCapabilities>(serialized)
-
-        assertNotNull(deserialized.tools)
-        assertFalse(deserialized.tools!!.listChanged)
-    }
-
-    // InitializeResult tests
-
-    fun testInitializeResultSerialization() {
-        val result = InitializeResult(
-            protocolVersion = "2025-03-26",
-            capabilities = ServerCapabilities(),
-            serverInfo = ServerInfo("test", "1.0")
-        )
-
-        val serialized = json.encodeToString(result)
-        val deserialized = json.decodeFromString<InitializeResult>(serialized)
-
-        assertEquals("2025-03-26", deserialized.protocolVersion)
-        assertNotNull(deserialized.capabilities)
-        assertEquals("test", deserialized.serverInfo.name)
-    }
-
-    // ToolsListResult tests
-
-    fun testToolsListResultSerialization() {
-        val schema = buildJsonObject { put("type", "object") }
-        val result = ToolsListResult(
-            tools = listOf(
-                ToolDefinition("tool1", "First tool", schema),
-                ToolDefinition("tool2", "Second tool", schema)
-            )
-        )
-
-        val serialized = json.encodeToString(result)
-        val deserialized = json.decodeFromString<ToolsListResult>(serialized)
-
-        assertEquals(2, deserialized.tools.size)
-        assertEquals("tool1", deserialized.tools[0].name)
-        assertEquals("tool2", deserialized.tools[1].name)
-    }
-
-    // ToolCallParams tests
-
-    fun testToolCallParamsSerialization() {
-        val params = ToolCallParams(
-            name = "ide_find_references",
-            arguments = buildJsonObject {
-                put("file", "src/Main.kt")
-                put("line", 10)
-                put("column", 5)
-            }
-        )
-
-        val serialized = json.encodeToString(params)
-        val deserialized = json.decodeFromString<ToolCallParams>(serialized)
-
-        assertEquals("ide_find_references", deserialized.name)
-        assertNotNull(deserialized.arguments)
-    }
-
-    fun testToolCallParamsWithoutArguments() {
-        val params = ToolCallParams(name = "ide_index_status")
-
-        val serialized = json.encodeToString(params)
-        val deserialized = json.decodeFromString<ToolCallParams>(serialized)
-
-        assertEquals("ide_index_status", deserialized.name)
-        assertNull(deserialized.arguments)
+        assertNotNull("initialize must advertise the tools capability", capabilities.tools)
+        assertFalse("server does not send tools/list_changed notifications", capabilities.tools!!.listChanged)
     }
 }

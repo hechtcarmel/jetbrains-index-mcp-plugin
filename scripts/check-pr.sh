@@ -165,24 +165,58 @@ fi
 # ── 8. Code correctness — test skip honesty ──────────────────────────────────
 hdr "Test skip honesty"
 
-if [ -n "$UPSTREAM_BASE" ]; then
-    EARLY_RETURN=$(git diff "$UPSTREAM_BASE" HEAD -- src/test/ 2>/dev/null | grep -cE '^\+.*(if.*!.*available|if.*!.*require).*return' || true)
-    EARLY_RETURN=${EARLY_RETURN:-0}
-    if [ "$EARLY_RETURN" -gt 0 ] 2>/dev/null; then
-        fail "$EARLY_RETURN new early-return test skips — use Assume.assumeTrue() instead (CONTRIBUTING.md § Test honesty)"
-    else
-        ok "No early-return test skips in diff"
-    fi
+# Whole-tree, not diff-only: a diff-scoped check permanently grandfathers existing
+# violations. Case-insensitive, because `pluginAvailable` did not match the old pattern.
+SKIPS=$( { grep -rniE 'if *\(!.*(available|capability|supported|enabled).*\) *return' src/test/ 2>/dev/null || true; } | wc -l | tr -d ' ')
+if [ "$SKIPS" -gt 0 ]; then
+    fail "$SKIPS early-return test skips — use Assume.assumeTrue() instead (CONTRIBUTING.md § Test honesty)"
+    { grep -rniE 'if *\(!.*(available|capability|supported|enabled).*\) *return' src/test/ 2>/dev/null || true; } | head -5 | sed 's/^/      /'
+else
+    ok "No early-return test skips"
 fi
 
-# ── 9. Unit tests ─────────────────────────────────────────────────────────────
-hdr "Unit tests"
+# ── 9. Plugin-detector impersonation ─────────────────────────────────────────
+hdr "Test tree hygiene"
 
-echo "  Running ./gradlew test --tests \"*UnitTest*\" ..."
-if ./gradlew test --tests "*UnitTest*" 2>&1 | grep -q "BUILD SUCCESSFUL"; then
-    ok "Unit tests pass"
+# A test class sitting at a PluginDetector fallback FQN makes that detector report its plugin
+# as available for the entire test fork (the result is cached `by lazy` on an object). See
+# src/test/kotlin/.../testutil/README.md and PluginDetectorLeakUnitTest.
+# The fallback FQNs are read from production so this check cannot drift.
+LEAKS=0
+while read -r FQN; do
+    [ -z "$FQN" ] && continue
+    CANDIDATE="src/test/kotlin/$(echo "$FQN" | tr '.' '/').kt"
+    if [ -f "$CANDIDATE" ]; then
+        fail "$CANDIDATE sits at PluginDetector fallback FQN '$FQN' — it will make that plugin appear available in every test. Use a duck-typed fake in the test's own package."
+        LEAKS=$((LEAKS+1))
+    fi
+done <<EOF
+$(grep -oE 'fallbackClass = "[^"]+"' src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/PluginDetectors.kt 2>/dev/null | sed 's/fallbackClass = "//; s/"//')
+EOF
+if [ "$LEAKS" -eq 0 ]; then
+    ok "No test classes at PluginDetector fallback FQNs"
+fi
+
+# PluginManager.findEnabledPlugin was rejected in JetBrains Marketplace review; PluginDetector
+# must keep using PluginManagerCore.isLoaded/isDisabled. Previously asserted by a test that read
+# the source file off disk — a lint rule belongs here, not in the test suite.
+if grep -qE '^import com\.intellij\.ide\.plugins\.PluginManager$|findEnabledPlugin' \
+    src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/PluginDetector.kt 2>/dev/null; then
+    fail "PluginDetector uses PluginManager.findEnabledPlugin — rejected in Marketplace review. Use PluginManagerCore.isLoaded/isDisabled."
 else
-    fail "Unit tests FAILED — fix before pushing"
+    ok "PluginDetector avoids the rejected PluginManager API"
+fi
+
+# ── 10. Tests ─────────────────────────────────────────────────────────────────
+hdr "Tests"
+
+# Exit code, not a grep for BUILD SUCCESSFUL: Gradle prints that when :test is UP-TO-DATE,
+# so the old check passed having executed nothing. cleanTest forces actual execution.
+echo "  Running ./gradlew cleanTest test ..."
+if ./gradlew cleanTest test; then
+    ok "All tests pass"
+else
+    fail "Tests FAILED — fix before pushing"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

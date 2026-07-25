@@ -261,11 +261,11 @@ override val inputSchema = SchemaBuilder.tool()
 # Run IDE with plugin installed
 ./gradlew runIde
 
-# Run tests
+# Run tests (see the Testing section for the -Ptier split)
 ./gradlew test
 
 # Run plugin verification
-./gradlew runPluginVerifier
+./gradlew verifyPlugin
 ```
 
 ### Run Configurations (in `.run/`)
@@ -294,68 +294,93 @@ Register in `plugin.xml`:
 
 ## Testing
 
-### Test Architecture
-
-Tests are split into two categories to optimize execution time:
-
-1. **Unit Tests (`*UnitTest.kt`)** - Extend `junit.framework.TestCase`
-   - Fast, no IntelliJ Platform initialization required
-   - Use for: serialization, schema validation, data classes, registries, pure logic
-   - Run with: `./gradlew test --tests "*UnitTest*"`
-
-2. **Platform Tests (`*Test.kt`)** - Extend `BasePlatformTestCase`
-   - Slower, requires full IntelliJ Platform with indexing
-   - Use for: tests needing `project`, PSI operations, tool execution, resource reads
-   - Run with: `./gradlew test --tests "*Test" --tests "!*UnitTest*"`
-
-### Test File Conventions
-
-| Test Class | Base Class | Purpose |
-|------------|------------|---------|
-| `McpPluginUnitTest` | `TestCase` | JSON-RPC serialization, error codes, registry |
-| `McpPluginTest` | `BasePlatformTestCase` | Platform availability |
-| `ToolsUnitTest` | `TestCase` | Tool schemas, registry, definitions |
-| `ToolsTest` | `BasePlatformTestCase` | Tool execution with project |
-| `JsonRpcHandlerUnitTest` | `TestCase` | JSON-RPC protocol, error handling |
-| `JsonRpcHandlerTest` | `BasePlatformTestCase` | Tool calls requiring project |
-| `CommandHistoryUnitTest` | `TestCase` | Data classes, filters |
-| `CommandHistoryServiceTest` | `BasePlatformTestCase` | Service with project |
-
-### When to Use Each Base Class
-
-**Use `TestCase` (unit test) when:**
-- Testing serialization/deserialization
-- Validating schemas and definitions
-- Testing data classes and their properties
-- Testing registries without executing tools
-- No `project` instance is needed
-
-**Use `BasePlatformTestCase` (platform test) when:**
-- Test needs `project` instance
-- Test executes tools against a project
-- Test uses project-level services (e.g., `CommandHistoryService`)
-- Test needs PSI or index access
-
 ### Running Tests
 
 ```bash
-# Run all tests
+# Everything (~40s locally). Safe to run — see "On running platform tests" below.
 ./gradlew test
 
-# Run only fast unit tests — use this locally (< 30s, no IDE needed)
-./gradlew test --tests "*UnitTest*"
+# Fast tier only: headless, no IntelliJ Platform (~20s)
+./gradlew test -Ptier=unit
 
-# Platform tests — DO NOT run locally; they require full IntelliJ Platform
-# initialization and hang on headless machines. Let CI run these.
-# ./gradlew test --tests "*Test" --tests "!*UnitTest*"
+# Platform tier only: BasePlatformTestCase fixtures with real indexing
+./gradlew test -Ptier=platform
 
-# Run specific test class
-./gradlew test --tests "McpPluginUnitTest"
+# One class
+./gradlew test --tests "ToolManifestContractUnitTest"
 ```
 
+`-Ptier` exists because Gradle's `--tests` flag has **no negation operator** and OR-combines
+repeated occurrences. The command this file used to document —
+`--tests "*Test" --tests "!*UnitTest*"` — silently selected the entire suite: `*Test` already
+matches every `*UnitTest` class, and `!*UnitTest*` is a literal pattern matching nothing. Do not
+reintroduce it.
+
+**On running platform tests locally:** you can. Earlier revisions of this file claimed they
+"hang on headless machines"; that was never substantiated. The full suite, platform tests
+included, runs locally in about 40 seconds, and CI runs `./gradlew check` on `ubuntu-latest`
+with no xvfb and no `DISPLAY`.
+
+### Test Architecture
+
+Three tiers, selected by class-name suffix:
+
+1. **Contract tests** (`contract/*UnitTest.kt`) — extend `junit.framework.TestCase`
+   - `ToolManifestContractUnitTest` snapshots every tool's name, description and complete input
+     schema into `src/test/resources/contract/tool-manifest.json`. This is the regression net
+     for large refactors: one assertion covers all tools × every schema property, so a dropped
+     `register(...)` call or a mutated parameter type fails here instead of shipping.
+   - `TestTierConventionUnitTest` enforces that no `*UnitTest` extends `BasePlatformTestCase`.
+   - `PluginDetectorLeakUnitTest` enforces that no test-tree class impersonates a language
+     plugin via `PluginDetector`'s `Class.forName` fallback.
+
+2. **Unit tests** (`*UnitTest.kt`) — extend `junit.framework.TestCase`
+   - Headless. Serialization decisions, schema semantics, pure logic, registries.
+
+3. **Platform tests** (`*Test.kt`, `*BehaviorTest.kt`, `*IntegrationTest.kt`) — extend
+   `McpPlatformTestCase` (which extends `BasePlatformTestCase`)
+   - Anything needing `project`, PSI, indexes, or end-to-end tool execution.
+
+**Changing the manifest is sometimes correct, but must always be deliberate:**
+
+```bash
+./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
+```
+
+Review the resulting diff as part of the change.
+
+### Writing platform tests
+
+Extend `McpPlatformTestCase` (`src/test/kotlin/.../testutil/McpPlatformTestCase.kt`). It provides
+`writeProjectFile`, `readProjectFileVfs`, `registerSourceRoot`, `assertToolSucceeded`,
+`assertRenamedInFile`, and friends.
+
+**Never build fixtures with `myFixture.addFileToProject`.** It writes into IntelliJ's in-memory
+`TempFileSystem` (`temp:///src/...`), but every production entry point that turns a tool argument
+into a `VirtualFile` — `AbstractMcpTool.resolveFile`, `PsiUtils`, the JS/TS symbol resolver — goes
+through `LocalFileSystem`, which cannot see `temp://` files. The tool then returns "file not
+found" and any assertion looser than an exact-error check passes for the wrong reason. Use
+`writeProjectFile`, and `registerSourceRoot` whenever the test relies on index-backed search
+(`ReferencesSearch`, inheritor search, JS/TS import resolution).
+
+### Assertion rules
+
+These are enforced by review, and violating them is how this suite previously accumulated ~1,000
+tests that could not fail:
+
+- **A test must fail if the production code it covers is deleted or inverted.** If it would still
+  pass, delete it.
+- **Assert both directions on refactorings.** A rename test that only checks the new name is
+  present passes when call-site updating is completely broken. Use `assertRenamedInFile`.
+- **Never simulate the system under test with a private helper and assert on the helper.**
+- **Conditional skips use `org.junit.Assume.assumeTrue`, never a bare `return`.** A bare return
+  reports the test as passed. Gradle is configured to log skipped tests so they stay visible.
+- **No asserting on production source text.** Reading a `.kt` file off disk and checking for
+  substrings passes on comments and breaks on behavior-preserving refactors.
+
 ### Test Data
-- Place test fixtures in `src/test/testData/`
-- Test both smart mode and dumb mode scenarios for platform tests
+- Fixtures live in `src/test/testData/`; golden files in `src/test/resources/`
+- Cover dumb mode with `DumbModeTestUtils` for any index-backed tool
 
 ## MCP Implementation Notes
 
