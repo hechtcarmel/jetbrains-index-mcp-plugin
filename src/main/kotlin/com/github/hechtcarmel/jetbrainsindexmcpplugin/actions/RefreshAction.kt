@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowPanel
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.wm.ToolWindowManager
@@ -28,4 +29,6 @@ class RefreshAction : AnAction(
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled = e.project != null
     }
+
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
 }

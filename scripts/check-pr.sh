@@ -165,14 +165,66 @@ fi
 # ── 8. Code correctness — test skip honesty ──────────────────────────────────
 hdr "Test skip honesty"
 
-# Whole-tree, not diff-only: a diff-scoped check permanently grandfathers existing
-# violations. Case-insensitive, because `pluginAvailable` did not match the old pattern.
-SKIPS=$( { grep -rniE 'if *\(!.*(available|capability|supported|enabled).*\) *return' src/test/ 2>/dev/null || true; } | wc -l | tr -d ' ')
-if [ "$SKIPS" -gt 0 ]; then
-    fail "$SKIPS early-return test skips — use Assume.assumeTrue() instead (CONTRIBUTING.md § Test honesty)"
-    { grep -rniE 'if *\(!.*(available|capability|supported|enabled).*\) *return' src/test/ 2>/dev/null || true; } | head -5 | sed 's/^/      /'
-else
+# Whole-tree, not diff-only: a diff-scoped check permanently grandfathers existing violations.
+#
+# Two rule sets, because the two shapes have different false-positive profiles:
+#
+#   A. A capability guard (`if (!javaAvailable) return`) is dishonest wherever it appears — in a
+#      helper it makes the helper a silent no-op and the caller's assertions run against an
+#      un-set-up fixture. Checked in every function.
+#
+#   B. An emptiness/null guard or an elvis bare return is only dishonest inside a test method,
+#      where it reports PASSED having asserted nothing. In a helper it is ordinary Kotlin —
+#      `setFieldIfPresent` in GetDiagnosticsToolBehaviorTest is a legitimate `?: return`.
+#      Scoped to `fun test*` bodies, tracking the innermost enclosing `fun` so a local function
+#      declared inside a test method is treated as the helper it is.
+#
+# A bare `return` is the tell in both cases: `return someValue` is control flow, `return` alone
+# after a guard is a skip. `if (expected == actual) return` survives on purpose — that is an
+# early exit on a satisfied assertion, not an unmet precondition.
+if SKIP_REPORT=$(python3 - <<'PYEOF'
+import re, sys
+from pathlib import Path
+
+CAPABILITY = r'(available|capabilit|supported|enabled)'
+EMPTY_OR_NULL = r'(isEmpty\(\)|isBlank\(\)|isNullOrEmpty\(\)|isNullOrBlank\(\)|==\s*null|!=\s*null)'
+BARE_RETURN = r'return(@\w+)?\s*(//.*)?$'
+
+FUN_DECL = re.compile(r'\bfun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)\s*[(<]')
+CAPABILITY_GUARD = re.compile(r'if\s*\(.*' + CAPABILITY + r'.*\)\s*' + BARE_RETURN, re.IGNORECASE)
+EMPTY_GUARD = re.compile(r'if\s*\(.*' + EMPTY_OR_NULL + r'.*\)\s*' + BARE_RETURN)
+ELVIS_GUARD = re.compile(r'\?:\s*' + BARE_RETURN)
+STANDALONE_RETURN = re.compile(r'^\s*' + BARE_RETURN)
+CONDITION = re.compile(CAPABILITY + '|' + EMPTY_OR_NULL, re.IGNORECASE)
+
+offenders = []
+for path in sorted(Path('src/test').rglob('*.kt')):
+    enclosing = ''
+    previous = ''
+    for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+        code = line.split('//')[0]
+        decl = FUN_DECL.search(code)
+        if decl:
+            enclosing = decl.group(1)
+        in_test = enclosing.startswith('test')
+        hit = CAPABILITY_GUARD.search(line)
+        if not hit and in_test:
+            hit = (EMPTY_GUARD.search(line) or ELVIS_GUARD.search(line)
+                   # `if (roots.isEmpty())` on one line, `return` on the next.
+                   or (STANDALONE_RETURN.search(line) and CONDITION.search(previous)))
+        if hit:
+            offenders.append(f'{path}:{lineno}:{line.strip()}')
+        if code.strip():
+            previous = code
+for o in offenders:
+    print(o)
+sys.exit(1 if offenders else 0)
+PYEOF
+); then
     ok "No early-return test skips"
+else
+    fail "Early-return test skips — use Assume.assumeTrue() instead (CONTRIBUTING.md § Test honesty)"
+    printf '%s\n' "$SKIP_REPORT" | head -10 | sed 's/^/      /'
 fi
 
 # ── 9. Plugin-detector impersonation ─────────────────────────────────────────
@@ -210,10 +262,15 @@ fi
 # ── 10. Tests ─────────────────────────────────────────────────────────────────
 hdr "Tests"
 
-# Exit code, not a grep for BUILD SUCCESSFUL: Gradle prints that when :test is UP-TO-DATE,
-# so the old check passed having executed nothing. cleanTest forces actual execution.
-echo "  Running ./gradlew cleanTest test ..."
-if ./gradlew cleanTest test; then
+# Exit code, not a grep for BUILD SUCCESSFUL: Gradle prints that when :test is UP-TO-DATE, so the
+# old check passed having executed nothing.
+#
+# --rerun-tasks, not cleanTest: with org.gradle.caching=true, cleanTest alone still resolves to
+# ":test FROM-CACHE" and the gate reports "All tests pass" in 3s having run nothing. Input-keyed
+# caching means a real code change does invalidate it, but the gate should not be blind to flakes
+# or print a claim it did not verify.
+echo "  Running ./gradlew test --rerun-tasks ..."
+if ./gradlew test --rerun-tasks; then
     ok "All tests pass"
 else
     fail "Tests FAILED — fix before pushing"

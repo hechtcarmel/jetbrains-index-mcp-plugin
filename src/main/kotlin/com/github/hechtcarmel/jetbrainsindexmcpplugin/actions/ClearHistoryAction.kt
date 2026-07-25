@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryServ
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.ui.Messages
@@ -41,4 +42,6 @@ class ClearHistoryAction : AnAction(
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled = e.project != null
     }
+
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
 }

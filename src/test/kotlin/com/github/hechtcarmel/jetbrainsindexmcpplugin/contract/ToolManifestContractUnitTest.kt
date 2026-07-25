@@ -10,13 +10,21 @@ import junit.framework.TestCase
 import java.io.File
 
 /**
- * Golden snapshot of the entire MCP tool surface: every registered tool's name, description
- * and complete input schema.
+ * Golden snapshot of the MCP tool INPUT surface: each registered tool's name, description and
+ * complete input schema.
  *
- * This is the regression net for large refactors. A single assertion covers every tool, every
- * schema property, every type, every enum and every `required` array — so deleting a
+ * This is the regression net for large refactors. A single assertion covers every registered
+ * tool, every schema property, every type, every enum and every `required` array — so deleting a
  * `register(...)` call, renaming a parameter, flipping a type, or emptying a description all
  * fail here rather than silently shipping.
+ *
+ * Two limits worth knowing before trusting it:
+ * - It covers the tools that register headlessly — currently 47 of the 50 in [ToolNames.ALL].
+ *   The three in [NOT_REGISTRABLE_HEADLESS] are guarded by set-equality in
+ *   [testEveryDeclaredToolNameIsRegistered] instead, so they cannot vanish unnoticed, but their
+ *   schemas are not snapshotted.
+ * - It covers INPUTS only. Response shapes are pinned separately by
+ *   [ResultShapeContractUnitTest].
  *
  * The manifest is a *contract with MCP clients*. Changing it is sometimes correct, but it must
  * always be deliberate: regenerate with

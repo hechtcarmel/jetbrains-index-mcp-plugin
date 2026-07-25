@@ -88,10 +88,17 @@ dependencies {
         bundledModules(providers.gradleProperty("platformBundledModules").map { it.split(',') })
 
         testFramework(TestFrameworkType.Platform)
-        // Supplies the mock JDK used by LightProjectDescriptor, so Java fixtures resolve
-        // java.lang.* instead of silently reporting every symbol as unresolved.
+        // Makes LightJavaCodeInsightFixtureTestCase and the JAVA_* project descriptors available.
+        // NOTE: no test currently supplies a descriptor, so fixtures still run without an SDK and
+        // java.lang.* does not resolve. Wiring getProjectDescriptor() is the remaining half — see
+        // the "Known gaps" note in CONTRIBUTING.md.
         testFramework(TestFrameworkType.Plugin.Java)
 
+        // `ide_list_tests` reads the `com.intellij.testFramework` extension point. The Java plugin
+        // declares that EP but ships no implementations, so without the JUnit plugin the extension
+        // list is empty and the tool can only ever return "No test frameworks are registered" —
+        // i.e. the tool is untestable. Test-scoped so production dependencies are unchanged.
+        testBundledPlugin("JUnit")
     }
 }
 

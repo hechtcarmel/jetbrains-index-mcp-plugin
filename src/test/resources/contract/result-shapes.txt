@@ -1,0 +1,476 @@
+# MCP tool response shapes — golden snapshot
+# Regenerate: ./gradlew test -Ptier=unit --tests "*ResultShapeContractUnitTest" -Dcontract.update=true
+# shapes: 61
+
+## ActiveFileInfo
+  column: number?
+  file: string
+  hasSelection: boolean
+  language: string?
+  line: number?
+  selectedText: string?
+
+## BuildMessage
+  category: string
+  column: number? (optional)
+  file: string? (optional)
+  line: number? (optional)
+  message: string
+
+## BuildProjectResult
+  aborted: boolean (optional)
+  buildMessages: array
+  durationMs: number
+  errors: number? (optional)
+  rawOutput: string? (optional)
+  success: boolean
+  truncated: boolean (optional)
+  warnings: number? (optional)
+
+## CallElement
+  children: array? (optional)
+  column: number
+  file: string
+  language: string? (optional)
+  line: number
+  name: string
+
+## CallHierarchyResult
+  calls: array
+  element: object
+
+## ChangeSignatureTool.ChangeSignatureResult
+  affectedFiles: array (optional)
+  changesCount: number (optional)
+  file: string
+  message: string
+  success: boolean
+
+## ConversionStatus (enum)
+  CONVERTED -> "CONVERTED"
+  SKIPPED -> "SKIPPED"
+  FAILED -> "FAILED"
+
+## ConversionSummary
+  converted: number
+  failed: number
+  skipped: number
+  totalRequested: number
+
+## CreateFileTool.CreateFileResult
+  file: string
+  message: string
+  success: boolean
+
+## DefinitionResult
+  astPath: array
+  column: number
+  file: string
+  line: number
+  preview: string
+  symbolName: string
+
+## DiagnosticsResult
+  analysisFresh: boolean? (optional)
+  analysisMessage: string? (optional)
+  analysisTimedOut: boolean? (optional)
+  buildErrorCount: number? (optional)
+  buildErrors: array? (optional)
+  buildErrorsTruncated: boolean? (optional)
+  buildTimestamp: number? (optional)
+  buildWarningCount: number? (optional)
+  intentionCount: number? (optional)
+  intentions: array? (optional)
+  problemCount: number? (optional)
+  problems: array? (optional)
+  testResults: array? (optional)
+  testResultsTruncated: boolean? (optional)
+  testSummary: object? (optional)
+
+## FileConversionResult
+  javaFileDeleted: boolean? (optional)
+  kotlinFile: string? (optional)
+  linesConverted: number? (optional)
+  reason: string? (optional)
+  requestedPath: string
+  status: string
+
+## FileMatch
+  directory: string
+  name: string
+  path: string
+
+## FileStructureResult
+  file: string
+  language: string
+  structure: string
+
+## FindClassResult
+  classes: array
+  hasMore: boolean (optional)
+  nextCursor: string? (optional)
+  offset: number (optional)
+  pageSize: number (optional)
+  query: string
+  stale: boolean (optional)
+  totalCollected: number (optional)
+  totalCount: number
+
+## FindFileResult
+  files: array
+  hasMore: boolean (optional)
+  nextCursor: string? (optional)
+  offset: number (optional)
+  pageSize: number (optional)
+  query: string
+  stale: boolean (optional)
+  totalCollected: number (optional)
+  totalCount: number
+
+## FindSymbolResult
+  hasMore: boolean (optional)
+  nextCursor: string? (optional)
+  offset: number (optional)
+  pageSize: number (optional)
+  query: string
+  stale: boolean (optional)
+  symbols: array
+  totalCollected: number (optional)
+  totalCount: number
+
+## FindUsagesResult
+  hasMore: boolean (optional)
+  nextCursor: string? (optional)
+  offset: number (optional)
+  pageSize: number (optional)
+  stale: boolean (optional)
+  totalCollected: number (optional)
+  totalCount: number
+  truncated: boolean (optional)
+  usages: array
+
+## GetActiveFileResult
+  activeFiles: array
+
+## ImplementationLocation
+  column: number
+  file: string
+  kind: string
+  language: string? (optional)
+  line: number
+  name: string
+
+## ImplementationResult
+  hasMore: boolean (optional)
+  implementations: array
+  nextCursor: string? (optional)
+  offset: number (optional)
+  pageSize: number (optional)
+  stale: boolean (optional)
+  totalCollected: number (optional)
+  totalCount: number
+
+## IndexStatusResult
+  indexingProgress: number?
+  isDumbMode: boolean
+  isIndexing: boolean
+
+## IntentionInfo
+  description: string?
+  name: string
+
+## JavaToKotlinConversionResult
+  files: array
+  summary: object
+
+## ListTestsResult
+  count: number
+  tests: array
+  truncated: boolean
+
+## MemberCandidate
+  kind: string
+  line: number
+  name: string
+  parameterCount: number? (optional)
+  signature: string? (optional)
+
+## MemberEditResult
+  endLine: number? (optional)
+  file: string
+  message: string
+  startLine: number? (optional)
+  success: boolean
+
+## MemberErrorResult
+  candidates: array? (optional)
+  error: string
+  hint: string? (optional)
+  member: string? (optional)
+
+## MethodInfo
+  column: number
+  containingClass: string
+  file: string
+  language: string? (optional)
+  line: number
+  name: string
+  signature: string
+
+## NoSymbolFoundResult
+  error: string
+  hint: string
+  position: object
+  suggestions: array
+
+## OpenFileResult
+  file: string
+  message: string
+  opened: boolean
+
+## PositionInfo
+  column: number
+  elementType: string
+  line: number
+
+## PositionInput
+  column: number
+  file: string
+  line: number
+
+## ProblemInfo
+  column: number
+  endColumn: number?
+  endLine: number?
+  file: string
+  line: number
+  message: string
+  severity: string
+
+## ReadFileResult
+  content: string
+  endLine: number?
+  file: string
+  isLibraryFile: boolean
+  language: string?
+  lineCount: number
+  startLine: number?
+
+## RefactoringResult
+  affectedFiles: array
+  changesCount: number
+  message: string
+  success: boolean
+  unretargetedImporters: array? (optional)
+  warnings: array? (optional)
+
+## ReplaceTextInFileTool.ReplaceTextResult
+  file: string
+  message: string
+  replacements: number
+  success: boolean
+
+## RunTestsResult
+  errors: number
+  exitCode: number
+  failed: number
+  noTestsFound: boolean
+  passed: number
+  success: boolean
+  tests: array
+  timedOut: boolean
+  total: number
+
+## SafeDeleteBlockedResult
+  blockingUsages: array
+  canDelete: boolean
+  elementName: string
+  elementType: string
+  message: string
+  usageCount: number
+
+## SafeDeleteFileBlockedResult
+  blockingUsages: array
+  canDelete: boolean
+  externalUsageCount: number
+  fileName: string
+  message: string
+  symbolCount: number
+
+## SearchTextResult
+  hasMore: boolean (optional)
+  matches: array
+  nextCursor: string? (optional)
+  offset: number (optional)
+  pageSize: number (optional)
+  query: string
+  stale: boolean (optional)
+  totalCollected: number (optional)
+  totalCount: number
+
+## StructuralSearchReplaceTool.SsrMatch
+  file: string
+  line: number
+  matchedText: string
+
+## StructuralSearchReplaceTool.SsrResult
+  matchCount: number
+  matches: array? (optional)
+  message: string
+  replacedCount: number
+  success: boolean
+
+## StructureKind (enum)
+  CLASS -> "CLASS"
+  INTERFACE -> "INTERFACE"
+  ENUM -> "ENUM"
+  ANNOTATION -> "ANNOTATION"
+  RECORD -> "RECORD"
+  OBJECT -> "OBJECT"
+  TRAIT -> "TRAIT"
+  METHOD -> "METHOD"
+  FIELD -> "FIELD"
+  PROPERTY -> "PROPERTY"
+  CONSTRUCTOR -> "CONSTRUCTOR"
+  CONSTANT -> "CONSTANT"
+  ENUM_CASE -> "ENUM_CASE"
+  FUNCTION -> "FUNCTION"
+  VARIABLE -> "VARIABLE"
+  TYPE_ALIAS -> "TYPE_ALIAS"
+  HEADING -> "HEADING"
+  INCLUDE -> "INCLUDE"
+  NAMESPACE -> "NAMESPACE"
+  PACKAGE -> "PACKAGE"
+  MODULE -> "MODULE"
+  UNKNOWN -> "UNKNOWN"
+
+## StructureNode
+  children: array (optional)
+  endLine: number? (optional)
+  kind: string
+  line: number
+  modifiers: array
+  name: string
+  signature: string?
+
+## SuperMethodInfo
+  column: number?
+  containingClass: string
+  containingClassKind: string
+  depth: number
+  file: string?
+  isInterface: boolean
+  language: string? (optional)
+  line: number?
+  name: string
+  signature: string
+
+## SuperMethodsResult
+  hierarchy: array
+  method: object
+  totalCount: number
+
+## SymbolInfo
+  column: number
+  line: number
+  name: string
+  type: string
+
+## SymbolMatch
+  column: number
+  containerName: string?
+  file: string
+  kind: string
+  language: string? (optional)
+  line: number
+  name: string
+  qualifiedName: string?
+
+## SymbolSuggestion
+  column: number
+  distance: number
+  line: number
+  name: string
+  type: string
+
+## SyncFilesResult
+  message: string
+  syncedAll: boolean
+  syncedPaths: array
+
+## TestEntry
+  className: string
+  displayName: string
+  file: string
+  framework: string
+  line: number
+  methodName: string?
+
+## TestResultInfo
+  durationMs: number?
+  errorMessage: string?
+  file: string?
+  line: number?
+  name: string
+  stacktrace: string?
+  status: string
+  suite: string?
+
+## TestRunEntry
+  errorMessage: string? (optional)
+  name: string
+  status: string
+
+## TestStatus (enum)
+  PASSED -> "passed"
+  FAILED -> "failed"
+  ERROR -> "error"
+  SKIPPED -> "skipped"
+
+## TestSummary
+  failed: number
+  ignored: number
+  passed: number
+  runConfigName: string?
+  total: number
+
+## TextMatch
+  column: number
+  context: string
+  contextType: string
+  file: string
+  line: number
+
+## TypeElement
+  file: string?
+  kind: string
+  language: string? (optional)
+  name: string
+  supertypes: array? (optional)
+
+## TypeHierarchyResult
+  element: object
+  subtypes: array
+  supertypes: array
+
+## UsageInfo
+  column: number
+  context: string
+  file: string
+  line: number
+
+## UsageLocation
+  astPath: array
+  column: number
+  context: string
+  file: string
+  line: number
+  type: string
+
+## UsageTypes (ide_find_references "type" literals)
+  METHOD_CALL -> "METHOD_CALL"
+  REFERENCE -> "REFERENCE"
+  FIELD_ACCESS -> "FIELD_ACCESS"
+  IMPORT -> "IMPORT"
+  PARAMETER -> "PARAMETER"
+  VARIABLE -> "VARIABLE"

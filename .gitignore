@@ -8,6 +8,7 @@ build
 tmp
 .claude
 local.properties
+*.hprof
 docs/superpowers
 .idea/
 scripts/build-install.sh

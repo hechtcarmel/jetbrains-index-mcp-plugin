@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.LightVirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -57,7 +58,11 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
      */
     fun testToolCallWithModuleContentRootPath() = runBlocking {
         val contentRoots = ProjectUtils.getModuleContentRoots(project)
-        if (contentRoots.isEmpty()) return@runBlocking
+        assertTrue(
+            "Light fixture must expose at least one module content root — skipping here would " +
+                "silently retire the workspace sub-project resolution this test exists to cover",
+            contentRoots.isNotEmpty()
+        )
 
         val contentRoot = contentRoots.first()
 
@@ -87,7 +92,9 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
      * subdirectory of an open project's basePath.
      */
     fun testToolCallWithSubdirectoryOfProject() = runBlocking {
-        val projectPath = project.basePath ?: return@runBlocking
+        val projectPath = requireNotNull(project.basePath) {
+            "Light fixture must have a base path; without one this test asserts nothing"
+        }
         val subPath = "$projectPath/src"
 
         val request = JsonRpcRequest(
@@ -157,7 +164,7 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
      */
     fun testIsProjectFileWorksWithContentRoots() {
         val roots = ProjectUtils.getModuleContentRoots(project)
-        if (roots.isEmpty()) return
+        assertTrue("Light fixture must expose at least one module content root", roots.isNotEmpty())
 
         val testFile = myFixture.addFileToProject("TestFile.txt", "test content")
         val virtualFile = testFile.virtualFile
@@ -165,6 +172,11 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
         assertTrue(
             "File under content root should be recognized as project file",
             ProjectUtils.isProjectFile(project, virtualFile)
+        )
+        assertFalse(
+            "A file outside every content root must not be reported as a project file, " +
+                "otherwise the check above passes for a constant-true implementation",
+            ProjectUtils.isProjectFile(project, LightVirtualFile("OutsideAnyContentRoot.txt", "x"))
         )
     }
 

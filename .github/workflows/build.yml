@@ -3,7 +3,7 @@
 # - Run 'test' and 'verifyPlugin' tasks.
 # - Run Qodana inspections.
 # - Run the 'buildPlugin' task and prepare artifact for further tests.
-# - Run the 'runPluginVerifier' task.
+# - Run the 'verifyPlugin' task.
 # - Create a draft release.
 #
 # The workflow is triggered on push and pull_request events.
