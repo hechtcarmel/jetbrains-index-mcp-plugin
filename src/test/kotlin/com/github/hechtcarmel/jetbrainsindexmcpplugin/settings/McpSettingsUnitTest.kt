@@ -297,4 +297,16 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("REPLACE_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_MEMBER))
     }
 
+    fun testHeadlessModeDefaultsToFalse() {
+        val settings = McpSettings()
+        assertFalse(settings.state.headlessMode)
+    }
+
+    fun testHeadlessModeRoundTrips() {
+        val settings = McpSettings()
+        settings.headlessMode = true
+        assertTrue(settings.headlessMode)
+        settings.headlessMode = false
+        assertFalse(settings.headlessMode)
+    }
 }

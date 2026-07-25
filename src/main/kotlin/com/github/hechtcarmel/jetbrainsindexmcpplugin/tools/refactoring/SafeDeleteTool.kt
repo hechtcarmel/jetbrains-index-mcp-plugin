@@ -160,6 +160,12 @@ class SafeDeleteTool : AbstractRefactoringTool() {
 
         requireSmartMode(project)
 
+        // Pre-check: ensure the target file is writable
+        val sourceVf = resolveFile(project, file)
+        if (sourceVf != null) {
+            ensureWritable(sourceVf, file)?.let { return it }
+        }
+
         return when (targetType) {
             "file" -> executeFileDelete(project, file, force)
             "symbol" -> {

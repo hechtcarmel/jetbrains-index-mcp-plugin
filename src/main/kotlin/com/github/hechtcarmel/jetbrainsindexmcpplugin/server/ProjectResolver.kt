@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.HeadlessModeManager
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
@@ -427,6 +428,7 @@ object ProjectResolver {
     }
 
     private suspend fun reopenAndAwaitSmartMode(path: String): Project? {
+        HeadlessModeManager.trustProjectPath(path)
         // Only serialise the openProjectAsync call itself, not the indexing wait.
         //
         // The burst problem: multiple Claude sessions starting simultaneously each call

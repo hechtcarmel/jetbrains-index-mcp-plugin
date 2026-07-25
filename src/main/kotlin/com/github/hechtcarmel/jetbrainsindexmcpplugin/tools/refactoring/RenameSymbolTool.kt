@@ -287,6 +287,12 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
+        // Pre-check: ensure the target file is writable
+        val sourceVf = resolveFile(project, file)
+        if (sourceVf != null) {
+            ensureWritable(sourceVf, file)?.let { return it }
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and validate (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════

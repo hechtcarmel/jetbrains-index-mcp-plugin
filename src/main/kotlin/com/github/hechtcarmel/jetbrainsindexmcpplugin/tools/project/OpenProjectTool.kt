@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.HeadlessModeManager
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -66,6 +67,8 @@ class OpenProjectTool : AbstractMcpTool() {
         if (!File(path).isAbsolute) {
             return createErrorResult("path must be an absolute path, got: $path")
         }
+
+        HeadlessModeManager.trustProjectPath(path)
 
         val timeoutSeconds = arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull
             ?: DEFAULT_TIMEOUT_SECONDS

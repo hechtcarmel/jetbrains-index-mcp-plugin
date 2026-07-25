@@ -461,6 +461,20 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     }
 
     /**
+     * Returns an error result if the file is read-only, null otherwise.
+     * Use before write operations to give a clear error instead of a blocking dialog.
+     */
+    protected fun ensureWritable(virtualFile: VirtualFile, filePath: String): CallToolResult? {
+        if (!virtualFile.isWritable) {
+            return createErrorResult(
+                "File is read-only: $filePath. Check file permissions or VCS lock status. " +
+                "If the file is under version control, ensure it is checked out for editing."
+            )
+        }
+        return null
+    }
+
+    /**
      * Finds the PSI element at a specific position in a file.
      *
      * @param project The project context

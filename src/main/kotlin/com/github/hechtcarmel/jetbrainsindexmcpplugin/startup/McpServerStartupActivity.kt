@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.HeadlessModeManager
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
@@ -21,6 +22,7 @@ class McpServerStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         LOG.info("MCP Server startup activity executing for project: ${project.name}")
         ProjectResolver.onProjectOpened(project)
+        HeadlessModeManager.applyProjectSettings(project)
 
         val application = ApplicationManager.getApplication()
         if (application.isUnitTestMode) {
@@ -33,6 +35,7 @@ class McpServerStartupActivity : ProjectActivity {
 
             val mcpService = McpServerService.getInstance()
             mcpService.initialize()
+            HeadlessModeManager.reapplyIfEnabled()
             val serverUrl = mcpService.getServerUrl()
             val serverError = mcpService.getServerError()
 
