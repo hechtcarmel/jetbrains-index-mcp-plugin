@@ -15,7 +15,7 @@
 
 ### Added
 
-- **Host header validation** on all MCP endpoints, alongside the existing Origin check — DNS-rebinding protection. Accepts loopback plus the configured `serverHost`, ignoring the port.
+- **Host header validation** on all MCP endpoints, alongside the existing Origin check — DNS-rebinding protection. Applies only when the server is bound to loopback, which is where that attack lives: it tricks a browser into reaching a server on the user's own machine through an attacker-controlled name. The port is ignored. A server deliberately bound to `0.0.0.0` or a LAN address is reached under whatever name or IP routes to it, so no allow-list is enforced there and such setups keep working exactly as before.
 
 ### Changed
 

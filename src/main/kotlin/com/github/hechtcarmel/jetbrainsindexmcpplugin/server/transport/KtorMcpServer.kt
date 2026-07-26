@@ -10,8 +10,6 @@ import io.ktor.server.application.ApplicationStopped
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.install
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -140,7 +138,7 @@ class KtorMcpServer(
         // routes so a rejected request never reaches a handler.
         installMcpOriginGuard(
             pathPrefix = McpConstants.MCP_ENDPOINT_PATH,
-            additionalAllowedHosts = listOf(host)
+            bindHost = host
         )
 
         // Must be the only Application-level `mcp*` call: each of them installs the SSE plugin

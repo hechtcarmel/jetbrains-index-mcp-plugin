@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -32,7 +33,8 @@ import java.net.URI
  *  - no `Origin` header → allowed, no CORS headers (non-browser client)
  *  - `Origin` present → scheme must be http/https and the host must be loopback; the response
  *    reflects the origin back
- *  - `Host` must be loopback or the configured bind address; the port is ignored
+ *  - `Host` must be loopback when the server is bound to loopback; the port is ignored. A
+ *    deliberately non-loopback bind skips the check — see [installMcpOriginGuard]
  */
 internal val LOOPBACK_HOSTS = setOf("127.0.0.1", "localhost", "::1")
 
@@ -95,14 +97,18 @@ internal fun hostnameOf(hostHeader: String): String? {
  * cannot stop the pipeline, so a rejected call would still reach the SDK handler and respond
  * twice.
  *
- * @param additionalAllowedHosts extra hostnames accepted in `Host`, i.e. a non-default
- *   `serverHost` setting. Without this a user who binds to a LAN address locks themselves out.
+ * @param bindHost the address the server is bound to, i.e. the `serverHost` setting. The `Host`
+ *   allow-list applies **only to loopback binds**. DNS rebinding is a loopback threat — it tricks a
+ *   browser into reaching a server on the user's own machine through an attacker-controlled name.
+ *   A user who deliberately binds to `0.0.0.0` or a LAN address (the settings UI warns in red
+ *   first) is reached under whatever name or IP routes there, none of which can be enumerated
+ *   here; enforcing the list would just lock them out of their own server.
  */
 internal fun Application.installMcpOriginGuard(
     pathPrefix: String,
-    additionalAllowedHosts: List<String> = emptyList()
+    bindHost: String = McpConstants.DEFAULT_SERVER_HOST
 ) {
-    val allowedHosts = LOOPBACK_HOSTS + additionalAllowedHosts.map { it.lowercase() }
+    val enforceHostAllowList = normalizeHost(bindHost.trim().lowercase()) in LOOPBACK_HOSTS
 
     intercept(ApplicationCallPipeline.Plugins) {
         if (!context.request.path().startsWith(pathPrefix)) return@intercept
@@ -129,8 +135,10 @@ internal fun Application.installMcpOriginGuard(
             context.reflectOrigin(origin)
         }
 
+        if (!enforceHostAllowList) return@intercept
+
         val hostHeader = context.request.headers[HttpHeaders.Host]
-        if (hostHeader != null && hostnameOf(hostHeader) !in allowedHosts) {
+        if (hostHeader != null && hostnameOf(hostHeader) !in LOOPBACK_HOSTS) {
             context.rejectForbidden("Host not allowed")
             return@intercept finish()
         }

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.ServerSocket
+import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -243,13 +244,69 @@ class KtorMcpServerHttpTest : BasePlatformTestCase() {
         assertEquals(HttpStatusCode.OK.value, response.statusCode())
     }
 
-    private fun createServer(port: Int): KtorMcpServer {
+    /**
+     * A loopback-bound server is exactly the DNS-rebinding target the Host check exists for: a
+     * browser lured to an attacker-controlled name that resolves to 127.0.0.1.
+     */
+    fun testLoopbackBindRejectsForeignHostHeader() {
+        val status = sendRawPost(port = port, hostHeader = "evil.example")
+
+        assertEquals(HttpStatusCode.Forbidden.value, status)
+    }
+
+    /**
+     * The mirror image, and a regression guard: binding to 0.0.0.0 is a supported, warned-about
+     * setting, and such a server is reached under whatever address routes to it. Enforcing the
+     * loopback Host allow-list there answers every LAN request with 403 — the server becomes
+     * unreachable for the exact configuration the user chose.
+     */
+    fun testNonLoopbackBindAcceptsForeignHostHeader() {
+        val wildcardPort = findFreePort()
+        val wildcardServer = createServer(wildcardPort, host = "0.0.0.0")
+        assertEquals(KtorMcpServer.StartResult.Success, wildcardServer.start())
+        try {
+            val status = sendRawPost(port = wildcardPort, hostHeader = "10.1.2.3")
+
+            assertEquals(HttpStatusCode.OK.value, status)
+        } finally {
+            wildcardServer.stop()
+        }
+    }
+
+    private fun createServer(port: Int, host: String = McpConstants.DEFAULT_SERVER_HOST): KtorMcpServer {
         return KtorMcpServer(
             port = port,
+            host = host,
             serverFactory = McpServerFactory(toolRegistry, McpToolDispatcher(toolRegistry)),
             legacySseTransports = LegacySseTransports(),
             coroutineScope = coroutineScope
         )
+    }
+
+    /**
+     * Raw socket rather than [HttpClient]: `Host` is on the JDK client's restricted-header list and
+     * is silently overwritten from the URI, so it cannot express this test at all.
+     */
+    private fun sendRawPost(port: Int, hostHeader: String): Int {
+        val body = initializeRequestBody("2025-03-26")
+        val request = buildString {
+            append("POST ${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH} HTTP/1.1\r\n")
+            append("Host: $hostHeader\r\n")
+            append("Accept: application/json, text/event-stream\r\n")
+            append("Content-Type: application/json\r\n")
+            append("Content-Length: ${body.toByteArray().size}\r\n")
+            append("Connection: close\r\n\r\n")
+            append(body)
+        }
+
+        Socket("127.0.0.1", port).use { socket ->
+            socket.getOutputStream().write(request.toByteArray())
+            socket.getOutputStream().flush()
+            val statusLine = socket.getInputStream().bufferedReader().readLine()
+                ?: error("No response from server")
+            return statusLine.split(" ").getOrNull(1)?.toIntOrNull()
+                ?: error("Unparseable status line: $statusLine")
+        }
     }
 
     private fun sendRequest(
