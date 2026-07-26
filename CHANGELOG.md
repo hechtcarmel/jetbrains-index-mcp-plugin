@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-07-26
+
 ### Breaking
 
 - **MCP protocol handling now uses the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk)** instead of a hand-written JSON-RPC/SSE implementation. All 50 tools, their names, input schemas and response payloads are unchanged — the golden `tool-manifest.json` and `result-shapes.txt` snapshots are byte-identical across the migration. Four client-visible behaviours did change:
@@ -25,7 +27,6 @@
 ### Fixed
 
 - **`initialize` reported a stale server version.** `serverInfo.version` was hardcoded to `4.10.4` while the plugin shipped 4.31.x; the build now stamps the real version into a resource the plugin reads at runtime. (Reading it off the plugin descriptor is not an option — every platform API that exposes it is `@ApiStatus.Internal` as of 2026.2, which the plugin verifier fails the build on.)
-
 - **`ide_structural_search_replace`** — replace mode failed with `Must not change PSI outside command or undo-transparent action` on every invocation that matched at least one element in a project file, applying no edits. `Replacer.replaceAll` opens its own write action but no command, which `PomModelImpl` requires for changes to physical files; replacements are now wrapped in a command, matching the IDE's own Replace All. Search-only mode was unaffected.
 - **`ide_find_definition`, `ide_find_references`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`** — symbol mode (`language` + `symbol`) returned `not_found` for `module#default` when the file used `export default function f() {}` or `export default class C {}`, the two most common default-export forms. Default-export detection probed a non-existent `isDefaultExport()` accessor; it now uses `isExportedWithDefault()`, which is where the modifier actually lives when there is no `ES6ExportDefault*` wrapper node. Affects both JavaScript and TypeScript.
 - **TypeScript overload resolution** — TypeScript functions were never recognised as function-like, because detection matched on the class name containing `JSFunction` and `TypeScriptFunctionImpl` does not. As a result, resolving an overloaded exported TypeScript function by symbol returned `ambiguous_match`, and `ide_call_hierarchy` seeded from an overload signature reported the empty declaration (no callees, under-reported callers) instead of normalising to the implementation. Detection now tests against the `JSFunction` interface.
@@ -1014,7 +1015,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.31.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.31.0...v5.0.0
 [4.31.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.30.0...v4.31.0
 [4.30.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.29.0...v4.30.0
 [4.29.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.28.0...v4.29.0
