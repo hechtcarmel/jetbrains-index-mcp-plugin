@@ -1419,7 +1419,7 @@ class PhpImplementationsHandler : BasePhpHandler<List<ImplementationData>>(), Im
 
             subclasses
                 .filter { shouldIncludeNavigationElement(searchScope, it) }
-                .take(100)
+                .take(MAX_COLLECTED_NAVIGATION_RESULTS)
                 .forEach { subclass ->
                 // Find only methods declared directly in this subclass. Inherited methods
                 // are not implementations/overrides of the queried method.
@@ -1462,7 +1462,7 @@ class PhpImplementationsHandler : BasePhpHandler<List<ImplementationData>>(), Im
 
             subclasses
                 .filter { shouldIncludeNavigationElement(searchScope, it) }
-                .take(100)
+                .take(MAX_COLLECTED_NAVIGATION_RESULTS)
                 .forEach { subclass ->
                 val file = subclass.containingFile?.virtualFile
                 if (file != null) {

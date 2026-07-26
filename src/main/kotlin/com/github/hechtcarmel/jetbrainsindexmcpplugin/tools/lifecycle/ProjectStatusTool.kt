@@ -43,10 +43,9 @@ class ProjectStatusTool : AbstractMcpTool() {
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val lifecycleEnabled = McpSettings.getInstance().lifecycleEnabled
-        val managedModes = if (lifecycleEnabled)
-            ProjectModeService.getInstance().getAllManagedModes()
-        else
-            emptyMap()
+        // lifecycleEnabled pauses automation only — enrollment is persisted state, so the
+        // registry must be read unconditionally to stay consistent with ide_get_project_modes.
+        val managedModes = ProjectModeService.getInstance().getAllManagedModes()
 
         val openProjects = ProjectManager.getInstance().openProjects
             .filter { !it.isDefault }
@@ -84,6 +83,14 @@ class ProjectStatusTool : AbstractMcpTool() {
                 put("managed_closed", projects.count {
                     it["managed"].toString() == "true" && it["open"].toString() == "false"
                 })
+                put("lifecycle_enabled", lifecycleEnabled)
+                if (!lifecycleEnabled && managedCount > 0) {
+                    put(
+                        "note",
+                        "Lifecycle automation is disabled in settings; 'managed' reflects " +
+                            "persisted enrollment and modes will not change until it is re-enabled."
+                    )
+                }
             })
         }
 

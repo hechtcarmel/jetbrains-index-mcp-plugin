@@ -1410,7 +1410,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
                     ))
                 }
             }
-            results.size < 100
+            results.size < MAX_COLLECTED_NAVIGATION_RESULTS
         })
 
         return results
@@ -1472,7 +1472,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
                     ))
                 }
             }
-            results.size < 100
+            results.size < MAX_COLLECTED_NAVIGATION_RESULTS
         })
 
         return results
@@ -1504,7 +1504,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
                     ))
                 }
             }
-            results.size < 100
+            results.size < MAX_COLLECTED_NAVIGATION_RESULTS
         })
 
         return results

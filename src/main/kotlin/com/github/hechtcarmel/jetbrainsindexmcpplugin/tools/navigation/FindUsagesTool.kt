@@ -11,6 +11,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ResolvedSymbolInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
@@ -26,9 +27,11 @@ import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.SmartPointerManager
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiModificationTracker
+import com.intellij.usageView.UsageViewUtil
 import com.intellij.util.Processor
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -44,11 +47,24 @@ class FindUsagesTool : AbstractMcpTool() {
         private val LOG = logger<FindUsagesTool>()
         private const val DEFAULT_MAX_RESULTS = 100
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
+        private const val METADATA_RESOLVED_SYMBOL = "resolvedSymbol"
+        private const val METADATA_SEARCH_EXHAUSTED = "searchExhausted"
 
         internal fun searchInfrastructureErrorMessage(error: Throwable): String {
             val detail = error.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
             return "Reference search failed due to IDE/plugin API incompatibility (${error::class.simpleName}$detail). " +
                 "Try ide_search_text as a fallback and check plugin compatibility against the current IDE build."
+        }
+
+        /**
+         * totalCount is exact when the initial search enumerated every reference (recorded in
+         * cursor metadata), or when the extender was probed and found nothing new (`!hasMore`)
+         * while still below the hard cache cap — at [PaginationService.MAX_CACHED_RESULTS_PER_CURSOR]
+         * extension is skipped and `hasMore=false` is forced, so exactness cannot be claimed there.
+         */
+        internal fun computeTotalIsExact(metadata: Map<String, String>, hasMore: Boolean, totalCollected: Int): Boolean {
+            return metadata[METADATA_SEARCH_EXHAUSTED] == "true" ||
+                (!hasMore && totalCollected < PaginationService.MAX_CACHED_RESULTS_PER_CURSOR)
         }
     }
 
@@ -57,7 +73,7 @@ class FindUsagesTool : AbstractMcpTool() {
     override val description = """
         Find all references to a symbol across the project. Use when you need to understand how a class, method, field, or variable is used before modifying or removing it.
 
-        Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.).
+        Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.). resolvedSymbol echoes the declaration that was actually searched — positions on comments or whitespace snap to the nearest enclosing named element, so check it matches the symbol you intended. totalCount is the number of references collected so far; when totalIsExact is false it is a lower bound ("at least N").
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
 
@@ -100,7 +116,9 @@ class FindUsagesTool : AbstractMcpTool() {
                     totalCollected = page.totalCollected,
                     offset = page.offset,
                     pageSize = page.pageSize,
-                    stale = page.stale
+                    stale = page.stale,
+                    resolvedSymbol = decodeResolvedSymbol(page.metadata),
+                    totalIsExact = computeTotalIsExact(page.metadata, page.hasMore, page.totalCollected)
                 )
             }
         }
@@ -131,6 +149,21 @@ class FindUsagesTool : AbstractMcpTool() {
             val targetElement = element as? PsiNamedElement
                 ?: (PsiUtils.resolveTargetElement(element)
                     ?: return@suspendingReadAction null to createErrorResult(ErrorMessages.NO_NAMED_ELEMENT))
+
+            // Echo the declaration actually searched: position-based lookup snaps comments and
+            // whitespace to the nearest enclosing named element, and without this echo that
+            // snap is invisible to the caller.
+            val nav = targetElement.navigationElement ?: targetElement
+            val declFile = nav.containingFile?.virtualFile
+            val declDoc = nav.containingFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
+            val resolvedInfo = ResolvedSymbolInfo(
+                name = (targetElement as? PsiNamedElement)?.name,
+                kind = UsageViewUtil.getType(targetElement).takeIf { it.isNotBlank() },
+                container = PsiUtils.qualifiedName(targetElement)
+                    ?: PsiUtils.getAstPath(nav).joinToString(".").ifEmpty { null },
+                file = declFile?.let { getRelativePath(project, it) },
+                line = declDoc?.getLineNumber(nav.textOffset)?.plus(1)
+            )
 
             val usages = ConcurrentLinkedQueue<UsageLocation>()
             val totalFound = AtomicInteger(0)
@@ -182,6 +215,10 @@ class FindUsagesTool : AbstractMcpTool() {
                 return@suspendingReadAction null to createErrorResult(searchInfrastructureErrorMessage(e))
             }
 
+            // The loop enumerated every reference iff it never exceeded the collection cap;
+            // in that case the (deduped) cache is complete and totalCount is exact.
+            val searchExhausted = totalFound.get() <= collectLimit
+
             val usagesList = usages.toList()
                 .distinctBy { "${it.file}:${it.line}:${it.column}" }
 
@@ -209,7 +246,11 @@ class FindUsagesTool : AbstractMcpTool() {
                 seenKeys = serializedResults.map { it.key }.toSet(),
                 searchExtender = searchExtender,
                 psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: "")
+                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
+                metadata = mapOf(
+                    METADATA_RESOLVED_SYMBOL to json.encodeToString(resolvedInfo),
+                    METADATA_SEARCH_EXHAUSTED to searchExhausted.toString()
+                )
             )
 
             token to null
@@ -228,8 +269,16 @@ class FindUsagesTool : AbstractMcpTool() {
                 totalCollected = page.totalCollected,
                 offset = page.offset,
                 pageSize = page.pageSize,
-                stale = page.stale
+                stale = page.stale,
+                resolvedSymbol = decodeResolvedSymbol(page.metadata),
+                totalIsExact = computeTotalIsExact(page.metadata, page.hasMore, page.totalCollected)
             )
+        }
+    }
+
+    private fun decodeResolvedSymbol(metadata: Map<String, String>): ResolvedSymbolInfo? {
+        return metadata[METADATA_RESOLVED_SYMBOL]?.let {
+            runCatching { json.decodeFromString<ResolvedSymbolInfo>(it) }.getOrNull()
         }
     }
 

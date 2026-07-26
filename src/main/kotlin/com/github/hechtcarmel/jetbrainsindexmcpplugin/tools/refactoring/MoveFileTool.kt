@@ -4,11 +4,14 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ConflictMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -232,6 +235,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         var success = false
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()
+        var conflictWarnings: List<String> = emptyList()
         val fileName = preparation.psiFile.name
 
         edtAction {
@@ -245,7 +249,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 val modifiedFilesBeforeMove = collectUnsavedProjectFiles(project)
 
                 when (preparation.backend) {
-                    MoveBackend.GENERIC_FILE_MOVE -> executeGenericFileMove(preparation)
+                    MoveBackend.GENERIC_FILE_MOVE -> conflictWarnings = executeGenericFileMove(preparation)
                     MoveBackend.PHP_SEMANTIC_MOVE -> executePhpSemanticMove(project, preparation)
                 }
 
@@ -278,7 +282,8 @@ open class MoveFileTool : AbstractRefactoringTool() {
                     success = true,
                     affectedFiles = affectedFiles.toList(),
                     changesCount = affectedFiles.size,
-                    message = "Successfully moved '${preparation.sourceRelativePath}' to '$newPath'$backendNote"
+                    message = "Successfully moved '${preparation.sourceRelativePath}' to '$newPath'$backendNote",
+                    warnings = conflictWarnings.takeIf { it.isNotEmpty() }
                 )
             )
         } else {
@@ -311,9 +316,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
         return MoveBackendSelection.PhpSemanticMove(pointer, declarationName)
     }
 
+    /**
+     * Runs the generic file move and returns the sanitized conflict messages the
+     * processor detected (empty when the move was conflict-free).
+     */
     internal open fun executeGenericFileMove(
         preparation: MovePreparation
-    ) {
+    ): List<String> {
         val processor = HeadlessMoveProcessor(
             preparation.psiFile.project,
             arrayOf<PsiElement>(preparation.psiFile),
@@ -326,7 +335,15 @@ open class MoveFileTool : AbstractRefactoringTool() {
         )
 
         processor.setPreviewUsages(false)
-        processor.run()
+        // MoveFilesOrDirectoriesProcessor.performRefactoring reads the thread's progress
+        // indicator without a null check, and headless write actions don't install one
+        // (ApplicationImpl.runEdtProgressWriteAction only installs the indicator when the
+        // UI is initialized), so install one for the duration of the move.
+        ProgressManager.getInstance().runProcess(
+            { processor.run() },
+            EmptyProgressIndicator()
+        )
+        return processor.capturedConflicts
     }
 
     internal open fun executePhpSemanticMove(project: Project, preparation: MovePreparation) {
@@ -648,7 +665,9 @@ open class MoveFileTool : AbstractRefactoringTool() {
  * Headless move processor that suppresses conflict dialogs for autonomous operation.
  *
  * Overrides [showConflicts] to always proceed (return true) instead of showing
- * a modal dialog that would block the MCP tool execution.
+ * a modal dialog that would block the MCP tool execution. The detected conflicts
+ * are captured in [capturedConflicts] (sanitized to plain text) so the tool can
+ * report them as warnings instead of silently claiming a conflict-free move.
  */
 private class HeadlessMoveProcessor(
     project: Project,
@@ -663,7 +682,10 @@ private class HeadlessMoveProcessor(
     project, elements, newParent, searchForReferences,
     searchInComments, searchInNonJavaFiles, moveCallback, prepareSuccessfulCallback
 ) {
+    val capturedConflicts = mutableListOf<String>()
+
     override fun showConflicts(conflicts: MultiMap<PsiElement, String>, usages: Array<out UsageInfo>?): Boolean {
+        capturedConflicts.addAll(ConflictMessages.sanitizeAll(conflicts.values()))
         return true
     }
 }

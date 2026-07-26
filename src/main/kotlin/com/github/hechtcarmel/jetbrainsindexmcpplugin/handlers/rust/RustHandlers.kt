@@ -778,7 +778,7 @@ class RustImplementationsHandler : BaseRustHandler<List<ImplementationData>>(), 
                         ))
                     }
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
 
             LOG.debug("Found ${results.size} trait implementations")
@@ -824,7 +824,7 @@ class RustImplementationsHandler : BaseRustHandler<List<ImplementationData>>(), 
                         ))
                     }
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
 
             LOG.debug("Found ${results.size} method implementations for $methodName")

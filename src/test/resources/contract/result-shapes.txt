@@ -143,9 +143,11 @@
   nextCursor: string? (optional)
   offset: number (optional)
   pageSize: number (optional)
+  resolvedSymbol: object? (optional)
   stale: boolean (optional)
   totalCollected: number (optional)
   totalCount: number
+  totalIsExact: boolean (optional)
   truncated: boolean (optional)
   usages: array
 
@@ -265,6 +267,7 @@
   warnings: array? (optional)
 
 ## ReplaceTextInFileTool.ReplaceTextResult
+  affectedLines: array? (optional)
   file: string
   message: string
   replacements: number

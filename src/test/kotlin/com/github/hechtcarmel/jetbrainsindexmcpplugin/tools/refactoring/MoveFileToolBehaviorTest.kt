@@ -12,7 +12,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -47,6 +49,13 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
     private fun resultMessage(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String {
         val resultJson = json.parseToJsonElement(toolText(result)).jsonObject
         return resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
+    }
+
+    private fun resultWarnings(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): List<String>? {
+        val resultJson = json.parseToJsonElement(toolText(result)).jsonObject
+        val warnings = resultJson["warnings"] ?: return null
+        if (warnings is JsonNull) return null
+        return warnings.jsonArray.map { it.jsonPrimitive.content }
     }
 
     fun testComposerNamespaceInferenceUsesNestedComposerJson() {
@@ -186,6 +195,7 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
 
         assertToolSucceeded("Java file move should succeed", result)
         assertTrue(resultMessage(result).contains("move-src/movetarget/MovedService.java"))
+        assertNull("Unconflicted move must not report warnings", resultWarnings(result))
         assertProjectFileAbsent("move-src/moveorigin/MovedService.java")
         assertProjectFileExists("move-src/movetarget/MovedService.java")
         assertRenamedInFile("move-src/movetarget/MovedService.java", "package moveorigin;", "package movetarget;")
@@ -195,6 +205,64 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
             "movetarget.MovedService"
         )
         assertFileContains("move-src/moveconsumer/ServiceClient.java", "new MovedService().describe()")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    // A package-private class moved out of the package that uses it is the canonical move
+    // conflict: the processor proceeds headlessly (correct for autonomous operation), but the
+    // detected conflicts must surface as plain-text warnings instead of vanishing into a
+    // clean-success response.
+    fun testConflictedJavaMoveSucceedsAndSurfacesSanitizedConflictWarnings() = runBlocking {
+        registerSourceRoot("conflict-src")
+        writeProjectFile(
+            "conflict-src/moveconflict/Hidden.java", """
+            package moveconflict;
+
+            class Hidden {
+                String describe() {
+                    return "hidden";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "conflict-src/moveconflict/HiddenUser.java", """
+            package moveconflict;
+
+            public class HiddenUser {
+                public String describe() {
+                    return new Hidden().describe();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "conflict-src/moveconflict/Hidden.java")
+            put("destination", "conflict-src/moveother")
+        })
+
+        assertToolSucceeded("Conflicted move should still complete headlessly", result)
+        assertProjectFileAbsent("conflict-src/moveconflict/Hidden.java")
+        assertProjectFileExists("conflict-src/moveother/Hidden.java")
+
+        val warnings = resultWarnings(result)
+        assertNotNull("Conflicted move must surface the detected conflicts as warnings", warnings)
+        assertTrue("Expected at least one conflict warning", warnings!!.isNotEmpty())
+        assertNotNull(
+            "Expected a conflict warning naming the moved class 'Hidden', got: $warnings",
+            warnings.firstOrNull { it.contains("Hidden") }
+        )
+        warnings.forEach { warning ->
+            assertFalse(
+                "Warning must not contain HTML markup: $warning",
+                warning.contains('<') || warning.contains('>')
+            )
+            assertFalse(
+                "Warning must not contain XML entities: $warning",
+                listOf("&lt;", "&gt;", "&quot;", "&amp;", "&#39;").any { warning.contains(it) }
+            )
+        }
         IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
 }

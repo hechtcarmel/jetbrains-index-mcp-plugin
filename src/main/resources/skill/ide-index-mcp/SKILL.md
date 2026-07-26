@@ -112,7 +112,7 @@ Omit `paths` to sync the entire project.
 ### "I need to find a class/file/symbol"
 1. `ide_find_class` - classes by name (CamelCase: `USvc` finds `UserService`)
 2. `ide_find_file` - files by name
-3. `ide_search_text` - exact word occurrences across project
+3. `ide_search_text` - substring text search across project (regex via `"regex": true`)
 
 ### "I need to refactor"
 1. `ide_refactor_rename` - rename symbol + all references atomically

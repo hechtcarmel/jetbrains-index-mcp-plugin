@@ -5,6 +5,10 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiManager
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -235,6 +239,97 @@ class MemberEditingToolsBehaviorTest : McpPlatformTestCase() {
         val thirdPos = content.indexOf("third")
         assertTrue("second should appear after first", secondPos > firstPos)
         assertTrue("second should appear before third", secondPos < thirdPos)
+    }
+
+    fun testJavaInsertMemberFirstPositionLandsBeforeExistingMembers() = runBlocking {
+        writeProjectFile("src/FirstPos.java", """
+            public class FirstPos {
+                public void existing() {}
+                public void trailing() {}
+            }
+        """.trimIndent())
+
+        val result = InsertMemberTool().execute(project, buildJsonObject {
+            put("file", "src/FirstPos.java")
+            put("class", "FirstPos")
+            put("content", "public void opener() {}")
+            put("position", "first")
+        })
+
+        assertToolSucceeded("Insert at position 'first' should succeed", result)
+        val content = readProjectFile("src/FirstPos.java")
+        val openerPos = content.indexOf("opener")
+        val existingPos = content.indexOf("existing")
+        val trailingPos = content.indexOf("trailing")
+        assertTrue("opener must be present", openerPos >= 0)
+        assertTrue("opener must be inside the class body", openerPos > content.indexOf("{"))
+        assertTrue("opener must precede existing", openerPos < existingPos)
+        assertTrue("opener must precede trailing", openerPos < trailingPos)
+    }
+
+    // ── Java: ide_insert_member stale-preparation guards ──
+    // The read-prepare/write-apply gap cannot be reproduced through execute() alone, so these
+    // drive applyInsertion directly with a preparation that went stale in between.
+
+    fun testInsertMemberStaleOffsetBeyondDocumentReturnsRetryError() = runBlocking {
+        writeProjectFile("src/StaleOffset.java", """
+            public class StaleOffset {
+                public void existing() {
+                    System.out.println("plenty of content to make the document long");
+                }
+            }
+        """.trimIndent())
+
+        val basePath = requireNotNull(project.basePath)
+        val virtualFile = requireNotNull(
+            LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/src/StaleOffset.java")
+        )
+        val psiFile = requireNotNull(PsiManager.getInstance(project).findFile(virtualFile))
+        val document = requireNotNull(PsiDocumentManager.getInstance(project).getDocument(psiFile))
+        val staleOffset = document.textLength
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            document.setText("class StaleOffset {}")
+            PsiDocumentManager.getInstance(project).commitAllDocuments()
+        }
+
+        val prep = InsertPreparation(psiFile, document, staleOffset, "src/StaleOffset.java")
+        val result = InsertMemberTool().applyInsertion(project, prep, "public void late() {}", reformat = false)
+
+        assertToolFailed("Stale offset must not be applied", result)
+        val text = toolText(result)
+        assertTrue("Error should report the out-of-bounds offset, got: $text", text.contains("out of bounds"))
+        assertTrue("Error should suggest retrying, got: $text", text.contains("retry the operation"))
+        assertEquals("Document must be left untouched", "class StaleOffset {}", document.text)
+    }
+
+    fun testInsertMemberInvalidPsiFileReturnsRetryError() = runBlocking {
+        writeProjectFile("src/Vanishing.java", """
+            public class Vanishing {
+                public void existing() {}
+            }
+        """.trimIndent())
+
+        val basePath = requireNotNull(project.basePath)
+        val virtualFile = requireNotNull(
+            LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/src/Vanishing.java")
+        )
+        val psiFile = requireNotNull(PsiManager.getInstance(project).findFile(virtualFile))
+        val document = requireNotNull(PsiDocumentManager.getInstance(project).getDocument(psiFile))
+        val offset = document.textLength
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            virtualFile.delete(this)
+        }
+        assertFalse("Precondition: PSI file must be invalid after deletion", psiFile.isValid)
+
+        val prep = InsertPreparation(psiFile, document, offset, "src/Vanishing.java")
+        val result = InsertMemberTool().applyInsertion(project, prep, "public void late() {}", reformat = false)
+
+        assertToolFailed("Invalid PSI file must not be edited", result)
+        val text = toolText(result)
+        assertTrue("Error should say the file is no longer valid, got: $text", text.contains("no longer valid"))
+        assertTrue("Error should suggest retrying, got: $text", text.contains("retry the operation"))
     }
 
     // ── Java: ide_edit_member replaces large method with short one without IndexOutOfBoundsException ──

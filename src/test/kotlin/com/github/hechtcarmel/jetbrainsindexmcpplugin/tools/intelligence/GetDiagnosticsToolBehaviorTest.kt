@@ -12,6 +12,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsRe
 import com.intellij.codeInsight.CodeSmellInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType
+import com.intellij.ide.PowerSaveMode
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -170,6 +171,111 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             )
         } finally {
             service.openFileAnalysisOverride = originalRunner
+        }
+    }
+
+    fun testOpenFileWithPowerSaveModeFallsBackToBatchAnalysis() = runBlocking {
+        val brokenFile = createProjectFile(
+            "PsmBroken.java",
+            """
+            class PsmBroken {
+                void test() {
+                    UnknownType value = null;
+                }
+            }
+            """.trimIndent()
+        )
+
+        val fileEditorManager = FileEditorManager.getInstance(project)
+        val originalPowerSaveMode = PowerSaveMode.isEnabled()
+
+        try {
+            ApplicationManager.getApplication().invokeAndWait {
+                fileEditorManager.openFile(brokenFile.virtualFile, true)
+            }
+            assertTrue("PsmBroken.java should be open in an editor", fileEditorManager.isFileOpen(brokenFile.virtualFile))
+
+            PowerSaveMode.setEnabled(true)
+
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/PsmBroken.java")
+            })
+
+            assertFalse("Diagnostics should succeed under Power Save Mode: ${renderResult(result)}", result.isFailure)
+
+            val diagnostics = decodeDiagnostics(result)
+            assertTrue(
+                "Expected at least one problem from the batch fallback, got: ${diagnostics.problems}",
+                (diagnostics.problemCount ?: 0) > 0
+            )
+            assertTrue(
+                "Expected unresolved symbol diagnostics from the batch fallback",
+                diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") || it.message.contains("Cannot resolve") }
+            )
+            assertFalse("Batch fallback should not be reported as timed out", diagnostics.analysisTimedOut == true)
+            assertTrue(
+                "Analysis message should disclose that Power Save Mode disabled the highlighting daemon, got: ${diagnostics.analysisMessage}",
+                diagnostics.analysisMessage?.contains("Power Save Mode") == true
+            )
+        } finally {
+            PowerSaveMode.setEnabled(originalPowerSaveMode)
+            ApplicationManager.getApplication().invokeAndWait {
+                fileEditorManager.closeFile(brokenFile.virtualFile)
+            }
+        }
+    }
+
+    fun testOpenFileWithIdleDaemonFallsBackToBatchAnalysis() = runBlocking {
+        val brokenFile = createProjectFile(
+            "IdleDaemonBroken.java",
+            """
+            class IdleDaemonBroken {
+                void test() {
+                    UnknownType value = null;
+                }
+            }
+            """.trimIndent()
+        )
+
+        val fileEditorManager = FileEditorManager.getInstance(project)
+        assertFalse("Power Save Mode must be off for the idle-daemon scenario", PowerSaveMode.isEnabled())
+
+        try {
+            ApplicationManager.getApplication().invokeAndWait {
+                fileEditorManager.openFile(brokenFile.virtualFile, true)
+            }
+            assertTrue("IdleDaemonBroken.java should be open in an editor", fileEditorManager.isFileOpen(brokenFile.virtualFile))
+
+            // In headless platform tests the highlighting daemon never self-runs, so the
+            // open-editor wait sees a stable empty markup model without any proof that passes ran.
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/IdleDaemonBroken.java")
+            })
+
+            assertFalse("Diagnostics should succeed with an idle daemon: ${renderResult(result)}", result.isFailure)
+
+            val diagnostics = decodeDiagnostics(result)
+            assertTrue(
+                "Expected at least one problem from the batch fallback, got: ${diagnostics.problems}",
+                (diagnostics.problemCount ?: 0) > 0
+            )
+            assertTrue(
+                "Expected unresolved symbol diagnostics from the batch fallback",
+                diagnostics.problems.orEmpty().any { it.message.contains("UnknownType") || it.message.contains("Cannot resolve") }
+            )
+            assertFalse("Idle-daemon fallback should not be reported as timed out", diagnostics.analysisTimedOut == true)
+            assertTrue(
+                "Analysis message should disclose that the daemon did not run, got: ${diagnostics.analysisMessage}",
+                diagnostics.analysisMessage?.contains("daemon did not run") == true
+            )
+            assertFalse(
+                "Idle-daemon fallback must stay distinguishable from the timeout fallback",
+                diagnostics.analysisMessage?.contains("timed out") == true
+            )
+        } finally {
+            ApplicationManager.getApplication().invokeAndWait {
+                fileEditorManager.closeFile(brokenFile.virtualFile)
+            }
         }
     }
 

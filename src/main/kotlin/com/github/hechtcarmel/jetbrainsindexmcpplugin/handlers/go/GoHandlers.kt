@@ -649,7 +649,7 @@ class GoImplementationsHandler : BaseGoHandler<List<ImplementationData>>(), Impl
                         ))
                     }
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
 
             LOG.debug("Found ${results.size} method implementations")
@@ -683,7 +683,7 @@ class GoImplementationsHandler : BaseGoHandler<List<ImplementationData>>(), Impl
                         ))
                     }
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
 
             LOG.debug("Found ${results.size} interface implementations")

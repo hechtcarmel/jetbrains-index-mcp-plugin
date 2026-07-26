@@ -19,12 +19,23 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.jetbrains.annotations.TestOnly
 
 class ChangeSignatureTool : AbstractMcpTool() {
 
     companion object {
         private val LOG = logger<ChangeSignatureTool>()
     }
+
+    /**
+     * Test hook replacing the `processor.run()` call, so tests can reproduce the production
+     * abort paths where `BaseRefactoringProcessor.run()` returns normally without applying
+     * anything (read-only files, conflict dialogs, dumb mode). In unit-test mode the platform
+     * converts those aborts into exceptions before `run()` returns, so they cannot be
+     * triggered for real.
+     */
+    @TestOnly
+    internal var processorRunHook: (() -> Unit)? = null
 
     override val name = ToolNames.CHANGE_SIGNATURE
 
@@ -68,6 +79,28 @@ class ChangeSignatureTool : AbstractMcpTool() {
     private data class SignaturePreparation(
         val method: PsiMethod,
         val relativePath: String
+    )
+
+    private data class SignatureState(
+        val name: String,
+        val returnTypeText: String?,
+        val visibility: String,
+        val parameters: List<Pair<String, String>>
+    )
+
+    /**
+     * Everything needed to check, after the processor ran, whether the requested change
+     * actually reached the PSI. `BaseRefactoringProcessor.run()` returns normally on abort paths
+     * (read-only target file, unwritable elements), so without this check an aborted
+     * refactoring would still be reported as applied.
+     */
+    private data class SignatureVerification(
+        val pointer: SmartPsiElementPointer<PsiMethod>,
+        val before: SignatureState,
+        val targetName: String?,
+        val targetReturnTypeText: String?,
+        val targetVisibility: String?,
+        val targetParameters: List<Pair<String, String>>?
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
@@ -172,24 +205,16 @@ class ChangeSignatureTool : AbstractMcpTool() {
         return try {
             val method = prep.method
 
-            data class ChangeModel(
-                val effectiveName: String,
-                val effectiveReturnType: Any?,
-                val effectiveVisibility: String,
-                val paramInfos: Any,
-                val changeInfo: Any
-            )
-
-            val modelResult = suspendingReadAction {
+            val (changeInfo, verification) = suspendingReadAction {
                 val factory = JavaPsiFacade.getElementFactory(project)
 
                 val effectiveName = newName ?: method.name
                 val canonicalTypesClass = Class.forName("com.intellij.refactoring.util.CanonicalTypes")
                 val createMethod = canonicalTypesClass.getMethod("createTypeWrapper", PsiType::class.java)
 
-                val effectiveReturnType = if (newReturnType != null) {
-                    val psiType = factory.createTypeFromText(newReturnType, method)
-                    createMethod.invoke(null, psiType)
+                val requestedReturnPsiType = newReturnType?.let { factory.createTypeFromText(it, method) }
+                val effectiveReturnType = if (requestedReturnPsiType != null) {
+                    createMethod.invoke(null, requestedReturnPsiType)
                 } else {
                     if (method.returnType != null) createMethod.invoke(null, method.returnType) else null
                 }
@@ -199,12 +224,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
                     "protected" -> PsiModifier.PROTECTED
                     "private" -> PsiModifier.PRIVATE
                     "package-private", "package-local" -> PsiModifier.PACKAGE_LOCAL
-                    else -> when {
-                        method.hasModifierProperty(PsiModifier.PUBLIC) -> PsiModifier.PUBLIC
-                        method.hasModifierProperty(PsiModifier.PROTECTED) -> PsiModifier.PROTECTED
-                        method.hasModifierProperty(PsiModifier.PRIVATE) -> PsiModifier.PRIVATE
-                        else -> PsiModifier.PACKAGE_LOCAL
-                    }
+                    else -> currentVisibility(method)
                 }
 
                 val paramInfos = if (newParametersJson != null) {
@@ -253,7 +273,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
                     Set::class.java
                 )
 
-                constructor.newInstance(
+                val newChangeInfo = constructor.newInstance(
                     effectiveVisibility,
                     method,
                     effectiveName,
@@ -264,9 +284,24 @@ class ChangeSignatureTool : AbstractMcpTool() {
                     emptySet<PsiMethod>(),
                     emptySet<PsiMethod>()
                 )
+
+                newChangeInfo to SignatureVerification(
+                    pointer = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method),
+                    before = captureSignatureState(method),
+                    targetName = newName,
+                    targetReturnTypeText = requestedReturnPsiType?.canonicalText,
+                    targetVisibility = if (newVisibility != null) effectiveVisibility else null,
+                    // Safe to re-read the JSON here: buildParameterInfos already validated every
+                    // entry (name, type present and parseable) earlier in this read action.
+                    targetParameters = newParametersJson?.map { paramJson ->
+                        val obj = paramJson.jsonObject
+                        val paramName = obj["name"]!!.jsonPrimitive.content
+                        val paramType = factory.createTypeFromText(obj["type"]!!.jsonPrimitive.content, method)
+                        paramName to paramType.canonicalText
+                    }
+                )
             }
 
-            val changeInfo = modelResult
             val changeInfoClass = Class.forName("com.intellij.refactoring.changeSignature.JavaChangeInfo")
             val affectedFiles = mutableSetOf<String>()
 
@@ -279,7 +314,8 @@ class ChangeSignatureTool : AbstractMcpTool() {
                     .newInstance(project, changeInfo) as com.intellij.refactoring.BaseRefactoringProcessor
 
                 processor.setPreviewUsages(false)
-                processor.run()
+                val hook = processorRunHook
+                if (hook != null) hook() else processor.run()
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
 
@@ -296,13 +332,24 @@ class ChangeSignatureTool : AbstractMcpTool() {
                 docManager.saveAllDocuments()
             }
 
-            createJsonResult(ChangeSignatureResult(
-                success = true,
-                file = prep.relativePath,
-                message = "Changed signature of '${method.name}'",
-                affectedFiles = affectedFiles.toList(),
-                changesCount = affectedFiles.size
-            ))
+            val requestedChangeApplied = suspendingReadAction {
+                anyRequestedAspectApplied(verification)
+            }
+
+            if (!requestedChangeApplied) {
+                createErrorResult(
+                    "Change signature did not apply — the IDE aborted the refactoring " +
+                        "(read-only file, unwritable elements, or indexing in progress)."
+                )
+            } else {
+                createJsonResult(ChangeSignatureResult(
+                    success = true,
+                    file = prep.relativePath,
+                    message = "Changed signature of '${method.name}'",
+                    affectedFiles = affectedFiles.toList(),
+                    changesCount = affectedFiles.size
+                ))
+            }
         } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
@@ -345,6 +392,49 @@ class ChangeSignatureTool : AbstractMcpTool() {
         val array = java.lang.reflect.Array.newInstance(parameterInfoImplClass, infos.size)
         infos.forEachIndexed { i, info -> java.lang.reflect.Array.set(array, i, info) }
         return Result.success(array)
+    }
+
+    private fun currentVisibility(method: PsiMethod): String = when {
+        method.hasModifierProperty(PsiModifier.PUBLIC) -> PsiModifier.PUBLIC
+        method.hasModifierProperty(PsiModifier.PROTECTED) -> PsiModifier.PROTECTED
+        method.hasModifierProperty(PsiModifier.PRIVATE) -> PsiModifier.PRIVATE
+        else -> PsiModifier.PACKAGE_LOCAL
+    }
+
+    private fun captureSignatureState(method: PsiMethod): SignatureState = SignatureState(
+        name = method.name,
+        returnTypeText = method.returnType?.canonicalText,
+        visibility = currentVisibility(method),
+        parameters = method.parameterList.parameters.map { it.name to it.type.canonicalText }
+    )
+
+    /**
+     * Conservative post-run check: an aspect counts as applied when the method now matches the
+     * request, or when it changed from the pre-run state at all (so any partial or
+     * differently-rendered application still counts). Only when every requested aspect is
+     * provably untouched — the signature of a silently aborted refactoring — is the run treated
+     * as failed. A pointer that no longer resolves means the refactoring restructured the PSI,
+     * which also counts as applied.
+     */
+    private fun anyRequestedAspectApplied(verification: SignatureVerification): Boolean {
+        val method = verification.pointer.element ?: return true
+        val after = captureSignatureState(method)
+        val before = verification.before
+        val aspects = listOfNotNull(
+            verification.targetName?.let {
+                after.name == it || after.name != before.name
+            },
+            verification.targetReturnTypeText?.let {
+                after.returnTypeText == it || after.returnTypeText != before.returnTypeText
+            },
+            verification.targetVisibility?.let {
+                after.visibility == it || after.visibility != before.visibility
+            },
+            verification.targetParameters?.let {
+                after.parameters == it || after.parameters != before.parameters
+            }
+        )
+        return aspects.isEmpty() || aspects.any { it }
     }
 
     private fun buildCurrentParameterInfos(method: PsiMethod, parameterInfoImplClass: Class<*>): Any {

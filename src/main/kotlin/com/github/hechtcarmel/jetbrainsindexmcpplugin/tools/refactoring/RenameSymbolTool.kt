@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ConflictMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.lang.LanguageNamesValidation
 import com.intellij.openapi.command.WriteCommandAction
@@ -216,7 +217,8 @@ class RenameSymbolTool : AbstractMcpTool() {
     private data class RenameValidation(
         val element: PsiNamedElement,
         val oldName: String,
-        val error: String? = null
+        val error: String? = null,
+        val newNameOverride: String? = null
     )
 
     private data class JsTsFileRenameRetargeting(
@@ -293,6 +295,7 @@ class RenameSymbolTool : AbstractMcpTool() {
 
         val element = validation.element
         val oldName = validation.oldName
+        val effectiveNewName = validation.newNameOverride ?: newName
         val jsTsFileRetargeting = if (
             renameMode is RenameModeDecision.FileRenameMode &&
             element is PsiFile &&
@@ -316,7 +319,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     project,
                     element,
                     oldName,
-                    newName,
+                    effectiveNewName,
                     overrideStrategy,
                     relatedRenamingStrategy,
                     affectedFiles,
@@ -351,7 +354,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     success = true,
                     affectedFiles = affectedFiles.toList(),
                     changesCount = result.affectedFilesCount,
-                    message = "Successfully renamed '$oldName' to '$newName'$relatedNote$partialNote",
+                    message = "Successfully renamed '$oldName' to '$effectiveNewName'$relatedNote$partialNote",
                     warnings = result.warnings,
                     unretargetedImporters = result.unretargetedImporters
                 )
@@ -445,6 +448,9 @@ class RenameSymbolTool : AbstractMcpTool() {
      *
      * Skips language-specific identifier validation since file names follow different
      * rules than code identifiers.
+     *
+     * Java files whose top-level class matches the filename are retargeted onto that class
+     * (see [retargetJavaFileRenameToClass]); every other case renames the file as-is.
      */
     private fun validateAndPrepareFileRename(
         project: Project,
@@ -468,9 +474,72 @@ class RenameSymbolTool : AbstractMcpTool() {
             )
         }
 
+        retargetJavaFileRenameToClass(project, psiFile, oldName, newName)?.let { return it }
+
         return RenameValidation(
             element = psiFile,
             oldName = oldName
+        )
+    }
+
+    /**
+     * Retargets a Java file rename onto its matching top-level class.
+     *
+     * A bare file rename leaves `public class Foo` inside `Bar.java` — a guaranteed compile
+     * error — because the platform only couples class and file in the class->file direction
+     * (`PsiClassImpl.setName` renames the containing file when the base names match). So when
+     * a `.java` file contains a top-level class named after the file, the rename is redirected
+     * to that class and `RenameProcessor` updates the class, all references, and the file.
+     *
+     * Java PSI is accessed reflectively because this tool is universal and loads in IDEs
+     * without the Java plugin. Implicit classes (Java 21+ `PsiImplicitClass`) are excluded so
+     * those files keep flowing through the platform's dedicated file-level processor.
+     *
+     * Returns null — falling through to the plain file rename — for every non-matching case:
+     * non-Java files, extension changes, class/file name mismatches, implicit-class files,
+     * invalid identifiers, and name conflicts.
+     */
+    private fun retargetJavaFileRenameToClass(
+        project: Project,
+        psiFile: PsiFile,
+        oldName: String,
+        newName: String
+    ): RenameValidation? {
+        val keepsJavaExtension = newName.endsWith(".java") || !newName.contains('.')
+        if (!keepsJavaExtension) return null
+
+        val psiClass = try {
+            val psiJavaFileClass = Class.forName("com.intellij.psi.PsiJavaFile")
+            if (!psiJavaFileClass.isInstance(psiFile)) return null
+
+            val implicitClassClass = try {
+                Class.forName("com.intellij.psi.PsiImplicitClass")
+            } catch (_: ClassNotFoundException) {
+                null
+            }
+
+            val oldBase = oldName.substringBeforeLast('.')
+            val classes = psiJavaFileClass.getMethod("getClasses").invoke(psiFile) as? Array<*>
+                ?: return null
+            classes.asSequence()
+                .filterIsInstance<PsiNamedElement>()
+                .filterNot { implicitClassClass?.isInstance(it) == true }
+                .firstOrNull { it.name == oldBase }
+        } catch (e: Exception) {
+            LOG.debug("Java file rename retargeting probe failed: ${e.message}")
+            null
+        } ?: return null
+
+        val newBase = newName.substringBeforeLast('.')
+        if (newBase.isEmpty() || newBase == psiClass.name) return null
+        if (validateNewName(project, psiClass, newBase) != null) return null
+        if (checkForConflicts(psiClass, newBase) != null) return null
+        val className = psiClass.name ?: return null
+
+        return RenameValidation(
+            element = psiClass,
+            oldName = className,
+            newNameOverride = newBase
         )
     }
 
@@ -486,7 +555,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         processor.findExistingNameConflicts(element, newName, conflicts)
 
         if (!conflicts.isEmpty) {
-            val conflictMessages = conflicts.values().take(3).joinToString("; ")
+            val conflictMessages = conflicts.values().take(3).joinToString("; ") { ConflictMessages.sanitize(it) }
             val moreCount = conflicts.values().size - 3
             val suffix = if (moreCount > 0) " (and $moreCount more)" else ""
             return "Name conflict: $conflictMessages$suffix"

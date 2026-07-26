@@ -530,7 +530,7 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
                         language = if (overridingMethod.language.id == "kotlin") "Kotlin" else "Java"
                     ))
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
         } catch (_: Exception) {
             // Handle gracefully
@@ -557,7 +557,7 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
                         language = if (inheritor.language.id == "kotlin") "Kotlin" else "Java"
                     ))
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
         } catch (_: Exception) {
             // Handle gracefully

@@ -82,16 +82,26 @@ class ReadFileTool : AbstractMcpTool() {
                 else -> null
             } ?: return@suspendingReadAction createErrorResult("File not found: ${filePath ?: qualifiedName}")
 
-            val content = if (startLine != null && endLine != null) {
-                PsiUtils.getFileContentByLines(project, virtualFile, startLine, endLine)
+            val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
+            val document = psiFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
+            val fullText = if (document == null) PsiUtils.getFileContent(project, virtualFile) else null
+            val lineCount = document?.lineCount ?: fullText?.split("\n")?.size
+                ?: return@suspendingReadAction createErrorResult("Unable to read file contents")
+
+            if (startLine != null && startLine > lineCount) {
+                return@suspendingReadAction createErrorResult(
+                    "startLine $startLine is beyond end of file ($lineCount lines)"
+                )
+            }
+            // Echo the range actually delivered: an endLine past EOF is clamped to the last line.
+            val effectiveEndLine = endLine?.coerceAtMost(lineCount)
+
+            val content = if (startLine != null && effectiveEndLine != null) {
+                PsiUtils.getFileContentByLines(project, virtualFile, startLine, effectiveEndLine)
             } else {
                 PsiUtils.getFileContent(project, virtualFile)
             } ?: return@suspendingReadAction createErrorResult("Unable to read file contents")
 
-            val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-            val document = psiFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
-            val fullText = if (document == null) PsiUtils.getFileContent(project, virtualFile) else null
-            val lineCount = document?.lineCount ?: fullText?.split("\n")?.size ?: content.split("\n").size
             val language = psiFile?.language?.id
 
             val resolvedPath = ProjectUtils.getToolFilePath(project, virtualFile)
@@ -105,7 +115,7 @@ class ReadFileTool : AbstractMcpTool() {
                 language = language,
                 lineCount = lineCount,
                 startLine = startLine,
-                endLine = endLine,
+                endLine = effectiveEndLine,
                 isLibraryFile = isLibraryFile
             ))
         }

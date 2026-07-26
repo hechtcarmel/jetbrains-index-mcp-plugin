@@ -21,6 +21,21 @@ data class UsageLocation(
     val astPath: List<String>,
 )
 
+/**
+ * The declaration a reference search actually targeted. Position-based lookups snap to the
+ * nearest enclosing named element (e.g. a position on a comment resolves to the commented
+ * method or class), so this echo lets clients detect when the search ran against a different
+ * symbol than the one they aimed at.
+ */
+@Serializable
+data class ResolvedSymbolInfo(
+    val name: String?,
+    val kind: String?,
+    val container: String?,
+    val file: String?,
+    val line: Int?
+)
+
 @Serializable
 data class FindUsagesResult(
     val usages: List<UsageLocation>,
@@ -31,7 +46,11 @@ data class FindUsagesResult(
     val totalCollected: Int = 0,
     val offset: Int = 0,
     val pageSize: Int = 0,
-    val stale: Boolean = false
+    val stale: Boolean = false,
+    val resolvedSymbol: ResolvedSymbolInfo? = null,
+    // When false, totalCount is a lower bound ("at least N") — the search hit the internal
+    // collection cap before enumerating every reference.
+    val totalIsExact: Boolean = true
 )
 
 // find_definition output

@@ -8,7 +8,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiComment
@@ -28,6 +30,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import org.jetbrains.annotations.TestOnly
 
 /**
  * Safe delete tool that checks for usages before deletion.
@@ -37,6 +40,21 @@ import kotlinx.serialization.json.putJsonArray
  * 2. **EDT Phase**: Apply deletion quickly (in write action)
  */
 class SafeDeleteTool : AbstractRefactoringTool() {
+
+    /**
+     * Test hook invoked between the usage check (phase 1) and the deletion write action
+     * (phase 2), i.e. inside the window where a concurrent external edit can invalidate
+     * the prepared PSI element.
+     */
+    @TestOnly
+    internal var beforeDeletionHook: (() -> Unit)? = null
+
+    /**
+     * Test hook invoked at the start of every usage search, so tests can simulate a
+     * search failure deterministically.
+     */
+    @TestOnly
+    internal var usageSearchHook: (() -> Unit)? = null
 
     override val name = "ide_refactor_safe_delete"
 
@@ -114,6 +132,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         ) : SymbolPreparationResult()
         data class FileNotFound(val file: String) : SymbolPreparationResult()
         data class PositionOutOfBounds(val line: Int, val column: Int) : SymbolPreparationResult()
+        data class UsageSearchFailed(val reason: String) : SymbolPreparationResult()
     }
 
     /**
@@ -123,7 +142,14 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         data class Success(val data: FileDeletePreparation) : FilePreparationResult()
         data object FileNotFound : FilePreparationResult()
         data class NonPhysicalFile(val fileName: String) : FilePreparationResult()
+        data class UsageSearchFailed(val reason: String) : FilePreparationResult()
     }
+
+    /**
+     * Wraps an unexpected failure of the usage search so callers can refuse the deletion
+     * instead of treating a partial (possibly empty) result as "no usages".
+     */
+    private class UsageSearchException(cause: Exception) : RuntimeException(cause)
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
@@ -162,7 +188,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         // PHASE 1: BACKGROUND - Find element and check usages (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════
         val preparationResult = suspendingReadAction {
-            prepareSymbolDelete(project, file, line, column)
+            prepareSymbolDelete(project, file, line, column, force)
         }
 
         return when (preparationResult) {
@@ -181,6 +207,8 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                         )
                     )
                 }
+
+                beforeDeletionHook?.invoke()
 
                 // ═══════════════════════════════════════════════════════════════════════
                 // PHASE 2: EDT - Apply deletion quickly (write action)
@@ -207,6 +235,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             is SymbolPreparationResult.PositionOutOfBounds -> {
                 createErrorResult("Position out of bounds: line ${preparationResult.line}, column ${preparationResult.column}")
             }
+            is SymbolPreparationResult.UsageSearchFailed -> {
+                createErrorResult(usageSearchFailedMessage(preparationResult.reason))
+            }
         }
     }
 
@@ -222,7 +253,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         // PHASE 1: BACKGROUND - Collect symbols and find external usages
         // ═══════════════════════════════════════════════════════════════════════
         val preparationResult = suspendingReadAction {
-            prepareFileDelete(project, file)
+            prepareFileDelete(project, file, force)
         }
 
         return when (preparationResult) {
@@ -242,6 +273,8 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                     )
                 }
 
+                beforeDeletionHook?.invoke()
+
                 // ═══════════════════════════════════════════════════════════════════════
                 // PHASE 2: EDT - Delete the file
                 // ═══════════════════════════════════════════════════════════════════════
@@ -253,8 +286,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             is FilePreparationResult.NonPhysicalFile -> {
                 createErrorResult("Cannot delete non-physical file '${preparationResult.fileName}' (e.g., in-memory or generated file)")
             }
+            is FilePreparationResult.UsageSearchFailed -> {
+                createErrorResult(usageSearchFailedMessage(preparationResult.reason))
+            }
         }
     }
+
+    private fun usageSearchFailedMessage(reason: String): String =
+        "Usage search failed ($reason) — refusing to delete without a complete usage check. " +
+            "Retry, or use force=true to delete anyway."
 
     private suspend fun applySymbolDeletion(
         project: Project,
@@ -270,9 +310,12 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 .withGroupId("MCP Refactoring")
                 .run<Throwable> {
                     try {
-                        if (preparation.element.isValid) {
-                            preparation.element.delete()
+                        if (!preparation.element.isValid) {
+                            errorMessage = "Element '${preparation.elementName}' is no longer valid — " +
+                                "the file changed since usages were checked. Retry the operation."
+                            return@run
                         }
+                        preparation.element.delete()
 
                         PsiDocumentManager.getInstance(project).commitAllDocuments()
                         FileDocumentManager.getInstance().saveAllDocuments()
@@ -316,9 +359,12 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 .withGroupId("MCP Refactoring")
                 .run<Throwable> {
                     try {
-                        if (preparation.psiFile.isValid) {
-                            preparation.psiFile.delete()
+                        if (!preparation.psiFile.isValid) {
+                            errorMessage = "File '${preparation.fileName}' is no longer valid — " +
+                                "the file changed since usages were checked. Retry the operation."
+                            return@run
                         }
+                        preparation.psiFile.delete()
 
                         PsiDocumentManager.getInstance(project).commitAllDocuments()
                         FileDocumentManager.getInstance().saveAllDocuments()
@@ -356,7 +402,8 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         project: Project,
         file: String,
         line: Int,
-        column: Int
+        column: Int,
+        force: Boolean
     ): SymbolPreparationResult {
         val psiFile = PsiUtils.getPsiFile(project, file)
             ?: return SymbolPreparationResult.FileNotFound(file)
@@ -395,7 +442,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         } ?: file
 
         // Find usages (POTENTIALLY SLOW - but in background!)
-        val usages = findUsages(project, element)
+        val usages = try {
+            findUsages(project, element)
+        } catch (e: UsageSearchException) {
+            if (!force) {
+                return SymbolPreparationResult.UsageSearchFailed(searchFailureReason(e))
+            }
+            // force=true means "delete regardless of usages", so a failed search cannot block it.
+            emptyList()
+        }
 
         return SymbolPreparationResult.Success(
             SymbolDeletePreparation(
@@ -491,7 +546,8 @@ class SafeDeleteTool : AbstractRefactoringTool() {
      */
     private fun prepareFileDelete(
         project: Project,
-        file: String
+        file: String,
+        force: Boolean
     ): FilePreparationResult {
         val psiFile = PsiUtils.getPsiFile(project, file)
             ?: return FilePreparationResult.FileNotFound
@@ -504,25 +560,6 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         val fileName = psiFile.name
         val filePath = psiFile.virtualFile?.let { getRelativePath(project, it) } ?: file
 
-        val externalUsages = mutableListOf<UsageInfo>()
-
-        // Layer 1: Search for direct references to the PsiFile itself.
-        // PsiFile implements PsiNamedElement, so findUsages works directly.
-        ProgressManager.checkCanceled()
-        for (usage in findUsages(project, psiFile)) {
-            if (usage.file != filePath) {
-                externalUsages.add(usage)
-            }
-        }
-
-        // Layer 2: Check if the file maps to a resource element (e.g., Android resource).
-        // Uses the same prepareRenaming probe as RenameSymbolTool.computeEffectiveNewName.
-        if (externalUsages.isEmpty()) {
-            ProgressManager.checkCanceled()
-            externalUsages.addAll(findResourceElementUsages(project, psiFile, filePath))
-        }
-
-        // Layer 3: Search top-level declarations for external usages.
         val topLevelElements = collectTopLevelDeclarations(project, psiFile)
 
         val symbols = topLevelElements.map { (element, line, column) ->
@@ -534,16 +571,41 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             )
         }
 
-        if (externalUsages.isEmpty()) {
-            val namedElements = topLevelElements.map { it.first }
-            for (element in namedElements) {
+        val externalUsages = mutableListOf<UsageInfo>()
+
+        try {
+            // Layer 1: Search for direct references to the PsiFile itself.
+            // PsiFile implements PsiNamedElement, so findUsages works directly.
+            ProgressManager.checkCanceled()
+            for (usage in findUsages(project, psiFile)) {
+                if (usage.file != filePath) {
+                    externalUsages.add(usage)
+                }
+            }
+
+            // Layer 2: Check if the file maps to a resource element (e.g., Android resource).
+            // Uses the same prepareRenaming probe as RenameSymbolTool.computeEffectiveNewName.
+            if (externalUsages.isEmpty()) {
                 ProgressManager.checkCanceled()
-                for (usage in findUsages(project, element)) {
-                    if (usage.file != filePath) {
-                        externalUsages.add(usage)
+                externalUsages.addAll(findResourceElementUsages(project, psiFile, filePath))
+            }
+
+            // Layer 3: Search top-level declarations for external usages.
+            if (externalUsages.isEmpty()) {
+                for ((element, _, _) in topLevelElements) {
+                    ProgressManager.checkCanceled()
+                    for (usage in findUsages(project, element)) {
+                        if (usage.file != filePath) {
+                            externalUsages.add(usage)
+                        }
                     }
                 }
             }
+        } catch (e: UsageSearchException) {
+            if (!force) {
+                return FilePreparationResult.UsageSearchFailed(searchFailureReason(e))
+            }
+            // force=true means "delete regardless of usages", so a failed search cannot block it.
         }
 
         return FilePreparationResult.Success(
@@ -708,10 +770,20 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         return suggestions.sortedBy { it.distance }.take(5)
     }
 
+    /**
+     * Finds all references to [element].
+     *
+     * Cancellation ([ProcessCanceledException]) and dumb mode ([IndexNotReadyException])
+     * are rethrown — the latter is translated into the standard dumb-mode retry error by
+     * [AbstractMcpTool.execute][com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool.execute].
+     * Any other failure is wrapped in [UsageSearchException]: an incomplete search must
+     * never be reported as "no usages" by a tool whose whole point is the safety check.
+     */
     private fun findUsages(project: Project, element: PsiNamedElement): List<UsageInfo> {
         val usages = mutableListOf<UsageInfo>()
 
         try {
+            usageSearchHook?.invoke()
             ReferencesSearch.search(element).forEach { reference ->
                 ProgressManager.checkCanceled() // Allow cancellation
 
@@ -738,11 +810,20 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                     )
                 }
             }
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            throw e
         } catch (e: Exception) {
-            // If we can't find usages, assume there are none
+            throw UsageSearchException(e)
         }
 
         return usages
+    }
+
+    private fun searchFailureReason(e: UsageSearchException): String {
+        val cause = e.cause
+        return cause?.message ?: cause?.javaClass?.simpleName ?: "unknown error"
     }
 
     private fun getContextLine(document: com.intellij.openapi.editor.Document?, line: Int): String {

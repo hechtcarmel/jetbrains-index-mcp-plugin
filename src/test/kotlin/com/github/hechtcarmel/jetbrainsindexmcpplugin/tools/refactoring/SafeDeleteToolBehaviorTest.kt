@@ -2,6 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
+import com.intellij.openapi.vfs.LocalFileSystem
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -289,5 +293,291 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
 
         assertProjectFileExists("sd-suggest-src/suggest/Suggestable.java")
         assertFileContains("sd-suggest-src/suggest/Suggestable.java", "public String keep()")
+    }
+
+    // ── Stale PSI between the usage check (phase 1) and the write action (phase 2) ──
+    //
+    // The write action used to skip the delete when the element had been invalidated, yet
+    // still report "Successfully deleted". These tests recreate the file in the window
+    // between the two phases (via the tool's @TestOnly hook) and require an explicit
+    // error, with the source text untouched.
+
+    fun testStaleSymbolElementIsAnErrorNotASilentSuccess() = runBlocking {
+        registerSourceRoot("sd-stale-src")
+        writeProjectFile(
+            "sd-stale-src/stale/Stale.java", """
+            package stale;
+
+            public class Stale {
+                public String unusedHelper() {
+                    return "unused";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.beforeDeletionHook = { recreateFileOnDisk("sd-stale-src/stale/Stale.java") }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-stale-src/stale/Stale.java")
+            put("line", 4)
+            put("column", 19)
+        })
+
+        assertToolFailed("An invalidated element must be an error, not 'Successfully deleted'", result)
+        val text = toolText(result)
+        assertTrue(
+            "Error must say the element went stale and ask for a retry. Got: $text",
+            text.contains("no longer valid") && text.contains("Retry")
+        )
+        assertFileContains("sd-stale-src/stale/Stale.java", "unusedHelper")
+    }
+
+    fun testStaleFileElementIsAnErrorNotASilentSuccess() = runBlocking {
+        registerSourceRoot("sd-stalefile-src")
+        writeProjectFile(
+            "sd-stalefile-src/stalefile/StaleFile.java", """
+            package stalefile;
+
+            public class StaleFile {
+                public String helper() {
+                    return "helper";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.beforeDeletionHook = { recreateFileOnDisk("sd-stalefile-src/stalefile/StaleFile.java") }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-stalefile-src/stalefile/StaleFile.java")
+            put("target_type", "file")
+        })
+
+        assertToolFailed("An invalidated file must be an error, not 'Successfully deleted'", result)
+        val text = toolText(result)
+        assertTrue(
+            "Error must say the file went stale and ask for a retry. Got: $text",
+            text.contains("no longer valid") && text.contains("Retry")
+        )
+        assertProjectFileExists("sd-stalefile-src/stalefile/StaleFile.java")
+        assertFileContains("sd-stalefile-src/stalefile/StaleFile.java", "class StaleFile")
+    }
+
+    // ── A failed usage search must refuse the delete, never report "no usages" ──
+    //
+    // findUsages used to swallow every exception and return the partial (usually empty)
+    // list, so a broken search made any symbol look safe to delete.
+
+    fun testUsageSearchFailureRefusesSymbolDeleteWithoutForce() = runBlocking {
+        registerSourceRoot("sd-searchfail-src")
+        writeProjectFile(
+            "sd-searchfail-src/searchfail/SearchFail.java", """
+            package searchfail;
+
+            public class SearchFail {
+                public String unusedHelper() {
+                    return "unused";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.usageSearchHook = { throw IllegalStateException("simulated search failure") }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-searchfail-src/searchfail/SearchFail.java")
+            put("line", 4)
+            put("column", 19)
+        })
+
+        assertToolFailed("A failed usage search must refuse the delete", result)
+        val text = toolText(result)
+        assertTrue("Error must name the failure. Got: $text", text.contains("Usage search failed"))
+        assertTrue("Error must carry the underlying reason. Got: $text", text.contains("simulated search failure"))
+        assertTrue("Error must offer the force=true escape hatch. Got: $text", text.contains("force=true"))
+        assertFileContains("sd-searchfail-src/searchfail/SearchFail.java", "unusedHelper")
+    }
+
+    fun testUsageSearchFailureRefusesFileDeleteWithoutForce() = runBlocking {
+        registerSourceRoot("sd-filesearchfail-src")
+        writeProjectFile(
+            "sd-filesearchfail-src/filesearchfail/FileSearchFail.java", """
+            package filesearchfail;
+
+            public class FileSearchFail {
+                public String helper() {
+                    return "helper";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.usageSearchHook = { throw IllegalStateException("simulated search failure") }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-filesearchfail-src/filesearchfail/FileSearchFail.java")
+            put("target_type", "file")
+        })
+
+        assertToolFailed("A failed usage search must refuse the file delete", result)
+        val text = toolText(result)
+        assertTrue("Error must name the failure. Got: $text", text.contains("Usage search failed"))
+        assertTrue("Error must offer the force=true escape hatch. Got: $text", text.contains("force=true"))
+        assertProjectFileExists("sd-filesearchfail-src/filesearchfail/FileSearchFail.java")
+        assertFileContains("sd-filesearchfail-src/filesearchfail/FileSearchFail.java", "class FileSearchFail")
+    }
+
+    /**
+     * force=true means "delete regardless of usages", so a failed usage search must not
+     * block it — otherwise the documented escape hatch in the refusal message would be
+     * a dead end.
+     */
+    fun testUsageSearchFailureWithForceStillDeletesTheSymbol() = runBlocking {
+        registerSourceRoot("sd-forcefail-src")
+        writeProjectFile(
+            "sd-forcefail-src/forcefail/ForceFail.java", """
+            package forcefail;
+
+            public class ForceFail {
+                public String unusedHelper() {
+                    return "unused";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.usageSearchHook = { throw IllegalStateException("simulated search failure") }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-forcefail-src/forcefail/ForceFail.java")
+            put("line", 4)
+            put("column", 19)
+            put("force", true)
+        })
+
+        assertToolSucceeded("force=true must delete even when the usage search fails", result)
+        val payload = decodeRefactoring(toolText(result))
+        assertTrue("Payload must report success", payload.success)
+        assertFileDoesNotContain("sd-forcefail-src/forcefail/ForceFail.java", "unusedHelper")
+        assertFileContains("sd-forcefail-src/forcefail/ForceFail.java", "public class ForceFail")
+    }
+
+    fun testUsageSearchFailureWithForceStillDeletesTheFile() = runBlocking {
+        registerSourceRoot("sd-forcefilefail-src")
+        writeProjectFile(
+            "sd-forcefilefail-src/forcefilefail/ForceFileFail.java", """
+            package forcefilefail;
+
+            public class ForceFileFail {
+                public String helper() {
+                    return "helper";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.usageSearchHook = { throw IllegalStateException("simulated search failure") }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-forcefilefail-src/forcefilefail/ForceFileFail.java")
+            put("target_type", "file")
+            put("force", true)
+        })
+
+        assertToolSucceeded("force=true must delete the file even when the usage search fails", result)
+        val payload = decodeRefactoring(toolText(result))
+        assertTrue("Payload must report success", payload.success)
+        assertProjectFileAbsent("sd-forcefilefail-src/forcefilefail/ForceFileFail.java")
+    }
+
+    /**
+     * [IndexNotReadyException] thrown mid-search (dumb mode starting after the smart-mode
+     * gate) must reach [com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool]'s
+     * translation into the standard dumb-mode retry error instead of being swallowed into
+     * an empty usage list followed by a delete.
+     */
+    fun testDumbModeDuringUsageSearchSurfacesTheRetryErrorInsteadOfDeleting() = runBlocking {
+        registerSourceRoot("sd-dumbfail-src")
+        writeProjectFile(
+            "sd-dumbfail-src/dumbfail/DumbFail.java", """
+            package dumbfail;
+
+            public class DumbFail {
+                public String unusedHelper() {
+                    return "unused";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.usageSearchHook = { throw IndexNotReadyException.create() }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "sd-dumbfail-src/dumbfail/DumbFail.java")
+            put("line", 4)
+            put("column", 19)
+        })
+
+        assertToolFailed("Dumb mode during the usage search must not end in a delete", result)
+        assertTrue(
+            "The standard dumb-mode retry guidance must surface. Got: ${toolText(result)}",
+            toolText(result).contains("ide_index_status")
+        )
+        assertFileContains("sd-dumbfail-src/dumbfail/DumbFail.java", "unusedHelper")
+    }
+
+    fun testProcessCancellationDuringUsageSearchIsNotSwallowedIntoADelete() {
+        registerSourceRoot("sd-pcefail-src")
+        writeProjectFile(
+            "sd-pcefail-src/pcefail/PceFail.java", """
+            package pcefail;
+
+            public class PceFail {
+                public String unusedHelper() {
+                    return "unused";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = SafeDeleteTool()
+        tool.usageSearchHook = { throw ProcessCanceledException() }
+
+        val thrown = runCatching {
+            runBlocking {
+                tool.execute(project, buildJsonObject {
+                    put("file", "sd-pcefail-src/pcefail/PceFail.java")
+                    put("line", 4)
+                    put("column", 19)
+                })
+            }
+        }.exceptionOrNull()
+
+        assertNotNull("Cancellation must propagate, not turn into a successful delete", thrown)
+        assertFileContains("sd-pcefail-src/pcefail/PceFail.java", "unusedHelper")
+    }
+
+    /**
+     * Deletes and recreates [relativePath] with identical content. Every PSI element the
+     * tool captured during its preparation phase belongs to the old, now-deleted file and
+     * is therefore invalid — while the source text is still on disk, exactly like an
+     * external tool rewriting the file mid-operation.
+     */
+    private fun recreateFileOnDisk(relativePath: String) {
+        val basePath = requireNotNull(project.basePath)
+        val content = readProjectFileVfs(relativePath)
+        val virtualFile = requireNotNull(
+            LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")
+        ) { "Missing test file $relativePath" }
+        ApplicationManager.getApplication().runWriteAction { virtualFile.delete(this) }
+        writeProjectFile(relativePath, content)
     }
 }

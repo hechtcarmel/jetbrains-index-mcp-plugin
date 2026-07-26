@@ -52,7 +52,8 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
         val success: Boolean,
         val file: String,
         val replacements: Int,
-        val message: String
+        val message: String,
+        val affectedLines: List<Int>? = null
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
@@ -88,20 +89,28 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
 
         var replacements = 0
         var relativePath = filePath
+        var affectedLines: List<Int>? = null
 
         suspendingWriteAction(project, "Replace text in $filePath") {
             val document = FileDocumentManager.getInstance().getDocument(virtualFile)
                 ?: throw Exception("Cannot get document for $filePath")
 
             val text = document.text
+            // Start offsets of each replacement, expressed in the NEW text's coordinates,
+            // so they can be mapped to line numbers after setText.
+            val replacementOffsets = mutableListOf<Int>()
 
             val newText = if (regex != null) {
+                var offsetDelta = 0
                 regex.replace(text) { matchResult ->
                     replacements++
-                    effectiveReplaceText.replace(Regex("\\$(\\d+)")) { groupRef ->
+                    val replacement = effectiveReplaceText.replace(Regex("\\$(\\d+)")) { groupRef ->
                         val groupIndex = groupRef.groupValues[1].toIntOrNull() ?: 0
                         matchResult.groupValues.getOrElse(groupIndex) { groupRef.value }
                     }
+                    replacementOffsets.add(matchResult.range.first + offsetDelta)
+                    offsetDelta += replacement.length - matchResult.value.length
+                    replacement
                 }
             } else {
                 val sb = StringBuilder()
@@ -111,6 +120,7 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
                     val idx = text.indexOf(searchText, pos, ignoreCase = !caseSensitive)
                     if (idx == -1) break
                     sb.append(text, pos, idx)
+                    replacementOffsets.add(sb.length)
                     sb.append(effectiveReplaceText)
                     replacements++
                     pos = idx + searchLen
@@ -121,6 +131,11 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
 
             if (replacements > 0) {
                 document.setText(newText)
+                affectedLines = replacementOffsets.asSequence()
+                    .map { document.getLineNumber(it) + 1 }
+                    .distinct()
+                    .take(MAX_AFFECTED_LINES)
+                    .toList()
                 PsiDocumentManager.getInstance(project).commitDocument(document)
                 FileDocumentManager.getInstance().saveDocument(document)
             }
@@ -141,8 +156,13 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
             success = true,
             file = relativePath,
             replacements = replacements,
-            message = "Replaced $replacements occurrence(s) in $relativePath"
+            message = "Replaced $replacements occurrence(s) in $relativePath",
+            affectedLines = affectedLines
         ))
+    }
+
+    private companion object {
+        const val MAX_AFFECTED_LINES = 100
     }
 
     private fun unescapeText(text: String): String {

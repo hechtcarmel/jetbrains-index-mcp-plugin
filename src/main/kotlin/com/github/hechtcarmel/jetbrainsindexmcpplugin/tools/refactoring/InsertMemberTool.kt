@@ -125,7 +125,9 @@ class InsertMemberTool : AbstractMcpTool() {
         return Result.success(InsertPreparation(psiFile, document, insertionOffset, relativePath))
     }
 
-    private suspend fun applyInsertion(
+    // Internal (not private) so tests can drive the stale-preparation guards directly:
+    // the read-prepare/write-apply gap cannot be reproduced through doExecute alone.
+    internal suspend fun applyInsertion(
         project: Project,
         prep: InsertPreparation,
         content: String,
@@ -135,8 +137,20 @@ class InsertMemberTool : AbstractMcpTool() {
 
         var startLine = 0
         var endLine = 0
+        var error: String? = null
 
         suspendingWriteAction(project, "Insert member") {
+            if (!prep.psiFile.isValid) {
+                error =
+                    "PSI file for '${prep.relativePath}' is no longer valid. The document may have been modified externally — retry the operation."
+                return@suspendingWriteAction
+            }
+            val docLength = prep.document.textLength
+            if (prep.insertionOffset < 0 || prep.insertionOffset > docLength) {
+                error =
+                    "Insertion offset ${prep.insertionOffset} is out of bounds (document length: ${docLength}). The document may have been modified externally — retry the operation."
+                return@suspendingWriteAction
+            }
             prep.document.insertString(prep.insertionOffset, insertText)
             MemberEditingUtils.commitDocuments(project)
             if (reformat) {
@@ -148,6 +162,11 @@ class InsertMemberTool : AbstractMcpTool() {
             startLine = MemberEditingUtils.safeLineNumber(prep.document, prep.insertionOffset)
             endLine = MemberEditingUtils.safeLineNumber(prep.document, prep.insertionOffset + insertText.length)
         }
+
+        if (error != null) {
+            return createErrorResult(error!!)
+        }
+
         MemberEditingUtils.saveToDisk()
 
         return createJsonResult(MemberEditResult(

@@ -433,7 +433,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
 
             overridingMethods.filterIsInstance<PsiElement>()
                 .filter { shouldIncludeNavigationElement(searchScope, it) }
-                .take(100)
+                .take(MAX_COLLECTED_NAVIGATION_RESULTS)
                 .mapNotNull { overridingMethod ->
                     val file = overridingMethod.containingFile?.virtualFile ?: return@mapNotNull null
                     val containingClass = findContainingPyClass(overridingMethod)
@@ -468,7 +468,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
 
             inheritors.filterIsInstance<PsiElement>()
                 .filter { shouldIncludeNavigationElement(searchScope, it) }
-                .take(100)
+                .take(MAX_COLLECTED_NAVIGATION_RESULTS)
                 .mapNotNull { inheritor ->
                     val file = inheritor.containingFile?.virtualFile ?: return@mapNotNull null
                     ImplementationData(

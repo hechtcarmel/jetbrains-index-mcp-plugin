@@ -42,8 +42,8 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
     }
 
     /**
-     * With lifecycle management disabled (the default) nothing is enrolled, so `managed` must be
-     * false and the `mode` key must be absent rather than present-and-null — agents branch on it.
+     * Nothing is enrolled by default, so `managed` must be false and the `mode` key must be
+     * absent rather than present-and-null — agents branch on it.
      */
     fun testUnmanagedProjectOmitsModeEntirely() = runBlocking {
         val result = ProjectStatusTool().execute(project, buildJsonObject { })
@@ -52,7 +52,7 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
         val self = payload["projects"]!!.jsonArray.map { it.jsonObject }
             .single { it["path"]?.jsonPrimitive?.content == project.basePath }
 
-        assertFalse("Lifecycle is off by default, so nothing is managed", self["managed"]!!.jsonPrimitive.boolean)
+        assertFalse("Nothing is enrolled by default, so nothing is managed", self["managed"]!!.jsonPrimitive.boolean)
         assertNull("mode must be omitted for unmanaged projects, not serialized as null", self["mode"])
     }
 
@@ -62,17 +62,22 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
      * either 1 or 0 and the summary arithmetic is untestable. `managed_closed` in particular is
      * `0 == 0` for any predicate you write when there is only one row.
      */
-    private fun withSyntheticManagedProjects(vararg closedPaths: String, body: () -> Unit) {
+    private fun withSyntheticManagedProjects(
+        vararg managedPaths: String,
+        closedPaths: Set<String> = managedPaths.toSet(),
+        lifecycleEnabled: Boolean = true,
+        body: () -> Unit
+    ) {
         val settings = McpSettings.getInstance()
         val service = ProjectModeService.getInstance()
         val previousLifecycle = settings.lifecycleEnabled
         val previousState = service.getAllManagedModes().keys.toSet()
         try {
-            settings.lifecycleEnabled = true
+            settings.lifecycleEnabled = lifecycleEnabled
             service.loadState(
                 ProjectModeService.State(
                     closedProjectPaths = ConcurrentHashMap.newKeySet<String>().apply { addAll(closedPaths) },
-                    managedProjectPaths = ConcurrentHashMap.newKeySet<String>().apply { addAll(closedPaths) }
+                    managedProjectPaths = ConcurrentHashMap.newKeySet<String>().apply { addAll(managedPaths) }
                 )
             )
             body()
@@ -140,6 +145,70 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
                 "managed_closed must equal managed rows that are not open",
                 2,
                 summary["managed_closed"]!!.jsonPrimitive.int
+            )
+            assertTrue(
+                "The summary must surface the lifecycle toggle state",
+                summary["lifecycle_enabled"]!!.jsonPrimitive.boolean
+            )
+            assertNull("No note when lifecycle automation is enabled", summary["note"])
+        }
+    }
+
+    /**
+     * `lifecycleEnabled` pauses automation; it never un-enrolls projects — the settings toggle
+     * flips only the flag, while releasing enrollments is a separate explicit action. So the
+     * registry read must be unconditional: a project enrolled earlier must still report
+     * managed=true while the toggle is off, exactly as `ide_get_project_modes` already does.
+     * Gating the read behind the toggle made the two tools disagree on the same registry.
+     */
+    fun testManagedProjectsAreReportedEvenWhenLifecycleAutomationIsDisabled() = runBlocking {
+        withSyntheticManagedProjects(
+            "/synthetic/enrolled-elsewhere",
+            closedPaths = emptySet(),
+            lifecycleEnabled = false
+        ) {
+            val result = runBlocking { ProjectStatusTool().execute(project, buildJsonObject { }) }
+            assertToolSucceeded("project_status should succeed", result)
+
+            val payload = json.parseToJsonElement(toolText(result)).jsonObject
+            val projects = payload["projects"]!!.jsonArray.map { it.jsonObject }
+            val enrolled = projects.singleOrNull {
+                it["path"]?.jsonPrimitive?.content == "/synthetic/enrolled-elsewhere"
+            }
+            assertNotNull("An enrolled project must be reported even while automation is paused", enrolled)
+            assertTrue(
+                "Enrollment is persisted state, not gated by the lifecycle toggle",
+                enrolled!!["managed"]!!.jsonPrimitive.boolean
+            )
+            assertEquals(
+                "A managed path that was never closed falls back to background mode",
+                "background",
+                enrolled["mode"]?.jsonPrimitive?.content
+            )
+
+            val summary = payload["summary"]!!.jsonObject
+            assertEquals("The enrolled project counts as managed", 1, summary["managed"]!!.jsonPrimitive.int)
+            assertFalse(
+                "lifecycle_enabled must report the toggle as off",
+                summary["lifecycle_enabled"]!!.jsonPrimitive.boolean
+            )
+            assertNotNull(
+                "Disabled-but-enrolled state must carry an explanatory note",
+                summary["note"]
+            )
+
+            // Cross-tool agreement: ide_get_project_modes reads the same registry unconditionally,
+            // so both tools must report the same managed set in the same state.
+            val modesResult = runBlocking { GetProjectModesTool().execute(project, buildJsonObject { }) }
+            assertToolSucceeded("get_project_modes should succeed", modesResult)
+            val managedInModes = json.parseToJsonElement(toolText(modesResult)).jsonObject["managed_projects"]!!
+                .jsonArray.map { it.jsonObject["path"]!!.jsonPrimitive.content }.toSet()
+            val managedInStatus = projects.filter { it["managed"]!!.jsonPrimitive.boolean }
+                .map { it["path"]!!.jsonPrimitive.content }.toSet()
+            assertEquals(
+                "Both lifecycle tools must agree on which projects are managed",
+                managedInModes,
+                managedInStatus
             )
         }
     }

@@ -400,14 +400,28 @@ class FindClassTool : AbstractMcpTool() {
     }
 
     private fun determineKind(element: PsiElement): String {
-        val className = element.javaClass.simpleName.lowercase()
+        fun probe(methodName: String): Boolean = try {
+            element.javaClass.getMethod(methodName).invoke(element) == true
+        } catch (_: Exception) {
+            false
+        }
         return when {
-            className.contains("interface") -> "INTERFACE"
-            className.contains("enum") -> "ENUM"
-            className.contains("class") -> "CLASS"
-            className.contains("struct") -> "STRUCT"
-            className.contains("trait") -> "TRAIT"
-            else -> "CLASS"
+            // isAnnotationType must precede isInterface: Java PSI reports annotation types as interfaces too
+            probe("isAnnotationType") || probe("isAnnotation") -> "ANNOTATION"
+            probe("isRecord") -> "RECORD"
+            probe("isEnum") -> "ENUM"
+            probe("isInterface") -> "INTERFACE"
+            probe("isTrait") -> "TRAIT"
+            else -> {
+                val className = element.javaClass.simpleName.lowercase()
+                when {
+                    className.contains("interface") -> "INTERFACE"
+                    className.contains("enum") -> "ENUM"
+                    className.contains("struct") -> "STRUCT"
+                    className.contains("trait") -> "TRAIT"
+                    else -> "CLASS"
+                }
+            }
         }
     }
 

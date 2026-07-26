@@ -814,7 +814,7 @@ schema:
 description:
   Find all references to a symbol across the project. Use when you need to understand how a class, method, field, or variable is used before modifying or removing it.
   
-  Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.).
+  Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.). resolvedSymbol echoes the declaration that was actually searched — positions on comments or whitespace snap to the nearest enclosing named element, so check it matches the symbol you intended. totalCount is the number of references collected so far; when totalIsExact is false it is a lower bound ("at least N").
   
   Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
   

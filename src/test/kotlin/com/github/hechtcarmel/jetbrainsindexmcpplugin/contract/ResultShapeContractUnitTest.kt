@@ -14,6 +14,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ResolvedSymbolInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.GetActiveFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
@@ -521,7 +522,15 @@ class ResultShapeContractUnitTest : TestCase() {
                     totalCollected = 120,
                     offset = 25,
                     pageSize = 25,
-                    stale = true
+                    stale = true,
+                    resolvedSymbol = ResolvedSymbolInfo(
+                        name = "handle",
+                        kind = "method",
+                        container = "com.example.Service",
+                        file = "src/main/java/com/example/Service.java",
+                        line = 42
+                    ),
+                    totalIsExact = false
                 )
             ),
             struct(
@@ -964,7 +973,8 @@ class ResultShapeContractUnitTest : TestCase() {
                     success = true,
                     file = "src/main/java/com/example/Service.java",
                     replacements = 4,
-                    message = "Replaced 4 occurrences"
+                    message = "Replaced 4 occurrences",
+                    affectedLines = listOf(10, 24)
                 )
             ),
             enumWire(ConversionStatus.serializer(), ConversionStatus.entries),

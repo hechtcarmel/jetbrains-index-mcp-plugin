@@ -1,10 +1,22 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiNamedElement
+
+/**
+ * Maximum number of results a navigation handler collects in a single search.
+ *
+ * Paginated navigation tools (e.g. `ide_find_implementations`) create their cursor with
+ * `searchExtender = null`, which [PaginationService] interprets as "the cached results are
+ * the complete set" when computing `hasMore`. Handlers must therefore collect up to the
+ * pagination cache bound — a smaller cap would be reported to clients as a complete result
+ * (`hasMore = false`) even though the search was silently truncated.
+ */
+const val MAX_COLLECTED_NAVIGATION_RESULTS = PaginationService.MAX_CACHED_RESULTS_PER_CURSOR
 
 /**
  * Base interface for language-specific handlers.

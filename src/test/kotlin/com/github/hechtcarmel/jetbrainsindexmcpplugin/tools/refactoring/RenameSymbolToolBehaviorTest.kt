@@ -213,4 +213,120 @@ class RenameSymbolToolBehaviorTest : McpPlatformTestCase() {
         assertRenamedInFile("cross-class-src/crossclass/ReportPrinter.java", "LegacyReport", "ArchivedReport")
         assertFileContains("cross-class-src/crossclass/ReportPrinter.java", "public String print(ArchivedReport source)")
     }
+
+    // ── Java: file rename mode ──
+    //
+    // Renaming a Java file without renaming its matching public class leaves
+    // `public class Foo` inside `Bar.java` — guaranteed non-compiling output. File mode must
+    // retarget onto the class (which renames the file and all references), but ONLY when the
+    // class name matches the file base name; otherwise a plain file rename must be preserved.
+
+    fun testJavaFileRenameRetargetsToMatchingClassAndUpdatesReferences() = runBlocking {
+        registerSourceRoot("file-rename-src")
+        writeProjectFile(
+            "file-rename-src/filerename/ExternalCaller.java", """
+            package filerename;
+
+            public class ExternalCaller {
+                public String call() {
+                    return "called";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "file-rename-src/filerename/CallerClient.java", """
+            package filerename;
+
+            public class CallerClient {
+                public String use(ExternalCaller caller) {
+                    return caller.call();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "file-rename-src/filerename/ExternalCaller.java")
+            put("targetType", "file")
+            put("newName", "ExternalGreetingCaller.java")
+        })
+
+        assertToolSucceeded("Java file rename with matching class should succeed", result)
+        assertProjectFileAbsent("file-rename-src/filerename/ExternalCaller.java")
+        assertProjectFileExists("file-rename-src/filerename/ExternalGreetingCaller.java")
+        assertRenamedInFile(
+            "file-rename-src/filerename/ExternalGreetingCaller.java",
+            "ExternalCaller",
+            "ExternalGreetingCaller"
+        )
+        assertFileContains(
+            "file-rename-src/filerename/ExternalGreetingCaller.java",
+            "public class ExternalGreetingCaller {"
+        )
+        assertRenamedInFile(
+            "file-rename-src/filerename/CallerClient.java",
+            "ExternalCaller",
+            "ExternalGreetingCaller"
+        )
+    }
+
+    fun testJavaFileRenameWithMismatchedClassNameFallsBackToPlainFileRename() = runBlocking {
+        writeProjectFile(
+            "src/misc/Helpers.java", """
+            class HelperImpl {
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/misc/Helpers.java")
+            put("targetType", "file")
+            put("newName", "Utility.java")
+        })
+
+        assertToolSucceeded("Mismatched-class Java file rename should fall back to plain file rename", result)
+        assertProjectFileAbsent("src/misc/Helpers.java")
+        assertProjectFileExists("src/misc/Utility.java")
+        assertFileContains("src/misc/Utility.java", "class HelperImpl")
+        assertFileDoesNotContain("src/misc/Utility.java", "class Utility")
+    }
+
+    // ── Conflict error sanitization ──
+    //
+    // Java's conflict messages are built for the IDE's HTML ConflictsDialog: element names
+    // arrive wrapped in <b><code>…</code></b>. A method-onto-existing-method rename is used
+    // here because ConflictsUtil.checkMethodConflicts produces exactly that markup, so this
+    // test fails when the sanitization is removed.
+
+    fun testJavaRenameConflictErrorContainsNoHtmlMarkup() = runBlocking {
+        writeProjectFile(
+            "src/ConflictHost.java", """
+            public class ConflictHost {
+                public String getName() {
+                    return "a";
+                }
+                public String getTitle() {
+                    return "b";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/ConflictHost.java")
+            put("targetType", "symbol")
+            put("line", 5)
+            put("column", 19)
+            put("newName", "getName")
+        })
+
+        assertToolFailed("Renaming a method onto an existing method name should report a conflict", result)
+        val message = toolText(result)
+        assertTrue("Expected a name-conflict error, got: $message", message.contains("Name conflict"))
+        assertTrue("Conflict message should name the conflicting method, got: $message", message.contains("getName"))
+        assertFalse("Conflict message must not contain '<b>': $message", message.contains("<b>"))
+        assertFalse("Conflict message must not contain '<code>': $message", message.contains("<code>"))
+        assertFalse("Conflict message must not contain '&lt;': $message", message.contains("&lt;"))
+    }
 }

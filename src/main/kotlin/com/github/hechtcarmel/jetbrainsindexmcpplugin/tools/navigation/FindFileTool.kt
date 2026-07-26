@@ -18,6 +18,7 @@ import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -218,6 +219,10 @@ class FindFileTool : AbstractMcpTool() {
 
             try {
                 processContributor(contributor, project, pattern, searchScope, scope, limit, matcher, results, seen)
+            } catch (e: ProcessCanceledException) {
+                // Swallowing cancellation would silently truncate the result set mid-enumeration
+                // while still reporting it as complete.
+                throw e
             } catch (e: Exception) {
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }
@@ -241,16 +246,25 @@ class FindFileTool : AbstractMcpTool() {
             // Modern API with Processor pattern
             val matchingNames = mutableListOf<String>()
 
+            // The name enumeration must not be capped: the underlying index streams keys for a
+            // scope-blind superset (project content + all libraries + SDK) in stable hash order,
+            // ignoring searchScope. Any cap here fills with out-of-scope names and silently drops
+            // in-scope matches. The only legitimate limiter is the result cap in phase 2 below —
+            // the same approach as the IDE's own Goto File (DefaultChooseByNameItemProvider).
             contributor.processNames(
                 { name ->
                     if (matcher.matches(name)) {
                         matchingNames.add(name)
                     }
-                    matchingNames.size < limit * 3
+                    true
                 },
                 searchScope,
                 null
             )
+
+            // Resolve best-matching names first so that when more than `limit` in-scope files
+            // match, the results kept are the best matches instead of hash-order-arbitrary ones.
+            matchingNames.sortByDescending { matcher.matchingDegree(it) }
 
             for (name in matchingNames) {
                 if (results.size >= limit) break

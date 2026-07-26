@@ -60,6 +60,73 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
         val payload = parseResult(result)
         assertTrue(payload.success)
         assertEquals(0, payload.replacements)
+        assertNull("No replacements means no affected lines", payload.affectedLines)
+    }
+
+    fun testAffectedLinesLiteralReplacement() = runBlocking {
+        writeProjectFile("src/Lines.java", """
+            public class Lines {
+                int a = OLD; int b = OLD;
+                int c = 1;
+                int d = 2;
+                int e = OLD;
+            }
+        """.trimIndent())
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/Lines.java")
+            put("searchText", "OLD")
+            put("replaceText", "NEW")
+        })
+
+        assertToolSucceeded("Replace should succeed", result)
+        val payload = parseResult(result)
+        assertEquals(3, payload.replacements)
+        assertEquals("Two matches on line 2 must collapse to one entry", listOf(2, 5), payload.affectedLines)
+
+        assertFileDoesNotContain("src/Lines.java", "OLD")
+        assertFileContains("src/Lines.java", "int a = NEW; int b = NEW;")
+        assertFileContains("src/Lines.java", "int e = NEW;")
+    }
+
+    fun testAffectedLinesRegexReplacementTracksLineShifts() = runBlocking {
+        writeProjectFile("src/Shift.java", "AAA FOO\nBBB FOO")
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/Shift.java")
+            put("searchText", "FOO")
+            put("replaceText", "LONG1\\nLONG2")
+            put("regex", true)
+        })
+
+        assertToolSucceeded("Regex replace should succeed", result)
+        val payload = parseResult(result)
+        assertEquals(2, payload.replacements)
+        // The first replacement inserts a newline, pushing the second match from
+        // line 2 of the old text to line 3 of the new text.
+        assertEquals(listOf(1, 3), payload.affectedLines)
+
+        assertFileDoesNotContain("src/Shift.java", "FOO")
+        assertEquals("AAA LONG1\nLONG2\nBBB LONG1\nLONG2", readProjectFileVfs("src/Shift.java"))
+    }
+
+    fun testAffectedLinesCappedAtOneHundred() = runBlocking {
+        val content = (1..150).joinToString("\n") { "// MARK line $it" }
+        writeProjectFile("src/Many.java", content)
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/Many.java")
+            put("searchText", "MARK")
+            put("replaceText", "DONE")
+        })
+
+        assertToolSucceeded("Replace should succeed", result)
+        val payload = parseResult(result)
+        assertEquals(150, payload.replacements)
+        assertEquals((1..100).toList(), payload.affectedLines)
+
+        assertFileDoesNotContain("src/Many.java", "MARK")
+        assertFileContains("src/Many.java", "// DONE line 150")
     }
 
     fun testReplaceWithRegex() = runBlocking {
