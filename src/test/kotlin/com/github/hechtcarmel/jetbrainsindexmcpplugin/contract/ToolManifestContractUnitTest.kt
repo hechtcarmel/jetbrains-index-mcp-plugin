@@ -3,6 +3,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.contract
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
+import io.modelcontextprotocol.kotlin.sdk.types.McpJson
+import kotlinx.serialization.json.encodeToJsonElement
 import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
@@ -173,7 +175,7 @@ class ToolManifestContractUnitTest : TestCase() {
                 appendLine("description:")
                 tool.description.trim().lines().forEach { appendLine("  $it") }
                 appendLine("schema:")
-                appendLine(canonicalJson(tool.inputSchema, indent = "  "))
+                appendLine(canonicalJson(McpJson.encodeToJsonElement(tool.inputSchema), indent = "  "))
             }
         }
     }

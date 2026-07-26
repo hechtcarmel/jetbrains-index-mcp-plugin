@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.ide.RecentProjectsManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -35,11 +36,11 @@ class CloseProjectTool : AbstractMcpTool() {
         Example: { "project_path": "/Users/dev/myproject" }
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }
         if (openProjects.size <= 1) {
             return createErrorResult(

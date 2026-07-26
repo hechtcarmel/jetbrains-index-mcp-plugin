@@ -2,11 +2,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ListTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.project.Project
@@ -44,7 +45,7 @@ class ListTestsTool : AbstractMcpTool() {
         Example: {} or {"file": "src/test/kotlin/com/example/MyTest.kt"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(
             required = false,
@@ -52,7 +53,7 @@ class ListTestsTool : AbstractMcpTool() {
         )
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         requireSmartMode(project)
 
         val frameworks = TestFramework.EXTENSION_NAME.extensionList

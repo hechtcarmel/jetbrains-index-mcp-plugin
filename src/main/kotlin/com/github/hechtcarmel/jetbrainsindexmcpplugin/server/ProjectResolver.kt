@@ -4,8 +4,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
 import com.intellij.ide.impl.OpenProjectTask
@@ -60,13 +61,13 @@ internal fun buildAvailableProjectsJson(
 internal fun buildStructuredErrorResult(
     payload: JsonObject,
     format: McpSettings.ResponseFormat = McpSettings.ResponseFormat.JSON
-): ToolCallResult {
+): CallToolResult {
     val json = Json { encodeDefaults = true; prettyPrint = false }
     return try {
         val jsonText = json.encodeToString(payload)
-        ToolCallResult(
+        CallToolResult(
             content = listOf(
-                ContentBlock.Text(
+                TextContent(
                     text = ResponseFormatter.formatStructuredPayload(jsonText, format)
                 )
             ),
@@ -74,8 +75,8 @@ internal fun buildStructuredErrorResult(
         )
     } catch (e: Exception) {
         val message = e.message?.takeIf { it.isNotBlank() } ?: "unknown error"
-        ToolCallResult(
-            content = listOf(ContentBlock.Text(text = "Response formatting failed: $message")),
+        CallToolResult(
+            content = listOf(TextContent(text = "Response formatting failed: $message")),
             isError = true
         )
     }
@@ -112,7 +113,7 @@ object ProjectResolver {
 
     data class Result(
         val project: Project? = null,
-        val errorResult: ToolCallResult? = null,
+        val errorResult: CallToolResult? = null,
         val isError: Boolean = false
     )
 

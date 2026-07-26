@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
@@ -165,17 +165,11 @@ class ToolRegistry {
      *
      * @return List of enabled tool definitions with name, description, and schema
      */
-    fun getToolDefinitions(): List<ToolDefinition> {
+    fun getToolDefinitions(): List<Tool> {
         val settings = McpSettings.getInstance()
         return tools.values
             .filter { settings.isToolEnabled(it.name) }
-            .map { tool ->
-                ToolDefinition(
-                    name = tool.name,
-                    description = tool.description,
-                    inputSchema = tool.inputSchema
-                )
-            }
+            .map { it.toMcpTool() }
     }
 
     /**
@@ -184,15 +178,13 @@ class ToolRegistry {
      *
      * @return List of all tool definitions
      */
-    fun getAllToolDefinitions(): List<ToolDefinition> {
-        return tools.values.map { tool ->
-            ToolDefinition(
-                name = tool.name,
-                description = tool.description,
-                inputSchema = tool.inputSchema
-            )
-        }
-    }
+    fun getAllToolDefinitions(): List<Tool> = tools.values.map { it.toMcpTool() }
+
+    private fun McpTool.toMcpTool() = Tool(
+        name = name,
+        description = description,
+        inputSchema = inputSchema
+    )
 
     /**
      * Registers all built-in tools.

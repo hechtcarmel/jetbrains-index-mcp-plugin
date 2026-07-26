@@ -2,11 +2,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector.extractTestRunnerResultsViewer
@@ -90,7 +91,7 @@ class RunTestsTool : AbstractMcpTool() {
         Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(
             ParamNames.TARGET,
@@ -100,7 +101,7 @@ class RunTestsTool : AbstractMcpTool() {
         .intProperty(ParamNames.TIMEOUT_SECONDS, "Timeout in seconds. Default: $DEFAULT_TIMEOUT_SECONDS.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val target = requiredStringArg(arguments, ParamNames.TARGET).getOrElse {
             return createErrorResult(it.message ?: "target is required")
         }
@@ -126,7 +127,7 @@ class RunTestsTool : AbstractMcpTool() {
         project: Project,
         runConfiguration: RunnerAndConfigurationSettings,
         timeout: Duration
-    ): ToolCallResult {
+    ): CallToolResult {
         val configName = runConfiguration.name
         val executor = DefaultRunExecutor.getRunExecutorInstance()
         val env = ExecutionEnvironmentBuilder.createOrNull(executor, runConfiguration)?.build()

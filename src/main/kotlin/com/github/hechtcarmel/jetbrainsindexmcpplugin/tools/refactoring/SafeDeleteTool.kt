@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
@@ -59,7 +60,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         - File: {"file": "src/UnusedUtils.java", "target_type": "file"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(description = "Path to file relative to project root. REQUIRED.")
         .intProperty("line", "1-based line number where the symbol is located. REQUIRED when target_type='symbol' (default).")
@@ -124,7 +125,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         data class NonPhysicalFile(val fileName: String) : FilePreparationResult()
     }
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }
@@ -156,7 +157,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         line: Int,
         column: Int,
         force: Boolean
-    ): ToolCallResult {
+    ): CallToolResult {
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and check usages (suspending read action)
         // ═══════════════════════════════════════════════════════════════════════
@@ -216,7 +217,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         project: Project,
         file: String,
         force: Boolean
-    ): ToolCallResult {
+    ): CallToolResult {
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Collect symbols and find external usages
         // ═══════════════════════════════════════════════════════════════════════
@@ -259,7 +260,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         project: Project,
         preparation: SymbolDeletePreparation,
         force: Boolean
-    ): ToolCallResult {
+    ): CallToolResult {
         var success = false
         var errorMessage: String? = null
 
@@ -305,7 +306,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         project: Project,
         preparation: FileDeletePreparation,
         force: Boolean
-    ): ToolCallResult {
+    ): CallToolResult {
         var success = false
         var errorMessage: String? = null
 

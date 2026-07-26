@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.EnrollAllProjectsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.GetProjectModesTool
@@ -44,20 +47,20 @@ class LifecycleToolsTest : BasePlatformTestCase() {
         }
     }
 
-    private fun resultText(result: ToolCallResult): String =
-        (result.content.firstOrNull() as? ContentBlock.Text)?.text ?: ""
+    private fun resultText(result: CallToolResult): String =
+        (result.content.firstOrNull() as? TextContent)?.text ?: ""
 
     fun testSetProjectModeToolReturnErrorWhenModeIsMissing() = runBlocking {
         val result = SetProjectModeTool().execute(project, buildJsonObject { })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("mode", ignoreCase = true))
     }
 
     fun testSetProjectModeToolReturnErrorWhenModeIsInvalid() = runBlocking {
         val result = SetProjectModeTool().execute(project, buildJsonObject { put("mode", "TURBO_SLEEP") })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         val text = resultText(result)
         assertTrue(text.contains("TURBO_SLEEP", ignoreCase = true))
         // Error must name all valid modes so the caller knows how to fix it
@@ -70,7 +73,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
     fun testSetProjectModeToolSetsActiveMode() = runBlocking {
         val result = SetProjectModeTool().execute(project, buildJsonObject { put("mode", "active") })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertEquals(ProjectMode.ACTIVE, modeService.getMode(project))
     }
 
@@ -80,14 +83,14 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = SetProjectModeTool().execute(project, buildJsonObject { put("mode", "background") })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertEquals(ProjectMode.BACKGROUND, modeService.getMode(project))
     }
 
     fun testSetProjectModeToolSetsDormantMode() = runBlocking {
         val result = SetProjectModeTool().execute(project, buildJsonObject { put("mode", "dormant") })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertEquals(ProjectMode.DORMANT, modeService.getMode(project))
     }
 
@@ -101,7 +104,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
     fun testSetProjectModeToolModeIsCaseInsensitive() = runBlocking {
         val result = SetProjectModeTool().execute(project, buildJsonObject { put("mode", "ACTIVE") })
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertEquals(ProjectMode.ACTIVE, modeService.getMode(project))
     }
 
@@ -112,7 +115,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
         try {
             val result = GetProjectModesTool().execute(project, buildJsonObject { })
 
-            assertFalse(result.isError)
+            assertFalse(result.isFailure)
             val text = resultText(result)
             assertTrue(
                 text.contains("No projects", ignoreCase = true) ||
@@ -129,7 +132,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = GetProjectModesTool().execute(project, buildJsonObject { })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         val text = resultText(result)
         assertTrue(text.contains(project.name) || text.contains(project.basePath ?: ""))
         assertTrue(text.contains("background", ignoreCase = true))
@@ -141,7 +144,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = GetProjectModesTool().execute(project, buildJsonObject { })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         val text = resultText(result)
         assertTrue(text.contains("closed", ignoreCase = true))
         assertTrue(text.contains(fakePath) || text.contains("project"))
@@ -153,7 +156,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = GetProjectModesTool().execute(project, buildJsonObject { })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         val parsed = json.parseToJsonElement(resultText(result)).jsonObject
         val total = parsed["total"]?.jsonPrimitive?.content?.toIntOrNull()
         assertNotNull("Result must include a total count", total)
@@ -169,7 +172,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
             val result = ReleaseProjectTool().execute(project, buildJsonObject { })
 
-            assertFalse(result.isError)
+            assertFalse(result.isFailure)
             assertTrue(resultText(result).contains("not managed", ignoreCase = true))
         } finally {
             settings.lifecycleEnabled = previouslyEnabled
@@ -181,7 +184,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = ReleaseProjectTool().execute(project, buildJsonObject { })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertFalse(modeService.isManaged(project))
     }
 
@@ -190,7 +193,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = ReleaseProjectTool().execute(project, buildJsonObject { })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertTrue(resultText(result).contains(project.name))
     }
 
@@ -200,7 +203,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = SetAllProjectModesTool().execute(project, buildJsonObject { put("mode", "background") })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertEquals(ProjectMode.BACKGROUND, modeService.getMode(project))
     }
 
@@ -209,7 +212,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = SetAllProjectModesTool().execute(project, buildJsonObject { put("mode", "closed") })
 
-        assertTrue("closed is not a valid mode for set_all_project_modes", result.isError)
+        assertTrue("closed is not a valid mode for set_all_project_modes", result.isFailure)
         val text = resultText(result)
         assertTrue(text.contains("active"))
         assertTrue(text.contains("background"))
@@ -221,7 +224,7 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         val result = SetAllProjectModesTool().execute(project, buildJsonObject { put("mode", "dormant") })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertTrue(resultText(result).contains("1"))
         assertTrue(resultText(result).contains(project.name))
     }

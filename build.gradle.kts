@@ -21,7 +21,6 @@ kotlin {
     jvmToolchain(21)
 }
 
-// Configure project's dependencies
 repositories {
     mavenCentral()
 
@@ -32,40 +31,64 @@ repositories {
 }
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog
-dependencies {
-    // MCP Kotlin SDK - exclude kotlinx-coroutines to use IntelliJ Platform's bundled version
-    implementation(libs.mcp.kotlin.sdk) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-bom")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
-        exclude(group = "org.slf4j")
-    }
+/**
+ * Artifacts the IntelliJ Platform already puts on the plugin classloader's parent. Bundling a
+ * second copy of any of them is either forbidden (kotlin-stdlib, kotlinx-coroutines — see
+ * https://jb.gg/intellij-platform-kotlin-coroutines) or pure weight.
+ *
+ * Verified present in the 2025.3 distribution:
+ *   kotlin-stdlib, kotlinx-coroutines, slf4j-api  → lib/util-8.jar
+ *   kotlin-reflect                                → lib/module-intellij.libraries.kotlin.reflect.jar
+ *
+ * kotlin-reflect matters beyond weight: Ktor drags in a version built against a newer stdlib
+ * than the platform ships, and reflect/stdlib must move together.
+ *
+ * NOT excluded, deliberately:
+ *   ktor-server        — the platform bundles only the Ktor *client*
+ *   kotlinx-serialization, kotlinx-io, kotlinx-collections-immutable — the platform has them,
+ *       but the SDK's generated serializers are compiled against 1.11.0 and the platform's are
+ *       older; plugin-first classloading keeps ours local to this plugin.
+ */
+fun ExternalModuleDependency.excludePlatformProvided() {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-reflect")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-bom")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
+    exclude(group = "org.slf4j")
+}
 
-    // Kotlinx Serialization
-    implementation(libs.kotlinx.serialization.json)
+// Configure project's dependencies
+dependencies {
+    // MCP protocol: JSON-RPC envelope, initialize/version negotiation, tools/list, tools/call,
+    // Streamable HTTP + legacy SSE transports, DNS-rebinding protection.
+    implementation(libs.mcp.kotlin.sdk.server) { excludePlatformProvided() }
+
     implementation(libs.jtoon)
 
-    // Ktor Server (for custom MCP server with configurable port)
-    implementation(libs.ktor.server.core) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
-    implementation(libs.ktor.server.cio) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
-    implementation(libs.ktor.server.cors) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
+    // Ktor engine. ktor-server-core arrives transitively from the SDK at the version the SDK was
+    // compiled against, which is exactly what we want. CORS is not a dependency: the plugin
+    // reflects loopback origins itself (see LocalOriginGuard) because Ktor's CORS plugin matches
+    // hosts including the port, and this server accepts any loopback port.
+    implementation(libs.ktor.server.cio) { excludePlatformProvided() }
+    // kotlin-sdk 0.10.0 installs the SSE plugin but not ContentNegotiation, and its transports
+    // answer with `call.respond(<serializable>)`. Without a JSON converter registered Ktor turns
+    // every MCP response into an empty 406. Later SDK versions install it themselves; until we
+    // can move to one, McpKtorServer installs it and these two artifacts supply it.
+    implementation(libs.ktor.server.content.negotiation) { excludePlatformProvided() }
+    implementation(libs.ktor.serialization.kotlinx.json) { excludePlatformProvided() }
 
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
+    // Drives the running server with an independent MCP implementation — the strongest available
+    // statement that the wire contract is intact.
+    testImplementation(libs.mcp.kotlin.sdk.client) { excludePlatformProvided() }
+    testImplementation(libs.ktor.client.cio) { excludePlatformProvided() }
     testImplementation(libs.mockk) {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")

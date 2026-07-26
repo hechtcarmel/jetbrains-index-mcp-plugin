@@ -2,9 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import kotlinx.serialization.json.JsonObject
@@ -34,7 +35,7 @@ class SetAllProjectModesTool : AbstractMcpTool() {
           does not limit which projects are affected.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .enumProperty(
             "mode",
             "Target mode: active, background, or dormant. (closed is not supported — use ide_set_project_mode per project.)",
@@ -44,7 +45,7 @@ class SetAllProjectModesTool : AbstractMcpTool() {
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val modeStr = arguments["mode"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: mode")
 

@@ -1,9 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
@@ -46,7 +47,7 @@ class OpenProjectTool : AbstractMcpTool() {
         Example: { "path": "/Users/dev/myproject" }
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .stringProperty("path", "Absolute filesystem path of the project directory to open.", required = true)
         .intProperty(
             ParamNames.TIMEOUT_SECONDS,
@@ -58,7 +59,7 @@ class OpenProjectTool : AbstractMcpTool() {
 
     private enum class OpenOutcome { OPEN_FAILED, CLOSED_WHILE_WAITING, READY }
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val path = requiredStringArg(arguments, "path").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: path")
         }

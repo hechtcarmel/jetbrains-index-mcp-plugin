@@ -1,6 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -16,7 +19,7 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
             put("content", "public class NewClass {\n    public void hello() {}\n}")
         })
 
-        assertFalse("Create should succeed: ${(result.content.singleOrNull() as? ContentBlock.Text)?.text}", result.isError)
+        assertFalse("Create should succeed: ${(result.content.singleOrNull() as? TextContent)?.text}", result.isFailure)
         val basePath = requireNotNull(project.basePath)
         assertTrue("File should exist on disk", Files.exists(Path.of(basePath, "src/NewClass.java")))
         val content = Files.readString(Path.of(basePath, "src/NewClass.java"))
@@ -34,8 +37,8 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
             put("content", "public class Replaced {}")
         })
 
-        assertTrue("Should fail for existing file", result.isError)
-        val text = (result.content.singleOrNull() as? ContentBlock.Text)?.text ?: ""
+        assertTrue("Should fail for existing file", result.isFailure)
+        val text = (result.content.singleOrNull() as? TextContent)?.text ?: ""
         assertTrue("Error should mention existing: $text", text.contains("already exists"))
     }
 
@@ -45,12 +48,12 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
             put("content", "content")
         })
 
-        assertTrue("Should fail for empty path", result.isError)
+        assertTrue("Should fail for empty path", result.isFailure)
     }
 
     fun testCreateFileMissingParamsFails() = runBlocking {
         val result = CreateFileTool().execute(project, buildJsonObject {})
-        assertTrue("Should fail for missing params", result.isError)
+        assertTrue("Should fail for missing params", result.isFailure)
     }
 
     fun testCreateFilePersistsToDisk() = runBlocking {
@@ -59,7 +62,7 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
             put("content", "public class Persisted { int x = 42; }")
         })
 
-        assertFalse("Create should succeed", result.isError)
+        assertFalse("Create should succeed", result.isFailure)
         val basePath = requireNotNull(project.basePath)
         val diskFile = Path.of(basePath, "src/Persisted.java")
         assertTrue("File must exist on disk (not just VFS)", Files.exists(diskFile))
@@ -73,7 +76,7 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
             put("content", "package deep.nested.path;\npublic class NewFile {}")
         })
 
-        assertFalse("Create with nested dirs should succeed", result.isError)
+        assertFalse("Create with nested dirs should succeed", result.isFailure)
         val basePath = requireNotNull(project.basePath)
         assertTrue("File should exist", Files.exists(Path.of(basePath, "src/deep/nested/path/NewFile.java")))
     }

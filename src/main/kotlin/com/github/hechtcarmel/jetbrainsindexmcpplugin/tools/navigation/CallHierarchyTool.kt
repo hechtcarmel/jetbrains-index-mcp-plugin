@@ -8,11 +8,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.CallElementData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript.isJsTsElementOrFile
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript.resolveJsTsCallHierarchySeed
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
@@ -56,7 +57,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()", "direction": "callers"}
         """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
@@ -72,7 +73,7 @@ class CallHierarchyTool : AbstractMcpTool() {
         private const val MAX_DEPTH = 5
     }
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val direction = arguments["direction"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: direction")
         val depth = (arguments["depth"]?.jsonPrimitive?.int ?: DEFAULT_DEPTH).coerceIn(1, MAX_DEPTH)

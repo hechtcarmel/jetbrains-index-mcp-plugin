@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -11,7 +11,7 @@ class StructuralSearchReplaceBehaviorTest : McpPlatformTestCase() {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun parseResult(result: ToolCallResult): StructuralSearchReplaceTool.SsrResult =
+    private fun parseResult(result: CallToolResult): StructuralSearchReplaceTool.SsrResult =
         json.decodeFromString(toolText(result))
 
     // Fixtures use invented API names (SsrLogSink, SsrLegacyLog, ...) rather than JDK calls so that

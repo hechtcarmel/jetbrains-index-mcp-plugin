@@ -8,8 +8,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassResolver
@@ -75,7 +76,7 @@ import kotlinx.serialization.json.put
  *     override val description = "My tool description"
  *     override val inputSchema = buildJsonObject { /* schema */ }
  *
- *     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+ *     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
  *         requireSmartMode(project)  // If index access is needed
  *         return readAction {
  *             // PSI operations here
@@ -229,9 +230,9 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      *
      * @param project The IntelliJ project context
      * @param arguments The tool arguments as a JSON object
-     * @return A [ToolCallResult] containing the operation result or error
+     * @return A [CallToolResult] containing the operation result or error
      */
-    final override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
+    final override suspend fun execute(project: Project, arguments: JsonObject): CallToolResult {
         val modeService = ProjectModeService.getInstance()
         if (participatesInLifecycle && McpSettings.getInstance().lifecycleEnabled) {
             if (!modeService.isManaged(project)) {
@@ -278,9 +279,9 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      *
      * @param project The IntelliJ project context
      * @param arguments The tool arguments as a JSON object matching [inputSchema]
-     * @return A [ToolCallResult] containing the operation result or error
+     * @return A [CallToolResult] containing the operation result or error
      */
-    protected abstract suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult
+    protected abstract suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult
 
     /**
      * Throws [IndexNotReadyException] if the IDE is in dumb mode (indexing).
@@ -583,7 +584,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates a structured invalid-scope error response.
      * Includes the provided value and list of supported scope values.
      */
-    protected fun createInvalidScopeError(provided: String): ToolCallResult =
+    protected fun createInvalidScopeError(provided: String): CallToolResult =
         createStructuredErrorResult(buildJsonObject {
             put("error", JsonPrimitive("invalid_scope"))
             put("parameter", JsonPrimitive(ParamNames.SCOPE))
@@ -717,7 +718,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     /**
      * Gets a page from the pagination cache.
      * Extracts project basePath and PSI mod count, delegates to PaginationService.
-     * Returns GetPageResult — caller maps Success/Error into tool-specific ToolCallResult.
+     * Returns GetPageResult — caller maps Success/Error into tool-specific CallToolResult.
      *
      * @param pageSize Explicit pageSize from request, or null to use the cursor-embedded value.
      */
@@ -739,7 +740,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     protected inline fun <reified T, reified R> buildPaginatedResult(
         result: PaginationService.GetPageResult,
         builder: (items: List<T>, page: PaginationService.PaginationPage) -> R
-    ): ToolCallResult {
+    ): CallToolResult {
         return when (result) {
             is PaginationService.GetPageResult.Error -> createErrorResult(result.message)
             is PaginationService.GetPageResult.Success -> {
@@ -784,11 +785,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates a successful result with a text message.
      *
      * @param text The success message
-     * @return A [ToolCallResult] with `isError = false`
+     * @return A [CallToolResult] with `isError = false`
      */
-    protected fun createSuccessResult(text: String): ToolCallResult {
-        return ToolCallResult(
-            content = listOf(ContentBlock.Text(text = text)),
+    protected fun createSuccessResult(text: String): CallToolResult {
+        return CallToolResult(
+            content = listOf(TextContent(text = text)),
             isError = false
         )
     }
@@ -797,11 +798,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates an error result with a message.
      *
      * @param message The error message
-     * @return A [ToolCallResult] with `isError = true`
+     * @return A [CallToolResult] with `isError = true`
      */
-    protected fun createErrorResult(message: String): ToolCallResult {
-        return ToolCallResult(
-            content = listOf(ContentBlock.Text(text = message)),
+    protected fun createErrorResult(message: String): CallToolResult {
+        return CallToolResult(
+            content = listOf(TextContent(text = message)),
             isError = true
         )
     }
@@ -812,11 +813,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * The payload is emitted using the configured response format.
      * If formatting fails, returns a plain-text formatting error instead.
      */
-    protected fun createStructuredErrorResult(data: JsonElement): ToolCallResult {
+    protected fun createStructuredErrorResult(data: JsonElement): CallToolResult {
         return try {
             val jsonText = json.encodeToString(JsonElement.serializer(), data)
-            ToolCallResult(
-                content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+            CallToolResult(
+                content = listOf(TextContent(text = formatStructuredPayload(jsonText))),
                 isError = true
             )
         } catch (e: Exception) {
@@ -828,13 +829,13 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates a successful result with JSON-serialized data.
      *
      * @param data The data to serialize (must be @Serializable)
-     * @return A [ToolCallResult] with JSON content and `isError = false`
+     * @return A [CallToolResult] with JSON content and `isError = false`
      */
-    protected inline fun <reified T> createJsonResult(data: T): ToolCallResult {
+    protected inline fun <reified T> createJsonResult(data: T): CallToolResult {
         return try {
             val jsonText = json.encodeToString(data)
-            ToolCallResult(
-                content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+            CallToolResult(
+                content = listOf(TextContent(text = formatStructuredPayload(jsonText))),
                 isError = false
             )
         } catch (e: Exception) {

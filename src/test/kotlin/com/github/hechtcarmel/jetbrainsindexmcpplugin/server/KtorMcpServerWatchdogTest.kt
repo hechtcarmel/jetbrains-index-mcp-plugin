@@ -1,7 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorSseSessionManager
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpServerFactory
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpToolDispatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.LegacySseTransports
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.CoroutineScope
@@ -145,8 +147,8 @@ class KtorMcpServerWatchdogTest : BasePlatformTestCase() {
         return KtorMcpServer(
             port = port,
             host = "127.0.0.1",
-            jsonRpcHandler = JsonRpcHandler(ToolRegistry()),
-            sseSessionManager = KtorSseSessionManager(),
+            serverFactory = ToolRegistry().let { McpServerFactory(it, McpToolDispatcher(it)) },
+            legacySseTransports = LegacySseTransports(),
             coroutineScope = testScope,
             onUnexpectedStop = onUnexpectedStop
         )

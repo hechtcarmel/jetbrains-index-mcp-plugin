@@ -1,48 +1,17 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.JsonRpcMethods
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcErrorCodes
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcRequest
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.McpErrorCodes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import junit.framework.TestCase
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
 
+/**
+ * The JSON-RPC request/response serialization tests that used to live here were deleted with the
+ * hand-written envelope models they covered. The MCP Kotlin SDK owns the envelope now; what this
+ * plugin still puts on the wire is pinned by
+ * [com.github.hechtcarmel.jetbrainsindexmcpplugin.models.McpWireFormatUnitTest].
+ */
 class McpPluginUnitTest : TestCase() {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
-
-    fun testJsonRpcRequestSerialization() {
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(1),
-            method = JsonRpcMethods.TOOLS_LIST
-        )
-
-        val serialized = json.encodeToString(request)
-        val deserialized = json.decodeFromString<JsonRpcRequest>(serialized)
-
-        assertEquals(McpConstants.JSON_RPC_VERSION, deserialized.jsonrpc)
-        assertEquals(JsonRpcMethods.TOOLS_LIST, deserialized.method)
-    }
-
-    fun testJsonRpcResponseSerialization() {
-        val response = JsonRpcResponse(
-            id = JsonPrimitive(1),
-            result = JsonPrimitive("test")
-        )
-
-        val serialized = json.encodeToString(response)
-        val deserialized = json.decodeFromString<JsonRpcResponse>(serialized)
-
-        assertEquals(McpConstants.JSON_RPC_VERSION, deserialized.jsonrpc)
-        assertNull(deserialized.error)
-    }
 
     fun testToolRegistry() {
         val registry = ToolRegistry()
@@ -61,11 +30,11 @@ class McpPluginUnitTest : TestCase() {
         assertNotNull("${ToolNames.INDEX_STATUS} tool should be registered", indexStatusTool)
     }
 
-    fun testJsonRpcErrorCodes() {
-        assertEquals(-32700, JsonRpcErrorCodes.PARSE_ERROR)
-        assertEquals(-32600, JsonRpcErrorCodes.INVALID_REQUEST)
-        assertEquals(-32601, JsonRpcErrorCodes.METHOD_NOT_FOUND)
-        assertEquals(-32602, JsonRpcErrorCodes.INVALID_PARAMS)
-        assertEquals(-32603, JsonRpcErrorCodes.INTERNAL_ERROR)
+    fun testMcpErrorCodesMatchTheJsonRpcSpec() {
+        assertEquals(-32700, McpErrorCodes.PARSE_ERROR)
+        assertEquals(-32600, McpErrorCodes.INVALID_REQUEST)
+        assertEquals(-32601, McpErrorCodes.METHOD_NOT_FOUND)
+        assertEquals(-32602, McpErrorCodes.INVALID_PARAMS)
+        assertEquals(-32603, McpErrorCodes.INTERNAL_ERROR)
     }
 }

@@ -1,7 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.openapi.project.Project
 import junit.framework.TestCase
 import kotlinx.serialization.json.JsonNull
@@ -146,9 +148,9 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
     private class ProbeTool : AbstractMcpTool() {
         override val name: String = "probe"
         override val description: String = "probe"
-        override val inputSchema: JsonObject = buildJsonObject {}
+        override val inputSchema: ToolSchema = ToolSchema()
 
-        override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+        override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
             error("Not used in unit tests")
         }
 

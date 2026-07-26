@@ -3,8 +3,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ServerStatusListener
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpServerFactory
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpToolDispatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorSseSessionManager
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.LegacySseTransports
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
@@ -30,11 +32,11 @@ import kotlinx.coroutines.launch
  * This service manages:
  * - Embedded Ktor CIO server with configurable port
  * - Tool registry for MCP tools
- * - JSON-RPC handler for message processing
- * - SSE session management for client connections
+ * - The MCP Kotlin SDK server factory that turns the registry into a protocol server
+ * - Legacy SSE transport bookkeeping
  * - Coroutine scope for non-blocking tool execution
  *
- * Uses HTTP+SSE transport for compatibility with MCP clients.
+ * Serves Streamable HTTP (primary) and legacy HTTP+SSE for older MCP clients.
  */
 @Service(Service.Level.APP)
 class McpServerService(
@@ -42,8 +44,8 @@ class McpServerService(
 ) : Disposable {
 
     private val toolRegistry: ToolRegistry = ToolRegistry()
-    private val jsonRpcHandler: JsonRpcHandler
-    private val sseSessionManager: KtorSseSessionManager = KtorSseSessionManager()
+    private val serverFactory: McpServerFactory
+    private val legacySseTransports: LegacySseTransports = LegacySseTransports()
     private var ktorServer: KtorMcpServer? = null
     private var serverError: ServerError? = null
 
@@ -76,7 +78,7 @@ class McpServerService(
 
     init {
         LOG.info("Initializing MCP Server Service (Protocol: ${McpConstants.MCP_PROTOCOL_VERSION})")
-        jsonRpcHandler = JsonRpcHandler(toolRegistry)
+        serverFactory = McpServerFactory(toolRegistry, McpToolDispatcher(toolRegistry))
         if (shouldStartServer()) {
             coroutineScope.launch { initialize() }
         } else {
@@ -126,8 +128,8 @@ class McpServerService(
         val server = KtorMcpServer(
             port = port,
             host = host,
-            jsonRpcHandler = jsonRpcHandler,
-            sseSessionManager = sseSessionManager,
+            serverFactory = serverFactory,
+            legacySseTransports = legacySseTransports,
             coroutineScope = coroutineScope,
             onUnexpectedStop = { scheduleRestart() }
         )
@@ -208,9 +210,8 @@ class McpServerService(
 
     fun getToolRegistry(): ToolRegistry = toolRegistry
 
-    fun getJsonRpcHandler(): JsonRpcHandler = jsonRpcHandler
-
-    fun getSseSessionManager(): KtorSseSessionManager = sseSessionManager
+    /** Number of open legacy SSE streams. Exposed for diagnostics. */
+    fun getActiveSseSessionCount(): Int = legacySseTransports.activeSessionCount()
 
     /**
      * Returns the Streamable HTTP endpoint URL for MCP connections (primary transport).
@@ -254,7 +255,7 @@ class McpServerService(
         val isRunning = isServerRunning()
         return ServerStatusInfo(
             name = McpConstants.SERVER_NAME,
-            version = McpConstants.SERVER_VERSION,
+            version = McpConstants.getServerVersion(),
             protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
             streamableHttpUrl = if (isRunning) "http://$host:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}" else "Server not running",
             legacySseUrl = if (isRunning) "http://$host:$port${McpConstants.SSE_ENDPOINT_PATH}" else "Server not running",
@@ -330,7 +331,6 @@ class McpServerService(
         isShuttingDown = true
         watchdogAlarm.cancelAllRequests()
         stopServer()
-        sseSessionManager.closeAllSessions()
     }
 }
 

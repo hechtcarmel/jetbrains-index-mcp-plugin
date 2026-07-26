@@ -4,7 +4,27 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- **MCP protocol handling now uses the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk)** instead of a hand-written JSON-RPC/SSE implementation. All 50 tools, their names, input schemas and response payloads are unchanged — the golden `tool-manifest.json` and `result-shapes.txt` snapshots are byte-identical across the migration. Four client-visible behaviours did change:
+  - **`Accept: application/json, text/event-stream` is now required** on `POST /index-mcp/streamable-http`, per the Streamable HTTP spec. `Accept: application/json` alone returns `406 Not Acceptable`, and a non-JSON `Content-Type` returns `415`. Every real MCP client (Claude Code, Cursor, the official SDKs) already sends both; only hand-written `curl` needs updating.
+  - **Tool failures are reported as `isError: true` results instead of JSON-RPC errors.** Dumb-mode (`-32001`), unknown tool (`-32601`) and disabled tool (`-32602`) previously came back as protocol errors, which clients surface as hard transport failures. The MCP spec puts tool-execution errors in the result so the model can read and act on them — which is what messages like "call `ide_index_status` until indexing finishes" were written for. The message text is unchanged.
+  - **`initialize` requires spec-complete params.** `capabilities` is mandatory per the MCP schema and is now validated.
+  - **`serverInfo.description` moved to `instructions`.** MCP's `Implementation` object has no `description` field; `instructions` is the spec's slot for "how to use this server" text, and clients feed it to the model.
+- **`initialize` negotiates the protocol version with the client** across `2024-11-05`, `2025-03-26`, `2025-06-18` and `2025-11-25`, rather than answering with a fixed version per endpoint. A client asking for `2024-11-05` still gets `2024-11-05`.
+
+### Added
+
+- **Host header validation** on all MCP endpoints, alongside the existing Origin check — DNS-rebinding protection. Accepts loopback plus the configured `serverHost`, ignoring the port.
+
+### Changed
+
+- Malformed JSON-RPC batches are processed per message rather than rejected wholesale, and a `DELETE` on the Streamable HTTP endpoint no longer sends an `Allow` header with its `405`.
+- The plugin no longer bundles `kotlin-stdlib`, `kotlinx-coroutines`, `kotlin-reflect` or a second copy of Ktor. It previously shipped **two major Ktor versions** (2.3.12 in use, plus a dead 3.0.2 tree pulled in by an MCP SDK dependency that no source file imported), along with artifacts the IntelliJ Platform forbids plugins from bundling.
+
 ### Fixed
+
+- **`initialize` reported a stale server version.** `serverInfo.version` was hardcoded to `4.10.4` while the plugin shipped 4.31.x; it now reads the real version from the plugin descriptor.
 
 - **`ide_structural_search_replace`** — replace mode failed with `Must not change PSI outside command or undo-transparent action` on every invocation that matched at least one element in a project file, applying no edits. `Replacer.replaceAll` opens its own write action but no command, which `PomModelImpl` requires for changes to physical files; replacements are now wrapped in a command, matching the IDE's own Replace All. Search-only mode was unaffected.
 - **`ide_find_definition`, `ide_find_references`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`** — symbol mode (`language` + `symbol`) returned `not_found` for `module#default` when the file used `export default function f() {}` or `export default class C {}`, the two most common default-export forms. Default-export detection probed a non-existent `isDefaultExport()` accessor; it now uses `isExportedWithDefault()`, which is where the modifier actually lives when there is no `ES6ExportDefault*` wrapper node. Affects both JavaScript and TypeScript.

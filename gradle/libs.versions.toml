@@ -4,9 +4,18 @@ junit = "4.13.2"
 opentest4j = "1.3.0"
 
 # MCP and HTTP
-mcpKotlinSdk = "0.4.0"
-ktor = "2.3.12"
-kotlinxSerializationJson = "1.7.3"
+#
+# DO NOT bump these without checking the Kotlin generation they were built against.
+# IntelliJ 2025.3 (our `pluginSinceBuild = 253` floor) ships Kotlin 2.2.20 and a
+# kotlin-stdlib with metadata version 2.2.0. A dependency compiled against stdlib 2.3.x
+# fails two ways:
+#   1. compile time — "compiled with an incompatible version of Kotlin", because the
+#      Kotlin Gradle plugin below reads metadata up to 2.2.0;
+#   2. run time — it may call stdlib members that the IDE's 2.2 stdlib does not have.
+# kotlin-sdk 0.10.0 is the newest release built against stdlib 2.2.21; 0.11.0+ moved to
+# 2.3.x. `ktor` must track the Ktor version that SDK release was compiled against.
+mcpKotlinSdk = "0.10.0"
+ktor = "3.2.3"
 kotlinxCoroutines = "1.9.0"
 jtoon = "1.0.9"
 
@@ -25,20 +34,22 @@ qodana = "2025.2.2"
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 opentest4j = { group = "org.opentest4j", name = "opentest4j", version.ref = "opentest4j" }
 
-# MCP Kotlin SDK
-mcp-kotlin-sdk = { group = "io.modelcontextprotocol", name = "kotlin-sdk-jvm", version.ref = "mcpKotlinSdk" }
+# MCP Kotlin SDK. Only `server` ships; `client` is test-only (conformance tests drive the
+# plugin with an independent MCP implementation). Both pull `core` transitively.
+mcp-kotlin-sdk-server = { group = "io.modelcontextprotocol", name = "kotlin-sdk-server-jvm", version.ref = "mcpKotlinSdk" }
+mcp-kotlin-sdk-client = { group = "io.modelcontextprotocol", name = "kotlin-sdk-client-jvm", version.ref = "mcpKotlinSdk" }
 
-# Kotlinx Serialization
-kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 jtoon = { group = "dev.toonformat", name = "jtoon", version.ref = "jtoon" }
 
 # Kotlinx Coroutines
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 
-# Ktor Server
-ktor-server-core = { group = "io.ktor", name = "ktor-server-core", version.ref = "ktor" }
+# Ktor. ktor-server-core arrives transitively via the MCP SDK; CIO is the engine. Content
+# negotiation is ours because kotlin-sdk 0.10.0 does not install it (see build.gradle.kts).
 ktor-server-cio = { group = "io.ktor", name = "ktor-server-cio", version.ref = "ktor" }
-ktor-server-cors = { group = "io.ktor", name = "ktor-server-cors", version.ref = "ktor" }
+ktor-server-content-negotiation = { group = "io.ktor", name = "ktor-server-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio", version.ref = "ktor" }
 
 # Testing
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }

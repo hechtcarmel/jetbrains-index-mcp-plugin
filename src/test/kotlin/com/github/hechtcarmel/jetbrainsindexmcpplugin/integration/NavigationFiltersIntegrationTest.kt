@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.integration
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
@@ -63,9 +66,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("scope", "project_production_files")
         })
 
-        assertFalse("Type hierarchy should succeed: ${result.content}", result.isError)
+        assertFalse("Type hierarchy should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(content.text)
         val subtypeNames = hierarchy.subtypes.map { it.name }
 
@@ -86,9 +89,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("scope", "project_test_files")
         })
 
-        assertFalse("Find implementations should succeed: ${result.content}", result.isError)
+        assertFalse("Find implementations should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val implementations = json.decodeFromString<ImplementationResult>(content.text)
         val implementationNames = implementations.implementations.map { it.name }
 
@@ -106,9 +109,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("scope", "project_test_files")
         })
 
-        assertFalse("Find class should succeed: ${result.content}", result.isError)
+        assertFalse("Find class should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val classes = json.decodeFromString<FindClassResult>(content.text)
         val classNames = classes.classes.map { it.name }
 
@@ -128,9 +131,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("pageSize", 1)
         })
 
-        assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isError)
+        assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isFailure)
 
-        val firstContent = firstPage.content.first() as ContentBlock.Text
+        val firstContent = firstPage.content.first() as TextContent
         val firstResult = json.decodeFromString<FindSymbolResult>(firstContent.text)
         val aggregatedFiles = firstResult.symbols.map { it.file }.toMutableList()
         var nextCursor = firstResult.nextCursor
@@ -140,8 +143,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
                 put("cursor", nextCursor)
                 put("pageSize", 1)
             })
-            assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isError)
-            val nextContent = nextPage.content.first() as ContentBlock.Text
+            assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isFailure)
+            val nextContent = nextPage.content.first() as TextContent
             val nextResult = json.decodeFromString<FindSymbolResult>(nextContent.text)
             aggregatedFiles += nextResult.symbols.map { it.file }
             nextCursor = nextResult.nextCursor
@@ -165,8 +168,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("matchMode", "exact")
             put("scope", "project_production_files")
         })
-        assertFalse("Find class should succeed: ${classResult.content}", classResult.isError)
-        val classContent = classResult.content.first() as ContentBlock.Text
+        assertFalse("Find class should succeed: ${classResult.content}", classResult.isFailure)
+        val classContent = classResult.content.first() as TextContent
         val classes = json.decodeFromString<FindClassResult>(classContent.text)
         assertTrue(
             "Class search should include the probe inside project_production_files",
@@ -177,8 +180,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", fixture.fileName)
             put("scope", "project_production_files")
         })
-        assertFalse("Find file should succeed: ${fileResult.content}", fileResult.isError)
-        val fileContent = fileResult.content.first() as ContentBlock.Text
+        assertFalse("Find file should succeed: ${fileResult.content}", fileResult.isFailure)
+        val fileContent = fileResult.content.first() as TextContent
         val files = json.decodeFromString<FindFileResult>(fileContent.text)
         assertTrue(
             "File search should include the probe inside project_production_files",
@@ -189,8 +192,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", fixture.className)
             put("scope", "project_production_files")
         })
-        assertFalse("Find symbol should succeed: ${symbolResult.content}", symbolResult.isError)
-        val symbolContent = symbolResult.content.first() as ContentBlock.Text
+        assertFalse("Find symbol should succeed: ${symbolResult.content}", symbolResult.isFailure)
+        val symbolContent = symbolResult.content.first() as TextContent
         val symbols = json.decodeFromString<FindSymbolResult>(symbolContent.text)
         assertTrue(
             "Symbol search should include files accepted by the selected built-in scope even under a venv path",
@@ -206,9 +209,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "BasicSolver.run")
         })
 
-        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+        assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val symbols = json.decodeFromString<FindSymbolResult>(content.text)
 
         assertEquals("Qualified query should resolve to exactly one method", 1, symbols.symbols.size)
@@ -230,9 +233,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("query", "asic.run")
         })
-        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+        assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val symbols = json.decodeFromString<FindSymbolResult>(content.text)
 
         assertTrue(
@@ -250,9 +253,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "*Solver")
             put("pageSize", 100)
         })
-        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+        assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val symbols = json.decodeFromString<FindSymbolResult>(content.text)
         val names = symbols.symbols.map { it.name }
 
@@ -279,9 +282,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "Batch*")
             put("pageSize", 100)
         })
-        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+        assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val symbols = json.decodeFromString<FindSymbolResult>(content.text)
         val names = symbols.symbols.map { it.name }
 
@@ -303,9 +306,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "test.BasicSolver.run")
         })
 
-        assertFalse("Find symbol should succeed: ${result.content}", result.isError)
+        assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val symbols = json.decodeFromString<FindSymbolResult>(content.text)
 
         assertEquals("Fully-qualified query should resolve to exactly one method", 1, symbols.symbols.size)
@@ -326,9 +329,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("pageSize", 1)
         })
 
-        assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isError)
+        assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isFailure)
 
-        val firstContent = firstPage.content.first() as ContentBlock.Text
+        val firstContent = firstPage.content.first() as TextContent
         val firstResult = json.decodeFromString<FindSymbolResult>(firstContent.text)
         val aggregatedFiles = firstResult.symbols.map { it.file }.toMutableList()
         var nextCursor = firstResult.nextCursor
@@ -338,8 +341,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
                 put("cursor", nextCursor)
                 put("pageSize", 1)
             })
-            assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isError)
-            val nextContent = nextPage.content.first() as ContentBlock.Text
+            assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isFailure)
+            val nextContent = nextPage.content.first() as TextContent
             val nextResult = json.decodeFromString<FindSymbolResult>(nextContent.text)
             aggregatedFiles += nextResult.symbols.map { it.file }
             nextCursor = nextResult.nextCursor
@@ -369,9 +372,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("language", "Java")
             put("pageSize", 100)
         })
-        assertFalse("Find symbol should succeed: ${filtered.content}", filtered.isError)
+        assertFalse("Find symbol should succeed: ${filtered.content}", filtered.isFailure)
 
-        val filteredContent = filtered.content.first() as ContentBlock.Text
+        val filteredContent = filtered.content.first() as TextContent
         val filteredResult = json.decodeFromString<FindSymbolResult>(filteredContent.text)
         assertTrue(
             "Language filter should keep results non-empty when Java matches exist",
@@ -388,8 +391,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("language", "java")
             put("pageSize", 100)
         })
-        assertFalse("Find symbol with lowercase language should succeed: ${lowercase.content}", lowercase.isError)
-        val lowercaseContent = lowercase.content.first() as ContentBlock.Text
+        assertFalse("Find symbol with lowercase language should succeed: ${lowercase.content}", lowercase.isFailure)
+        val lowercaseContent = lowercase.content.first() as TextContent
         val lowercaseResult = json.decodeFromString<FindSymbolResult>(lowercaseContent.text)
         assertEquals(
             "Language filter must be case-insensitive — lowercase 'java' must yield the same symbol set as canonical 'Java'",
@@ -402,8 +405,8 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("language", "Kotlin")
             put("pageSize", 100)
         })
-        assertFalse("Find symbol should succeed: ${mismatched.content}", mismatched.isError)
-        val mismatchedContent = mismatched.content.first() as ContentBlock.Text
+        assertFalse("Find symbol should succeed: ${mismatched.content}", mismatched.isFailure)
+        val mismatchedContent = mismatched.content.first() as TextContent
         val mismatchedResult = json.decodeFromString<FindSymbolResult>(mismatchedContent.text)
         assertTrue(
             "Language filter is exclusive — fixture has no Kotlin, so zero results expected",
@@ -423,9 +426,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("scope", "project_production_files")
         })
 
-        assertFalse("Call hierarchy should succeed: ${result.content}", result.isError)
+        assertFalse("Call hierarchy should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val hierarchy = json.decodeFromString<CallHierarchyResult>(content.text)
         val callerNames = hierarchy.calls.map { it.name }
 
@@ -445,9 +448,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("scope", "project_and_libraries")
         })
 
-        assertFalse("Call hierarchy should succeed: ${result.content}", result.isError)
+        assertFalse("Call hierarchy should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val hierarchy = json.decodeFromString<CallHierarchyResult>(content.text)
         val callerNames = hierarchy.calls.map { it.name }
 
@@ -466,9 +469,9 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("scope", "project_and_libraries")
         })
 
-        assertFalse("Find references should succeed: ${result.content}", result.isError)
+        assertFalse("Find references should succeed: ${result.content}", result.isFailure)
 
-        val content = result.content.first() as ContentBlock.Text
+        val content = result.content.first() as TextContent
         val usages = json.decodeFromString<FindUsagesResult>(content.text)
         val usageFiles = usages.usages.map { it.file }
 

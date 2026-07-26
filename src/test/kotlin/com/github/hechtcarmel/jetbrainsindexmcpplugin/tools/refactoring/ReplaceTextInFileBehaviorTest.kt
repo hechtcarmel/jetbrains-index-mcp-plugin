@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -11,7 +11,7 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun parseResult(result: ToolCallResult): ReplaceTextInFileTool.ReplaceTextResult =
+    private fun parseResult(result: CallToolResult): ReplaceTextInFileTool.ReplaceTextResult =
         json.decodeFromString(toolText(result))
 
     fun testReplaceLiteralTextMultipleOccurrences() = runBlocking {

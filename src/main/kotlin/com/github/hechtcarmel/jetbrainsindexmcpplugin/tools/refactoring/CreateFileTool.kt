@@ -2,9 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -36,7 +37,7 @@ class CreateFileTool : AbstractMcpTool() {
         - {"file": "src/utils/helper.ts", "content": "export function helper(): string {\n    return 'help';\n}"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(description = "Path to the new file relative to project root. REQUIRED. File must not already exist.")
         .stringProperty("content", "The file content to write.", required = true)
@@ -49,7 +50,7 @@ class CreateFileTool : AbstractMcpTool() {
         val message: String
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
         val content = arguments["content"]?.jsonPrimitive?.content

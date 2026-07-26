@@ -1,8 +1,11 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
@@ -57,7 +60,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             put("file", "src/Broken.java")
         })
 
-        assertFalse("Diagnostics should succeed: ${renderResult(result)}", result.isError)
+        assertFalse("Diagnostics should succeed: ${renderResult(result)}", result.isFailure)
 
         val diagnostics = decodeDiagnostics(result)
         assertTrue("Expected fresh file analysis", diagnostics.analysisFresh == true)
@@ -103,7 +106,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
                 put("file", "src/TimeoutExample.java")
             })
 
-            assertFalse("Timeout should be reported in-band: ${renderResult(result)}", result.isError)
+            assertFalse("Timeout should be reported in-band: ${renderResult(result)}", result.isFailure)
 
             val diagnostics = decodeDiagnostics(result)
             assertTrue("Analysis should be marked timed out", diagnostics.analysisTimedOut == true)
@@ -152,7 +155,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
                 put("file", "src/OpenEditorExample.java")
             })
 
-            assertFalse("Diagnostics should succeed for open-editor analysis: ${renderResult(result)}", result.isError)
+            assertFalse("Diagnostics should succeed for open-editor analysis: ${renderResult(result)}", result.isFailure)
 
             val diagnostics = decodeDiagnostics(result)
             assertTrue("Expected the open-editor analysis path to be used", openPathUsed)
@@ -273,7 +276,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
                 put("file", "src/FreshnessExample.java")
             })
 
-            assertFalse("Diagnostics should succeed after external edit: ${renderResult(result)}", result.isError)
+            assertFalse("Diagnostics should succeed after external edit: ${renderResult(result)}", result.isFailure)
 
             val diagnostics = decodeDiagnostics(result)
             assertTrue("Expected fresh file analysis after external edit", diagnostics.analysisFresh == true)
@@ -322,7 +325,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
                 put("severity", "errors")
             })
 
-            assertFalse("Diagnostics should succeed for error-only severity: ${renderResult(result)}", result.isError)
+            assertFalse("Diagnostics should succeed for error-only severity: ${renderResult(result)}", result.isFailure)
 
             val diagnostics = decodeDiagnostics(result)
             assertEquals("Expected one error result after severity filtering", 1, diagnostics.problemCount)
@@ -358,7 +361,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             put("severity", "errors")
         })
 
-        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isError)
+        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isFailure)
 
         val diagnostics = decodeDiagnostics(result)
         assertEquals("Expected only error diagnostics", 1, diagnostics.buildErrors?.size)
@@ -385,7 +388,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             put("includeBuildErrors", true)
         })
 
-        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isError)
+        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isFailure)
 
         val diagnostics = decodeDiagnostics(result)
         assertEquals("Expected one recorded build diagnostic", 1, diagnostics.buildErrors?.size)
@@ -421,7 +424,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             put("includeBuildErrors", true)
         })
 
-        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isError)
+        assertFalse("Build diagnostics should succeed: ${renderResult(result)}", result.isFailure)
 
         val diagnostics = decodeDiagnostics(result)
         assertEquals("Expected duplicated compiler/build event diagnostics to collapse to one entry", 1, diagnostics.buildErrors?.size)
@@ -506,15 +509,15 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
     private fun Class<*>.getDeclaredFieldOrNull(name: String): java.lang.reflect.Field? =
         runCatching { getDeclaredField(name) }.getOrNull()
 
-    private fun decodeDiagnostics(result: ToolCallResult): DiagnosticsResult {
-        val content = result.content.first() as ContentBlock.Text
+    private fun decodeDiagnostics(result: CallToolResult): DiagnosticsResult {
+        val content = result.content.first() as TextContent
         return json.decodeFromString(content.text)
     }
 
-    private fun renderResult(result: ToolCallResult): String =
+    private fun renderResult(result: CallToolResult): String =
         result.content.joinToString(separator = " | ") { block ->
             when (block) {
-                is ContentBlock.Text -> block.text
+                is TextContent -> block.text
                 else -> block.toString()
             }
         }

@@ -15,11 +15,16 @@ and goes stale the moment the plugin restarts. Call the server directly via HTTP
 ```bash
 curl -s -X POST http://127.0.0.1:29170/index-mcp/streamable-http \
   -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}'
 ```
 
 Port 29170 is IntelliJ IDEA. Other IDEs: see `IdeProductInfo.kt` for the full map.
+
+**Both `Accept` values are required.** The Streamable HTTP spec mandates
+`Accept: application/json, text/event-stream`, and since 5.0.0 the server enforces it —
+`Accept: application/json` alone returns `406 Not Acceptable`. Real MCP clients already send
+both; only hand-written curl needs updating.
 
 ### The install-restart-verify cycle
 
@@ -29,7 +34,7 @@ Port 29170 is IntelliJ IDEA. Other IDEs: see `IdeProductInfo.kt` for the full ma
 4. Poll the server until it responds (typically 15–30s):
    ```bash
    curl -s --max-time 3 http://127.0.0.1:29170/index-mcp/streamable-http \
-     -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
+     -X POST -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
    ```
 5. Confirm restart actually happened: `restarter.log` in `~/Library/Logs/JetBrains/IntelliJIdea*/`

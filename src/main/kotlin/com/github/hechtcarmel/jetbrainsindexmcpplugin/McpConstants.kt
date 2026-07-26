@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeProductInfo
+import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.util.messages.Topic
 
 object McpConstants {
@@ -50,7 +52,19 @@ object McpConstants {
      * Legacy constant for backwards compatibility.
      */
     const val SERVER_NAME = "jetbrains-index-mcp"
-    const val SERVER_VERSION = "4.10.4"
+
+    /** Plugin coordinates, used to report the real version in `initialize`. */
+    const val PLUGIN_ID = "com.github.hechtcarmel.jetbrainsindexmcpplugin"
+
+    /**
+     * Version reported to MCP clients in `initialize`.
+     *
+     * Read from the plugin descriptor rather than hardcoded — the constant this replaced said
+     * "4.10.4" while the plugin shipped 4.31.x, so every client saw a stale version.
+     */
+    @JvmStatic
+    fun getServerVersion(): String =
+        PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.version ?: "unknown"
     const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and Markdown file structure. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
 
     /**

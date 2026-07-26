@@ -2,10 +2,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.codeInsight.actions.AbstractLayoutCodeProcessor
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.codeInsight.actions.RearrangeCodeProcessor
@@ -56,7 +57,7 @@ class ReformatCodeTool : AbstractMcpTool() {
         Example: {"file": "src/MyClass.java", "startLine": 10, "endLine": 50, "optimizeImports": false}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file()
         .intProperty(ParamNames.START_LINE, "Start line for partial formatting (1-based). If provided, endLine is also required.")
@@ -74,7 +75,7 @@ class ReformatCodeTool : AbstractMcpTool() {
         val error: String? = null
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, ParamNames.FILE).getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }

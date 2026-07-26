@@ -8,11 +8,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.util.PsiModificationTracker
@@ -55,7 +56,7 @@ class FindSymbolTool : AbstractMcpTool() {
         Example: {"query": "UserService"} or {"query": "find_user", "scope": "project_and_libraries"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(ParamNames.QUERY, "Search pattern. Matching follows IntelliJ's Go to Symbol popup, including qualified queries. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
@@ -66,7 +67,7 @@ class FindSymbolTool : AbstractMcpTool() {
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))

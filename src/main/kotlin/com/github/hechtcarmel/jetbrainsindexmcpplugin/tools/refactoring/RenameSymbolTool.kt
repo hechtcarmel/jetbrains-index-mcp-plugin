@@ -1,10 +1,11 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.lang.LanguageNamesValidation
 import com.intellij.openapi.command.WriteCommandAction
@@ -179,7 +180,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         - File rename: {"file": "res/mipmap-hdpi/ic_launcher.webp", "targetType": "file", "newName": "ic_app_icon.webp"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(description = "Path to file relative to project root. REQUIRED.")
         .enumProperty(
@@ -238,7 +239,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         val unretargetedImporters: List<String>?
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }

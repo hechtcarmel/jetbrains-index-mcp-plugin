@@ -1,9 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 
@@ -34,12 +35,12 @@ class ReleaseProjectTool : AbstractMcpTool() {
         - project_path (optional): Routing hint when multiple projects are open.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .stringProperty("path", "Filesystem path of a closed managed project to release. Omit to release the routed project.")
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val modeService = ProjectModeService.getInstance()
         val explicitPath = optionalStringArg(arguments, "path")
 

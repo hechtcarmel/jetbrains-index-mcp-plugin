@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.command.WriteCommandAction
@@ -45,14 +47,14 @@ class AbstractMcpToolCommitDocumentsTest : BasePlatformTestCase() {
     private class ExposedCommitTool : AbstractMcpTool() {
         override val name: String = "test_commit_documents"
         override val description: String = "Test helper"
-        override val inputSchema: JsonObject = buildJsonObject { }
+        override val inputSchema: ToolSchema = ToolSchema()
         override val requiresPsiSync: Boolean = false
 
         suspend fun commitFromTest(project: Project) {
             commitDocuments(project)
         }
 
-        override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+        override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
             commitDocuments(project)
             return createSuccessResult("ok")
         }

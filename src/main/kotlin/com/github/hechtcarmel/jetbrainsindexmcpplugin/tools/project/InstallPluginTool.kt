@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.io.FileUtil
@@ -42,12 +43,12 @@ class InstallPluginTool : AbstractMcpTool() {
           is omitted, to identify which project's build output to use.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .stringProperty("path", "Absolute path to the plugin zip to install.")
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val zipPath = arguments["path"]?.jsonPrimitive?.content
             ?.let { Path.of(it) }
             ?: findBuildOutput(project)

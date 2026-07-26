@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -126,15 +129,15 @@ abstract class McpPlatformTestCase : BasePlatformTestCase() {
 
     // ── Assertions ──────────────────────────────────────────────────────────────────────
 
-    protected fun toolText(result: ToolCallResult): String =
-        (result.content.firstOrNull() as? ContentBlock.Text)?.text.orEmpty()
+    protected fun toolText(result: CallToolResult): String =
+        (result.content.firstOrNull() as? TextContent)?.text.orEmpty()
 
-    protected fun assertToolSucceeded(message: String, result: ToolCallResult) {
-        assertFalse("$message — tool returned error: ${toolText(result)}", result.isError)
+    protected fun assertToolSucceeded(message: String, result: CallToolResult) {
+        assertFalse("$message — tool returned error: ${toolText(result)}", result.isFailure)
     }
 
-    protected fun assertToolFailed(message: String, result: ToolCallResult) {
-        assertTrue("$message — expected an error but tool succeeded: ${toolText(result)}", result.isError)
+    protected fun assertToolFailed(message: String, result: CallToolResult) {
+        assertTrue("$message — expected an error but tool succeeded: ${toolText(result)}", result.isFailure)
     }
 
     /**

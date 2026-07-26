@@ -2,9 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -38,7 +39,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
         - Change return type: {"file": "src/Service.java", "line": 15, "column": 10, "newReturnType": "Optional<User>"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(description = "Path to file containing the method. REQUIRED.")
         .lineAndColumn(required = true)
@@ -69,7 +70,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
         val relativePath: String
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
         val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
@@ -167,7 +168,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
         changeSignatureProcessorClass: Class<*>,
         javaChangeInfoImplClass: Class<*>,
         parameterInfoImplClass: Class<*>
-    ): ToolCallResult {
+    ): CallToolResult {
         return try {
             val method = prep.method
 

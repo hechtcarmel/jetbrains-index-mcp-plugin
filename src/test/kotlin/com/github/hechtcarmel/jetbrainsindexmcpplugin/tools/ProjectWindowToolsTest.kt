@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
@@ -14,8 +17,8 @@ import java.nio.file.Path
 
 class ProjectWindowToolsTest : BasePlatformTestCase() {
 
-    private fun resultText(result: ToolCallResult) =
-        (result.content.firstOrNull() as? ContentBlock.Text)?.text ?: ""
+    private fun resultText(result: CallToolResult) =
+        (result.content.firstOrNull() as? TextContent)?.text ?: ""
 
     private fun missingAbsoluteProjectPath(): String =
         Path.of(requireNotNull(project.basePath) { "test project must have a basePath" }, "__missing_project_for_open_tool_tests__")
@@ -34,7 +37,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
 
         val result = SetPowerSaveModeTool().execute(project, buildJsonObject { put("enabled", true) })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertTrue(PowerSaveMode.isEnabled())
         assertTrue(resultText(result).contains("enabled", ignoreCase = true))
     }
@@ -44,7 +47,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
 
         val result = SetPowerSaveModeTool().execute(project, buildJsonObject { put("enabled", false) })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertFalse(PowerSaveMode.isEnabled())
         assertTrue(resultText(result).contains("disabled", ignoreCase = true))
     }
@@ -52,14 +55,14 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
     fun testSetPowerSaveModeRequiresEnabledParam() = runBlocking {
         val result = SetPowerSaveModeTool().execute(project, buildJsonObject { })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("enabled", ignoreCase = true))
     }
 
     fun testSetPowerSaveModeRejectsNonBooleanEnabled() = runBlocking {
         val result = SetPowerSaveModeTool().execute(project, buildJsonObject { put("enabled", "yes") })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("enabled", ignoreCase = true))
     }
 
@@ -68,7 +71,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         // imply it only affects the context project.
         val result = SetPowerSaveModeTool().execute(project, buildJsonObject { put("enabled", true) })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertTrue(resultText(result).contains("IDE-wide"))
     }
 
@@ -78,28 +81,28 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         // ide_open_project, fails with no_project_open), so the tool must refuse.
         val result = CloseProjectTool().execute(project, buildJsonObject { })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("last open project", ignoreCase = true))
     }
 
     fun testOpenProjectRequiresPathParam() = runBlocking {
         val result = OpenProjectTool().execute(project, buildJsonObject { })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("path", ignoreCase = true))
     }
 
     fun testOpenProjectRejectsBlankPath() = runBlocking {
         val result = OpenProjectTool().execute(project, buildJsonObject { put("path", "   ") })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("path", ignoreCase = true))
     }
 
     fun testOpenProjectRejectsRelativePath() = runBlocking {
         val result = OpenProjectTool().execute(project, buildJsonObject { put("path", "relative/project/dir") })
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("absolute", ignoreCase = true))
     }
 
@@ -112,7 +115,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
             }
         )
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("timeoutSeconds"))
     }
 
@@ -122,7 +125,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
             buildJsonObject { put("path", missingAbsoluteProjectPath()) }
         )
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
     }
 
     fun testOpenProjectIsIdempotentWhenProjectAlreadyOpen() = runBlocking {
@@ -131,7 +134,7 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
 
         val result = OpenProjectTool().execute(project, buildJsonObject { put("path", basePath!!) })
 
-        assertFalse(result.isError)
+        assertFalse(result.isFailure)
         assertTrue(resultText(result).contains("already open", ignoreCase = true))
     }
 }

@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.*
@@ -40,7 +40,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.REFORMAT, "Auto-reformat the changed range and optimize imports. Default: true.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
         val memberName = arguments[ParamNames.MEMBER]?.jsonPrimitive?.content
@@ -113,7 +113,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
         prep: MemberEditPreparation,
         content: String,
         reformat: Boolean
-    ): ToolCallResult {
+    ): CallToolResult {
         val member = prep.member
         val originalBodyStart = member.bodyStartOffset
         val originalBodyEnd = member.bodyEndOffset
@@ -173,7 +173,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
         )
     }
 
-    private fun handleError(error: Throwable, memberName: String): ToolCallResult {
+    private fun handleError(error: Throwable, memberName: String): CallToolResult {
         return when (error) {
             is MemberNotFoundException -> createJsonResult(MemberErrorResult(
                 error = "member_not_found",

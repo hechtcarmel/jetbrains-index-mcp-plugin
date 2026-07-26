@@ -1,7 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
 import com.intellij.openapi.project.Project
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -25,18 +26,12 @@ import kotlinx.serialization.json.JsonObject
  * class MyCustomTool : AbstractMcpTool() {
  *     override val name = "ide_my_custom_tool"
  *     override val description = "Does something useful"
- *     override val inputSchema = buildJsonObject {
- *         put("type", "object")
- *         putJsonObject("properties") {
- *             putJsonObject("param1") {
- *                 put("type", "string")
- *                 put("description", "A required parameter")
- *             }
- *         }
- *         putJsonArray("required") { add(JsonPrimitive("param1")) }
- *     }
+ *     override val inputSchema = SchemaBuilder.tool()
+ *         .projectPath()
+ *         .stringProperty("param1", "A required parameter", required = true)
+ *         .build()
  *
- *     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+ *     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
  *         val param1 = arguments["param1"]?.jsonPrimitive?.content
  *             ?: return createErrorResult("Missing required parameter: param1")
  *         // ... tool logic
@@ -54,7 +49,7 @@ import kotlinx.serialization.json.JsonObject
  * @see AbstractMcpTool
  * @see AbstractMcpTool.doExecute
  * @see ToolRegistry
- * @see ToolCallResult
+ * @see CallToolResult
  */
 interface McpTool {
     /**
@@ -88,17 +83,16 @@ interface McpTool {
     /**
      * JSON Schema defining the tool's input parameters.
      *
-     * The schema should follow JSON Schema specification and define:
-     * - Parameter types and descriptions
-     * - Required vs optional parameters
-     * - Validation constraints
+     * [ToolSchema] is always `"type": "object"`; supply the property definitions and the
+     * `required` list. Always build it with `SchemaBuilder` rather than by hand — schemas are
+     * a wire contract with MCP clients and are snapshotted in `contract/tool-manifest.json`.
      *
      * All tools should include `project_path` as an optional parameter
      * to support multi-project scenarios.
      *
      * @see com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
      */
-    val inputSchema: JsonObject
+    val inputSchema: ToolSchema
 
     /**
      * Executes the tool with the given arguments.
@@ -111,9 +105,9 @@ interface McpTool {
      *
      * @param project The IntelliJ project context (already resolved from project_path if provided)
      * @param arguments The tool arguments as a JSON object matching [inputSchema]
-     * @return A [ToolCallResult] containing the operation result or error information
+     * @return A [CallToolResult] containing the operation result or error information
      *
      * @see AbstractMcpTool.doExecute
      */
-    suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult
+    suspend fun execute(project: Project, arguments: JsonObject): CallToolResult
 }

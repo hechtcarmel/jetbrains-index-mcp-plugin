@@ -44,7 +44,7 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
         return method.invoke(tool, project, targetDirectory) as? String
     }
 
-    private fun resultMessage(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String {
+    private fun resultMessage(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String {
         val resultJson = json.parseToJsonElement(toolText(result)).jsonObject
         return resultJson["message"]?.jsonPrimitive?.content ?: error("Missing message")
     }

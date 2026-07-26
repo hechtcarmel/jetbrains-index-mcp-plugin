@@ -1,9 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.LifecycleEventLog
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -42,13 +43,13 @@ class LifecycleLogTool : AbstractMcpTool() {
         - project_path: Routing hint when multiple projects are open
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .intProperty("limit", "Number of recent events to return, newest first (default 50, max 500).")
         .stringProperty("project", "Optional path filter (substring match against project path).")
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val limit = arguments["limit"]?.jsonPrimitive?.intOrNull ?: 50
         val pathFilter = optionalStringArg(arguments, "project")
 

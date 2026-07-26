@@ -29,7 +29,7 @@ import com.intellij.psi.util.PsiTreeUtil
  *
  * Example:
  * ```kotlin
- * override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+ * override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
  *     // Phase 1: Background - collect data
  *     val data = readAction { collectData(project, ...) }
  *

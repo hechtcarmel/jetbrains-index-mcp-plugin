@@ -6,11 +6,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeElementData
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
@@ -53,7 +54,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         Example: {"className": "com.example.UserService", "scope": "project_and_libraries"} or {"file": "src/MyClass.java", "line": 10, "column": 14}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty("className", "Fully qualified class name for JVM/PHP-style languages or simple class/interface name for JavaScript/TypeScript (e.g., 'com.example.MyClass', 'App\\\\Models\\\\User', or 'MyComponent').")
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
@@ -63,7 +64,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include supertypes/subtypes defined in generated sources (KSP/Dagger/annotation-processor output). Default: true — keep generated types in the hierarchy.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         requireSmartMode(project)
 
         val className = arguments["className"]?.jsonPrimitive?.content

@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.InstallPluginTool
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
@@ -10,14 +13,14 @@ import kotlinx.serialization.json.put
 
 class PluginDevToolsTest : BasePlatformTestCase() {
 
-    private fun resultText(result: ToolCallResult) =
-        (result.content.firstOrNull() as? ContentBlock.Text)?.text ?: ""
+    private fun resultText(result: CallToolResult) =
+        (result.content.firstOrNull() as? TextContent)?.text ?: ""
 
     fun testInstallPluginToolReturnsErrorWhenNoBuildOutputExists() = runBlocking {
         // The test project has no build/distributions/ directory, so auto-detection fails.
         val result = InstallPluginTool().execute(project, buildJsonObject { })
 
-        assertTrue("Missing zip must produce an error", result.isError)
+        assertTrue("Missing zip must produce an error", result.isFailure)
         val text = resultText(result)
         assertTrue(
             "Error must suggest running buildPlugin",
@@ -32,7 +35,7 @@ class PluginDevToolsTest : BasePlatformTestCase() {
             buildJsonObject { put("path", "/nonexistent/plugin.zip") }
         )
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains("not found", ignoreCase = true))
     }
 
@@ -42,7 +45,7 @@ class PluginDevToolsTest : BasePlatformTestCase() {
             buildJsonObject { put("path", "/some/plugin.jar") }
         )
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(resultText(result).contains(".zip", ignoreCase = true))
     }
 }

@@ -1,9 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
@@ -36,12 +37,12 @@ class SetLifecycleLogFileTool : AbstractMcpTool() {
         Example: { "enabled": true }
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .booleanProperty("enabled", "true to write events to the log file, false to stop.", required = true)
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val enabled = arguments["enabled"]?.jsonPrimitive?.boolean
             ?: return createErrorResult("Missing required parameter: enabled")
 

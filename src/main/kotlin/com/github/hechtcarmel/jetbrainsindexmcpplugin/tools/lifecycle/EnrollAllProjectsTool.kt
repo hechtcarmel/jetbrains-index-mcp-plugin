@@ -1,9 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import kotlinx.serialization.json.JsonObject
@@ -25,9 +26,9 @@ class EnrollAllProjectsTool : AbstractMcpTool() {
         - project_path (optional): Routing hint when multiple projects are open.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool().projectPath().build()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool().projectPath().build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val modeService = ProjectModeService.getInstance()
         val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }
         val before = openProjects.count { modeService.isManaged(it) }

@@ -2,10 +2,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.project.Project
@@ -31,7 +32,7 @@ class ReadFileTool : AbstractMcpTool() {
     Examples: {"file": "src/main/java/MyClass.java"} or {"qualifiedName": "java.util.ArrayList"} or {"file": "MyClass.java", "startLine": 10, "endLine": 20}
 """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(required = false, description = "File path (relative, absolute, jar path with jar!/, or jar:// URL).")
         .stringProperty(ParamNames.QUALIFIED_NAME, "Fully qualified class name (e.g., java.util.ArrayList).")
@@ -39,7 +40,7 @@ class ReadFileTool : AbstractMcpTool() {
         .intProperty(ParamNames.END_LINE, "Ending line number (1-based, inclusive).")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
         val qualifiedName = arguments[ParamNames.QUALIFIED_NAME]?.jsonPrimitive?.content
         val startLineInput = arguments[ParamNames.START_LINE]?.jsonPrimitive?.int

@@ -2,9 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.diagnostic.logger
@@ -41,7 +42,7 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
         - Replace: {"searchPattern": "new Sync(${'$'}fn${'$'})", "replacePattern": "new Sync<>(Map.class, ${'$'}fn${'$'})", "filePattern": "*.java"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(ParamNames.SEARCH_PATTERN, "SSR search pattern. Use \$variable\$ for wildcards.", required = true)
         .stringProperty(ParamNames.REPLACE_PATTERN, "SSR replacement pattern. If omitted, returns matches without replacing.")
@@ -65,7 +66,7 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
         val message: String
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val searchPattern = arguments[ParamNames.SEARCH_PATTERN]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: searchPattern")
         if (searchPattern.isBlank()) {

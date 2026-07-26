@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.*
@@ -41,7 +41,7 @@ class InsertMemberTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.REFORMAT, "Auto-reformat the inserted range and optimize imports. Default: true.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: file")
         val content = arguments[ParamNames.CONTENT]?.jsonPrimitive?.content
@@ -130,7 +130,7 @@ class InsertMemberTool : AbstractMcpTool() {
         prep: InsertPreparation,
         content: String,
         reformat: Boolean
-    ): ToolCallResult {
+    ): CallToolResult {
         val insertText = "\n$content\n"
 
         var startLine = 0
@@ -159,7 +159,7 @@ class InsertMemberTool : AbstractMcpTool() {
         ))
     }
 
-    private fun handleError(error: Throwable): ToolCallResult {
+    private fun handleError(error: Throwable): CallToolResult {
         return when (error) {
             is MemberNotFoundException -> createJsonResult(MemberErrorResult(
                 error = "anchor_not_found",

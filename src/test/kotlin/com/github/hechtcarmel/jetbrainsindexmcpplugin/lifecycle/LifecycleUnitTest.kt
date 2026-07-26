@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.get
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.LifecycleEventLog
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
@@ -81,14 +83,14 @@ class LifecycleUnitTest : TestCase() {
 
     fun testSetProjectModeToolModeIsRequired() {
         val schema = SetProjectModeTool().inputSchema
-        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        val required = schema.required
         assertNotNull(required)
         assertTrue(required!!.contains("mode"))
     }
 
     fun testSetProjectModeToolModeEnumMatchesProjectMode() {
         val schema = SetProjectModeTool().inputSchema
-        val modeEnum = schema["properties"]?.jsonObject
+        val modeEnum = schema.properties
             ?.get("mode")?.jsonObject
             ?.get("enum")?.jsonArray
             ?.map { it.jsonPrimitive.content }
@@ -211,7 +213,7 @@ class LifecycleUnitTest : TestCase() {
 
     fun testSetAllProjectModesToolExcludesClosedFromEnum() {
         val schema = SetAllProjectModesTool().inputSchema
-        val modeEnum = schema["properties"]?.jsonObject
+        val modeEnum = schema.properties
             ?.get("mode")?.jsonObject
             ?.get("enum")?.jsonArray
             ?.map { it.jsonPrimitive.content }

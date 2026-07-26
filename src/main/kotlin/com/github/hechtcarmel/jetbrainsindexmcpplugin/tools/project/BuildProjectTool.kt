@@ -4,11 +4,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildProjectResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.ide.trustedProjects.TrustedProjects
@@ -57,14 +58,14 @@ class BuildProjectTool : AbstractMcpTool() {
         Example: {} or {"rebuild": true} or {"includeRawOutput": true, "timeoutSeconds": 120}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .booleanProperty(ParamNames.REBUILD, "Full rebuild instead of incremental build. Default: false.")
         .booleanProperty(ParamNames.INCLUDE_RAW_OUTPUT, "Include raw build output log in response. Default: false.")
         .intProperty(ParamNames.TIMEOUT_SECONDS, "Timeout in seconds. Must be a positive integer. No timeout if omitted.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         if (!TrustedProjects.isProjectTrusted(project)) {
             return createErrorResult("Cannot build: project is not trusted. Open project settings to mark it as trusted.")
         }

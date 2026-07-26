@@ -5,11 +5,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createFilteredScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TextMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.find.FindModel
 import com.intellij.find.impl.FindInProjectUtil
 import com.intellij.openapi.application.ApplicationManager
@@ -68,7 +69,7 @@ class SearchTextTool : AbstractMcpTool() {
         Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "Runtime\\.getRuntime\\(\\)\\.exec\\(", "regex": true, "filePattern": "*.java"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(ParamNames.QUERY, "Text to search for. Treated as a substring (plain text) or pattern (when regex is true). Required for fresh search, ignored when cursor is provided.")
         .booleanProperty(ParamNames.REGEX, "Treat query as a regular expression. Default: false.")
@@ -81,7 +82,7 @@ class SearchTextTool : AbstractMcpTool() {
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
@@ -176,7 +177,7 @@ class SearchTextTool : AbstractMcpTool() {
         )
     }
 
-    private suspend fun buildPaginatedResult(cursorToken: String, pageSize: Int?, project: Project): ToolCallResult =
+    private suspend fun buildPaginatedResult(cursorToken: String, pageSize: Int?, project: Project): CallToolResult =
         buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
             SearchTextResult(
                 matches = items,

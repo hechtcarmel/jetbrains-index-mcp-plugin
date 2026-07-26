@@ -1,6 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
@@ -86,8 +89,8 @@ class ToolsTest : McpPlatformTestCase() {
         }
     }
 
-    private fun errorText(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String =
-        (result.content.first() as ContentBlock.Text).text
+    private fun errorText(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
+        (result.content.first() as TextContent).text
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -101,13 +104,13 @@ class ToolsTest : McpPlatformTestCase() {
 
         val result = tool.execute(project, buildJsonObject { })
 
-        assertFalse("get_index_status should succeed", result.isError)
+        assertFalse("get_index_status should succeed", result.isFailure)
         assertTrue("Should have content", result.content.isNotEmpty())
 
         val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
+        assertTrue("Content should be text", content is TextContent)
 
-        val textContent = (content as ContentBlock.Text).text
+        val textContent = (content as TextContent).text
         val resultJson = json.parseToJsonElement(textContent).jsonObject
 
         assertEquals(
@@ -126,7 +129,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = FindUsagesTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
         assertTrue("Should mention required params", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
     }
 
@@ -139,7 +142,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals(
             ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
             errorText(result)
@@ -154,7 +157,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("line", 1)
         })
 
-        assertTrue("Should error with partial position params", result.isError)
+        assertTrue("Should error with partial position params", result.isFailure)
         assertTrue("Should mention missing column", errorText(result).contains("column"))
     }
 
@@ -165,7 +168,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("language", "Java")
         })
 
-        assertTrue("Should error when language provided without symbol", result.isError)
+        assertTrue("Should error when language provided without symbol", result.isFailure)
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
@@ -176,7 +179,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "com.example.MyClass#method(String)")
         })
 
-        assertTrue("Should error when symbol provided without language", result.isError)
+        assertTrue("Should error when symbol provided without language", result.isFailure)
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
@@ -191,7 +194,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -203,7 +206,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "com.example.MyClass")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
@@ -211,7 +214,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = FindDefinitionTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
         assertTrue("Should mention required params", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
     }
 
@@ -222,7 +225,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", "test.kt")
         })
 
-        assertTrue("Should error with partial position params", result.isError)
+        assertTrue("Should error with partial position params", result.isFailure)
         assertTrue("Should mention missing line", errorText(result).contains("line"))
     }
 
@@ -233,7 +236,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("language", "Java")
         })
 
-        assertTrue("Should error when language provided without symbol", result.isError)
+        assertTrue("Should error when language provided without symbol", result.isFailure)
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
@@ -248,7 +251,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -259,7 +262,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "invalidSymbolWithoutHash")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -271,7 +274,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = TypeHierarchyTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing className", result.isError)
+        assertTrue("Should error with missing className", result.isFailure)
     }
 
     fun testTypeHierarchyToolInvalidClass() = runBlocking {
@@ -281,7 +284,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("className", "com.nonexistent.Class")
         })
 
-        assertTrue("Should error with invalid class", result.isError)
+        assertTrue("Should error with invalid class", result.isFailure)
         assertTrue(
             "Error should name the class that could not be resolved: ${errorText(result)}",
             errorText(result).contains("Class 'com.nonexistent.Class' not found")
@@ -292,7 +295,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = CallHierarchyTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testCallHierarchyToolInvalidFile() = runBlocking {
@@ -307,7 +310,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals(
             ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
             errorText(result)
@@ -322,7 +325,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Should error when symbol provided without language", result.isError)
+        assertTrue("Should error when symbol provided without language", result.isFailure)
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
@@ -335,7 +338,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
@@ -357,7 +360,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertFalse("Barrel-import callers should be routed through JS/TS symbol resolution", result.isError)
+        assertFalse("Barrel-import callers should be routed through JS/TS symbol resolution", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         val callersByName = payload.calls.associateBy { it.name }
         val callerNames = callersByName.keys
@@ -386,7 +389,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callees")
         })
 
-        assertFalse("TypeScript overload symbols should resolve to an implementation-capable call-hierarchy seed", result.isError)
+        assertFalse("TypeScript overload symbols should resolve to an implementation-capable call-hierarchy seed", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertEquals("Seed should point at the implementation signature", 10, payload.element.line)
         assertTrue(
@@ -406,7 +409,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callees")
         })
 
-        assertFalse("Overload signature position should normalize to the implementation for callees", result.isError)
+        assertFalse("Overload signature position should normalize to the implementation for callees", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertEquals("Normalized seed should point at implementation line", 10, payload.element.line)
         assertTrue("Normalized position seed should expose readProjectIdFromConfig callee", payload.calls.any { it.name == "readProjectIdFromConfig" })
@@ -442,7 +445,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertFalse("Overload signature position should normalize to the implementation for callers", result.isError)
+        assertFalse("Overload signature position should normalize to the implementation for callers", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertEquals("Normalized caller seed should point at implementation line", 3, payload.element.line)
         assertTrue("Normalized caller seed should expose consumer call sites", payload.calls.any { it.name == "readProjectId" })
@@ -466,7 +469,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertFalse("Realistic index barrel callers should be routed through JS/TS symbol resolution", result.isError)
+        assertFalse("Realistic index barrel callers should be routed through JS/TS symbol resolution", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         val callersByName = payload.calls.associateBy { it.name }
         val productionCaller = callersByName["bootstrapPluginConfig"]
@@ -495,7 +498,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = FindImplementationsTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testFindImplementationsToolInvalidFile() = runBlocking {
@@ -507,7 +510,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals(
             ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
             errorText(result)
@@ -525,7 +528,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -537,7 +540,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "com.example.Repository")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
@@ -548,7 +551,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "invalidSymbolWithoutHash")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -562,7 +565,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("scope", "totally_invalid")
         })
 
-        assertTrue("Should error with invalid scope", result.isError)
+        assertTrue("Should error with invalid scope", result.isFailure)
 
         val errorJson = json.parseToJsonElement(errorText(result)).jsonObject
         assertEquals("invalid_scope", errorJson["error"]?.jsonPrimitive?.content)
@@ -584,7 +587,7 @@ class ToolsTest : McpPlatformTestCase() {
             })
         })
 
-        assertTrue("Should error with malformed scope type", result.isError)
+        assertTrue("Should error with malformed scope type", result.isFailure)
 
         val errorJson = json.parseToJsonElement(errorText(result)).jsonObject
         assertEquals("invalid_scope", errorJson["error"]?.jsonPrimitive?.content)
@@ -677,8 +680,8 @@ class ToolsTest : McpPlatformTestCase() {
             put("pageSize", 10)
         })
 
-        assertFalse("Search should succeed", result.isError)
-        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertFalse("Search should succeed", result.isFailure)
+        val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
 
         assertEquals(listOf("mappers/UserMapper.xml"), files)
@@ -706,8 +709,8 @@ class ToolsTest : McpPlatformTestCase() {
             put("pageSize", 10)
         })
 
-        assertFalse("Regex search should succeed", result.isError)
-        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertFalse("Regex search should succeed", result.isFailure)
+        val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
 
         assertEquals(listOf("src/CommandRunner.java"), files)
@@ -728,8 +731,8 @@ class ToolsTest : McpPlatformTestCase() {
             put("query", "a_word")
         })
 
-        assertFalse("Search should not return an error", result.isError)
-        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertFalse("Search should not return an error", result.isFailure)
+        val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val matches = resultJson["matches"]!!.jsonArray
         assertTrue(
             "Should find 'a_word' as a substring of 'a_word_and_another_word' — " +
@@ -763,8 +766,8 @@ class ToolsTest : McpPlatformTestCase() {
             put("pageSize", 50)
         })
 
-        assertFalse("Search should succeed", result.isError)
-        val matches = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text)
+        assertFalse("Search should succeed", result.isFailure)
+        val matches = json.parseToJsonElement((result.content.first() as TextContent).text)
             .jsonObject["matches"]!!.jsonArray
         val contextTypes = matches.map { it.jsonObject["contextType"]!!.jsonPrimitive.content }
         assertTrue("Should have at least one comment match", contextTypes.any { it == "COMMENT" })
@@ -787,8 +790,8 @@ class ToolsTest : McpPlatformTestCase() {
             put("pageSize", 10)
         })
 
-        assertFalse("Search should succeed", result.isError)
-        val matches = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text)
+        assertFalse("Search should succeed", result.isFailure)
+        val matches = json.parseToJsonElement((result.content.first() as TextContent).text)
             .jsonObject["matches"]!!.jsonArray
         assertTrue(
             "Case-insensitive search for 'maxretrycount' should match 'MaxRetryCount'",
@@ -802,7 +805,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = GetDiagnosticsTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", result.isError)
+        assertTrue("Should error with missing file", result.isFailure)
     }
 
     fun testGetDiagnosticsToolInvalidFile() = runBlocking {
@@ -812,7 +815,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", "nonexistent/file.kt")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
@@ -823,7 +826,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "invalidSymbolWithoutHash")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -835,7 +838,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = RenameSymbolTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testRenameSymbolToolInvalidFile() = runBlocking {
@@ -848,7 +851,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("newName", "newSymbol")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals("No element found at the specified position", errorText(result))
     }
 
@@ -862,7 +865,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("newName", "   ")
         })
 
-        assertTrue("Should error with blank name", result.isError)
+        assertTrue("Should error with blank name", result.isFailure)
     }
 
     fun testRenameSymbolToolCompiledElementReturnsHelpfulError() = runBlocking {
@@ -902,8 +905,8 @@ class ToolsTest : McpPlatformTestCase() {
         // The rename must not succeed — either the compiled check fires (error mentions
         // "compiled") or the element didn't resolve (some other error). Either way, no
         // SEVERE "Plugin to blame" assertion must fire, which is the key regression property.
-        assertTrue("Renaming a JDK type reference must not succeed", result.isError)
-        val msg = (result.content.firstOrNull() as? ContentBlock.Text)?.text ?: ""
+        assertTrue("Renaming a JDK type reference must not succeed", result.isFailure)
+        val msg = (result.content.firstOrNull() as? TextContent)?.text ?: ""
         assertFalse(
             "Success response must not be returned for a compiled/unresolved symbol",
             msg.contains("Successfully renamed", ignoreCase = true)
@@ -929,7 +932,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = SafeDeleteTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testSafeDeleteToolInvalidFile() = runBlocking {
@@ -941,7 +944,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
@@ -951,7 +954,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = FileStructureTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testFileStructureToolInvalidFile() = runBlocking {
@@ -961,7 +964,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", "nonexistent/file.java")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals("File not found: nonexistent/file.java", errorText(result))
     }
 
@@ -973,7 +976,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", fixtureProjectPath("types/type-alias-vs-interface.ts"))
         })
 
-        assertFalse("Type alias fixture should be accepted by file structure tool", result.isError)
+        assertFalse("Type alias fixture should be accepted by file structure tool", result.isFailure)
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
         assertTrue("Type alias output should remain distinct from classes", payload.structure.contains("typealias FileStructureAlias"))
         assertFalse("Type alias output should not regress back to class formatting", payload.structure.contains("class FileStructureAlias"))
@@ -990,7 +993,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", fixtureSymbol("interface-implements/thoth-client-interface.ts", "ThothClient"))
         })
 
-        assertFalse("Interface+implements fixture should be wired into implementations coverage", result.isError)
+        assertFalse("Interface+implements fixture should be wired into implementations coverage", result.isFailure)
         val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
         assertTrue(
             "HttpThothClient should remain the regression implements target",
@@ -1012,7 +1015,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 3)
         })
 
-        assertFalse("Class implements method fixture should be accepted by find super methods", result.isError)
+        assertFalse("Class implements method fixture should be accepted by find super methods", result.isFailure)
         val payload = json.decodeFromString<SuperMethodsResult>(errorTextless(result))
         assertEquals("fetch", payload.method.name)
         assertTrue(
@@ -1032,7 +1035,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", fixtureProjectPath("aliases/import-type-alias.ts"))
         })
 
-        assertFalse("Type import alias fixture should be accepted by file structure tool", result.isError)
+        assertFalse("Type import alias fixture should be accepted by file structure tool", result.isFailure)
         val structure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
         assertTrue("Type import alias coverage should mention ImportedPluginNameAlias", structure.contains("typealias ImportedPluginNameAlias"))
         assertTrue("Type import alias coverage should keep importedPluginName visible", structure.contains("var importedPluginName"))
@@ -1049,7 +1052,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", fixtureProjectPath("derived/const-derived-types.ts"))
         })
 
-        assertFalse("as const derived fixture should be accepted by file structure tool", result.isError)
+        assertFalse("as const derived fixture should be accepted by file structure tool", result.isFailure)
         val derivedStructure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
         assertTrue("as const coverage should mention THOTH_STATUS", derivedStructure.contains("var THOTH_STATUS"))
         assertTrue("Derived type coverage should mention ThothStatus", derivedStructure.contains("typealias ThothStatus"))
@@ -1170,13 +1173,13 @@ class ToolsTest : McpPlatformTestCase() {
 
         val result = tool.execute(project, buildJsonObject { })
 
-        assertFalse("get_active_file should succeed", result.isError)
+        assertFalse("get_active_file should succeed", result.isFailure)
         assertTrue("Should have content", result.content.isNotEmpty())
 
         val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
+        assertTrue("Content should be text", content is TextContent)
 
-        val textContent = (content as ContentBlock.Text).text
+        val textContent = (content as TextContent).text
         val resultJson = json.parseToJsonElement(textContent).jsonObject
 
         val activeFiles = resultJson["activeFiles"]?.jsonArray
@@ -1192,7 +1195,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = OpenFileTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testOpenFileToolInvalidFile() = runBlocking {
@@ -1202,7 +1205,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", "nonexistent/file.kt")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
@@ -1214,7 +1217,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 5)
         })
 
-        assertTrue("Should error with column without line", result.isError)
+        assertTrue("Should error with column without line", result.isFailure)
     }
 
     fun testOpenFileToolInvalidLine() = runBlocking {
@@ -1225,7 +1228,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("line", 0)
         })
 
-        assertTrue("Should error with line < 1", result.isError)
+        assertTrue("Should error with line < 1", result.isFailure)
     }
 
     // Reformat Code Tool Tests
@@ -1234,7 +1237,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = ReformatCodeTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testReformatCodeToolInvalidFile() = runBlocking {
@@ -1244,7 +1247,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", "nonexistent/file.kt")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
@@ -1256,7 +1259,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("startLine", 1)
         })
 
-        assertTrue("Should error when startLine provided without endLine", result.isError)
+        assertTrue("Should error when startLine provided without endLine", result.isFailure)
     }
 
     fun testReformatCodeToolEndLineWithoutStartLine() = runBlocking {
@@ -1267,7 +1270,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("endLine", 10)
         })
 
-        assertTrue("Should error when endLine provided without startLine", result.isError)
+        assertTrue("Should error when endLine provided without startLine", result.isFailure)
     }
 
     fun testReformatCodeToolInvalidLineRange() = runBlocking {
@@ -1279,7 +1282,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("endLine", 5)
         })
 
-        assertTrue("Should error when endLine < startLine", result.isError)
+        assertTrue("Should error when endLine < startLine", result.isFailure)
     }
 
     fun testReformatCodeToolStartLineLessThanOne() = runBlocking {
@@ -1291,7 +1294,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("endLine", 5)
         })
 
-        assertTrue("Should error when startLine < 1", result.isError)
+        assertTrue("Should error when startLine < 1", result.isFailure)
     }
 
     // FindSuperMethods Tool Tests (language+symbol)
@@ -1300,7 +1303,7 @@ class ToolsTest : McpPlatformTestCase() {
         val tool = FindSuperMethodsTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
         assertTrue("Should mention required params", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
     }
 
@@ -1313,7 +1316,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
         assertEquals(
             ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
             errorText(result)
@@ -1328,7 +1331,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with partial position params", result.isError)
+        assertTrue("Should error with partial position params", result.isFailure)
         assertTrue("Should mention missing file", errorText(result).contains("file"))
     }
 
@@ -1339,7 +1342,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "com.example.UserServiceImpl#getUser(String)")
         })
 
-        assertTrue("Should error when symbol provided without language", result.isError)
+        assertTrue("Should error when symbol provided without language", result.isFailure)
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
@@ -1354,7 +1357,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -1366,7 +1369,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("symbol", "com.example.UserServiceImpl#getUser(String)")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
@@ -1379,7 +1382,7 @@ class ToolsTest : McpPlatformTestCase() {
 
         // Representative routing check only: JS super-method semantics may not be meaningful in minimal fixtures,
         // but malformed symbol grammar must still be rejected by the JS/TS symbol handler path.
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -1393,7 +1396,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -1414,10 +1417,10 @@ class ToolsTest : McpPlatformTestCase() {
             assertTrue("Name should not be empty", definition.name.isNotEmpty())
 
             assertNotNull("Definition should have description", definition.description)
-            assertTrue("Description should not be empty", definition.description.isNotEmpty())
+            assertTrue("Description should not be empty", definition.description!!.isNotEmpty())
 
             assertNotNull("Definition should have inputSchema", definition.inputSchema)
-            assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+            assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema.type)
         }
     }
 
@@ -1490,8 +1493,8 @@ class ToolsTest : McpPlatformTestCase() {
             .removeSuffix(".cjs")
     }
 
-    private fun errorTextless(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String =
-        (result.content.first() as ContentBlock.Text).text
+    private fun errorTextless(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
+        (result.content.first() as TextContent).text
 
     class LegacyContributor(
         private val itemsByName: Map<String, Array<NavigationItem>>

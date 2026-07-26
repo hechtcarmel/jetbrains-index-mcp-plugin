@@ -1,6 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
@@ -40,7 +43,7 @@ class ResponseFormattingToolTest : BasePlatformTestCase() {
         val tool = GetIndexStatusTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        val text = (result.content.single() as ContentBlock.Text).text
+        val text = (result.content.single() as TextContent).text
 
         val parsed = json.parseToJsonElement(text).jsonObject
         assertNotNull(parsed["isDumbMode"])
@@ -52,7 +55,7 @@ class ResponseFormattingToolTest : BasePlatformTestCase() {
         val tool = GetIndexStatusTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        val text = (result.content.single() as ContentBlock.Text).text
+        val text = (result.content.single() as TextContent).text
 
         assertFalse("TOON output should not be raw JSON", text.trim().startsWith("{"))
         assertTrue(text.contains("isDumbMode:"))
@@ -67,9 +70,9 @@ class ResponseFormattingToolTest : BasePlatformTestCase() {
             put("query", "Foo")
             put("scope", "not_a_scope")
         })
-        val text = (result.content.single() as ContentBlock.Text).text
+        val text = (result.content.single() as TextContent).text
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertFalse("Structured TOON error should not be raw JSON", text.trim().startsWith("{"))
         assertTrue(text.contains("error: invalid_scope"))
         assertTrue(text.contains("parameter: scope"))
@@ -80,9 +83,9 @@ class ResponseFormattingToolTest : BasePlatformTestCase() {
         val tool = FindFileTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        val text = (result.content.single() as ContentBlock.Text).text
+        val text = (result.content.single() as TextContent).text
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertTrue(text.contains("Missing required parameter: query"))
         assertFalse("Plain text errors should not be structured payloads", text.contains("supportedValues"))
     }

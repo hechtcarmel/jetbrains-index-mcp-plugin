@@ -18,8 +18,8 @@ Create an MCP server within an IntelliJ plugin that allows AI coding assistants 
 - **Language**: Kotlin (JVM 21)
 - **Build System**: Gradle 9.0 with Kotlin DSL
 - **IDE Platform**: IntelliJ IDEA 2025.1+ (platformType = IC)
-- **HTTP Server**: Ktor CIO 2.3.12 (embedded, configurable port)
-- **Protocol**: Model Context Protocol (MCP) 2025-03-26
+- **HTTP Server**: Ktor CIO 3.2.3 (embedded, configurable port)
+- **Protocol**: Model Context Protocol via the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk) (`io.modelcontextprotocol:kotlin-sdk-server`). Negotiates 2024-11-05 … 2025-11-25.
 
 ## Key Documentation
 
@@ -58,12 +58,14 @@ src/
 │   │   │   └── rust/RustHandlers.kt    # Rust handlers (reflection)
 │   │   ├── server/                     # MCP server infrastructure
 │   │   │   ├── McpServerService.kt     # App-level service managing server lifecycle
-│   │   │   ├── JsonRpcHandler.kt       # JSON-RPC 2.0 request routing
 │   │   │   ├── ProjectResolver.kt      # Multi-project resolution with workspace support
-│   │   │   ├── models/                 # Protocol models (JsonRpc, MCP)
-│   │   │   └── transport/              # HTTP+SSE transport layer
-│   │   │       ├── KtorMcpServer.kt    # Embedded Ktor CIO server
-│   │   │       ├── KtorSseSessionManager.kt # SSE session management
+│   │   │   ├── mcp/                    # Bridge from the tool registry to the MCP SDK
+│   │   │   │   ├── McpServerFactory.kt # Builds an SDK `Server` per connection
+│   │   │   │   └── McpToolDispatcher.kt # Settings gate, project resolution, history, modality
+│   │   │   └── transport/              # HTTP transport layer
+│   │   │       ├── KtorMcpServer.kt    # Embedded Ktor CIO server + SDK route wiring
+│   │   │       ├── LegacySseRoutes.kt  # 2024-11-05 HTTP+SSE endpoints
+│   │   │       ├── LocalOriginGuard.kt # Loopback Origin/Host validation + CORS
 │   │   ├── startup/                    # Startup activities
 │   │   ├── tools/                      # MCP tool implementations
 │   │   │   ├── McpTool.kt             # Tool interface
@@ -145,11 +147,30 @@ MCP servers expose:
 
 **Key Server Classes:**
 - `McpServerService` - Application-level service managing server lifecycle
-- `KtorMcpServer` - Embedded Ktor CIO server with CORS support
-- `KtorSseSessionManager` - SSE session management using Kotlin channels
-- `JsonRpcHandler` - JSON-RPC 2.0 request processing
+- `KtorMcpServer` - Embedded Ktor CIO engine; installs ContentNegotiation, the origin guard, and
+  the SDK's route helpers. Owns no protocol logic.
+- `McpServerFactory` - Turns `ToolRegistry` into an SDK `Server`. A **fresh server per
+  connection**, so toggling a tool in Settings takes effect on the next `tools/list` — and so the
+  per-request session does not accumulate. Stateless Streamable HTTP never closes what it
+  creates, so `KtorMcpServer` closes each server when the HTTP call completes
+  (`StatelessServerLifecycleTest` guards this).
+- `McpToolDispatcher` - Everything between "client asked for tool X" and the tool running:
+  enabled/disabled gate, `project_path` resolution, command history, and the IDE modality
+  context that `commitAllDocuments` requires.
+- `LocalOriginGuard` - Loopback Origin/Host validation and CORS. Deliberately *not* the SDK's
+  `DnsRebindingProtection`: that implementation compares `Host` including the port and rejects
+  requests with no `Origin` header at all, which would break curl and several clients.
 
-**Transport**: This plugin supports two transports with JSON-RPC 2.0:
+**What the SDK owns:** JSON-RPC framing and error codes, `initialize` and protocol-version
+negotiation, `ping`, `tools/list`, `tools/call` dispatch, SSE framing, session ids, batching.
+
+**Version pinning:** `mcpKotlinSdk` and `ktor` in `gradle/libs.versions.toml` must stay within
+the Kotlin generation the target IDE ships (2.2.x for 2025.3). kotlin-sdk 0.11.0+ is built
+against Kotlin 2.3 and fails to compile against this platform. See the comment in the catalog.
+
+**Transport**: This plugin supports two transports with JSON-RPC 2.0. Both require
+`Accept: application/json, text/event-stream` and `Content-Type: application/json` on POSTs, as
+the Streamable HTTP spec mandates:
 
 *Streamable HTTP (Primary, MCP 2025-03-26):*
 - `POST /index-mcp/streamable-http` → Stateless JSON-RPC requests/responses

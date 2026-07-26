@@ -1,6 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ListTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestEntry
@@ -303,7 +303,7 @@ class ListTestsToolBehaviorTest : McpPlatformTestCase() {
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────
 
-    private fun decode(result: ToolCallResult): ListTestsResult = json.decodeFromString(toolText(result))
+    private fun decode(result: CallToolResult): ListTestsResult = json.decodeFromString(toolText(result))
 
     private suspend fun listTests(file: String? = null): List<TestEntry> {
         val result = ListTestsTool().execute(project, buildJsonObject {

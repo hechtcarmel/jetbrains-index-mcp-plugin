@@ -1,10 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcRequest
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.JsonRpcResponse
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpToolDispatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.text
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.testFramework.PsiTestUtil
@@ -13,7 +13,6 @@ import com.intellij.testFramework.LightVirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -27,20 +26,14 @@ import kotlinx.serialization.json.put
  */
 class WorkspaceResolutionTest : BasePlatformTestCase() {
 
-    private lateinit var handler: JsonRpcHandler
-    private lateinit var toolRegistry: ToolRegistry
+    private lateinit var dispatcher: McpToolDispatcher
     private var originalAvailableProjectsMode: McpSettings.AvailableProjectsMode? = null
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val json = Json { ignoreUnknownKeys = true }
 
     override fun setUp() {
         super.setUp()
-        toolRegistry = ToolRegistry()
-        toolRegistry.registerBuiltInTools()
-        handler = JsonRpcHandler(toolRegistry)
+        dispatcher = McpToolDispatcher(ToolRegistry().apply { registerBuiltInTools() })
         originalAvailableProjectsMode = McpSettings.getInstance().availableProjectsMode
     }
 
@@ -66,25 +59,15 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
 
         val contentRoot = contentRoots.first()
 
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(1),
-            method = "tools/call",
-            params = buildJsonObject {
-                put("name", ToolNames.INDEX_STATUS)
-                put("arguments", buildJsonObject {
-                    put("project_path", contentRoot)
-                })
-            }
+        val result = dispatcher.call(
+            ToolNames.INDEX_STATUS,
+            buildJsonObject { put("project_path", contentRoot) }
         )
 
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
-
-        assertNull("Module content root path should not return JSON-RPC error", response.error)
-        assertNotNull("Should return result", response.result)
-
-        val result = json.decodeFromJsonElement(ToolCallResult.serializer(), response.result!!)
-        assertFalse("Tool should succeed with module content root path", result.isError)
+        assertFalse(
+            "Tool should succeed with module content root path: ${'$'}{result.text}",
+            result.isFailure
+        )
     }
 
     /**
@@ -97,25 +80,15 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
         }
         val subPath = "$projectPath/src"
 
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(2),
-            method = "tools/call",
-            params = buildJsonObject {
-                put("name", ToolNames.INDEX_STATUS)
-                put("arguments", buildJsonObject {
-                    put("project_path", subPath)
-                })
-            }
+        val result = dispatcher.call(
+            ToolNames.INDEX_STATUS,
+            buildJsonObject { put("project_path", subPath) }
         )
 
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
-
-        assertNull("Subdirectory path should not return JSON-RPC error", response.error)
-        assertNotNull("Should return result", response.result)
-
-        val result = json.decodeFromJsonElement(ToolCallResult.serializer(), response.result!!)
-        assertFalse("Tool should succeed with subdirectory of project", result.isError)
+        assertFalse(
+            "Tool should succeed with subdirectory of project: ${result.text}",
+            result.isFailure
+        )
     }
 
     /**
@@ -181,32 +154,14 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
     }
 
     private fun requestInvalidPathErrorJson() = runBlocking {
-        val request = JsonRpcRequest(
-            id = JsonPrimitive(3),
-            method = "tools/call",
-            params = buildJsonObject {
-                put("name", ToolNames.INDEX_STATUS)
-                put("arguments", buildJsonObject {
-                    put("project_path", "/completely/invalid/path")
-                })
-            }
+        val result = dispatcher.call(
+            ToolNames.INDEX_STATUS,
+            buildJsonObject { put("project_path", "/completely/invalid/path") }
         )
 
-        val responseJson = handler.handleRequest(json.encodeToString(JsonRpcRequest.serializer(), request))
-        val response = json.decodeFromString<JsonRpcResponse>(responseJson!!)
+        assertTrue("Tool should return error for completely invalid path", result.isFailure)
 
-        assertNull("Should not return JSON-RPC level error", response.error)
-        assertNotNull("Should return result", response.result)
-
-        val result = json.decodeFromJsonElement(ToolCallResult.serializer(), response.result!!)
-        assertTrue("Tool should return error for completely invalid path", result.isError)
-
-        val content = result.content.firstOrNull()
-        assertNotNull("Should have error content", content)
-
-        return@runBlocking json.parseToJsonElement(
-            (content as? com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock.Text)?.text ?: ""
-        ).jsonObject
+        return@runBlocking json.parseToJsonElement(result.text).jsonObject
     }
 
     private fun addWorkspaceSubProjectContentRoot(): VirtualFile {

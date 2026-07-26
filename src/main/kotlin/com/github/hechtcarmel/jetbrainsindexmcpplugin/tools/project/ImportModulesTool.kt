@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.project.Project
@@ -41,7 +42,7 @@ class ImportModulesTool : AbstractMcpTool() {
         Example: { "paths": ["/Users/dev/casehub/drafthouse", "/Users/dev/casehub/worker"] }
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .property("paths", kotlinx.serialization.json.buildJsonObject {
             put("type", kotlinx.serialization.json.JsonPrimitive("array"))
             put("description", kotlinx.serialization.json.JsonPrimitive(
@@ -54,7 +55,7 @@ class ImportModulesTool : AbstractMcpTool() {
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val pathsJson = arguments["paths"]?.jsonArray
             ?: return createErrorResult("Missing required parameter: paths (array of directory paths)")
 

@@ -1,7 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -102,7 +103,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         Example: {"files": ["src/Main.java"]}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .property("files", buildJsonObject {
             put("type", "array")
@@ -140,7 +141,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         val virtualFile: VirtualFile?
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         requireSmartMode(project)
 
         val filesList = arguments["files"]?.jsonArray?.map { it.jsonPrimitive.content }
@@ -522,7 +523,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 private data class ConversionExecutionResult(
-    val result: ToolCallResult,
+    val result: CallToolResult,
     val summary: ConversionSummary
 )
 

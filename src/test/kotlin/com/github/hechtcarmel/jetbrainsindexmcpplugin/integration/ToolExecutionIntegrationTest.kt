@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.integration
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
@@ -55,7 +58,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
+        assertTrue("Should error with missing file", resultMissing.isFailure)
 
         // Test with invalid file
         val resultInvalid = tool.execute(project, buildJsonObject {
@@ -63,7 +66,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("line", 1)
             put("column", 1)
         })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
+        assertTrue("Should error with invalid file", resultInvalid.isFailure)
     }
 
     fun testFindDefinitionToolEndToEnd() = runBlocking {
@@ -71,7 +74,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
+        assertTrue("Should error with missing file", resultMissing.isFailure)
 
         // Test with invalid file
         val resultInvalid = tool.execute(project, buildJsonObject {
@@ -79,7 +82,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("line", 1)
             put("column", 1)
         })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
+        assertTrue("Should error with invalid file", resultInvalid.isFailure)
     }
 
     fun testFindDefinitionToolFullElementPreview() = runBlocking {
@@ -141,27 +144,27 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
         val tool = ReadFileTool()
 
         val missing = tool.execute(project, buildJsonObject { })
-        assertTrue("Missing file/qualifiedName should error", missing.isError)
+        assertTrue("Missing file/qualifiedName should error", missing.isFailure)
 
         val endLineOnly = tool.execute(project, buildJsonObject {
             put("file", "Test.java")
             put("endLine", 2)
         })
-        assertTrue("endLine without startLine should error", endLineOnly.isError)
+        assertTrue("endLine without startLine should error", endLineOnly.isFailure)
 
         val invalidRange = tool.execute(project, buildJsonObject {
             put("file", "Test.java")
             put("startLine", 3)
             put("endLine", 2)
         })
-        assertTrue("endLine < startLine should error", invalidRange.isError)
+        assertTrue("endLine < startLine should error", invalidRange.isFailure)
 
         val invalidStart = tool.execute(project, buildJsonObject {
             put("file", "Test.java")
             put("startLine", 0)
             put("endLine", 1)
         })
-        assertTrue("startLine < 1 should error", invalidStart.isError)
+        assertTrue("startLine < 1 should error", invalidStart.isFailure)
     }
 
     fun testReadFileToolReadsLinesAndMetadata() = runBlocking {
@@ -181,8 +184,8 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("endLine", 3)
         })
 
-        assertFalse("Should succeed for valid file", result.isError)
-        val content = result.content.first() as ContentBlock.Text
+        assertFalse("Should succeed for valid file", result.isFailure)
+        val content = result.content.first() as TextContent
         val readFile = json.decodeFromString<ReadFileResult>(content.text)
 
         assertTrue("Resolved path should end with filename", readFile.file.endsWith("ReadMe.java"))
@@ -199,8 +202,8 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("file", fileArg)
             put("startLine", 4)
         })
-        assertFalse("Single-line read should succeed", singleLine.isError)
-        val singleContent = singleLine.content.first() as ContentBlock.Text
+        assertFalse("Single-line read should succeed", singleLine.isFailure)
+        val singleContent = singleLine.content.first() as TextContent
         val singleResult = json.decodeFromString<ReadFileResult>(singleContent.text)
         assertEquals("line4", singleResult.content)
         assertEquals(4, singleResult.startLine)
@@ -234,8 +237,8 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("scope", "project_files")
         })
 
-        assertFalse("Project-only file search should succeed", projectOnlyResult.isError)
-        val projectOnlyContent = projectOnlyResult.content.first() as ContentBlock.Text
+        assertFalse("Project-only file search should succeed", projectOnlyResult.isFailure)
+        val projectOnlyContent = projectOnlyResult.content.first() as TextContent
         val projectOnlyMatches = json.decodeFromString<FindFileResult>(projectOnlyContent.text)
         assertNull(
             "Library file should not be returned when scope excludes libraries",
@@ -247,8 +250,8 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("scope", "project_and_libraries")
         })
 
-        assertFalse("Library file search should succeed", result.isError)
-        val content = result.content.first() as ContentBlock.Text
+        assertFalse("Library file search should succeed", result.isFailure)
+        val content = result.content.first() as TextContent
         val findFile = json.decodeFromString<FindFileResult>(content.text)
         val match = findFile.files.firstOrNull { it.name == "$className.java" }
         assertNotNull("Library file should be returned when scope includes libraries", match)
@@ -287,8 +290,8 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("column", 14)
         })
 
-        assertFalse("Library source definition lookup should succeed", result.isError)
-        val content = result.content.first() as ContentBlock.Text
+        assertFalse("Library source definition lookup should succeed", result.isFailure)
+        val content = result.content.first() as TextContent
         val definition = json.decodeFromString<DefinitionResult>(content.text)
         assertEquals(libraryFile.toString().replace('\\', '/'), definition.file)
         assertEquals(className, definition.symbolName)
@@ -311,7 +314,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("column", 14)
         })
 
-        assertTrue("Unrelated external files must remain inaccessible", result.isError)
+        assertTrue("Unrelated external files must remain inaccessible", result.isFailure)
     }
 
     fun testFindUsagesToolFindsProjectUsagesFromLibrarySourcePath() = runBlocking {
@@ -366,8 +369,8 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("column", column)
         })
 
-        assertFalse("Library-source usages lookup should succeed", result.isError)
-        val content = result.content.first() as ContentBlock.Text
+        assertFalse("Library-source usages lookup should succeed", result.isFailure)
+        val content = result.content.first() as TextContent
         val usages = json.decodeFromString<FindUsagesResult>(content.text)
         assertTrue(
             "Project usage should be found from external library declaration",
@@ -380,13 +383,13 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing className", resultMissing.isError)
+        assertTrue("Should error with missing className", resultMissing.isFailure)
 
         // Test with invalid class
         val resultInvalid = tool.execute(project, buildJsonObject {
             put("className", "com.nonexistent.InvalidClass")
         })
-        assertTrue("Should error with invalid class", resultInvalid.isError)
+        assertTrue("Should error with invalid class", resultInvalid.isFailure)
     }
 
     fun testCallHierarchyToolEndToEnd() = runBlocking {
@@ -394,7 +397,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
+        assertTrue("Should error with missing file", resultMissing.isFailure)
 
         // Test with invalid file
         val resultInvalid = tool.execute(project, buildJsonObject {
@@ -402,7 +405,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("line", 1)
             put("column", 1)
         })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
+        assertTrue("Should error with invalid file", resultInvalid.isFailure)
     }
 
     fun testFindImplementationsToolEndToEnd() = runBlocking {
@@ -410,7 +413,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
+        assertTrue("Should error with missing file", resultMissing.isFailure)
 
         // Test with invalid file
         val resultInvalid = tool.execute(project, buildJsonObject {
@@ -418,7 +421,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("line", 1)
             put("column", 1)
         })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
+        assertTrue("Should error with invalid file", resultInvalid.isFailure)
     }
 
     // Intelligence Tools Tests
@@ -428,13 +431,13 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         // Test missing required parameter
         val resultMissing = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", resultMissing.isError)
+        assertTrue("Should error with missing file", resultMissing.isFailure)
 
         // Test with invalid file
         val resultInvalid = tool.execute(project, buildJsonObject {
             put("file", "nonexistent.kt")
         })
-        assertTrue("Should error with invalid file", resultInvalid.isError)
+        assertTrue("Should error with invalid file", resultInvalid.isFailure)
     }
 
     // Project Tools Tests
@@ -444,13 +447,13 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
 
         val result = tool.execute(project, buildJsonObject { })
 
-        assertFalse("get_index_status should succeed", result.isError)
+        assertFalse("get_index_status should succeed", result.isFailure)
         assertTrue("Should have content", result.content.isNotEmpty())
 
         val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
+        assertTrue("Content should be text", content is TextContent)
 
-        val textContent = (content as ContentBlock.Text).text
+        val textContent = (content as TextContent).text
         val resultJson = json.parseToJsonElement(textContent).jsonObject
 
         assertNotNull("Result should have isDumbMode", resultJson["isDumbMode"])
@@ -547,10 +550,10 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
         val definitions = registry.getToolDefinitions()
 
         definitions.forEach { definition ->
-            assertTrue("${definition.name} should have non-empty description", definition.description.isNotEmpty())
+            assertTrue("${definition.name} should have non-empty description", !definition.description.isNullOrEmpty())
             assertNotNull("${definition.name} should have inputSchema", definition.inputSchema)
             assertEquals("${definition.name} inputSchema should be object type",
-                "object", definition.inputSchema["type"]?.toString()?.replace("\"", ""))
+                "object", definition.inputSchema.type)
         }
     }
 

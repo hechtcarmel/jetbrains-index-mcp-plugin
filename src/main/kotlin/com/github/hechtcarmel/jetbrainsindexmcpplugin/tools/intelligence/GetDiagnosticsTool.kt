@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.IntentionInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.intention.IntentionManager
@@ -67,7 +68,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         Example: {"file": "src/MyClass.java"} or {"includeBuildErrors": true, "severity": "errors"} or {"file": "src/MyClass.java", "includeBuildErrors": true, "includeTestResults": true}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Optional — enables per-file code analysis.")
         .intProperty("line", "1-based line number for intention lookup. Optional, defaults to 1. Requires file.")
@@ -82,7 +83,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         .intProperty(ParamNames.MAX_TEST_RESULTS, "Max test results to return. Default: 100, max: 500.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         // Parse arguments
         val filePath = arguments["file"]?.jsonPrimitive?.content
         val line = arguments["line"]?.jsonPrimitive?.intOrNull ?: 1

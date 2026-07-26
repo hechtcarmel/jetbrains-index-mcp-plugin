@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import junit.framework.TestCase
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -74,10 +77,10 @@ class ProjectResolverUnitTest : TestCase() {
             }
         )
 
-        val text = (result.content.single() as ContentBlock.Text).text
+        val text = (result.content.single() as TextContent).text
         val parsed = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertEquals("project_not_found", parsed["error"]?.jsonPrimitive?.content)
         assertEquals("Missing project", parsed["message"]?.jsonPrimitive?.content)
     }
@@ -91,9 +94,9 @@ class ProjectResolverUnitTest : TestCase() {
             format = McpSettings.ResponseFormat.TOON
         )
 
-        val text = (result.content.single() as ContentBlock.Text).text
+        val text = (result.content.single() as TextContent).text
 
-        assertTrue(result.isError)
+        assertTrue(result.isFailure)
         assertFalse(text.trim().startsWith("{"))
         assertTrue(text.contains("error: project_not_found"))
         assertTrue(text.contains("message: Missing project"))

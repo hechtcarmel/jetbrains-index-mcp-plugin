@@ -1,9 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.PathManager
@@ -46,7 +47,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         - {"modules": ["/Users/dev/casehub/platform", "/Users/dev/casehub/engine", "/Users/dev/casehub/worker"]}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .stringProperty("path", "Absolute path to the root directory containing Maven project subdirectories. Mutually exclusive with 'modules'.")
         .property("modules", kotlinx.serialization.json.buildJsonObject {
             put("type", kotlinx.serialization.json.JsonPrimitive("array"))
@@ -63,7 +64,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
 
     private enum class OpenOutcome { OPEN_FAILED, CLOSED_WHILE_WAITING, MAVEN_UNAVAILABLE, IMPORT_INCOMPLETE, STALE_MODULES, READY }
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val pathArg = arguments["path"]?.jsonPrimitive?.content
         val modulesArg = arguments["modules"]?.jsonArray?.map { it.jsonPrimitive.content }
 

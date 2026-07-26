@@ -1,7 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
@@ -21,10 +21,10 @@ class MemberEditingToolsBehaviorTest : McpPlatformTestCase() {
     private fun readProjectFile(relativePath: String): String =
         Files.readString(Path.of(requireNotNull(project.basePath), relativePath))
 
-    private fun parseResult(result: ToolCallResult): MemberEditResult =
+    private fun parseResult(result: CallToolResult): MemberEditResult =
         json.decodeFromString(toolText(result))
 
-    private fun parseErrorResult(result: ToolCallResult): MemberErrorResult =
+    private fun parseErrorResult(result: CallToolResult): MemberErrorResult =
         json.decodeFromString(toolText(result))
 
     // ── Java: ide_replace_member ──

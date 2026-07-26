@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
@@ -68,7 +69,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         - Move config file: {"file": "config/old.yml", "destination": "config/archive"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(description = "Path to the source file to move, relative to project root. REQUIRED.")
         .stringProperty("destination", "Target directory path relative to project root. The file will be moved into this directory. Created automatically if it doesn't exist. REQUIRED.", required = true)
@@ -98,7 +99,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         val phpDeclarationName: String? = null
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }
@@ -227,7 +228,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
     private suspend fun executeMove(
         project: Project,
         preparation: MovePreparation
-    ): ToolCallResult {
+    ): CallToolResult {
         var success = false
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()

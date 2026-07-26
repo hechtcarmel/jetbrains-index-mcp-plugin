@@ -1,6 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -27,8 +30,8 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         val tool = ConvertJavaToKotlinTool()
         val result = tool.execute(project, buildJsonObject { })
 
-        assertTrue("Should error with missing files parameter", result.isError)
-        val error = (result.content.first() as ContentBlock.Text).text
+        assertTrue("Should error with missing files parameter", result.isFailure)
+        val error = (result.content.first() as TextContent).text
         assertTrue("Error should mention missing parameter",
             error.contains("Missing required parameter") || error.contains("files"))
     }
@@ -41,7 +44,7 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
             })
         })
 
-        assertFalse("Structured per-file skips should not be top-level errors", result.isError)
+        assertFalse("Structured per-file skips should not be top-level errors", result.isFailure)
 
         val payload = decodeResult(result)
         assertEquals(1, payload.summary.totalRequested)
@@ -59,8 +62,8 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
             put("files", kotlinx.serialization.json.buildJsonArray { })
         })
 
-        assertTrue("Should error with empty files list", result.isError)
-        val error = (result.content.first() as ContentBlock.Text).text
+        assertTrue("Should error with empty files list", result.isFailure)
+        val error = (result.content.first() as TextContent).text
         assertTrue("Error should mention no files", error.contains("No files"))
     }
 
@@ -74,7 +77,7 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
             })
         })
 
-        assertFalse("All-skipped batches should still return structured results", result.isError)
+        assertFalse("All-skipped batches should still return structured results", result.isFailure)
 
         val payload = decodeResult(result)
         assertEquals(3, payload.summary.totalRequested)
@@ -103,7 +106,7 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
             })
         })
 
-        assertFalse("Duplicate skipped entries should still return structured results", result.isError)
+        assertFalse("Duplicate skipped entries should still return structured results", result.isFailure)
 
         val payload = decodeResult(result)
         assertEquals(2, payload.summary.totalRequested)
@@ -136,9 +139,9 @@ class ConvertJavaToKotlinToolTest : BasePlatformTestCase() {
         assertFalse("Schema should not include 'file' parameter", schema.contains("\"file\""))
     }
 
-    private fun decodeResult(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult):
+    private fun decodeResult(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult):
         JavaToKotlinConversionResult {
-        val text = (result.content.first() as ContentBlock.Text).text
+        val text = (result.content.first() as TextContent).text
         return json.decodeFromString(text)
     }
 }
