@@ -1,9 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.IdeProductInfo
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.util.messages.Topic
+import java.util.Properties
 
 object McpConstants {
     const val PLUGIN_NAME = "Index MCP Server"
@@ -53,18 +52,23 @@ object McpConstants {
      */
     const val SERVER_NAME = "jetbrains-index-mcp"
 
-    /** Plugin coordinates, used to report the real version in `initialize`. */
-    const val PLUGIN_ID = "com.github.hechtcarmel.jetbrainsindexmcpplugin"
-
     /**
      * Version reported to MCP clients in `initialize`.
      *
-     * Read from the plugin descriptor rather than hardcoded — the constant this replaced said
-     * "4.10.4" while the plugin shipped 4.31.x, so every client saw a stale version.
+     * Stamped into `mcp-server.properties` by the build rather than hardcoded — the constant this
+     * replaced said "4.10.4" while the plugin shipped 4.31.x, so every client saw a stale version.
+     * The descriptor is not an option: every platform API that exposes it is `@ApiStatus.Internal`
+     * as of 2026.2.
      */
     @JvmStatic
-    fun getServerVersion(): String =
-        PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.version ?: "unknown"
+    fun getServerVersion(): String = stampedVersion
+
+    private val stampedVersion: String by lazy {
+        McpConstants::class.java.getResourceAsStream("/mcp-server.properties")?.use { stream ->
+            Properties().apply { load(stream) }.getProperty("version")
+        } ?: "unknown"
+    }
+
     const val SERVER_DESCRIPTION = "Code intelligence server for JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, PhpStorm, RustRover). Use this instead of grep/ripgrep for semantic code understanding. Capabilities: find usages, go to definition, type/call hierarchies, find implementations, symbol search, rename refactoring, safe delete, diagnostics. Languages: Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and Markdown file structure. Prerequisite: project must be open in IDE. Note: refactoring tools modify source files."
 
     /**

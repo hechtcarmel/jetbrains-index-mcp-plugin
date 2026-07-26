@@ -24,7 +24,7 @@
 
 ### Fixed
 
-- **`initialize` reported a stale server version.** `serverInfo.version` was hardcoded to `4.10.4` while the plugin shipped 4.31.x; it now reads the real version from the plugin descriptor.
+- **`initialize` reported a stale server version.** `serverInfo.version` was hardcoded to `4.10.4` while the plugin shipped 4.31.x; the build now stamps the real version into a resource the plugin reads at runtime. (Reading it off the plugin descriptor is not an option — every platform API that exposes it is `@ApiStatus.Internal` as of 2026.2, which the plugin verifier fails the build on.)
 
 - **`ide_structural_search_replace`** — replace mode failed with `Must not change PSI outside command or undo-transparent action` on every invocation that matched at least one element in a project file, applying no edits. `Replacer.replaceAll` opens its own write action but no command, which `PomModelImpl` requires for changes to physical files; replacements are now wrapped in a command, matching the IDE's own Replace All. Search-only mode was unaffected.
 - **`ide_find_definition`, `ide_find_references`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`** — symbol mode (`language` + `symbol`) returned `not_found` for `module#default` when the file used `export default function f() {}` or `export default class C {}`, the two most common default-export forms. Default-export detection probed a non-existent `isDefaultExport()` accessor; it now uses `isExportedWithDefault()`, which is where the modifier actually lives when there is no `ES6ExportDefault*` wrapper node. Affects both JavaScript and TypeScript.

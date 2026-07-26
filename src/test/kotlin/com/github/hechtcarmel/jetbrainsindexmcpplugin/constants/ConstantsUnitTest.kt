@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.constants
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import junit.framework.TestCase
 
 class ConstantsUnitTest : TestCase() {
@@ -99,5 +100,20 @@ class ConstantsUnitTest : TestCase() {
         assertTrue(message.contains("Unsupported language for symbol references: Python"))
         assertTrue(message.contains("No symbol reference handlers are available in this IDE session"))
         assertTrue(message.contains("Use file+line+column instead"))
+    }
+
+    // McpConstants tests
+
+    /**
+     * Covers the whole build-stamped-version chain: the resource has to exist, `processResources`
+     * has to have expanded the placeholder, and the read has to find the key. A missing resource
+     * yields "unknown" and a dropped `expand` yields the literal "${pluginVersion}" — both fail here.
+     */
+    fun testServerVersionIsStampedByTheBuild() {
+        val version = McpConstants.getServerVersion()
+        assertTrue(
+            "Expected a version stamped from gradle.properties, got '$version'",
+            version.matches(Regex("""\d+\.\d+\.\d+.*"""))
+        )
     }
 }

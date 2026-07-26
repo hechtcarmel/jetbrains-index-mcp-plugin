@@ -217,6 +217,19 @@ tasks {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
 
+    // The plugin reports its own version to MCP clients in `initialize`. Every platform API that
+    // can read it off the descriptor — PluginManagerCore.getPlugin, PluginManager.getPlugins,
+    // getPluginByClass, findEnabledPlugin — is @ApiStatus.Internal as of 2026.2, and the verifier
+    // fails the build on internal API usage. So the build stamps the version into a resource
+    // instead. Scoped to the one file: `expand` would otherwise choke on `$` in McpBundle.
+    processResources {
+        val pluginVersion = providers.gradleProperty("pluginVersion")
+        inputs.property("pluginVersion", pluginVersion)
+        filesMatching("mcp-server.properties") {
+            expand("pluginVersion" to pluginVersion.get())
+        }
+    }
+
     test {
         // Skips must be visible. A silently-skipped test is indistinguishable from a
         // passing one in the console, which is how 16 JS/TS tests went years without
