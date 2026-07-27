@@ -428,8 +428,10 @@ call sites". It is thin in these areas:
   Consequence: `GetDiagnosticsToolBehaviorTest`'s `contains("Cannot resolve")` assertions cannot
   distinguish a deliberate error from the missing standard library. Wiring a descriptor with
   `JAVA_LATEST` is the fix.
-- **No dumb-mode coverage.** `DumbModeTestUtils` is unused, so no test proves an index-backed tool
-  degrades gracefully during indexing instead of leaking a platform exception to the MCP client.
+- **Dumb-mode coverage is minimal.** `ClassResolverTest` uses `DumbModeTestUtils` to pin that FQN
+  lookup propagates `IndexNotReadyException` (which the tool layer turns into retry guidance)
+  instead of misreporting "Class not found", but no test yet drives an index-backed tool
+  end-to-end through dumb mode to prove it degrades gracefully at the MCP boundary.
 - **No whole-file golden fixtures.** `configureByFile` / `checkResultByFile` are unused, so
   formatting damage and collateral edits outside the asserted region are invisible. This matters
   most for `ide_reformat_code` and `ide_optimize_imports`.

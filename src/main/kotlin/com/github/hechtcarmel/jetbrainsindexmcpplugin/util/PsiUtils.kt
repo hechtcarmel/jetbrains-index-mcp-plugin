@@ -161,7 +161,10 @@ object PsiUtils {
             }
         }
 
-        return getVirtualFile(project, normalizedPath)
+        // Plain local paths (including ~-expanded ones) must stay within the project's content
+        // roots or its registered libraries — the jar branches above enforce the same containment
+        // for archives. Without this, ide_read_file could read arbitrary files on disk.
+        return getVirtualFile(project, normalizedPath)?.takeIf { ProjectUtils.isAccessibleFile(project, it) }
     }
 
     fun resolveNavigableVirtualFile(project: Project, path: String): VirtualFile? {

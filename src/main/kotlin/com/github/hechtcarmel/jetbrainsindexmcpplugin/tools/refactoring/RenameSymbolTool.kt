@@ -148,6 +148,16 @@ class RenameSymbolTool : AbstractMcpTool() {
             "Make sure the cursor is positioned on a symbol defined in source code within this project."
     }
 
+    /**
+     * Test hook replacing the `renameProcessor.run()` call, so tests can reproduce the
+     * production abort paths where `BaseRefactoringProcessor.run()` returns normally without
+     * applying anything (read-only files, conflict dialogs, dumb mode). In unit-test mode the
+     * platform converts those aborts into exceptions before `run()` returns, so they cannot
+     * be triggered for real.
+     */
+    @org.jetbrains.annotations.TestOnly
+    internal var processorRunHook: (() -> Unit)? = null
+
     override val name = "ide_refactor_rename"
 
     override val description = """
@@ -669,9 +679,20 @@ class RenameSymbolTool : AbstractMcpTool() {
         val retargetWarnings = mutableListOf<String>()
         val unretargetedImporters = mutableListOf<String>()
 
+        // Capture the target's identity before the run: BaseRefactoringProcessor.run()
+        // returns normally on abort paths (conflicts dialog cancelled, read-only files),
+        // so success must be verified against the PSI afterwards instead of assumed.
+        val targetPointer = SmartPointerManager.getInstance(project)
+            .createSmartPsiElementPointer(targetElement)
+        val targetNameBeforeRename = targetElement.name
+
         // RenameProcessor manages its own write actions and progress. Starting it inside
         // WriteCommandAction can deadlock in modern IDE builds.
-        renameProcessor.run()
+        val hook = processorRunHook
+        if (hook != null) hook() else renameProcessor.run()
+
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        verifyRenameApplied(targetPointer, targetNameBeforeRename)
 
         if (shouldRetargetJsTsFileRename) {
             PsiDocumentManager.getInstance(project).commitAllDocuments()
@@ -701,12 +722,39 @@ class RenameSymbolTool : AbstractMcpTool() {
             }
         }
 
+        val conflictWarnings = (renameProcessor as? HeadlessRenameProcessor)
+            ?.capturedConflicts.orEmpty()
+
         return RenameExecutionResult(
             affectedFilesCount = affectedFiles.size,
             relatedRenamesCount = relatedRenamesCount,
-            warnings = retargetWarnings.distinct().takeIf { it.isNotEmpty() },
+            warnings = (conflictWarnings + retargetWarnings).distinct().takeIf { it.isNotEmpty() },
             unretargetedImporters = unretargetedImporters.distinct().takeIf { it.isNotEmpty() }
         )
+    }
+
+    /**
+     * Fails the rename when `RenameProcessor.run()` returned without touching the target.
+     *
+     * The check is conservative, mirroring [ChangeSignatureTool]'s post-run verification:
+     * a pointer that no longer resolves means the refactoring restructured the PSI, and any
+     * name change at all (even one differing from the requested name, e.g. extension handling
+     * on file renames or Android resource substitution) counts as applied. Only a target that
+     * provably still carries its pre-run name — the signature of a silent platform abort —
+     * is treated as failed.
+     */
+    private fun verifyRenameApplied(
+        targetPointer: SmartPsiElementPointer<PsiNamedElement>,
+        targetNameBeforeRename: String?
+    ) {
+        if (targetNameBeforeRename == null) return
+        val targetAfterRename = targetPointer.element ?: return
+        if (targetAfterRename.isValid && targetAfterRename.name == targetNameBeforeRename) {
+            throw Exception(
+                "Rename was not applied — the platform aborted the refactoring " +
+                    "(read-only files or unresolved conflicts)."
+            )
+        }
     }
 
     /**

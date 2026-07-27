@@ -242,6 +242,48 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
         assertFalse("Should not contain literal backslash-n", content.contains("\\n"))
     }
 
+    /**
+     * The identity pre-flight must compare the same semantics the replacement applies:
+     * replaceText is unescaped (\n, \t, \\) before use while searchText is not. Raw-equal
+     * inputs that differ after unescaping are a real replacement (a literal backslash-n in
+     * the file becomes a newline), not a no-op to be rejected.
+     */
+    fun testRawIdenticalTextsThatDifferAfterUnescapingAreReplaced() = runBlocking {
+        // The file contains the two characters backslash + n inside the string literal.
+        writeProjectFile("src/EscapedSame.java", "String s = \"a\\nb\";")
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/EscapedSame.java")
+            put("searchText", "a\\nb")
+            put("replaceText", "a\\nb")
+        })
+
+        assertToolSucceeded("Raw-identical texts differing after unescaping are a real replacement", result)
+        val payload = parseResult(result)
+        assertEquals(1, payload.replacements)
+        assertEquals("String s = \"a\nb\";", readProjectFileVfs("src/EscapedSame.java"))
+    }
+
+    /**
+     * Pins the documented escape hatch of the unescaping convention: a doubled backslash
+     * survives as a single literal backslash, so `\\n` in replaceText produces the two
+     * characters backslash + n instead of a newline.
+     */
+    fun testDoubledBackslashProducesLiteralBackslashSequence() = runBlocking {
+        writeProjectFile("src/EscapeHatch.java", "String sep = \"PLACEHOLDER\";")
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/EscapeHatch.java")
+            put("searchText", "PLACEHOLDER")
+            put("replaceText", "a\\\\nb")
+        })
+
+        assertToolSucceeded("Replace should succeed", result)
+        val payload = parseResult(result)
+        assertEquals(1, payload.replacements)
+        assertEquals("String sep = \"a\\nb\";", readProjectFileVfs("src/EscapeHatch.java"))
+    }
+
     fun testReplaceInvalidRegexFails() = runBlocking {
         writeProjectFile("src/BadRegex.java", """
             public class BadRegex {}

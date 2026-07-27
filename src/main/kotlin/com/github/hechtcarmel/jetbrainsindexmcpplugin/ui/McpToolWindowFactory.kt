@@ -140,6 +140,11 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
             McpBundle.message("toolWindow.title"),
             false
         )
+        // The content only auto-disposes its component when the component itself is Disposable,
+        // but the panel sits inside a plain wrapper JPanel. Without an explicit disposer the
+        // panel's application-level message bus connection and history listener would outlive
+        // the tool window and keep the Project reachable forever.
+        content.setDisposer(panel)
         toolWindow.contentManager.addContent(content)
 
         // Also add quick actions to title bar

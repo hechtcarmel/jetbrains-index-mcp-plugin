@@ -147,9 +147,12 @@ class FindDefinitionTool : AbstractMcpTool() {
                     fullText
                 }
             } else {
-                // Original behavior: a few lines around the definition
+                // Original behavior: a few lines around the definition.
+                // The range below is exclusive, so the bound is lineCount (not lineCount - 1):
+                // capping at lineCount - 1 would make the file's last line — including a
+                // definition sitting on it — unreachable.
                 val previewStartLine = maxOf(0, targetLine - 2)
-                val previewEndLine = minOf(document.lineCount - 1, targetLine + 2)
+                val previewEndLine = minOf(document.lineCount, targetLine + 2)
 
                 (previewStartLine until previewEndLine).joinToString("\n") { lineIndex ->
                     val startOffset = document.getLineStartOffset(lineIndex)

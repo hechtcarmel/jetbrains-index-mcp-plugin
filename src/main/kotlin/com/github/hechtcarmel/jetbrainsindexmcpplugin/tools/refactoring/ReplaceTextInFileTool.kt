@@ -42,7 +42,7 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
         .projectPath()
         .file()
         .stringProperty("searchText", "Text to find. Treated as literal unless regex is true.", required = true)
-        .stringProperty("replaceText", "Replacement text. Supports regex group references ($1, $2) when regex is true.", required = true)
+        .stringProperty("replaceText", "Replacement text. The escape sequences \\n, \\t, and \\\\ are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references ($1, $2) when regex is true.", required = true)
         .booleanProperty(ParamNames.REGEX, "Treat searchText as a regular expression. Default: false.")
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case-sensitive matching. Default: true.")
         .build()
@@ -69,11 +69,15 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
         if (searchText.isEmpty()) {
             return createErrorResult("searchText must not be empty.")
         }
-        if (searchText == replaceText) {
+
+        // The identity pre-flight must compare what will actually be written: replaceText is
+        // unescaped (\n, \t, \\) before use while searchText is not, so comparing the raw
+        // strings blocks legitimate replacements that differ only by escaping (literal \n
+        // becoming a newline) and misses genuine no-ops.
+        val effectiveReplaceText = unescapeText(replaceText)
+        if (searchText == effectiveReplaceText) {
             return createErrorResult("searchText and replaceText are identical — nothing to replace.")
         }
-
-        val effectiveReplaceText = unescapeText(replaceText)
 
         val virtualFile = resolveFile(project, filePath)
             ?: return createErrorResult("File not found: $filePath")

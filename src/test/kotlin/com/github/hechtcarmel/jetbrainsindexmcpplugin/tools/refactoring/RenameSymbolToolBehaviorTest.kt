@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
+import com.intellij.psi.PsiElement
+import com.intellij.util.containers.MultiMap
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -328,5 +330,79 @@ class RenameSymbolToolBehaviorTest : McpPlatformTestCase() {
         assertFalse("Conflict message must not contain '<b>': $message", message.contains("<b>"))
         assertFalse("Conflict message must not contain '<code>': $message", message.contains("<code>"))
         assertFalse("Conflict message must not contain '&lt;': $message", message.contains("&lt;"))
+    }
+
+    // ── Silent platform aborts must not be reported as success ──
+
+    /**
+     * The regression test for the silent-abort bug. In production,
+     * `BaseRefactoringProcessor.run()` returns normally on abort paths (conflicts dialog
+     * cancelled, read-only files) — verified against the platform bytecode. In unit-test
+     * mode the platform converts every such abort into an exception before `run()` returns,
+     * so the silent return is reproduced through the tool's `processorRunHook` instead.
+     * Without post-run verification the tool reported `success: true` with the target's file
+     * in `affectedFiles` for a rename that changed nothing; this test fails with "expected
+     * an error but tool succeeded" if the verification is removed.
+     */
+    fun testSilentlyAbortedRenameReportsErrorInsteadOfSuccess() = runBlocking {
+        writeProjectFile(
+            "src/AbortRename.java", """
+            public class AbortRename {
+                public String process(String input) {
+                    return input.trim();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = RenameSymbolTool()
+        tool.processorRunHook = { /* BaseRefactoringProcessor.run() returning without applying */ }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/AbortRename.java")
+            put("targetType", "symbol")
+            put("line", 2)
+            put("column", 19)
+            put("newName", "processRenamed")
+        })
+
+        assertToolFailed("An aborted rename must not be reported as success", result)
+        assertTrue(
+            "Expected the honest abort error, got: ${toolText(result)}",
+            toolText(result).contains("was not applied")
+        )
+        assertFileContains("src/AbortRename.java", "public String process(String input)")
+        assertFileDoesNotContain("src/AbortRename.java", "processRenamed")
+    }
+
+    /**
+     * In production, `RenameProcessor.preprocessUsages` builds the conflicts dialog directly
+     * via `prepareConflictsDialog` — it never routes through the overridable `showConflicts` —
+     * and an unanswered or cancelled dialog silently aborts the rename. The headless
+     * processor therefore overrides `prepareConflictsDialog` to proceed and capture the
+     * sanitized conflicts. That path is unreachable end-to-end in unit-test mode
+     * (`preprocessUsages` throws `ConflictsInTestsException` first), so the override is
+     * exercised directly. If it is removed, the base implementation constructs the real
+     * Swing conflicts dialog, which fails in headless tests, and `capturedConflicts` stays
+     * empty.
+     */
+    fun testHeadlessRenameProcessorProceedsThroughConflictsDialogAndCapturesSanitizedConflicts() {
+        val psiFile = myFixture.addFileToProject("conflictdialog/Host.java", "public class Host {}")
+        val psiClass = com.intellij.psi.util.PsiTreeUtil
+            .findChildOfType(psiFile, com.intellij.psi.PsiClass::class.java)
+            ?: error("Fixture class not found")
+
+        val processor = HeadlessRenameProcessor(project, psiClass, "RenamedHost", false, false)
+        val conflicts = MultiMap<PsiElement, String>()
+        conflicts.putValue(psiClass, "Field <b><code>bar</code></b> will hide the local variable")
+
+        val dialog = processor.prepareConflictsDialog(conflicts, null)
+
+        assertTrue("The headless conflicts dialog must proceed with the rename", dialog.showAndGet())
+        assertFalse("The headless conflicts dialog must not request the conflicts view", dialog.isShowConflicts())
+        assertEquals(
+            listOf("Field bar will hide the local variable"),
+            processor.capturedConflicts
+        )
     }
 }

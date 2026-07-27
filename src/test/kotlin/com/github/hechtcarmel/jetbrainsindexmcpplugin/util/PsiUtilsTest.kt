@@ -6,8 +6,10 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiField
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 
@@ -261,5 +263,54 @@ class PsiUtilsTest : BasePlatformTestCase() {
 
         val resolvedByUrl = PsiUtils.resolveVirtualFileAnywhere(project, "jar://${jarFile.absolutePath}!/$entryPath")
         assertNull("JAR URL not in project libraries should be blocked", resolvedByUrl)
+    }
+
+    fun testResolveVirtualFileAnywhere_BlocksLocalFileOutsideProjectAndLibraries() {
+        val outsideFile = Files.createTempFile("jetbrains-index-mcp-outside", ".txt").toFile()
+        try {
+            outsideFile.writeText("secret")
+            // Make the file visible to the VFS so a missing containment guard would resolve it.
+            assertNotNull(
+                "Test setup: VFS must see the outside file",
+                LocalFileSystem.getInstance().refreshAndFindFileByPath(outsideFile.absolutePath)
+            )
+
+            val resolved = PsiUtils.resolveVirtualFileAnywhere(project, outsideFile.absolutePath)
+            assertNull("Local file outside project content roots and libraries should be blocked", resolved)
+        } finally {
+            outsideFile.delete()
+        }
+    }
+
+    fun testResolveVirtualFileAnywhere_BlocksTildeExpandedHomePath() {
+        val homeDir = Path.of(System.getProperty("user.home"))
+        val homeFile = Files.createTempFile(homeDir, "jetbrains-index-mcp-home", ".txt").toFile()
+        try {
+            homeFile.writeText("secret")
+            assertNotNull(
+                "Test setup: VFS must see the home file",
+                LocalFileSystem.getInstance().refreshAndFindFileByPath(homeFile.absolutePath)
+            )
+
+            val resolved = PsiUtils.resolveVirtualFileAnywhere(project, "~/${homeFile.name}")
+            assertNull("~-expanded path outside the project should be blocked", resolved)
+        } finally {
+            homeFile.delete()
+        }
+    }
+
+    fun testResolveVirtualFileAnywhere_ResolvesLibraryRootFileOutsideProject() {
+        val libDir = Files.createTempDirectory("jetbrains-index-mcp-lib").toFile()
+        val libFile = File(libDir, "Library.txt")
+        libFile.writeText("library content")
+        LocalFileSystem.getInstance().refreshAndFindFileByPath(libFile.absolutePath)
+
+        // Register the directory as a module library root — files under it are dependency
+        // files and must stay readable even though they live outside the project.
+        ModuleRootModificationUtil.addModuleLibrary(module, "file://${libDir.absolutePath.replace('\\', '/')}")
+
+        val resolved = PsiUtils.resolveVirtualFileAnywhere(project, libFile.absolutePath)
+        assertNotNull("File under a registered library root must stay readable", resolved)
+        assertEquals("Library.txt", resolved?.name)
     }
 }

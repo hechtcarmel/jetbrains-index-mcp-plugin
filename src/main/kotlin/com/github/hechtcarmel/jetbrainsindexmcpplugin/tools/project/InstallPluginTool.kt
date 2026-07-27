@@ -70,6 +70,18 @@ class InstallPluginTool : AbstractMcpTool() {
             )
 
         val pluginsDir = Path.of(PathManager.getPluginsPath())
+
+        // Validate the whole archive before touching the existing installation: a zip-slip
+        // entry must reject the install outright, and an error after removeExistingInstallation
+        // would leave the previous plugin deleted with nothing installed.
+        val unsafeEntry = findUnsafeZipEntry(zipPath, pluginsDir)
+        if (unsafeEntry != null) {
+            return createErrorResult(
+                "Refusing to install: zip entry '$unsafeEntry' would be written outside the " +
+                    "plugins directory. The archive is malformed or malicious (zip-slip)."
+            )
+        }
+
         removeExistingInstallation(pluginsDir, pluginId)
         extractZip(zipPath, pluginsDir)
 
@@ -132,10 +144,33 @@ class InstallPluginTool : AbstractMcpTool() {
             ?.firstNotNullOfOrNull { pluginIdFromJar(it.inputStream()) }
     }
 
-    private fun extractZip(zipPath: Path, destDir: Path) {
+    /**
+     * Returns the name of the first zip entry whose normalized destination escapes [destDir]
+     * (path traversal via `..` segments or absolute entry names), or null when every entry is
+     * safe. Entries with `./` prefixes or nested directories normalize to paths inside
+     * [destDir] and are accepted.
+     */
+    internal fun findUnsafeZipEntry(zipPath: Path, destDir: Path): String? {
+        val root = destDir.toAbsolutePath().normalize()
+        ZipFile(zipPath.toFile()).use { zip ->
+            for (entry in zip.entries()) {
+                val dest = root.resolve(entry.name).normalize()
+                if (!dest.startsWith(root)) return entry.name
+            }
+        }
+        return null
+    }
+
+    internal fun extractZip(zipPath: Path, destDir: Path) {
+        val root = destDir.toAbsolutePath().normalize()
         ZipFile(zipPath.toFile()).use { zip ->
             zip.entries().asSequence().forEach { entry ->
-                val dest = destDir.resolve(entry.name)
+                val dest = root.resolve(entry.name).normalize()
+                // Already validated by findUnsafeZipEntry before extraction starts; re-checked
+                // here so extractZip can never write outside destDir on its own.
+                check(dest.startsWith(root)) {
+                    "Unsafe zip entry escapes the destination directory: ${entry.name}"
+                }
                 if (entry.isDirectory) {
                     Files.createDirectories(dest)
                 } else {

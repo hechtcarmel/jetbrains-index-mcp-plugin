@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.ide.RecentProjectsManager
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ex.ProjectManagerEx
@@ -52,14 +53,37 @@ class CloseProjectTool : AbstractMcpTool() {
 
         val projectName = project.name
         ApplicationManager.getApplication().invokeLater {
-            if (!project.isDisposed) {
-                // Mirror the platform's CloseProjectAction: persist the frame state before
-                // closing and refresh the recent-projects path afterwards.
-                WindowManager.getInstance().updateDefaultFrameInfoOnProjectClose(project)
-                ProjectManagerEx.getInstanceEx().closeAndDispose(project)
-                RecentProjectsManager.getInstance().updateLastProjectPath()
-            }
+            closeOnEdt(project)
         }
         return createSuccessResult("Project '$projectName' is closing.")
+    }
+
+    /**
+     * Performs the actual close on the EDT, re-checking the last-open-project guard first:
+     * the count observed in [doExecute] on the caller thread can be stale by the time this
+     * runs (a concurrent ide_close_project, a user close, or a lifecycle-driven close may
+     * have landed in between), and closing the last project would leave the MCP server with
+     * no JSON-RPC context to recover from. Returns true when the project was closed.
+     */
+    internal fun closeOnEdt(project: Project): Boolean {
+        if (project.isDisposed) return false
+        val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }
+        if (openProjects.size <= 1) {
+            LOG.warn(
+                "Skipping deferred close of '${project.name}' — it became the last open project " +
+                    "after the close was scheduled."
+            )
+            return false
+        }
+        // Mirror the platform's CloseProjectAction: persist the frame state before
+        // closing and refresh the recent-projects path afterwards.
+        WindowManager.getInstance().updateDefaultFrameInfoOnProjectClose(project)
+        ProjectManagerEx.getInstanceEx().closeAndDispose(project)
+        RecentProjectsManager.getInstance().updateLastProjectPath()
+        return true
+    }
+
+    companion object {
+        private val LOG = logger<CloseProjectTool>()
     }
 }

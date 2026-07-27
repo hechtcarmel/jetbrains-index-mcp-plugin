@@ -179,6 +179,16 @@ object ProjectResolver {
                 return Result(project = parentMatch)
             }
 
+            // 4. Match if the given path is inside a module content root. Workspace
+            // sub-projects need this: an ide_open_workspace aggregator's basePath is a
+            // generated directory that shares no prefix with the real module roots, so a
+            // sub-path of a sub-project fails all of the passes above. Runs last so it
+            // cannot reroute any path the earlier passes already resolve.
+            val contentRootParentMatch = findProjectByContentRootPrefix(openProjects, normalizedPath)
+            if (contentRootParentMatch != null) {
+                return Result(project = contentRootParentMatch)
+            }
+
             return Result(
                 isError = true,
                 errorResult = buildStructuredErrorResult(
@@ -234,6 +244,34 @@ object ProjectResolver {
             }
         }
         return null
+    }
+
+    /**
+     * Finds the project owning a module content root that contains the given path,
+     * preferring the longest (most specific) matching root — mirroring
+     * [ProjectUtils.getRelativePath]'s content-root matching for file paths.
+     */
+    private fun findProjectByContentRootPrefix(projects: List<Project>, normalizedPath: String): Project? {
+        var bestProject: Project? = null
+        var bestRootLength = -1
+        for (project in projects) {
+            try {
+                for (module in ModuleManager.getInstance(project).modules) {
+                    for (root in ModuleRootManager.getInstance(module).contentRoots) {
+                        val rootPath = normalizePath(root.path)
+                        val matches = normalizedPath == rootPath ||
+                            normalizedPath.startsWith("$rootPath/")
+                        if (matches && rootPath.length > bestRootLength) {
+                            bestProject = project
+                            bestRootLength = rootPath.length
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                LOG.debug("Failed to check module content roots for project ${project.name}", e)
+            }
+        }
+        return bestProject
     }
 
     /**

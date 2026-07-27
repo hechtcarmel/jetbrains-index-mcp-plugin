@@ -223,6 +223,11 @@ class FindFileTool : AbstractMcpTool() {
                 // Swallowing cancellation would silently truncate the result set mid-enumeration
                 // while still reporting it as complete.
                 throw e
+            } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
+                // Dumb mode started mid-search. Propagate so AbstractMcpTool.execute translates
+                // this into the standard retryable "IDE is indexing" error instead of caching a
+                // truncated result set as a complete page.
+                throw e
             } catch (e: Exception) {
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }

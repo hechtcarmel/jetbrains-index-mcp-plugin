@@ -85,6 +85,18 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         assertTrue(resultText(result).contains("last open project", ignoreCase = true))
     }
 
+    fun testDeferredCloseReChecksLastOpenProjectGuardOnEdt() {
+        // The guard in doExecute runs on the caller thread; by the time the deferred
+        // EDT block runs, a concurrent close may have made this the last open project.
+        // The EDT block must re-check and skip instead of closing the last project.
+        // Here the fixture project is already the last open project, so the deferred
+        // close must refuse and leave it open.
+        val closed = CloseProjectTool().closeOnEdt(project)
+
+        assertFalse("Deferred close must skip when the project became the last open project", closed)
+        assertFalse("Project must remain open after the skipped close", project.isDisposed)
+    }
+
     fun testOpenProjectRequiresPathParam() = runBlocking {
         val result = OpenProjectTool().execute(project, buildJsonObject { })
 

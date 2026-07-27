@@ -92,6 +92,36 @@ class WorkspaceResolutionTest : BasePlatformTestCase() {
     }
 
     /**
+     * Tests that a tool call resolves correctly when project_path is a subdirectory of a
+     * module content root that lives outside the project basePath. This is the
+     * ide_open_workspace layout: the aggregator basePath is a generated directory that
+     * shares no prefix with the real module roots, so only content-root prefix matching
+     * can resolve sub-paths of a workspace sub-project.
+     */
+    fun testToolCallWithSubdirectoryOfWorkspaceContentRoot() = runBlocking {
+        val contentRoot = addWorkspaceSubProjectContentRoot()
+        val basePath = project.basePath
+        assertFalse(
+            "precondition: the workspace content root must live outside the project basePath — " +
+                "otherwise this test passes via the basePath-subdirectory pass instead of the " +
+                "content-root prefix pass it exists to cover",
+            basePath != null && ProjectResolver.normalizePath(contentRoot.path)
+                .startsWith("${ProjectResolver.normalizePath(basePath)}/")
+        )
+        val subDir = myFixture.tempDirFixture.findOrCreateDir("workspace-subproject/nested")
+
+        val result = dispatcher.call(
+            ToolNames.INDEX_STATUS,
+            buildJsonObject { put("project_path", subDir.path) }
+        )
+
+        assertFalse(
+            "Tool should succeed with a subdirectory of a workspace content root: ${result.text}",
+            result.isFailure
+        )
+    }
+
+    /**
      * Tests that an invalid path still returns a proper error with available_projects.
      */
     fun testInvalidPathReturnsAvailableProjects() = runBlocking {

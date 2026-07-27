@@ -1970,7 +1970,7 @@ schema:
       },
       "replaceText":
       {
-        "description": "Replacement text. Supports regex group references ($1, $2) when regex is true.",
+        "description": "Replacement text. The escape sequences \\n, \\t, and \\\\ are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references ($1, $2) when regex is true.",
         "type": "string"
       },
       "searchText":

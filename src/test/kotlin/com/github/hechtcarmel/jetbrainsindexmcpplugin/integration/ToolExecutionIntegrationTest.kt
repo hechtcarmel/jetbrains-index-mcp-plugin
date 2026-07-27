@@ -140,6 +140,69 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
         )
     }
 
+    fun testFindDefinitionToolDefaultPreviewIncludesDefinitionOnLastFileLine() = runBlocking {
+        val sourceRoot = "definition-lastline-src"
+        registerSourceRoot(sourceRoot)
+        // The entire definition file is a single line: the definition sits on the file's
+        // last line, which the old exclusive lineCount-1 bound could never render — the
+        // tool returned an empty preview for a successful lookup.
+        val tailSource = "public class Tail { public static void work() {} }"
+        val callerSource = """
+            public class TailCaller {
+                void call() {
+                    Tail.work();
+                }
+            }
+        """.trimIndent()
+        writeProjectFile("$sourceRoot/Tail.java", tailSource)
+        writeProjectFile("$sourceRoot/TailCaller.java", callerSource)
+
+        val (callLine, callColumn) = findPosition(callerSource, "work")
+        val result = FindDefinitionTool().execute(project, buildJsonObject {
+            put("file", "$sourceRoot/TailCaller.java")
+            put("line", callLine)
+            put("column", callColumn)
+        })
+
+        assertToolSucceeded("Definition lookup should succeed", result)
+        val definition = json.decodeFromString<DefinitionResult>(toolText(result))
+        assertEquals("$sourceRoot/Tail.java", definition.file)
+        assertEquals("work", definition.symbolName)
+        assertEquals("1: $tailSource", definition.preview)
+    }
+
+    fun testFindDefinitionToolDefaultPreviewShowsLastLineDefinitionWithPrecedingContext() = runBlocking {
+        val sourceRoot = "definition-lastline-multiline-src"
+        registerSourceRoot(sourceRoot)
+        // Definition on the last line of a multi-line file: the preview used to show only
+        // the preceding line(s) and silently omit the definition itself.
+        val helperSource = "public class TailHelper {\n    public static void assist() {} }"
+        val callerSource = """
+            public class TailHelperCaller {
+                void call() {
+                    TailHelper.assist();
+                }
+            }
+        """.trimIndent()
+        writeProjectFile("$sourceRoot/TailHelper.java", helperSource)
+        writeProjectFile("$sourceRoot/TailHelperCaller.java", callerSource)
+
+        val (callLine, callColumn) = findPosition(callerSource, "assist")
+        val result = FindDefinitionTool().execute(project, buildJsonObject {
+            put("file", "$sourceRoot/TailHelperCaller.java")
+            put("line", callLine)
+            put("column", callColumn)
+        })
+
+        assertToolSucceeded("Definition lookup should succeed", result)
+        val definition = json.decodeFromString<DefinitionResult>(toolText(result))
+        assertEquals("$sourceRoot/TailHelper.java", definition.file)
+        assertEquals(
+            "1: public class TailHelper {\n2:     public static void assist() {} }",
+            definition.preview
+        )
+    }
+
     fun testReadFileToolValidation() = runBlocking {
         val tool = ReadFileTool()
 

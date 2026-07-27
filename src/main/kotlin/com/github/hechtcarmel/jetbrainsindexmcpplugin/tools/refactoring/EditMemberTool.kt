@@ -146,7 +146,7 @@ class EditMemberTool : AbstractMcpTool() {
             return createErrorResult(error!!)
         }
 
-        MemberEditingUtils.saveToDisk()
+        edtAction { MemberEditingUtils.saveToDisk() }
 
         return createJsonResult(
             MemberEditResult(

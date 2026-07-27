@@ -442,8 +442,11 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         } ?: file
 
         // Find usages (POTENTIALLY SLOW - but in background!)
+        // References inside the deleted element itself (recursive calls, factory methods
+        // returning the class) vanish with the deletion, so they must not block it —
+        // matching IntelliJ's own SafeDeleteProcessor and this tool's file-delete mode.
         val usages = try {
-            findUsages(project, element)
+            findUsages(project, element, excludeWithin = element)
         } catch (e: UsageSearchException) {
             if (!force) {
                 return SymbolPreparationResult.UsageSearchFailed(searchFailureReason(e))
@@ -778,8 +781,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
      * [AbstractMcpTool.execute][com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool.execute].
      * Any other failure is wrapped in [UsageSearchException]: an incomplete search must
      * never be reported as "no usages" by a tool whose whole point is the safety check.
+     *
+     * @param excludeWithin when non-null, references located inside this element are skipped —
+     *   they are deleted together with it and cannot be broken by the deletion.
      */
-    private fun findUsages(project: Project, element: PsiNamedElement): List<UsageInfo> {
+    private fun findUsages(
+        project: Project,
+        element: PsiNamedElement,
+        excludeWithin: PsiElement? = null
+    ): List<UsageInfo> {
         val usages = mutableListOf<UsageInfo>()
 
         try {
@@ -788,6 +798,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 ProgressManager.checkCanceled() // Allow cancellation
 
                 val refElement = reference.element
+                if (excludeWithin != null && PsiTreeUtil.isAncestor(excludeWithin, refElement, false)) {
+                    return@forEach
+                }
                 val refFile = refElement.containingFile?.virtualFile
 
                 if (refFile != null) {

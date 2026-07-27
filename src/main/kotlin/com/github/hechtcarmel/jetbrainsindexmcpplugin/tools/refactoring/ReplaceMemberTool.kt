@@ -160,7 +160,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
             return createErrorResult(error!!)
         }
 
-        MemberEditingUtils.saveToDisk()
+        edtAction { MemberEditingUtils.saveToDisk() }
 
         return createJsonResult(
             MemberEditResult(

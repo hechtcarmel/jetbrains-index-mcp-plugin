@@ -86,6 +86,11 @@ object MemberEditingUtils {
         PsiDocumentManager.getInstance(project).commitAllDocuments()
     }
 
+    /**
+     * Must be called on the EDT — [FileDocumentManager.saveAllDocuments] asserts write-intent
+     * access and throws on a background thread. Callers wrap this in
+     * [com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool.edtAction].
+     */
     fun saveToDisk() {
         FileDocumentManager.getInstance().saveAllDocuments()
     }

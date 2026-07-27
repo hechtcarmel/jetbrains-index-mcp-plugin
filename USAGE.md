@@ -2015,7 +2015,7 @@ Insert a new member (method, field, inner class, etc.) at a structural position 
 |-----------|------|----------|-------------|
 | `file` | string | Yes | Path to the file relative to project root |
 | `searchText` | string | Yes | Text to find. Treated as literal unless `regex` is true |
-| `replaceText` | string | Yes | Replacement text. Supports regex group references (`$1`, `$2`) when `regex` is true |
+| `replaceText` | string | Yes | Replacement text. The escape sequences `\n`, `\t`, and `\\` are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references (`$1`, `$2`) when `regex` is true |
 | `regex` | boolean | No | Treat `searchText` as a regular expression (default: false) |
 | `caseSensitive` | boolean | No | Case-sensitive matching (default: true) |
 | `class` | string | No | Class name to insert into (omit for top-level insertion) |

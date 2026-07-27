@@ -10,6 +10,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
@@ -19,6 +21,7 @@ import com.intellij.psi.search.searches.OverridingMethodsSearch
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.Processor
+import kotlinx.coroutines.CancellationException
 
 /**
  * Registration entry point for Java language handlers.
@@ -168,12 +171,27 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         val resolved = resolveReference(element)
         if (resolved is PsiMethod) return resolved
 
+        // Kotlin-declared targets resolve to Kotlin PSI (KtNamedFunction/KtProperty/accessor),
+        // not a PsiMethod. Convert the resolved callee to its light method instead of discarding
+        // it — otherwise the parent-walk fallback below returns the ENCLOSING declaration.
+        // Restricted to callable declarations so a resolved KtClass still falls through to
+        // resolveClass (toLightMethods on a class would return its constructor).
+        if (resolved != null && isKotlinCallableDeclaration(resolved)) {
+            PsiUtils.toLightMethods(resolved).firstOrNull()?.let { return it }
+        }
+
         // Fallback based on language
         return if (element.language.id == "kotlin") {
             resolveKotlinMethod(element)
         } else {
             PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
         }
+    }
+
+    private fun isKotlinCallableDeclaration(element: PsiElement): Boolean {
+        return (ktNamedFunctionClass?.isInstance(element) == true) ||
+            (ktPropertyAccessorClass?.isInstance(element) == true) ||
+            (ktPropertyClass?.isInstance(element) == true)
     }
 
     /**
@@ -225,6 +243,13 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         // Try reference resolution first (for type references)
         val resolved = resolveReference(element)
         if (resolved is PsiClass) return resolved
+
+        // Kotlin-declared classes resolve to KtClass/KtObject, not a PsiClass. Convert the
+        // resolved target to its light class instead of discarding it — otherwise the
+        // parent-walk fallback below returns the ENCLOSING class.
+        if (resolved != null && resolved.language.id == "kotlin") {
+            PsiUtils.resolveAsPsiClass(resolved)?.let { return it }
+        }
 
         // Fallback based on language
         return if (element.language.id == "kotlin") {
@@ -343,6 +368,14 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
 
         val supertypes = mutableListOf<TypeElementData>()
 
+        // Classes reported by the unresolved-extends fallback below, tracked locally so the
+        // interfaces loop does not report them a second time. For an interface, getSuperClass()
+        // returns java.lang.Object, so the fallback emits each extended superinterface — and
+        // psiClass.interfaces returns that same set. A local set (not `visited`) is used because
+        // `visited` accumulates across the whole recursion and would drop legitimately
+        // directly-implemented interfaces in diamond hierarchies.
+        val fallbackAdded = mutableSetOf<String>()
+
         // Try resolved superclass first
         val superClass = psiClass.superClass
         if (superClass != null && superClass.qualifiedName != "java.lang.Object") {
@@ -373,6 +406,7 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
                     shouldIncludeNavigationElement(searchScope, resolved)
                 ) {
                     val superSupertypes = getSupertypes(project, resolved, visited, depth + 1, searchScope)
+                    (resolved.qualifiedName ?: resolved.name)?.let { fallbackAdded.add(it) }
                     supertypes.add(TypeElementData(
                         name = resolved.qualifiedName ?: resolved.name ?: "unknown",
                         qualifiedName = resolved.qualifiedName,
@@ -403,6 +437,10 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
         val interfaces = psiClass.interfaces
         if (interfaces.isNotEmpty()) {
             for (iface in interfaces) {
+                // Skip interfaces the extends-list fallback already reported (interface-extends-
+                // interface case) — the fallback entry carries the transitive supertype chain.
+                val ifaceKey = iface.qualifiedName ?: iface.name
+                if (ifaceKey != null && ifaceKey in fallbackAdded) continue
                 if (shouldIncludeNavigationElement(searchScope, iface)) {
                     val ifaceSupertypes = getSupertypes(project, iface, visited, depth + 1, searchScope)
                     supertypes.add(TypeElementData(
@@ -469,6 +507,14 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
                 }
                 results.size < 100
             })
+        } catch (e: ProcessCanceledException) {
+            // Cancellation and dumb-mode must propagate — swallowing them would report a
+            // truncated result set as a complete success.
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            throw e
         } catch (_: Exception) {
             // Handle gracefully
         }
@@ -532,6 +578,14 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
                 }
                 results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
+        } catch (e: ProcessCanceledException) {
+            // Cancellation and dumb-mode must propagate — swallowing them would report a
+            // truncated result set as a complete success.
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            throw e
         } catch (_: Exception) {
             // Handle gracefully
         }
@@ -559,6 +613,14 @@ class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), 
                 }
                 results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
+        } catch (e: ProcessCanceledException) {
+            // Cancellation and dumb-mode must propagate — swallowing them would report a
+            // truncated result set as a complete success.
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            throw e
         } catch (_: Exception) {
             // Handle gracefully
         }
@@ -705,6 +767,14 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                 }
             }
             results.distinctBy { it.name + it.file + it.line }.take(MAX_RESULTS_PER_LEVEL)
+        } catch (e: ProcessCanceledException) {
+            // Cancellation and dumb-mode must propagate — swallowing them would report a
+            // truncated result set as a complete success.
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            throw e
         } catch (_: Exception) {
             emptyList()
         }
@@ -770,7 +840,15 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
             if (callees.isEmpty()) {
                 findKotlinCallees(project, method, depth, visited, stackDepth, callees, searchScope)
             }
-        } catch (e: Exception) {
+        } catch (e: ProcessCanceledException) {
+            // Cancellation and dumb-mode must propagate — swallowing them would report a
+            // truncated result set as a complete success.
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexNotReadyException) {
+            throw e
+        } catch (_: Exception) {
             // Handle gracefully
         }
         return callees

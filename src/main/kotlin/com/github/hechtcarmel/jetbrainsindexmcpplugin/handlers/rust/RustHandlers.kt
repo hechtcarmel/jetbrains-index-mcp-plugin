@@ -582,7 +582,14 @@ class RustTypeHierarchyHandler : BaseRustHandler<TypeHierarchyData>(), TypeHiera
             // Search for references to this type to find impl blocks
             ReferencesSearch.search(type, searchScope).forEach(Processor { reference ->
                 val impl = findContainingRsImpl(reference.element)
-                if (impl != null && shouldIncludeNavigationElement(searchScope, impl)) {
+                // Only a reference in the impl header's own type-reference position means
+                // "impl Trait for <this type>". References to the type elsewhere in the impl
+                // (method bodies, parameters, return types) must not attribute that impl's
+                // trait to this type.
+                if (impl != null &&
+                    shouldIncludeNavigationElement(searchScope, impl) &&
+                    isImplHeaderTypeReference(impl, reference.element)
+                ) {
                     val traitRef = getTraitRef(impl)
                     if (traitRef != null) {
                         val resolvedTrait = resolveReference(traitRef)
@@ -612,6 +619,17 @@ class RustTypeHierarchyHandler : BaseRustHandler<TypeHierarchyData>(), TypeHiera
         }
 
         return results
+    }
+
+    /**
+     * Returns true when [referenceElement] sits inside the impl block's own type reference —
+     * the `MyStruct` in `impl Trait for MyStruct`. When [getTypeReference] cannot be read via
+     * reflection this returns false, conservatively skipping the reference rather than
+     * attributing an unrelated impl's trait to the queried type.
+     */
+    private fun isImplHeaderTypeReference(impl: PsiElement, referenceElement: PsiElement): Boolean {
+        val implTypeRef = getTypeReference(impl) ?: return false
+        return PsiTreeUtil.isAncestor(implTypeRef, referenceElement, false)
     }
 
     private fun getImplHierarchy(

@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
+import com.intellij.ide.PowerSaveMode
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.util.ui.UIUtil
 
 /**
  * Tests the ProjectModeService state machine using a real application context.
@@ -30,6 +32,10 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
             }
             // Reset persisted state
             service.loadState(ProjectModeService.State())
+            // Drop stale pendingClose entries left by deferred-close tests
+            service.flushPendingCloses()
+            // PSM is IDE-global — restore it so test isolation isn't broken
+            PowerSaveMode.setEnabled(false)
         } finally {
             super.tearDown()
         }
@@ -422,5 +428,75 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
         service.transition(project, ProjectMode.ACTIVE)
         service.resetInactivityTimer(project)  // must not throw or change state
         assertEquals(ProjectMode.ACTIVE, service.getMode(project))
+    }
+
+    // ── Power Save Mode reconciliation (Bug: releasing the last managed ──────
+    // project computed anyActive=false over an empty set and turned PSM ON)
+
+    fun testReconcileDisablesPowerSaveModeWhenNoManagedProjects() {
+        PowerSaveMode.setEnabled(true)  // simulate PSM left on by lifecycle management
+        assertTrue(service.getAllManagedModes().isEmpty())  // sanity: nothing managed
+
+        service.reconcilePowerSaveMode()
+
+        assertFalse(
+            "With no managed projects, reconcile must disable Power Save Mode, not enable it",
+            PowerSaveMode.isEnabled()
+        )
+    }
+
+    fun testReleasingLastManagedProjectDisablesPowerSaveMode() {
+        service.enroll(project)
+        UIUtil.dispatchAllInvocationEvents()  // flush enroll's invokeLater reconcile
+        assertTrue(
+            "precondition: PSM must be on while the only managed project is non-active",
+            PowerSaveMode.isEnabled()
+        )
+
+        service.release(project)
+        UIUtil.dispatchAllInvocationEvents()  // flush release's invokeLater reconcile
+
+        assertFalse(
+            "Releasing the last managed project must restore full IDE capabilities (PSM off)",
+            PowerSaveMode.isEnabled()
+        )
+    }
+
+    // ── Deferred close: state must follow the actual close outcome ───────────
+    // (Bug: onClosed recorded CLOSED before closeAndDispose ran and ignored its
+    // result, so a vetoed close left the registry disagreeing with the open
+    // window forever.) The closer lambda replaces the platform boundary only —
+    // light test projects short-circuit canClose, so a real veto cannot be
+    // produced in this fixture.
+
+    fun testDeferredCloseRecordsClosedOnlyAfterSuccessfulClose() {
+        service.enroll(project)
+        val path = project.basePath!!
+
+        service.executeDeferredClose(project, path, "dormant", "timer:close") { true }
+
+        assertTrue("successful close must be recorded", service.wasClosedByUs(path))
+        assertEquals(ProjectMode.CLOSED, service.getMode(path))
+    }
+
+    fun testDeferredCloseVetoIsNotRecordedAsClosed() {
+        service.enroll(project)
+        val path = project.basePath!!
+
+        service.executeDeferredClose(project, path, "dormant", "timer:close") { false }
+
+        assertFalse(
+            "vetoed close must NOT be recorded in closedProjectPaths",
+            service.wasClosedByUs(path)
+        )
+        assertEquals(
+            "vetoed close must fall back to DORMANT",
+            ProjectMode.DORMANT,
+            service.getMode(path)
+        )
+        assertTrue(
+            "vetoed close must enter pendingClose for event-driven retry",
+            service.isInPendingClose(path)
+        )
     }
 }

@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiag
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
@@ -37,6 +38,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsR
 import com.intellij.lang.java.JavaLanguage
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiClass
@@ -599,6 +602,74 @@ class ToolsTest : McpPlatformTestCase() {
         )
     }
 
+    fun testFindClassToolSurfacesDumbModeFromContributorInsteadOfTruncating() = runBlocking {
+        // Dumb mode starting after the smart-mode gate makes contributors throw
+        // IndexNotReadyException mid-enumeration. That must reach AbstractMcpTool's
+        // translation into the standard retry error — not be swallowed into an empty
+        // result set cached as a complete page.
+        ExtensionTestUtil.maskExtensions(
+            ChooseByNameContributor.CLASS_EP_NAME,
+            listOf<ChooseByNameContributor>(ThrowingClassContributor { IndexNotReadyException.create() }),
+            testRootDisposable
+        )
+
+        val result = FindClassTool().execute(project, buildJsonObject {
+            put("query", "UserService")
+        })
+
+        assertTrue(
+            "Dumb mode during the contributor loop must surface as an error, not as empty results",
+            result.isFailure
+        )
+        assertTrue(
+            "The standard dumb-mode retry guidance must surface. Got: ${errorText(result)}",
+            errorText(result).contains("ide_index_status")
+        )
+    }
+
+    fun testFindClassToolDoesNotSwallowCancellationIntoEmptyResults() {
+        ExtensionTestUtil.maskExtensions(
+            ChooseByNameContributor.CLASS_EP_NAME,
+            listOf<ChooseByNameContributor>(ThrowingClassContributor { ProcessCanceledException() }),
+            testRootDisposable
+        )
+
+        val thrown = runCatching {
+            runBlocking {
+                FindClassTool().execute(project, buildJsonObject {
+                    put("query", "UserService")
+                })
+            }
+        }.exceptionOrNull()
+
+        assertNotNull(
+            "Cancellation must propagate, not turn into a complete-looking empty result",
+            thrown
+        )
+    }
+
+    fun testFindFileToolSurfacesDumbModeFromContributorInsteadOfTruncating() = runBlocking {
+        // Same contract as the FindClassTool test above, for the FILE_EP_NAME loop.
+        ExtensionTestUtil.maskExtensions(
+            ChooseByNameContributor.FILE_EP_NAME,
+            listOf<ChooseByNameContributor>(ThrowingClassContributor { IndexNotReadyException.create() }),
+            testRootDisposable
+        )
+
+        val result = FindFileTool().execute(project, buildJsonObject {
+            put("query", "UserService.java")
+        })
+
+        assertTrue(
+            "Dumb mode during the contributor loop must surface as an error, not as empty results",
+            result.isFailure
+        )
+        assertTrue(
+            "The standard dumb-mode retry guidance must surface. Got: ${errorText(result)}",
+            errorText(result).contains("ide_index_status")
+        )
+    }
+
     fun testOptimizedSymbolSearchLegacyContributorHonorsProjectFilesScope() {
         val projectFile = myFixture.addFileToProject(
             "legacy/ProjectScopeSymbol.java",
@@ -772,6 +843,61 @@ class ToolsTest : McpPlatformTestCase() {
         val contextTypes = matches.map { it.jsonObject["contextType"]!!.jsonPrimitive.content }
         assertTrue("Should have at least one comment match", contextTypes.any { it == "COMMENT" })
         assertTrue("Should not return code or string matches", contextTypes.all { it == "COMMENT" })
+    }
+
+    fun testSearchTextToolContextCodeKeepsNumericLiteralMatches() = runBlocking {
+        myFixture.addFileToProject(
+            "src/PortConfig.java",
+            """
+            class PortConfig {
+                int port = 8080;
+                String portLabel = "8080";
+            }
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val codeResult = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "8080")
+            put("context", "code")
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", codeResult.isFailure)
+        val codeLines = json.parseToJsonElement(errorText(codeResult)).jsonObject["matches"]!!.jsonArray
+            .map { it.jsonObject["context"]!!.jsonPrimitive.content }
+        assertTrue(
+            "context=code must keep the match on the numeric literal ('int port = 8080;'). Got: $codeLines",
+            codeLines.any { it.contains("int port") }
+        )
+        assertFalse(
+            "context=code must not return the string literal match. Got: $codeLines",
+            codeLines.any { it.contains("portLabel") }
+        )
+
+        val allResult = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "8080")
+            put("context", "all")
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", allResult.isFailure)
+        val allMatches = json.parseToJsonElement(errorText(allResult)).jsonObject["matches"]!!.jsonArray
+            .map { it.jsonObject }
+        val numericMatch = allMatches.firstOrNull { it["context"]!!.jsonPrimitive.content.contains("int port") }
+        val stringMatch = allMatches.firstOrNull { it["context"]!!.jsonPrimitive.content.contains("portLabel") }
+        assertNotNull("context=all should return the numeric literal match", numericMatch)
+        assertNotNull("context=all should return the string literal match", stringMatch)
+        assertEquals(
+            "A numeric literal is code, not a string literal",
+            "CODE",
+            numericMatch!!["contextType"]!!.jsonPrimitive.content
+        )
+        assertEquals(
+            "A string literal must stay classified as STRING_LITERAL",
+            "STRING_LITERAL",
+            stringMatch!!["contextType"]!!.jsonPrimitive.content
+        )
     }
 
     fun testSearchTextToolCaseInsensitivePlainText() = runBlocking {
@@ -1495,6 +1621,24 @@ class ToolsTest : McpPlatformTestCase() {
 
     private fun errorTextless(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
         (result.content.first() as TextContent).text
+
+    /**
+     * Simulates a contributor hitting mid-search cancellation or a dumb-mode transition:
+     * both throw from inside the contributor loop after the smart-mode entry gate passed.
+     */
+    class ThrowingClassContributor(
+        private val failure: () -> RuntimeException
+    ) : ChooseByNameContributor {
+        override fun getNames(project: com.intellij.openapi.project.Project, includeNonProjectItems: Boolean): Array<String> =
+            throw failure()
+
+        override fun getItemsByName(
+            name: String,
+            pattern: String,
+            project: com.intellij.openapi.project.Project,
+            includeNonProjectItems: Boolean
+        ): Array<NavigationItem> = emptyArray()
+    }
 
     class LegacyContributor(
         private val itemsByName: Map<String, Array<NavigationItem>>

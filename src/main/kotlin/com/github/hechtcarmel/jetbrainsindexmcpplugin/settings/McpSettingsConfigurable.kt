@@ -371,13 +371,6 @@ class McpSettingsConfigurable : Configurable {
 
     @Throws(ConfigurationException::class)
     override fun apply() {
-        if (isHostValidationPending) {
-            throw ConfigurationException(
-                McpBundle.message("settings.serverHost.validating"),
-                McpBundle.message("settings.validation.pending.title")
-            )
-        }
-
         val settings = McpSettings.getInstance()
         val oldHost = settings.serverHost
         val oldPort = settings.serverPort
@@ -391,6 +384,20 @@ class McpSettingsConfigurable : Configurable {
             )
         }
 
+        // The async validation only runs on focus loss, which never happens when the user
+        // confirms the dialog from the keyboard while the host field still has focus. Instead
+        // of rejecting the apply until focus moves, validate the current text synchronously.
+        if (isHostValidationPending) {
+            if (!isValidHost(newHost)) {
+                throw ConfigurationException(
+                    McpBundle.message("settings.serverHost.invalid", newHost),
+                    McpBundle.message("settings.validation.host.title")
+                )
+            }
+            isHostValidationPending = false
+            lastHostValidation = null
+        }
+
         if (lastHostValidation != null) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverHost.invalid", newHost),
@@ -398,8 +405,10 @@ class McpSettingsConfigurable : Configurable {
             )
         }
 
-        // Validate address availability before applying
-        if (!isServerAddressAvailable(newHost, newPort)) {
+        // Bind-test the address only when it actually changed. When it is unchanged, an
+        // externally occupied port (the exact error state whose notification points here)
+        // must not block applying unrelated settings such as tool toggles.
+        if ((newHost != oldHost || newPort != oldPort) && !isServerAddressAvailable(newHost, newPort)) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverAddress.unavailable", "$newHost:$newPort"),
                 McpBundle.message("settings.validation.serverAddress.title")
@@ -427,45 +436,51 @@ class McpSettingsConfigurable : Configurable {
 
         settings.updateToolEnabledStates(toolCheckBoxes.mapValues { (_, checkbox) -> checkbox.isSelected })
 
-        // Auto-restart server if host/port changed
+        // Auto-restart server if host/port changed. Must run on a pooled thread:
+        // EmbeddedServer.stop() blocks (runBlocking) while in-flight MCP calls drain — calls
+        // that may themselves be waiting for the EDT — and the CIO bind is blocking too, so
+        // restarting on the EDT freezes the UI and can only be unblocked by Ktor's force-cancel
+        // timeout. Only the result notification goes back to the EDT.
         if (newHost != oldHost || newPort != oldPort) {
-            ApplicationManager.getApplication().invokeLater({
+            ApplicationManager.getApplication().executeOnPooledThread {
                 val mcpService = McpServerService.getInstance()
-                if (!mcpService.isInitialized) return@invokeLater
+                if (!mcpService.isInitialized) return@executeOnPooledThread
                 val result = mcpService.restartServer(newHost, newPort)
-                when (result) {
-                    is KtorMcpServer.StartResult.Success -> {
-                        NotificationGroupManager.getInstance()
-                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                            .createNotification(
-                                McpBundle.message("notification.serverRestarted.title"),
-                                McpBundle.message("notification.serverRestarted", "$newHost:$newPort"),
-                                NotificationType.INFORMATION
-                            )
-                            .notify(null)
+                ApplicationManager.getApplication().invokeLater({
+                    when (result) {
+                        is KtorMcpServer.StartResult.Success -> {
+                            NotificationGroupManager.getInstance()
+                                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                                .createNotification(
+                                    McpBundle.message("notification.serverRestarted.title"),
+                                    McpBundle.message("notification.serverRestarted", "$newHost:$newPort"),
+                                    NotificationType.INFORMATION
+                                )
+                                .notify(null)
+                        }
+                        is KtorMcpServer.StartResult.PortInUse -> {
+                            NotificationGroupManager.getInstance()
+                                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                                .createNotification(
+                                    McpBundle.message("notification.serverStartFailed.title"),
+                                    McpBundle.message("notification.serverPortInUse.content", result.port, newHost),
+                                    NotificationType.ERROR
+                                )
+                                .notify(null)
+                        }
+                        is KtorMcpServer.StartResult.Error -> {
+                            NotificationGroupManager.getInstance()
+                                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                                .createNotification(
+                                    McpBundle.message("notification.serverStartFailed.title"),
+                                    McpBundle.message("notification.serverStartFailed.content", result.message),
+                                    NotificationType.ERROR
+                                )
+                                .notify(null)
+                        }
                     }
-                    is KtorMcpServer.StartResult.PortInUse -> {
-                        NotificationGroupManager.getInstance()
-                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                            .createNotification(
-                                McpBundle.message("notification.serverStartFailed.title"),
-                                McpBundle.message("notification.serverPortInUse.content", result.port, newHost),
-                                NotificationType.ERROR
-                            )
-                            .notify(null)
-                    }
-                    is KtorMcpServer.StartResult.Error -> {
-                        NotificationGroupManager.getInstance()
-                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                            .createNotification(
-                                McpBundle.message("notification.serverStartFailed.title"),
-                                McpBundle.message("notification.serverStartFailed.content", result.message),
-                                NotificationType.ERROR
-                            )
-                            .notify(null)
-                    }
-                }
-            }, ModalityState.any())
+                }, ModalityState.any())
+            }
         }
     }
 

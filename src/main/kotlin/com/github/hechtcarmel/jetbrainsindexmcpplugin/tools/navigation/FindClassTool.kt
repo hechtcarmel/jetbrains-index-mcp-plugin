@@ -20,6 +20,7 @@ import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
@@ -237,6 +238,15 @@ class FindClassTool : AbstractMcpTool() {
 
             try {
                 processContributor(contributor, project, pattern, searchScope, scope, limit, nameFilter, matcher, results, seen, languageFilter)
+            } catch (e: ProcessCanceledException) {
+                // Swallowing cancellation would silently truncate the result set mid-enumeration
+                // while still reporting it as complete.
+                throw e
+            } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
+                // Dumb mode started mid-search. Propagate so AbstractMcpTool.execute translates
+                // this into the standard retryable "IDE is indexing" error instead of caching a
+                // truncated result set as a complete page.
+                throw e
             } catch (e: Exception) {
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }

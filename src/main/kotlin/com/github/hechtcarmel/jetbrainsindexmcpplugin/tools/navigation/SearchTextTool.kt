@@ -374,11 +374,16 @@ class SearchTextTool : AbstractMcpTool() {
             }
             current = current.parent
         }
-        // Check the element itself for string-like types not caught by ancestor walk
+        // Check the element itself for string-like types not caught by ancestor walk.
+        // Char literals and text blocks are in the IDE's string-literal token sets
+        // (Java ElementType.STRING_LITERALS), so they must classify as STRING_LITERAL,
+        // while numeric/boolean literals (INTEGER_LITERAL, FLOAT_LITERAL, ...) are code.
         val elementType = element.node?.elementType?.toString() ?: ""
         return when {
             elementType.contains("STRING", ignoreCase = true) -> "STRING_LITERAL"
-            elementType.contains("LITERAL", ignoreCase = true) -> "STRING_LITERAL"
+            elementType.contains("CHARACTER_LITERAL", ignoreCase = true) ||
+                elementType.contains("CHAR_LITERAL", ignoreCase = true) ||
+                elementType.contains("TEXT_BLOCK_LITERAL", ignoreCase = true) -> "STRING_LITERAL"
             else -> "CODE"
         }
     }

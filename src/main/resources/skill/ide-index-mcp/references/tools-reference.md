@@ -403,7 +403,7 @@ Find and replace text in a file using IntelliJ's Document API. Performs plain te
 |-----------|------|----------|-------------|
 | `file` | string | yes | Path to the file relative to project root |
 | `searchText` | string | yes | Text to find. Treated as literal unless `regex` is true |
-| `replaceText` | string | yes | Replacement text. Supports regex group references (`$1`, `$2`) when `regex` is true |
+| `replaceText` | string | yes | Replacement text. The escape sequences `\n`, `\t`, and `\\` are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references (`$1`, `$2`) when `regex` is true |
 | `regex` | boolean | no | Treat `searchText` as a regular expression. Default false |
 | `caseSensitive` | boolean | no | Case-sensitive matching. Default true |
 | `project_path` | string | no | Project root path |

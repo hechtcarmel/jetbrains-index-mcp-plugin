@@ -287,6 +287,14 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
      * is still ACTIVE (B's invokeLater enables PSM, A never re-disables it).
      */
     fun reconcilePowerSaveMode() {
+        // No managed projects means lifecycle management is inactive — restore full IDE
+        // capabilities. Without this, releasing the last managed project would compute
+        // anyActive=false over an empty set and turn PSM ON permanently (nothing managed
+        // remains to ever trigger another reconcile).
+        if (persistedState.managedProjectPaths.isEmpty()) {
+            PowerSaveMode.setEnabled(false)
+            return
+        }
         val anyActive = persistedState.managedProjectPaths.any { getMode(it) == ProjectMode.ACTIVE }
         PowerSaveMode.setEnabled(!anyActive)
     }
@@ -331,20 +339,54 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
             return
         }
 
-        // Log the actual close now that we've confirmed it will happen.
-        LifecycleEventLog.getInstance().log(
-            LifecycleEventLog.Entry(
-                project = project.name, path = path,
-                event = "transition", from = previous.name.lowercase(), to = "closed",
-                trigger = trigger
-            )
-        )
-        markClosed(path)
+        // Record the close only after it actually happens — closeAndDispose runs canClose,
+        // which any ProjectCloseHandler (e.g. a terminate-running-processes prompt) can veto.
         ApplicationManager.getApplication().invokeLater {
-            if (!project.isDisposed) {
-                ProjectManagerEx.getInstanceEx().closeAndDispose(project)
-                LOG.info("closed: $path")
-            }
+            executeDeferredClose(project, path, previous.name.lowercase(), trigger)
+        }
+    }
+
+    /**
+     * Runs on the EDT. State is recorded according to the actual outcome of the close:
+     * recording CLOSED before the attempt would leave the registry permanently disagreeing
+     * with an open window when the close is vetoed (healthCheck would then report a false
+     * "open but in closedProjectPaths" bug every cycle). A vetoed close falls back into the
+     * existing pendingClose retry machinery.
+     *
+     * [closeAndDispose] exists as a seam for tests only — light test projects short-circuit
+     * the platform's canClose veto check, so the veto outcome cannot be produced with a real
+     * close in the test fixture. Production always uses the default.
+     */
+    internal fun executeDeferredClose(
+        project: Project,
+        path: String,
+        previousModeLabel: String,
+        trigger: String,
+        closeAndDispose: (Project) -> Boolean = { ProjectManagerEx.getInstanceEx().closeAndDispose(it) }
+    ) {
+        if (project.isDisposed) return
+        val projectName = project.name
+        if (closeAndDispose(project)) {
+            LifecycleEventLog.getInstance().log(
+                LifecycleEventLog.Entry(
+                    project = projectName, path = path,
+                    event = "transition", from = previousModeLabel, to = "closed",
+                    trigger = trigger
+                )
+            )
+            markClosed(path)
+            LOG.info("closed: $path")
+        } else {
+            modes[path] = ProjectMode.DORMANT
+            pendingClose.add(path)
+            LifecycleEventLog.getInstance().log(
+                LifecycleEventLog.Entry(
+                    project = projectName, path = path,
+                    event = "transition", from = previousModeLabel, to = "dormant",
+                    trigger = "close_vetoed"
+                )
+            )
+            LOG.info("close vetoed, kept dormant: $path")
         }
     }
 

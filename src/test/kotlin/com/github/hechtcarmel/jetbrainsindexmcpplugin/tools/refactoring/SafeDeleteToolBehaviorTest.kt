@@ -105,6 +105,76 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
         assertProjectFileAbsent("sd-file-src/housekeeping/UnusedUtils.java")
     }
 
+    // ── Self-contained symbols: references inside the deleted element must not block ──
+    //
+    // The references vanish together with the element, so counting them as blocking
+    // usages pushes agents toward force=true for perfectly safe deletions. File-delete
+    // mode always excluded same-file usages; symbol mode used to count them.
+
+    fun testSelfRecursiveMethodDeletesWithoutForce() = runBlocking {
+        registerSourceRoot("sd-selfref-src")
+        writeProjectFile(
+            "sd-selfref-src/selfref/MathUtil.java", """
+            package selfref;
+
+            public class MathUtil {
+                public String keep() {
+                    return "keep";
+                }
+
+                private int fact(int n) {
+                    return n <= 1 ? 1 : fact(n - 1);
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-selfref-src/selfref/MathUtil.java")
+            put("line", 8)
+            put("column", 17)
+        })
+
+        assertToolSucceeded("A self-recursive method with no external callers must delete without force", result)
+        val payload = decodeRefactoring(toolText(result))
+        assertTrue("Payload must report success", payload.success)
+        assertEquals("Successfully deleted 'fact'", payload.message)
+        assertFileDoesNotContain("sd-selfref-src/selfref/MathUtil.java", "fact")
+        assertFileContains("sd-selfref-src/selfref/MathUtil.java", "public String keep()")
+    }
+
+    fun testClassWhoseOnlyReferencesAreItsOwnFactoryDeletesWithoutForce() = runBlocking {
+        registerSourceRoot("sd-selffactory-src")
+        writeProjectFile(
+            "sd-selffactory-src/selffactory/Widget.java", """
+            package selffactory;
+
+            public class Widget {
+                public static Widget create() {
+                    return new Widget();
+                }
+            }
+
+            class WidgetSibling {
+            }
+        """.trimIndent()
+        )
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-selffactory-src/selffactory/Widget.java")
+            put("line", 3)
+            put("column", 14)
+        })
+
+        assertToolSucceeded("A class referenced only from inside itself must delete without force", result)
+        val payload = decodeRefactoring(toolText(result))
+        assertTrue("Payload must report success", payload.success)
+        assertEquals("Successfully deleted 'Widget'", payload.message)
+        assertFileDoesNotContain("sd-selffactory-src/selffactory/Widget.java", "class Widget {")
+        assertFileDoesNotContain("sd-selffactory-src/selffactory/Widget.java", "new Widget()")
+        assertFileContains("sd-selffactory-src/selffactory/Widget.java", "class WidgetSibling")
+    }
+
     // ── Refusal: the blocking usage is named and nothing is deleted ──
 
     fun testReferencedJavaMethodIsRefusedAndTheCallSiteIsReported() = runBlocking {

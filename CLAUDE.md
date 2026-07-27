@@ -124,7 +124,7 @@ src/
 The plugin supports workspace projects where a single IDE window contains multiple sub-projects
 represented as modules with separate content roots:
 
-- **Project resolution** (`ProjectResolver.resolve`): Checks exact basePath → module content roots → subdirectory match
+- **Project resolution** (`ProjectResolver.resolve`): Checks exact basePath → exact module content root → basePath subdirectory → module content-root subdirectory (longest root wins)
 - **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath, then module content roots
 - **Relative path computation** (`ProjectUtils.getRelativePath`): Strips the matching content root prefix
 - **VFS/PSI sync** (`AbstractMcpTool.ensurePsiUpToDate`): Refreshes all content roots, not just basePath

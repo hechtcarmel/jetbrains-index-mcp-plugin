@@ -11,6 +11,8 @@ import com.intellij.execution.ui.ConsoleViewWithDelegate
 import com.intellij.execution.ui.ExecutionConsole
 import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 
@@ -151,7 +153,7 @@ object TestResultsCollector {
         }
     }
 
-    private fun toTestResultInfo(test: SMTestProxy, project: Project): TestResultInfo {
+    internal fun toTestResultInfo(test: SMTestProxy, project: Project): TestResultInfo {
         val status = when {
             test.isPassed -> "PASSED"
             test.isIgnored -> "IGNORED"
@@ -165,18 +167,26 @@ object TestResultsCollector {
         var file: String? = null
         var line: Int? = null
         try {
-            val location = test.getLocation(project, com.intellij.psi.search.GlobalSearchScope.allScope(project))
-            val psiElement = location?.psiElement
-            if (psiElement != null) {
-                val containingFile = psiElement.containingFile?.virtualFile
-                if (containingFile != null) {
-                    file = ProjectUtils.getRelativePath(project, containingFile.path)
-                    val document = PsiDocumentManager.getInstance(project).getDocument(psiElement.containingFile)
-                    if (document != null) {
-                        line = document.getLineNumber(psiElement.textOffset) + 1
+            // MCP tool calls arrive on Ktor worker threads with no read lock. Location lookup
+            // goes through SMTestLocator implementations into PSI and the stub index, which
+            // assert read access — without a read action the assertion is thrown, swallowed by
+            // the catch below, and file/line silently come back null for every test.
+            ReadAction.run<Exception> {
+                val location = test.getLocation(project, com.intellij.psi.search.GlobalSearchScope.allScope(project))
+                val psiElement = location?.psiElement
+                if (psiElement != null) {
+                    val containingFile = psiElement.containingFile?.virtualFile
+                    if (containingFile != null) {
+                        file = ProjectUtils.getRelativePath(project, containingFile.path)
+                        val document = PsiDocumentManager.getInstance(project).getDocument(psiElement.containingFile)
+                        if (document != null) {
+                            line = document.getLineNumber(psiElement.textOffset) + 1
+                        }
                     }
                 }
             }
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (_: Exception) {
             // Location extraction is best-effort
         }

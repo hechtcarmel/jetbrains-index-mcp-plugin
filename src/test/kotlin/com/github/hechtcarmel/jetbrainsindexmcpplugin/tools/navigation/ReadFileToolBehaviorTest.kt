@@ -2,7 +2,9 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
+import com.intellij.openapi.vfs.LocalFileSystem
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -62,6 +64,27 @@ class ReadFileToolBehaviorTest : McpPlatformTestCase() {
         assertEquals(2, payload.startLine)
         assertEquals(4, payload.endLine)
         assertEquals("line2\nline3\nline4", payload.content)
+    }
+
+    fun testAbsolutePathOutsideProjectIsNotReadable() = runBlocking {
+        val outside = Files.createTempFile("read-file-tool-outside", ".txt")
+        try {
+            Files.writeString(outside, "top secret")
+            // Make the file visible to the VFS so only the containment guard can block it.
+            assertNotNull(
+                "Test setup: VFS must see the outside file",
+                LocalFileSystem.getInstance().refreshAndFindFileByPath(outside.toString())
+            )
+
+            val result = ReadFileTool().execute(project, buildJsonObject {
+                put("file", outside.toString())
+            })
+
+            assertToolFailed("Reading a file outside project roots and libraries must fail", result)
+            assertEquals("File not found: $outside", toolText(result))
+        } finally {
+            Files.deleteIfExists(outside)
+        }
     }
 
     fun testStartLineAtLastLineSucceeds() = runBlocking {

@@ -4,6 +4,33 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`ide_install_plugin` rejects archives with zip-slip entries** (`../` traversal or absolute paths) that would write outside the IDE plugins directory. The whole archive is validated before the existing installation is removed, so a rejected archive leaves the current plugin intact, and extraction independently re-checks every normalized destination path.
+- **`ide_read_file` no longer reads local files outside the project.** Plain filesystem paths (including `~`-expanded ones) are now checked against the project's content roots and registered libraries; jar/library-source reads are unaffected.
+
+### Fixed
+
+- **MCP server lifecycle hardening.** Concurrent restarts (settings apply racing the watchdog) could orphan a bound Ktor engine, permanently occupying its port for the IDE session — server start/stop is now atomic. A failed start (e.g. port still in use at IDE startup) disarmed the watchdog and never retried, leaving the server down until an IDE restart — non-success starts now stop the failed instance and re-arm the watchdog, engine-side bind cancellations no longer kill the startup coroutine silently, and repeated failures no longer spam duplicate error balloons.
+- **Changing the server port in Settings no longer freezes the IDE UI** while the old server drains in-flight MCP calls — the restart runs off the EDT, with the result reported via notification.
+- **`project_path` pointing inside a workspace sub-project's content root** (e.g. a source directory under an `ide_open_workspace` module) now resolves to the open workspace instead of returning `project_not_found` with misleading advice.
+- **`ide_find_class` and `ide_find_file` no longer swallow cancellation or mid-search dumb-mode transitions** — they return the standard "IDE is indexing, retry" error instead of silently reporting a truncated result set as complete. The same fix applies to the Java hierarchy/implementations handlers (`ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, `ide_find_super_methods`), and to FQN class lookup (`ide_read_file` `qualifiedName`, `ide_run_tests`), which previously misreported "Class not found" while indexing.
+- **`ide_search_text` with `context: "code"` no longer drops matches inside numeric, char, or boolean literals**, and `contextType` now labels non-string literals as `CODE` instead of `STRING_LITERAL`.
+- **`ide_find_definition` default preview now includes the file's last line** — definitions on the last line (including one-line files) previously produced an empty or truncated preview.
+- **`ide_edit_member`/`ide_insert_member`/`ide_replace_member` no longer crash with a threading assertion** after applying the edit when called over HTTP — the crash left the change unsaved on disk and prompted duplicate-insert retries.
+- **`ide_insert_member` with `position: "first"` at Kotlin file scope** now inserts after the package declaration and imports instead of corrupting the file by inserting before them.
+- **`ide_refactor_rename` no longer reports success when the platform silently aborts the rename** (conflicts, read-only files). Conflicts are auto-resolved headlessly and surfaced as warnings; a provably unapplied rename returns an error.
+- **`ide_refactor_safe_delete` no longer counts references inside the deleted symbol itself** (recursive calls, the class's own factory methods) as blocking usages requiring `force: true`.
+- **`ide_replace_text_in_file`'s identity pre-flight compares what is actually written** — it unescapes `replaceText` before comparing to `searchText`, so replacements that differ only by escaping are no longer rejected as identical. The `\n`/`\t`/`\\` unescaping convention is now documented in the tool schema and docs.
+- **Kotlin call sites and type references resolve to the referenced declaration** in `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`, and `ide_type_hierarchy` — previously the cursor on a Kotlin call resolved to the enclosing function or class instead of the callee.
+- **`ide_type_hierarchy` on a Java interface no longer lists extended superinterfaces twice**, and on a Rust struct/enum no longer reports traits from unrelated `impl` blocks that merely mention the type in their bodies.
+- **`ide_diagnostics` test results now include file/line locations** — location lookup ran without a read action on the MCP server thread and silently returned null in production.
+- **Releasing the last lifecycle-managed project (`ide_release_project`) now disables Power Save Mode** instead of leaving it permanently enabled.
+- **A vetoed project close is no longer recorded as closed** — lifecycle state now follows the actual close outcome, and vetoed closes retry via the pending-close queue.
+- **`ide_close_project` re-checks the last-open-project guard on the EDT at close time**, so concurrent close requests can no longer leave the IDE with zero open projects and an unreachable MCP server.
+- **The MCP tool window panel is disposed with its content**, releasing the application-level server-status and command-history listeners (previously leaked the Project after closing it), and its Refresh button actually refreshes again (was a silent no-op).
+- **Settings can be applied while the configured port is occupied by another process** as long as host/port are unchanged, and applying with Enter while the Server Host field has focus no longer fails with a perpetual "Validating server host" error.
+
 ## [5.0.0] - 2026-07-26
 
 ### Breaking

@@ -111,6 +111,11 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
                         body.javaClass.getMethod("getLBrace").invoke(body) as? PsiElement
                     } catch (_: Exception) { null }
                     lBrace?.textRange?.endOffset ?: return null
+                } else if (scope is PsiFile) {
+                    // Offset 0 would place the member before the package directive and imports —
+                    // a Kotlin syntax error. Insert after the file header instead (offset 0 only
+                    // when the file has neither, e.g. scripts).
+                    fileHeaderEndOffset(scope)
                 } else scope.textRange.startOffset
             }
             else -> {
@@ -122,6 +127,25 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
                         rBrace?.textRange?.startOffset ?: return null
                 } else scope.textRange.endOffset
             }
+        }
+    }
+
+    /**
+     * End offset of a Kotlin file's header: the later of the package directive and the
+     * import list. Accessors are invoked reflectively (KtFile is not on the compile classpath);
+     * both elements exist but are empty (end offset 0) when the file declares neither.
+     */
+    private fun fileHeaderEndOffset(file: PsiFile): Int {
+        val packageDirectiveEnd = getChildElement(file, "getPackageDirective")?.textRange?.endOffset ?: 0
+        val importListEnd = getChildElement(file, "getImportList")?.textRange?.endOffset ?: 0
+        return maxOf(packageDirectiveEnd, importListEnd)
+    }
+
+    private fun getChildElement(element: PsiElement, accessor: String): PsiElement? {
+        return try {
+            element.javaClass.getMethod(accessor).invoke(element) as? PsiElement
+        } catch (_: Exception) {
+            null
         }
     }
 
