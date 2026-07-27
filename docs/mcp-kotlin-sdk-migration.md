@@ -658,7 +658,7 @@ elicitation.
 
 ## 11. What actually happened
 
-Five things this design got wrong or did not foresee. Recorded because each one is a trap for
+Seven things this design got wrong or did not foresee. Recorded because each one is a trap for
 the next person who touches these versions.
 
 ### 11.1 SDK 0.14.0 does not compile against this platform — 0.10.0 is the ceiling
@@ -725,6 +725,19 @@ runs a per-request stateless transport there, the same way the Streamable HTTP e
 - `initialize` now requires `capabilities` in params. The MCP schema always mandated it and the
   hand-written handler ignored params entirely, so this is new strictness the design missed.
 - `DELETE` on the Streamable HTTP endpoint still returns 405 but no longer sets `Allow: POST`.
+
+### 11.6 The `McpKtorServer` rename was dropped
+
+The §3 "After" diagram, the file-level plan, and Phase 4 all rename the transport class to
+`McpKtorServer`. The rewrite happened; the rename did not — the class is still
+`server/transport/KtorMcpServer.kt` (and CLAUDE.md documents it under that name).
+
+### 11.7 `AcceptHeaderContractTest` was never written
+
+§6 item 4 and Phase 5 promise an `AcceptHeaderContractTest` (406 without the dual `Accept`,
+200 with it), and the §8 risk table calls the break "pinned" by it. No test by that or any
+other name asserts the 406 path — the transport tests only ever send the correct dual
+`Accept` header — so the documented 5.0.0 breaking behavior remains unpinned.
 
 ### Test outcome
 

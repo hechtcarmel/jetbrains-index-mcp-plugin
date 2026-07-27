@@ -76,11 +76,11 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 | `ide_release_all_projects` | Release all managed projects from lifecycle management at once | Disabled |
 | `ide_lifecycle_log` | Query recent lifecycle events with trigger reasons | Disabled |
 | `ide_set_lifecycle_log_file` | Enable or disable persistent lifecycle log file writes | Disabled |
-| `ide_set_power_save_mode` | Toggle Power Save Mode directly | Enabled |
-| `ide_close_project` | Close a project window | Enabled |
-| `ide_open_project` | Open a project by path and wait for indexing | Enabled |
-| `ide_install_plugin` | Install a plugin zip into the IDE | Enabled |
-| `ide_restart` | Restart the IDE | Enabled |
+| `ide_set_power_save_mode` | Toggle Power Save Mode directly | Disabled |
+| `ide_close_project` | Close a project window | Disabled |
+| `ide_open_project` | Open a project by path and wait for indexing | Disabled |
+| `ide_install_plugin` | Install a plugin zip into the IDE | Disabled |
+| `ide_restart` | Restart the IDE | Disabled |
 
 ---
 
@@ -144,11 +144,7 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_release_all_projects](#ide_release_all_projects)
   - [ide_enroll_all_projects](#ide_enroll_all_projects)
   - [ide_lifecycle_log](#ide_lifecycle_log)
-  - [ide_set_power_save_mode](#ide_set_power_save_mode)
-  - [ide_close_project](#ide_close_project)
-  - [ide_open_project](#ide_open_project)
-  - [ide_install_plugin](#ide_install_plugin)
-  - [ide_restart](#ide_restart)
+  - [ide_set_lifecycle_log_file](#ide_set_lifecycle_log_file)
 - [Java-Specific Tools](#java-specific-tools)
   - [ide_list_tests](#ide_list_tests)
   - [ide_convert_java_to_kotlin](#ide_convert_java_to_kotlin)
@@ -186,7 +182,7 @@ Some tools support identifying the target element by fully qualified symbol refe
 
 **Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
 
-**Supported languages:** Java, JS, TS, and Python. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+**Supported languages:** Java, JavaScript, TypeScript, Python, and PHP. Availability is dynamic — a language is accepted only when its plugin is installed (e.g., Python in PyCharm, PHP in PhpStorm). Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
 
 **Python symbol grammar:** Symbols must be module-qualified (dotted path with ≥2 segments):
 - `pkg.mod.ClassName` — class
@@ -200,6 +196,8 @@ Parameter lists are not supported (Python has no overload-by-signature); bare un
 - `modulePath#exportName` — named export (e.g., `src/utils#formatDate`)
 - `modulePath#default` — default export (e.g., `src/index#default`)
 - `modulePath#ClassName.memberName` — class member (e.g., `src/models#User.validate`)
+
+**PHP symbol grammar:** `\Namespace\ClassName` or `\Namespace\ClassName::method()` (e.g., `\App\Service\UserService::find()`).
 
 **Deterministic outcomes for JS/TS symbol resolution:**
 - `unsupported_grammar` — symbol does not match accepted forms
@@ -353,7 +351,8 @@ Finds the definition/declaration location of a symbol at a given source location
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
-| `maxPreviewLines` | integer | No | Limit `fullElementPreview` output size (default: 50, max: 500) |
+| `fullElementPreview` | boolean | No | Return the complete element code instead of a preview snippet (default: false) |
+| `maxPreviewLines` | integer | No | Limit `fullElementPreview` output size (default: 50, max: 500). Only used when `fullElementPreview` is `true` |
 
 **Example Request (position-based):**
 
@@ -542,8 +541,13 @@ Searches for text using IntelliJ's Find in Files engine, matching the IDE's own 
 | `regex` | boolean | No | Treat `query` as a regular expression (default: false) |
 | `context` | string | No | Where to search: `"code"`, `"comments"`, `"strings"`, or `"all"` (default) |
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
+| `wholeWord` | boolean | No | Match whole words only (default: false — substring match) |
 | `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
-| `limit` | integer | No | Maximum results (default: 100, max: 500) |
+| `limit` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
+| `cursor` | string | No | Pagination cursor from a previous response |
+| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
+
+Supports cursor-based pagination: the first call returns results plus `nextCursor`; pass `cursor` to get the next page.
 
 **Example Request:**
 
@@ -592,7 +596,9 @@ Regex example:
     }
   ],
   "totalCount": 1,
-  "query": "TODO"
+  "query": "TODO",
+  "nextCursor": null,
+  "hasMore": false
 }
 ```
 
@@ -621,7 +627,7 @@ File problems are collected through explicit daemon analysis, so they do not dep
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
+| `file` | string | No | Path to the file relative to project root. Enables per-file code analysis. At least one of `file`, `includeBuildErrors`, or `includeTestResults` must be provided |
 | `line` | integer | No | 1-based line number for intention lookup (default: 1) |
 | `column` | integer | No | 1-based column number for intention lookup (default: 1) |
 | `startLine` | integer | No | Filter problems to start from this line |
@@ -642,6 +648,21 @@ File problems are collected through explicit daemon analysis, so they do not dep
     "name": "ide_diagnostics",
     "arguments": {
       "file": "src/main/java/com/example/UserService.java"
+    }
+  }
+}
+```
+
+**Example Request (build output only, no file analysis):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_diagnostics",
+    "arguments": {
+      "includeBuildErrors": true,
+      "severity": "errors"
     }
   }
 }
@@ -931,58 +952,6 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
   ],
   "truncated": false,
   "durationMs": 3200
-}
-```
-
----
-
-### ide_list_tests
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-> **Availability**: Requires Java plugin — only available in **IntelliJ IDEA** and **Android Studio** (uses the `com.intellij.testFramework` extension point declared by the Java plugin)
-
-List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
-
-**Use when:**
-- Discovering what tests exist before running them
-- Finding the exact FQN of a test class or method to pass to `ide_run_tests`
-- Checking whether a new test file was picked up by the IDE
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
-| `file` | string | No | Path to a specific test file relative to project root. If omitted, all test sources are scanned |
-
-**Example Request:**
-
-```json
-{
-  "method": "tools/call",
-  "params": {
-    "name": "ide_list_tests",
-    "arguments": {}
-  }
-}
-```
-
-**Example Response:**
-
-```json
-{
-  "tests": [
-    {
-      "framework": "JUnit4",
-      "className": "McpPluginUnitTest",
-      "methodName": "testToolNamesHaveIdePrefix",
-      "displayName": "McpPluginUnitTest.testToolNamesHaveIdePrefix",
-      "file": "src/test/kotlin/com/example/McpPluginUnitTest.kt",
-      "line": 42
-    }
-  ],
-  "count": 1,
-  "truncated": false
 }
 ```
 
@@ -1745,6 +1714,39 @@ Reformat code according to the project's code style settings. Equivalent to the 
 
 ---
 
+### ide_optimize_imports
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Optimize imports in a file: remove unused imports and organize the remaining imports according to the project code style. Equivalent to the IDE's "Optimize Imports" action (<kbd>Ctrl+Alt+O</kbd> / <kbd>Cmd+Opt+O</kbd>). Does **not** reformat code. Supports undo (Ctrl/Cmd+Z).
+
+**Use when:**
+- Removing unused imports after code changes
+- Organizing imports without touching the rest of the file's formatting
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_optimize_imports",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java"
+    }
+  }
+}
+```
+
+---
+
 ### ide_structural_search_replace
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
@@ -1759,18 +1761,6 @@ When `replacePattern` is omitted, the tool performs search-only and returns matc
 - Finding code patterns that text search cannot express (e.g., all calls to a deprecated method with specific argument types)
 - Applying systematic code transformations across the project
 - Migrating API usage patterns
-### ide_edit_member
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
-Replace an entire member declaration (signature + body) with new content. The tool locates the member by name, optional parameter count, and optional line number, then replaces the complete declaration.
-
-**Languages:** Java, Kotlin.
-
-**Use when:**
-- Rewriting a method signature and body together
-- Replacing a field declaration with a different type or initializer
-- Updating a member where both signature and body need to change
 
 **Parameters:**
 
@@ -1778,19 +1768,10 @@ Replace an entire member declaration (signature + body) with new content. The to
 |-----------|------|----------|-------------|
 | `searchPattern` | string | Yes | Structural search pattern using IntelliJ SSR syntax |
 | `replacePattern` | string | No | Replacement pattern. If omitted, search-only mode |
-| `filePattern` | string | No | IntelliJ file mask to filter files (e.g., `"*.java"`, `"*.kt"`) |
+| `filePattern` | string | No | IntelliJ file mask to filter files (e.g., `"*.java"`, `"*.kt"`). Default: `"*.java"` |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 
 **Example Request (search-only):**
-| `file` | string | Yes | Path to the file relative to project root |
-| `class` | string | No | Class name to scope the search (required for inner classes or when the member name is ambiguous) |
-| `member` | string | Yes | Name of the member to replace |
-| `parameterCount` | integer | No | Number of parameters to disambiguate overloaded methods |
-| `line` | integer | No | 1-based line number to disambiguate when multiple members share the same name |
-| `content` | string | Yes | The full replacement declaration (signature + body) |
-| `reformat` | boolean | No | Reformat the replaced code using project code style (default: true) |
-
-**Example Request:**
 
 ```json
 {
@@ -1836,6 +1817,62 @@ Replace an entire member declaration (signature + body) with new content. The to
 
 ---
 
+### ide_edit_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Replace an entire member declaration (signature + body) with new content. The tool locates the member by name, optional parameter count, and optional line number, then replaces the complete declaration.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Rewriting a method signature and body together
+- Replacing a field declaration with a different type or initializer
+- Updating a member where both signature and body need to change
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `class` | string | No | Class name to scope the search (required for inner classes or when the member name is ambiguous) |
+| `member` | string | Yes | Name of the member to replace |
+| `parameterCount` | integer | No | Number of parameters to disambiguate overloaded methods |
+| `line` | integer | No | 1-based line number to disambiguate when multiple members share the same name |
+| `content` | string | Yes | The full replacement declaration (signature + body) |
+| `reformat` | boolean | No | Reformat the replaced code using project code style (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_edit_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "member": "findUser",
+      "parameterCount": 1,
+      "content": "public User findUser(String id) {\n    return userRepository.findById(id).orElseThrow(() -> new NotFoundException(id));\n}"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Replaced method 'findUser' entirely",
+  "startLine": 15,
+  "endLine": 18
+}
+```
+
+---
+
 ### ide_change_signature
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
@@ -1859,7 +1896,7 @@ Change a method's signature — name, return type, visibility, and parameters �
 | `column` | integer | Yes | 1-based column number of the method name |
 | `newName` | string | No | New method name (unchanged if omitted) |
 | `newReturnType` | string | No | New return type (unchanged if omitted) |
-| `newVisibility` | string | No | New visibility: `"public"`, `"protected"`, `"private"`, or `"package-local"` (unchanged if omitted) |
+| `newVisibility` | string | No | New visibility: `"public"`, `"protected"`, `"private"`, or `"package-private"` (unchanged if omitted; `"package-local"` is accepted as a legacy alias) |
 | `newParameters` | array | No | Array of parameter objects defining the new parameter list. Each object: `{ oldIndex, name, type, defaultValue }`. Use `oldIndex: -1` for new parameters. |
 | `generateDelegate` | boolean | No | Generate a delegate method with the old signature that calls the new one (default: false) |
 
@@ -1905,12 +1942,6 @@ Change a method's signature — name, return type, visibility, and parameters �
       "column": 17,
       "newName": "findUserById",
       "newVisibility": "public"
-    "name": "ide_edit_member",
-    "arguments": {
-      "file": "src/main/java/com/example/UserService.java",
-      "member": "findUser",
-      "parameterCount": 1,
-      "content": "public User findUser(String id) {\n    return userRepository.findById(id).orElseThrow(() -> new NotFoundException(id));\n}"
     }
   }
 }
@@ -1929,9 +1960,6 @@ Change a method's signature — name, return type, visibility, and parameters �
     "src/test/java/com/example/UserServiceTest.java"
   ],
   "changesCount": 5
-  "message": "Replaced method 'findUser' entirely",
-  "startLine": 15,
-  "endLine": 18
 }
 ```
 
@@ -1996,18 +2024,6 @@ Use this for mechanical text substitutions — e.g., replacing a method call wra
 - Replacing a deprecated method call pattern across a file
 - Updating import paths or string constants
 - Applying regex-based text transformations
-### ide_insert_member
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
-Insert a new member (method, field, inner class, etc.) at a structural position within a class or at the top level of a file.
-
-**Languages:** Java, Kotlin.
-
-**Use when:**
-- Adding a new method to a class
-- Adding a new field or constant
-- Inserting a member at a specific position relative to an existing member
 
 **Parameters:**
 
@@ -2018,13 +2034,6 @@ Insert a new member (method, field, inner class, etc.) at a structural position 
 | `replaceText` | string | Yes | Replacement text. The escape sequences `\n`, `\t`, and `\\` are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references (`$1`, `$2`) when `regex` is true |
 | `regex` | boolean | No | Treat `searchText` as a regular expression (default: false) |
 | `caseSensitive` | boolean | No | Case-sensitive matching (default: true) |
-| `class` | string | No | Class name to insert into (omit for top-level insertion) |
-| `content` | string | Yes | The full member declaration to insert |
-| `position` | string | No | Where to insert: `before`, `after`, `first`, or `last` (default: `last`) |
-| `anchor` | string | No | Name of an existing member to position relative to (required for `before`/`after`) |
-| `anchorParameterCount` | integer | No | Number of parameters to disambiguate overloaded anchor methods |
-| `anchorLine` | integer | No | 1-based line number to disambiguate the anchor member |
-| `reformat` | boolean | No | Reformat the inserted code using project code style (default: true) |
 
 **Example Request:**
 
@@ -2054,6 +2063,56 @@ Insert a new member (method, field, inner class, etc.) at a structural position 
       "searchText": "LOG\\.debug\\((.*)\\)",
       "replaceText": "LOG.trace($1)",
       "regex": true
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/Service.java",
+  "replacements": 3,
+  "message": "Replaced 3 occurrence(s) of 'OldHelper.wrap(' in Service.java"
+}
+```
+
+---
+
+### ide_insert_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Insert a new member (method, field, inner class, etc.) at a structural position within a class or at the top level of a file.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Adding a new method to a class
+- Adding a new field or constant
+- Inserting a member at a specific position relative to an existing member
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `content` | string | Yes | The full member declaration to insert |
+| `class` | string | No | Class name to insert into (omit for top-level insertion) |
+| `position` | string | No | Where to insert: `before`, `after`, `first`, or `last` (default: `last`) |
+| `anchor` | string | No | Name of an existing member to position relative to (required for `before`/`after`) |
+| `anchorParameterCount` | integer | No | Number of parameters to disambiguate overloaded anchor methods |
+| `anchorLine` | integer | No | 1-based line number to disambiguate the anchor member |
+| `reformat` | boolean | No | Reformat the inserted code using project code style (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
     "name": "ide_insert_member",
     "arguments": {
       "file": "src/main/java/com/example/UserService.java",
@@ -2071,9 +2130,6 @@ Insert a new member (method, field, inner class, etc.) at a structural position 
 ```json
 {
   "success": true,
-  "file": "src/main/java/com/example/Service.java",
-  "replacements": 3,
-  "message": "Replaced 3 occurrence(s) of 'OldHelper.wrap(' in Service.java"
   "file": "src/main/java/com/example/UserService.java",
   "message": "Inserted member",
   "startLine": 22,
@@ -2174,6 +2230,8 @@ Retrieves the complete type hierarchy for a class or interface.
 | `includeGenerated` | boolean | No | Include supertypes/subtypes in generated sources (KSP/Dagger/annotation-processor output). Default: true — keeps generated types in the hierarchy |
 
 *Either `file`/`line`/`column` OR `className` must be provided.
+
+**Rust note:** `className` is not supported for Rust — use `file` + `line` + `column` instead.
 
 **Example Request (by position):**
 
@@ -2612,6 +2670,58 @@ These tools require the Java plugin and are only available in **IntelliJ IDEA** 
 
 `ide_convert_java_to_kotlin` also requires the Kotlin plugin and is disabled by default.
 
+### ide_list_tests
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Availability**: Requires Java plugin — only available in **IntelliJ IDEA** and **Android Studio** (uses the `com.intellij.testFramework` extension point declared by the Java plugin)
+
+List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
+
+**Use when:**
+- Discovering what tests exist before running them
+- Finding the exact FQN of a test class or method to pass to `ide_run_tests`
+- Checking whether a new test file was picked up by the IDE
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+| `file` | string | No | Path to a specific test file relative to project root. If omitted, all test sources are scanned |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_list_tests",
+    "arguments": {}
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "tests": [
+    {
+      "framework": "JUnit4",
+      "className": "McpPluginUnitTest",
+      "methodName": "testToolNamesHaveIdePrefix",
+      "displayName": "McpPluginUnitTest.testToolNamesHaveIdePrefix",
+      "file": "src/test/kotlin/com/example/McpPluginUnitTest.kt",
+      "line": 42
+    }
+  ],
+  "count": 1,
+  "truncated": false
+}
+```
+
+---
+
 ### ide_convert_java_to_kotlin
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
@@ -2709,8 +2819,9 @@ Safely deletes an element, first checking for usages.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | string | Yes | Path to the file |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `target_type` | string | No | What to delete: `"symbol"` (default) or `"file"` (deletes the entire file if no symbol has external usages) |
+| `line` | integer | Conditional | 1-based line number. Required when `target_type` is `"symbol"` (the default) |
+| `column` | integer | Conditional | 1-based column number. Required when `target_type` is `"symbol"` (the default) |
 | `force` | boolean | No | Force deletion even if usages exist (default: false) |
 
 **Example Request:**
@@ -2724,6 +2835,21 @@ Safely deletes an element, first checking for usages.
       "file": "src/main/java/com/example/LegacyHelper.java",
       "line": 8,
       "column": 14
+    }
+  }
+}
+```
+
+**Example Request (delete an entire file):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_safe_delete",
+    "arguments": {
+      "file": "src/main/java/com/example/UnusedUtils.java",
+      "target_type": "file"
     }
   }
 }
@@ -2758,24 +2884,9 @@ Safely deletes an element, first checking for usages.
 
 ## Error Handling
 
-### JSON-RPC Standard Errors
+### Tool-Level Errors
 
-| Code | Name | When It Occurs |
-|------|------|----------------|
-| -32700 | Parse Error | Invalid JSON in request |
-| -32600 | Invalid Request | Missing required JSON-RPC fields |
-| -32601 | Method Not Found | Unknown tool or method name |
-| -32602 | Invalid Params | Missing or invalid parameters |
-| -32603 | Internal Error | Unexpected server error |
-
-### Custom MCP Errors
-
-| Code | Name | When It Occurs |
-|------|------|----------------|
-| -32001 | Index Not Ready | IDE is indexing (dumb mode) |
-| -32002 | File Not Found | Specified file doesn't exist |
-| -32003 | Symbol Not Found | No symbol at the specified position |
-| -32004 | Refactoring Conflict | Refactoring cannot be completed |
+Tool failures (file not found, symbol not found, IDE indexing, refactoring conflicts, etc.) are reported as a normal `tools/call` result with `isError: true` and a human-readable message in `content`, per the MCP specification — never as JSON-RPC errors with custom codes.
 
 ### Example Error Response
 
@@ -2783,12 +2894,29 @@ Safely deletes an element, first checking for usages.
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "error": {
-    "code": -32001,
-    "message": "IDE is in dumb mode, indexes not available. Please wait for indexing to complete."
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "IDE is in dumb mode, indexes not available. Please wait for indexing to complete."
+      }
+    ],
+    "isError": true
   }
 }
 ```
+
+### JSON-RPC Standard Errors
+
+JSON-RPC error codes appear only for protocol-level failures handled by the MCP SDK:
+
+| Code | Name | When It Occurs |
+|------|------|----------------|
+| -32700 | Parse Error | Invalid JSON in request |
+| -32600 | Invalid Request | Missing required JSON-RPC fields |
+| -32601 | Method Not Found | Unknown JSON-RPC method name (an unknown *tool* name returns an `isError` result instead) |
+| -32602 | Invalid Params | Missing or invalid parameters |
+| -32603 | Internal Error | Unexpected server error |
 
 ### Handling Dumb Mode
 
@@ -2993,72 +3121,4 @@ Lifecycle log file enabled. Events are being written to: /Users/you/Library/Logs
 
 ---
 
-### ide_set_power_save_mode
-
-Toggle Power Save Mode directly.
-
-**Parameters:**
-- `enabled` (required): `true` or `false`
-- `project_path` (optional)
-
-```json
-{ "name": "ide_set_power_save_mode", "arguments": { "enabled": true } }
-```
-
-Power Save Mode suspends background inspections and code analysis while leaving the index and all MCP operations fully functional.
-
----
-
-### ide_close_project
-
-Close an open project window and free its memory.
-
-**Parameters:** `project_path` (optional — defaults to the active project)
-
-```json
-{ "name": "ide_close_project", "arguments": {} }
-```
-
-The project can be reopened via Recent Projects or `ide_open_project`.
-
----
-
-### ide_open_project
-
-Open a project by filesystem path and block until indexing completes, so subsequent MCP tool calls succeed immediately.
-
-**Parameters:**
-- `path` (required): filesystem path of the project directory
-- `project_path` (optional): routing hint — requires at least one project already open
-
-```json
-{ "name": "ide_open_project", "arguments": { "path": "/Users/dev/myproject" } }
-```
-
----
-
-### ide_install_plugin
-
-Install a plugin zip into the IDE, replacing any existing version. A restart is required to load the updated plugin.
-
-**Parameters:**
-- `path` (optional): explicit path to a `.zip` file. If omitted, auto-detects `build/distributions/*.zip` in the current project — useful when developing the plugin itself.
-- `project_path` (optional)
-
-```json
-{ "name": "ide_install_plugin", "arguments": {} }
-```
-
-Typical workflow: `./gradlew buildPlugin` → `ide_install_plugin` → `ide_restart`.
-
----
-
-### ide_restart
-
-Restart the IDE. Terminates the MCP connection immediately — no further tool calls should be made after calling this.
-
-**Parameters:** `project_path` (optional)
-
-```json
-{ "name": "ide_restart", "arguments": {} }
-```
+**Related window-management tools:** `ide_set_power_save_mode`, `ide_close_project`, and `ide_open_project` are documented under [Project Window Management](#project-window-management); `ide_install_plugin` and `ide_restart` under [Plugin Development](#plugin-development).

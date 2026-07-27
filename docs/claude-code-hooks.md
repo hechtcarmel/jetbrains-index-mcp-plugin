@@ -22,7 +22,7 @@ skills or CLAUDE.md instructions.
 ## Installation
 
 Add these hooks to your Claude Code settings. You can configure them via
-`claude mcp` or by editing `~/.claude/settings.json` directly.
+the `/hooks` command or by editing `~/.claude/settings.json` directly.
 
 In `~/.claude/settings.json`, add to the `hooks` section:
 

@@ -1,0 +1,91 @@
+name: Bug report
+description: Report a problem with the IDE Index MCP Server plugin
+labels: [bug]
+body:
+  - type: dropdown
+    id: ide
+    attributes:
+      label: IDE
+      description: Which JetBrains IDE are you running the plugin in?
+      options:
+        - IntelliJ IDEA
+        - Android Studio
+        - PyCharm
+        - WebStorm
+        - GoLand
+        - PhpStorm
+        - RubyMine
+        - CLion
+        - RustRover
+        - DataGrip
+        - Aqua
+        - DataSpell
+        - Rider
+    validations:
+      required: true
+  - type: input
+    id: ide-version
+    attributes:
+      label: IDE version
+      placeholder: e.g. 2025.3.1
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Settings → Plugins → Index MCP Server
+      placeholder: e.g. 5.0.2
+    validations:
+      required: true
+  - type: dropdown
+    id: mcp-client
+    attributes:
+      label: MCP client
+      options:
+        - Claude Code
+        - Cursor
+        - Other (specify in reproduction steps)
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport endpoint used
+      options:
+        - Streamable HTTP (/index-mcp/streamable-http)
+        - Legacy SSE (/index-mcp/sse)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include the tool name and arguments if the bug involves a specific MCP tool.
+      placeholder: |
+        1. Open project ...
+        2. Call ide_find_references with ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant idea.log snippet
+      description: Help → Show Log in Finder/Explorer. Paste any related stack traces or errors.
+      render: text
+    validations:
+      required: false

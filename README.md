@@ -65,7 +65,7 @@ These tools activate based on installed language plugins:
 
 **Project Lifecycle Management**
 
-When working across many projects simultaneously, idle ones consume memory unnecessarily and leave editors open for no reason. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity — no configuration required.
+When working across many projects simultaneously, idle ones consume memory unnecessarily and leave editors open for no reason. Lifecycle management sleeps and wakes projects based on window focus and MCP activity. It is opt-in — disabled by default; turn on "Enable lifecycle management" in Settings → Tools → Index MCP Server, after which no further configuration is required.
 
 - **Automatic sleep/wake** - Projects move from active → background (Power Save on) → dormant (editors closed, PSI cache freed) → closed (fully unloaded), and auto-reopen transparently on the next MCP call
 - **`ide_project_status`** - Combined snapshot of every open and managed project
@@ -96,8 +96,11 @@ Perfect for AI-assisted development workflows where accuracy and safety matter.
 - [Lifecycle Management](#lifecycle-management)
 - [Tool Window](#tool-window)
 - [Error Codes](#error-codes)
+- [Settings](#settings)
 - [Requirements](#requirements)
+- [Architecture](#architecture)
 - [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
@@ -240,6 +243,9 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 | CLion | `clion-index` | 29177 |
 | RustRover | `rustrover-index` | 29178 |
 | DataGrip | `datagrip-index` | 29179 |
+| Aqua | `aqua-index` | 29180 |
+| DataSpell | `dataspell-index` | 29181 |
+| Rider | `rider-index` | 29182 |
 
 > **Tip**: Use the "Install on Coding Agents" button in the tool window - it automatically uses the correct server name and port for your IDE.
 
@@ -336,9 +342,9 @@ PHP file structure support requires the PHP plugin and is available in PhpStorm 
 | `dormant` | on | closed | freed | N min idle → closed |
 | `closed` | — | — | freed | next MCP call → background (auto-reopens) |
 
-Timing thresholds are configurable in Settings. Projects enroll automatically on first MCP use and auto-reopen when an MCP tool targets a closed project — existing tools require no changes.
+Timing thresholds are configurable in Settings. Lifecycle management is opt-in (disabled by default); once "Enable lifecycle management" is turned on in Settings → Tools → Index MCP Server, projects enroll automatically on first MCP use and auto-reopen when an MCP tool targets a closed project — existing tools require no changes.
 
-**MCP availability guarantee:** the lifecycle manager never closes the last open managed project — it stays in `dormant` (memory mostly freed, MCP still reachable). If all projects are somehow closed (e.g., the user manually closes the last window), any MCP tool call without a `project_path` automatically reopens a managed-closed project to restore access.
+**MCP availability guarantee:** the lifecycle manager never closes below the configurable minimum of open managed projects (default 4) — projects at the floor stay in `dormant` (memory mostly freed, MCP still reachable) instead of closing. If all projects are somehow closed (e.g., the user manually closes the last window), any MCP tool call without a `project_path` automatically reopens a managed-closed project to restore access.
 
 ### Tool Availability by IDE
 
@@ -346,21 +352,21 @@ Timing thresholds are configurable in Settings. Projects enroll automatically on
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| IntelliJ IDEA | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
-| Android Studio | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
-| PyCharm | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
-| WebStorm | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
-| GoLand | ✓ 25 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
-| RustRover | ✓ 25 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
-| PhpStorm | ✓ 25 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| IntelliJ IDEA | ✓ all universal tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| Android Studio | ✓ all universal tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| PyCharm | ✓ all universal tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| WebStorm | ✓ all universal tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| GoLand | ✓ all universal tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
+| RustRover | ✓ all universal tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
+| PhpStorm | ✓ all universal tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
 
 **May Work (Untested):**
 
 | IDE | Universal | Navigation | Refactoring |
 |-----|-----------|------------|-------------|
-| RubyMine | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
-| CLion | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
-| DataGrip | ✓ 25 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| RubyMine | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| CLion | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| DataGrip | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
 > **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
@@ -400,9 +406,9 @@ When an error occurs, the response returns `available_projects`. By default this
 
 ## Lifecycle Management
 
-When you use the plugin across multiple projects simultaneously — common when an AI agent is working across a monorepo — open projects compete for memory even when they're not being actively used. Lifecycle management handles this automatically.
+When you use the plugin across multiple projects simultaneously — common when an AI agent is working across a monorepo — open projects compete for memory even when they're not being actively used. Lifecycle management handles this, but it is opt-in: enable "Enable lifecycle management" in Settings → Tools → Index MCP Server (disabled by default).
 
-Projects enroll on their first MCP tool call and are notified via balloon. From that point, transitions happen based on focus and MCP activity:
+Once enabled, projects enroll on their first MCP tool call and are notified via balloon. From that point, transitions happen based on focus and MCP activity:
 
 1. **Focus lost** → after 2 minutes, Power Save Mode on (`background`)
 2. **No MCP calls** → after 2 more minutes, editors close and PSI cache is freed (`dormant`)
@@ -411,11 +417,11 @@ Projects enroll on their first MCP tool call and are notified via balloon. From 
 
 No changes are needed in existing MCP tools — `ProjectResolver` handles the reopen transparently. The auto-reopen typically takes 5–15 seconds on first open; subsequent opens are faster.
 
-The lifecycle manager never closes the last open managed project: it stays dormant (memory mostly freed, MCP still reachable). If all projects are closed by other means, any tool call automatically reopens one managed project to restore MCP access.
+The lifecycle manager never closes below the configurable minimum of open managed projects (default 4): projects at the floor stay dormant (memory mostly freed, MCP still reachable) instead of closing. If all projects are closed by other means, any tool call automatically reopens one managed project to restore MCP access.
 
 Use `ide_project_status` to see the current state of all projects at a glance, and `ide_lifecycle_log` to see what happened and why — useful when a project closed unexpectedly. Each log event has a `trigger` field: `timer:inactivity`, `timer:close`, `focus_gained`, `mcp_call`, `auto_open`, `user`, etc.
 
-Timing thresholds are configurable in Settings → Index MCP Server → Project Lifecycle Management.
+Timing thresholds are configurable in Settings → Tools → Index MCP Server → Project Lifecycle Management.
 
 ## Tool Window
 
@@ -452,14 +458,9 @@ The plugin adds an "Index MCP Server" tool window (bottom panel) that shows:
 | -32602 | Invalid Params | Invalid or missing parameters |
 | -32603 | Internal Error | Unexpected internal error |
 
-### Custom MCP Errors
+### Tool Errors
 
-| Code | Name | Description |
-|------|------|-------------|
-| -32001 | Index Not Ready | IDE is in dumb mode (indexing in progress) |
-| -32002 | File Not Found | Specified file does not exist |
-| -32003 | Symbol Not Found | No symbol found at the specified position |
-| -32004 | Refactoring Conflict | Refactoring cannot be completed (e.g., name conflict) |
+Since v5.0.0, tool-level failures (index not ready, file not found, symbol not found, refactoring conflicts) are returned as MCP tool results with `isError: true` and a descriptive message — not as custom JSON-RPC error codes. JSON-RPC error codes are reserved for transport-level protocol violations handled by the MCP SDK.
 
 ## Settings
 
@@ -472,17 +473,19 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Max History Size | 100 | Maximum number of commands to keep in history |
 | Project List in Error Responses | Expanded | Controls `available_projects` detail for invalid/missing `project_path` errors. `Expanded` includes workspace sub-projects; `Compact` returns only top-level project roots |
 | Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
+| Response Format | JSON | Tool response serialization: JSON or TOON |
 | Disabled Tools | Tool-specific | Per-tool enable/disable toggles. Disabled tools stay hidden and cannot be called until enabled |
 | **Lifecycle Management** | | |
-| Enable lifecycle management | true | Master toggle for the automatic sleep/wake state machine |
+| Enable lifecycle management | false | Master toggle for the automatic sleep/wake state machine — no automatic sleep/wake happens until this is enabled |
 | Active → Background (minutes) | 2 | Focus-loss grace period before switching to Power Save Mode |
 | Background → Dormant (minutes) | 2 | MCP-idle time before closing editors and freeing PSI caches |
 | Dormant → Closed (minutes) | 10 | Idle time before fully closing the project window |
+| Minimum open projects | 4 | Floor of managed projects kept open (1-20); projects at the floor stay dormant instead of closing |
 | Event log buffer size | 500 | How many events `ide_lifecycle_log` retains in memory (100–10,000) |
 
 ## Requirements
 
-- **JetBrains IDE** 2025.1 or later (any IDE based on IntelliJ Platform)
+- **JetBrains IDE** 2025.3 or later (any IDE based on IntelliJ Platform)
 - **JVM** 21 or later
 - **MCP Protocol** 2025-03-26 (primary Streamable HTTP), with 2024-11-05 legacy SSE compatibility
 
@@ -568,7 +571,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the test tiers and assertion rules.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 

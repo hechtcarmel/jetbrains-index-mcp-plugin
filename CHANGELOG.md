@@ -11,6 +11,8 @@
 
 ### Fixed
 
+- **The settings page now appears under Settings → Tools → Index MCP Server**, where all documentation always said it was — it was previously registered as a top-level settings entry.
+- **Documentation corrections across README, USAGE, CLAUDE.md and the bundled skill**: the license is MIT (README claimed Apache 2.0), the minimum IDE version is 2025.3 (docs claimed 2025.1), lifecycle management is documented as opt-in (its master toggle defaults to off), stale tool counts/parameters were reconciled with the real tool schemas, and the pre-5.0 custom JSON-RPC error-code tables were replaced with the current `isError: true` behavior.
 - **MCP server lifecycle hardening.** Concurrent restarts (settings apply racing the watchdog) could orphan a bound Ktor engine, permanently occupying its port for the IDE session — server start/stop is now atomic. A failed start (e.g. port still in use at IDE startup) disarmed the watchdog and never retried, leaving the server down until an IDE restart — non-success starts now stop the failed instance and re-arm the watchdog, engine-side bind cancellations no longer kill the startup coroutine silently, and repeated failures no longer spam duplicate error balloons.
 - **Changing the server port in Settings no longer freezes the IDE UI** while the old server drains in-flight MCP calls — the restart runs off the EDT, with the result reported via notification.
 - **`project_path` pointing inside a workspace sub-project's content root** (e.g. a source directory under an `ide_open_workspace` module) now resolves to the open workspace instead of returning `project_not_found` with misleading advice.
@@ -31,28 +33,12 @@
 - **The MCP tool window panel is disposed with its content**, releasing the application-level server-status and command-history listeners (previously leaked the Project after closing it), and its Refresh button actually refreshes again (was a silent no-op).
 - **Settings can be applied while the configured port is occupied by another process** as long as host/port are unchanged, and applying with Enter while the Server Host field has focus no longer fails with a perpetual "Validating server host" error.
 
-## [5.0.0] - 2026-07-26
-
-### Breaking
-
-- **MCP protocol handling now uses the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk)** instead of a hand-written JSON-RPC/SSE implementation. All 50 tools, their names, input schemas and response payloads are unchanged — the golden `tool-manifest.json` and `result-shapes.txt` snapshots are byte-identical across the migration. Four client-visible behaviours did change:
-  - **`Accept: application/json, text/event-stream` is now required** on `POST /index-mcp/streamable-http`, per the Streamable HTTP spec. `Accept: application/json` alone returns `406 Not Acceptable`, and a non-JSON `Content-Type` returns `415`. Every real MCP client (Claude Code, Cursor, the official SDKs) already sends both; only hand-written `curl` needs updating.
-  - **Tool failures are reported as `isError: true` results instead of JSON-RPC errors.** Dumb-mode (`-32001`), unknown tool (`-32601`) and disabled tool (`-32602`) previously came back as protocol errors, which clients surface as hard transport failures. The MCP spec puts tool-execution errors in the result so the model can read and act on them — which is what messages like "call `ide_index_status` until indexing finishes" were written for. The message text is unchanged.
-  - **`initialize` requires spec-complete params.** `capabilities` is mandatory per the MCP schema and is now validated.
-  - **`serverInfo.description` moved to `instructions`.** MCP's `Implementation` object has no `description` field; `instructions` is the spec's slot for "how to use this server" text, and clients feed it to the model.
-- **`initialize` negotiates the protocol version with the client** across `2024-11-05`, `2025-03-26`, `2025-06-18` and `2025-11-25`, rather than answering with a fixed version per endpoint. A client asking for `2024-11-05` still gets `2024-11-05`.
+## [5.0.1] - 2026-07-27
 
 ### Added
 
-- **Host header validation** on all MCP endpoints, alongside the existing Origin check — DNS-rebinding protection. Applies only when the server is bound to loopback, which is where that attack lives: it tricks a browser into reaching a server on the user's own machine through an attacker-controlled name. The port is ignored. A server deliberately bound to `0.0.0.0` or a LAN address is reached under whatever name or IP routes to it, so no allow-list is enforced there and such setups keep working exactly as before.
-
 - **`ide_find_references` echoes the resolved symbol.** Positions on comments or whitespace silently snap to the nearest enclosing named element; the new optional `resolvedSymbol` field (name, kind, container, file, line) lets clients verify which declaration was actually searched. A new `totalIsExact` field distinguishes an exact `totalCount` from a lower bound when collection hit the internal cap.
 - **`ide_replace_text_in_file` returns `affectedLines`** — the 1-based line numbers touched by replacements (capped at 100), which its description had always promised.
-
-### Changed
-
-- Malformed JSON-RPC batches are processed per message rather than rejected wholesale, and a `DELETE` on the Streamable HTTP endpoint no longer sends an `Allow` header with its `405`.
-- The plugin no longer bundles `kotlin-stdlib`, `kotlinx-coroutines`, `kotlin-reflect` or a second copy of Ktor. It previously shipped **two major Ktor versions** (2.3.12 in use, plus a dead 3.0.2 tree pulled in by an MCP SDK dependency that no source file imported), along with artifacts the IntelliJ Platform forbids plugins from bundling.
 
 ### Fixed
 
@@ -71,6 +57,28 @@
 - **`ide_read_file` rejects `startLine` beyond end-of-file with an error naming the real line count**, and echoes the effective (clamped) `endLine` instead of the requested one, so an overhanging range no longer masquerades as fulfilled.
 - **Refactoring conflict messages no longer leak IDE-dialog HTML.** Rename conflict errors carried raw `<b><code>…</code></b>` markup and XML entities from the IDE's conflicts dialog; messages are now sanitized to plain text.
 - The bundled skill doc described `ide_search_text` as "exact word occurrences"; it is a substring search with optional regex, and the doc now says so.
+
+## [5.0.0] - 2026-07-26
+
+### Breaking
+
+- **MCP protocol handling now uses the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk)** instead of a hand-written JSON-RPC/SSE implementation. All 50 tools, their names, input schemas and response payloads are unchanged — the golden `tool-manifest.json` and `result-shapes.txt` snapshots are byte-identical across the migration. Four client-visible behaviours did change:
+  - **`Accept: application/json, text/event-stream` is now required** on `POST /index-mcp/streamable-http`, per the Streamable HTTP spec. `Accept: application/json` alone returns `406 Not Acceptable`, and a non-JSON `Content-Type` returns `415`. Every real MCP client (Claude Code, Cursor, the official SDKs) already sends both; only hand-written `curl` needs updating.
+  - **Tool failures are reported as `isError: true` results instead of JSON-RPC errors.** Dumb-mode (`-32001`), unknown tool (`-32601`) and disabled tool (`-32602`) previously came back as protocol errors, which clients surface as hard transport failures. The MCP spec puts tool-execution errors in the result so the model can read and act on them — which is what messages like "call `ide_index_status` until indexing finishes" were written for. The message text is unchanged.
+  - **`initialize` requires spec-complete params.** `capabilities` is mandatory per the MCP schema and is now validated.
+  - **`serverInfo.description` moved to `instructions`.** MCP's `Implementation` object has no `description` field; `instructions` is the spec's slot for "how to use this server" text, and clients feed it to the model.
+- **`initialize` negotiates the protocol version with the client** across `2024-11-05`, `2025-03-26`, `2025-06-18` and `2025-11-25`, rather than answering with a fixed version per endpoint. A client asking for `2024-11-05` still gets `2024-11-05`.
+
+### Added
+
+- **Host header validation** on all MCP endpoints, alongside the existing Origin check — DNS-rebinding protection. Applies only when the server is bound to loopback, which is where that attack lives: it tricks a browser into reaching a server on the user's own machine through an attacker-controlled name. The port is ignored. A server deliberately bound to `0.0.0.0` or a LAN address is reached under whatever name or IP routes to it, so no allow-list is enforced there and such setups keep working exactly as before.
+
+### Changed
+
+- Malformed JSON-RPC batches are processed per message rather than rejected wholesale, and a `DELETE` on the Streamable HTTP endpoint no longer sends an `Allow` header with its `405`.
+- The plugin no longer bundles `kotlin-stdlib`, `kotlinx-coroutines`, `kotlin-reflect` or a second copy of Ktor. It previously shipped **two major Ktor versions** (2.3.12 in use, plus a dead 3.0.2 tree pulled in by an MCP SDK dependency that no source file imported), along with artifacts the IntelliJ Platform forbids plugins from bundling.
+
+### Fixed
 
 - **`initialize` reported a stale server version.** `serverInfo.version` was hardcoded to `4.10.4` while the plugin shipped 4.31.x; the build now stamps the real version into a resource the plugin reads at runtime. (Reading it off the plugin descriptor is not an option — every platform API that exposes it is `@ApiStatus.Internal` as of 2026.2, which the plugin verifier fails the build on.)
 - **`ide_structural_search_replace`** — replace mode failed with `Must not change PSI outside command or undo-transparent action` on every invocation that matched at least one element in a project file, applying no edits. `Replacer.replaceAll` opens its own write action but no command, which `PomModelImpl` requires for changes to physical files; replacements are now wrapped in a command, matching the IDE's own Replace All. Search-only mode was unaffected.
@@ -1061,7 +1069,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.1...HEAD
+[5.0.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.31.0...v5.0.0
 [4.31.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.30.0...v4.31.0
 [4.30.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.29.0...v4.30.0

@@ -21,7 +21,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
  *    tool list once at startup.
  *  - **No session accumulation.** `Server` keeps a map of live sessions; in stateless mode
  *    nothing ever closes them. Callers must close the server when the call completes — see
- *    `McpKtorServer`.
+ *    `KtorMcpServer`.
  *
  * Construction is cheap: it fills two maps from an already-built tool list.
  *

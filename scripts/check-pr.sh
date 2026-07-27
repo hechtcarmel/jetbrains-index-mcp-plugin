@@ -3,6 +3,12 @@
 # Run before every push. Exits non-zero if any check fails.
 set -euo pipefail
 
+# All paths below are repo-root-relative; run from anywhere.
+cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null || cd "$(git rev-parse --show-toplevel)"
+
+# Computed once, before any check uses it. An exported UPSTREAM_BASE overrides detection.
+UPSTREAM_BASE=${UPSTREAM_BASE:-$(git merge-base HEAD upstream/main 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || echo "")}
+
 PASS=0
 FAIL=0
 
@@ -27,7 +33,6 @@ fi
 # ── 2. Forbidden files ───────────────────────────────────────────────────────
 hdr "Forbidden files"
 
-UPSTREAM_BASE=$(git merge-base HEAD upstream/main 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || echo "")
 if [ -n "$UPSTREAM_BASE" ]; then
     CHANGED=$(git diff --name-only "$UPSTREAM_BASE" HEAD)
     if echo "$CHANGED" | grep -q "^\.idea/gradle\.xml$"; then
@@ -52,14 +57,23 @@ fi
 # ── 3. Deprecated / internal API ─────────────────────────────────────────────
 hdr "API compliance"
 
-if git diff "${UPSTREAM_BASE:-HEAD~1}" HEAD -- src/main/ 2>/dev/null | grep -q "NON_MODAL\b"; then
-    fail "ModalityState.NON_MODAL found — use ModalityState.nonModal()"
+# Only ADDED lines count: a PR that removes a banned usage must not fail the gate.
+API_ADDED=$(git diff "${UPSTREAM_BASE:-HEAD~1}" HEAD -- src/main/ 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+
+if echo "$API_ADDED" | grep -qE 'NON_MODAL\b'; then
+    fail "ModalityState.NON_MODAL added — use ModalityState.nonModal()"
 else
     ok "No deprecated ModalityState.NON_MODAL"
 fi
 
-if git diff "${UPSTREAM_BASE:-HEAD~1}" HEAD -- src/main/ 2>/dev/null | grep -q "getDeclaredField\|isAccessible = true"; then
-    fail "Reflection on private fields detected — likely internal API usage; use public builder APIs"
+if echo "$API_ADDED" | grep -qE 'ModalityState\.ANY\b'; then
+    fail "ModalityState.ANY added — use ModalityState.any()"
+else
+    ok "No deprecated ModalityState.ANY"
+fi
+
+if echo "$API_ADDED" | grep -qE 'getDeclaredField|isAccessible = true'; then
+    fail "Reflection on private fields added — likely internal API usage; use public builder APIs"
 else
     ok "No reflection on private fields"
 fi
@@ -69,7 +83,7 @@ hdr "ToolNames.ALL sort order"
 
 TOOLNAMES="src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/constants/ToolNames.kt"
 if [ -f "$TOOLNAMES" ]; then
-    python3 - <<'PYEOF'
+    if python3 - <<'PYEOF'
 import re, sys
 content = open("src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/constants/ToolNames.kt").read()
 vals = {m.group(1): m.group(2) for m in re.finditer(r'const val (\w+) = "(ide_\w+)"', content)}
@@ -86,8 +100,15 @@ if m:
                 print(f"  ✗ ToolNames.ALL out of order at position {i}: has '{a}', expected '{b}'")
                 break
         sys.exit(1)
+else:
+    print("  ✗ Could not locate 'val ALL = listOf(...)' in ToolNames.kt — the sort-check regex needs updating")
+    sys.exit(1)
 PYEOF
-    [ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+    then
+        PASS=$((PASS+1))
+    else
+        FAIL=$((FAIL+1))
+    fi
 else
     echo "  ? ToolNames.kt not found — skipping sort check"
 fi
@@ -98,6 +119,12 @@ hdr "New tools disabled by default"
 if [ -n "$UPSTREAM_BASE" ]; then
     NEW_TOOLS=$(git diff "$UPSTREAM_BASE" HEAD -- src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/constants/ToolNames.kt 2>/dev/null \
         | grep '^+.*const val.*= "ide_' | grep -oE '"ide_[^"]+"' | tr -d '"' || true)
+    # A name already present in the base revision is not new. Without this, any cosmetic edit to
+    # an existing constant line (reindent, added comment, renamed Kotlin identifier, moved group)
+    # re-emits it as an addition and the schema-version gate below would demand a settings
+    # migration for a no-op change.
+    BASE_TOOLS=$(git show "$UPSTREAM_BASE:$TOOLNAMES" 2>/dev/null | grep -oE '"ide_[^"]+"' | tr -d '"' | sort -u || true)
+    NEW_TOOLS=$(comm -23 <(printf '%s\n' $NEW_TOOLS | sort -u) <(printf '%s\n' $BASE_TOOLS | sort -u) || true)
     # Resolve disabled tools from McpSettings.kt — supports both literal "ide_..." strings
     # and ToolNames.CONSTANT references (the current convention).
     DISABLED=$(python3 - <<'PYEOF'
@@ -125,6 +152,34 @@ PYEOF
             fail "$tool is NOT in McpSettings.disabledTools — all new tools must be opt-in"
         fi
     done
+
+    # Six-doc-location consistency (CONTRIBUTING.md § Quick consistency check). These are the five
+    # grep-able doc files. The sixth location — ToolNames.kt / McpSettings.kt / ToolRegistry.kt —
+    # is only partly covered: check 4 verifies ALL is sorted but not that the tool is in it, and
+    # nothing here checks ToolRegistry registration. ToolExecutionIntegrationTest catches both.
+    DOC_LOCATIONS="README.md USAGE.md CLAUDE.md src/main/resources/skill/ide-index-mcp/SKILL.md src/main/resources/skill/ide-index-mcp/references/tools-reference.md"
+    for tool in $NEW_TOOLS; do
+        MISSING_DOCS=""
+        for doc in $DOC_LOCATIONS; do
+            grep -qw "$tool" "$doc" 2>/dev/null || MISSING_DOCS="$MISSING_DOCS $doc"
+        done
+        if [ -z "$MISSING_DOCS" ]; then
+            ok "$tool present in all doc locations"
+        else
+            fail "$tool missing from:$MISSING_DOCS"
+        fi
+    done
+
+    # A new tool is opt-in, so ToolSettingsDefaults.CURRENT_SCHEMA_VERSION (McpSettings.kt) must
+    # be bumped with a migration entry, or existing users' persisted settings ship it enabled.
+    if [ -n "$NEW_TOOLS" ]; then
+        MCPSETTINGS="src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/settings/McpSettings.kt"
+        if git diff "$UPSTREAM_BASE" HEAD -- "$MCPSETTINGS" 2>/dev/null | grep '^+' | grep -v '^+++' | grep -q 'CURRENT_SCHEMA_VERSION'; then
+            ok "CURRENT_SCHEMA_VERSION touched for new tool(s)"
+        else
+            fail "New tool(s) added but CURRENT_SCHEMA_VERSION in McpSettings.kt is untouched — bump it and add a DEFAULT_DISABLED_TOOL_MIGRATIONS entry"
+        fi
+    fi
     [ -z "$NEW_TOOLS" ] && ok "No new tools added (or none detected)"
 fi
 
@@ -136,12 +191,12 @@ if [ -n "$PROXY_FILES" ]; then
     PROXY_UNSAFE=""
     for pf in $PROXY_FILES; do
         if ! grep -q '"equals"' "$pf" 2>/dev/null; then
-            PROXY_UNSAFE="$PROXY_UNSAFE  $pf\n"
+            PROXY_UNSAFE="$PROXY_UNSAFE  $pf"$'\n'
         fi
     done
     if [ -n "$PROXY_UNSAFE" ]; then
         fail "Proxy.newProxyInstance without equals/hashCode/toString handling:"
-        printf "$PROXY_UNSAFE"
+        printf '%s' "$PROXY_UNSAFE"
     else
         ok "All proxies handle equals/hashCode/toString"
     fi
@@ -269,11 +324,19 @@ hdr "Tests"
 # ":test FROM-CACHE" and the gate reports "All tests pass" in 3s having run nothing. Input-keyed
 # caching means a real code change does invalidate it, but the gate should not be blind to flakes
 # or print a claim it did not verify.
-echo "  Running ./gradlew test --rerun-tasks ..."
-if ./gradlew test --rerun-tasks; then
-    ok "All tests pass"
+# Gradle 9 needs Java 17+ to launch; fail with an actionable message instead of letting the
+# Gradle bootstrap die cryptically on an old default JDK (this machine defaults to JDK 8).
+JAVA_BIN="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+JAVA_MAJOR=$("$JAVA_BIN" -version 2>&1 | awk -F'"' '/version/ {print $2; exit}' | sed -E 's/^1\.//; s/[^0-9].*$//' || true)
+if [ -z "$JAVA_MAJOR" ] || [ "$JAVA_MAJOR" -lt 17 ]; then
+    fail "Gradle needs Java 17+ but '$JAVA_BIN' is version ${JAVA_MAJOR:-unknown} — set JAVA_HOME to a JDK 17+ (e.g. export JAVA_HOME=\$(/usr/libexec/java_home -v 21) for Zulu 21) and re-run"
 else
-    fail "Tests FAILED — fix before pushing"
+    echo "  Running ./gradlew test --rerun-tasks ..."
+    if ./gradlew test --rerun-tasks; then
+        ok "All tests pass"
+    else
+        fail "Tests FAILED — fix before pushing"
+    fi
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

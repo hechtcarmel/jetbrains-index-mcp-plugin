@@ -7,6 +7,15 @@ build works before committing or raising a PR.
 
 ## Meta-protocol
 
+### Prerequisites — enable the exercised tools
+
+Most tools this protocol exercises are **disabled by default** and hidden from `tools/list`:
+`ide_set_power_save_mode`, `ide_open_project`, `ide_close_project`, `ide_install_plugin`,
+`ide_restart`, `ide_set_lifecycle_log_file`, and every lifecycle tool except
+`ide_project_status` (see `DEFAULT_DISABLED_TOOLS` in `McpSettings.kt`). Enable them first in
+Settings → Tools → Index MCP Server → Available Tools, or every affected step fails with a
+disabled-tool error on a fresh install.
+
 ### How to call the server
 
 Do NOT rely on the Claude session's MCP tool schema — it is captured at session start
@@ -82,7 +91,8 @@ Check the log file directly for events that occurred while all projects were clo
 ```bash
 cat ~/Library/Logs/JetBrains/IntelliJIdea*/mcp-lifecycle.log
 ```
-File writes require debug logging to be enabled — see F6 below.
+File writes require enabling file output first — `ide_set_lifecycle_log_file { "enabled": true }`
+or debug logging; see F9 below.
 
 ---
 
@@ -118,6 +128,16 @@ PP=/path/to/jetbrains-index-mcp-plugin   # adjust to actual path
 - Call with `path: "/nonexistent/path"` and `project_path`
 - PASS: `isError: true`, message contains "Failed to open" or the path
 - FAIL: HTTP 500 with empty body (unhandled exception), or hangs
+
+---
+
+### 3b. `ide_close_project` — last-project guard
+
+- With a single project open, call `ide_close_project` with `project_path`
+- PASS: `isError: true`, message contains "last open project" — the tool refuses to close
+  the last open project so the MCP server keeps a serving context
+- With 2+ projects open the call succeeds and schedules the close. Do not run that variant
+  during active development; it closes the window.
 
 ---
 
@@ -159,9 +179,7 @@ PP=/path/to/jetbrains-index-mcp-plugin   # adjust to actual path
 
 ---
 
-## Fork-only tests
-
-> These tests cover tools added in this fork and are not relevant to the upstream project.
+## Lifecycle tests
 
 ### F1. `ide_get_project_modes`
 
@@ -285,3 +303,57 @@ This is the core lifecycle feature. It is the slowest test (5–15s for indexing
 still be opening in the background. Wait 10s and retry the call — it should succeed
 immediately if indexing completed. The `NonCancellable` wrapper in `reopenAndAwaitSmartMode`
 ensures the open completes even if the first HTTP call timed out.
+
+---
+
+### F9. Monitoring — reading the lifecycle log for anomalies
+
+Enable file output once (no restart needed), either over MCP:
+
+```
+ide_set_lifecycle_log_file { "enabled": true }
+```
+
+or via Help → Diagnostic Tools → Debug Log Settings:
+add `#com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle` (see F6d).
+
+Then watch the log:
+
+```bash
+tail -f ~/Library/Logs/JetBrains/IntelliJIdea*/mcp-lifecycle.log
+```
+
+Or query via MCP: `ide_lifecycle_log { "limit": 30 }`
+
+**Anomaly patterns to watch for:**
+
+| Pattern in log | What it means |
+|----------------|---------------|
+| `timer:focus` waking a `dormant` project | Focus alarm fires after inactivity alarm — the two timers are racing. |
+| Projects cycling `background→dormant→background` repeatedly | Inactivity and focus timers leapfrogging each other. |
+| `auto_open` immediately followed by `timer:inactivity→dormant` | Project auto-opened but no MCP call followed. |
+| A project showing `timer:close→closed` you didn't expect | The dormant-to-closed window may be too short for your workflow. |
+| `last_project_kept` trigger in the log | The lifecycle manager would have closed a project but held it dormant because closing it would drop the open managed count below the configured minimum (default 4). Normal and expected. |
+| No `auto_open` after routing an MCP call to a managed-closed project | `wasClosedByUs` check not matching — likely a path normalisation mismatch. |
+
+---
+
+### F10. MCP availability — verifying the last-project and auto-recovery guarantees
+
+**F10a. Last-project stays dormant:**
+
+1. Enroll exactly one project: `ide_set_project_mode { "mode": "background" }`
+2. Wait for `timer:inactivity` → dormant, then `timer:close` fires
+3. Check the lifecycle log — PASS: log shows `last_project_kept` trigger instead of `dormant→closed`
+4. PASS: `ide_project_status` still returns `open: true` for the project in `dormant` mode
+
+**F10b. Auto-recovery when all projects are manually closed:**
+
+1. Manually close the last IntelliJ project window (File → Close Project)
+2. Call any MCP tool **without** `project_path`:
+   ```
+   ide_index_status
+   ```
+3. PASS: tool succeeds — a managed-closed project was auto-opened to restore routing
+4. FAIL: `no_project_open` error with no recovery — means no managed projects were in
+   `closedProjectPaths` (this can happen if the user closed projects that were never enrolled)

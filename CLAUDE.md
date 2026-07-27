@@ -17,7 +17,7 @@ Create an MCP server within an IntelliJ plugin that allows AI coding assistants 
 ### Technology Stack
 - **Language**: Kotlin (JVM 21)
 - **Build System**: Gradle 9.0 with Kotlin DSL
-- **IDE Platform**: IntelliJ IDEA 2025.1+ (platformType = IC)
+- **IDE Platform**: IntelliJ Platform 2025.3+ (`pluginSinceBuild = 253`; builds against IntelliJ IDEA Ultimate (IU) — IC is not published for 2025.3+)
 - **HTTP Server**: Ktor CIO 3.2.3 (embedded, configurable port)
 - **Protocol**: Model Context Protocol via the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk) (`io.modelcontextprotocol:kotlin-sdk-server`). Negotiates 2024-11-05 … 2025-11-25.
 
@@ -45,7 +45,10 @@ Create an MCP server within an IntelliJ plugin that allows AI coding assistants 
 src/
 ├── main/
 │   ├── kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/
-│   │   ├── MyBundle.kt                 # Resource bundle accessor
+│   │   ├── McpBundle.kt                # Resource bundle accessor
+│   │   ├── actions/                    # IDE actions
+│   │   ├── constants/ToolNames.kt      # All tool name constants + ALL list
+│   │   ├── exceptions/                 # Plugin exception types
 │   │   ├── handlers/                   # Language-specific handlers
 │   │   │   ├── LanguageHandler.kt      # Handler interfaces & data classes
 │   │   │   ├── LanguageHandlerRegistry.kt # Data-driven handler registry
@@ -55,10 +58,16 @@ src/
 │   │   │   ├── javascript/JavaScriptHandlers.kt # JS/TS handlers (reflection)
 │   │   │   ├── go/GoHandlers.kt        # Go handlers (reflection)
 │   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
-│   │   │   └── rust/RustHandlers.kt    # Rust handlers (reflection)
+│   │   │   ├── rust/RustHandlers.kt    # Rust handlers (reflection)
+│   │   │   └── markdown/MarkdownHandlers.kt # Markdown handlers
+│   │   ├── history/                    # Per-project command history (bounded ring buffer)
+│   │   ├── icons/                      # Plugin icons
+│   │   ├── lifecycle/                  # ProjectModeService, LifecycleEventLog, focus tracking
 │   │   ├── server/                     # MCP server infrastructure
 │   │   │   ├── McpServerService.kt     # App-level service managing server lifecycle
 │   │   │   ├── ProjectResolver.kt      # Multi-project resolution with workspace support
+│   │   │   ├── PaginationService.kt    # Cursor cache for paginated search tools
+│   │   │   ├── BuildDiagnosticsCacheService.kt # Cached build output for ide_diagnostics
 │   │   │   ├── mcp/                    # Bridge from the tool registry to the MCP SDK
 │   │   │   │   ├── McpServerFactory.kt # Builds an SDK `Server` per connection
 │   │   │   │   └── McpToolDispatcher.kt # Settings gate, project resolution, history, modality
@@ -66,6 +75,7 @@ src/
 │   │   │       ├── KtorMcpServer.kt    # Embedded Ktor CIO server + SDK route wiring
 │   │   │       ├── LegacySseRoutes.kt  # 2024-11-05 HTTP+SSE endpoints
 │   │   │       ├── LocalOriginGuard.kt # Loopback Origin/Host validation + CORS
+│   │   ├── settings/                   # McpSettings (app-level persisted state) + settings UI
 │   │   ├── startup/                    # Startup activities
 │   │   ├── tools/                      # MCP tool implementations
 │   │   │   ├── McpTool.kt             # Tool interface
@@ -76,6 +86,8 @@ src/
 │   │   │   ├── editor/                # Editor interaction tools
 │   │   │   ├── navigation/            # Navigation tools (multi-language)
 │   │   │   ├── intelligence/          # Code analysis tools
+│   │   │   ├── lifecycle/             # Lifecycle management tools
+│   │   │   ├── models/                # Shared result models
 │   │   │   ├── project/               # Project status tools
 │   │   │   └── refactoring/           # Refactoring tools
 │   │   ├── util/                      # Utilities
@@ -90,7 +102,7 @@ src/
 │       ├── META-INF/
 │       │   ├── plugin.xml              # Plugin configuration
 │       │   └── *-features.xml          # Optional language-specific extensions
-│       └── messages/MyBundle.properties # i18n messages
+│       └── messages/McpBundle.properties # i18n messages
 └── test/
     ├── kotlin/                         # Test sources
     └── testData/                       # Test fixtures
@@ -140,7 +152,7 @@ MCP servers expose:
 
 **Server Infrastructure:**
 - Custom embedded **Ktor CIO** HTTP server (not IntelliJ's built-in server)
-- Configurable port with IDE-specific defaults (e.g., IntelliJ: 29170, PyCharm: 29172) via Settings → Index MCP Server → Server Port
+- Configurable port with IDE-specific defaults (e.g., IntelliJ: 29170, PyCharm: 29172) via Settings → Tools → Index MCP Server → Server Port
 - Binds to `127.0.0.1` only (localhost) for security
 - Single server instance across all open projects
 - Auto-restart on port change
@@ -232,16 +244,18 @@ The IntelliJ Platform maintains separate Document (text) and PSI (parsed structu
 When files are modified externally (e.g., by AI coding tools), PSI may not immediately reflect
 the changes. This can cause search APIs to miss references in newly created files.
 
-**Solution**: `AbstractMcpTool` automatically refreshes the VFS and commits documents
-before executing any tool. This ensures PSI is synchronized with external file changes.
+**Solution**: When the "Sync external file changes" setting is enabled, `AbstractMcpTool`
+refreshes the VFS and commits documents before executing any PSI-dependent tool, so PSI is
+synchronized with external file changes. The setting is disabled by default.
 
-**User Setting**: "Sync external file changes before operations" (Settings → MCP Server)
+**User Setting**: "Sync external file changes before operations" (Settings → Tools → Index MCP Server)
 - **Disabled** (default): Best performance, suitable for most use cases
 - **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when rename/find-usages misses references in files just created externally. Each operation will take seconds instead of milliseconds on large repos.
 
 **For tool developers**:
 - Extend `AbstractMcpTool` and implement `doExecute()` (not `execute()`)
-- PSI synchronization happens automatically before `doExecute()` is called
+- PSI synchronization happens automatically before `doExecute()` is called when the setting
+  is enabled and the tool has `requiresPsiSync = true`
 - To opt-out (for tools that don't use PSI), override:
   ```kotlin
   override val requiresPsiSync: Boolean = false
@@ -467,7 +481,6 @@ Tools are organized by IDE availability.
 - `ide_change_signature` - Change method signature (name, return type, visibility, parameters) with automatic caller updates using IntelliJ's Change Signature refactoring. Java only. (disabled by default)
 - `ide_create_file` - Create a new source file with content, immediately indexed by IntelliJ. Created through IntelliJ's VFS, instantly available for all IDE tools without needing `ide_sync_files`. Use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. File must not already exist. (disabled by default)
 - `ide_replace_text_in_file` - Find and replace text in a file using IntelliJ's Document API. Plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to index, PSI, and all other IDE tools without needing `ide_sync_files`. (disabled by default)
-- `ide_list_tests` - List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.). Optional `file` parameter limits scan to a single file. Returns entries with className, methodName, framework, file path, and line number. (disabled by default)
 - `ide_run_tests` - Run tests via the IDE's run configuration infrastructure. `target` accepts an existing run config name (works for any language/framework) or a Java/Kotlin class/method FQN (`com.example.MyTest` / `com.example.MyTest#testFoo`). **Creating a config from an FQN is Java/Kotlin-only** — for Python/JS/TS/Go/PHP/Rust, pass an existing run-config name. Results are read directly from the IDE's test runner (any Service-Message-based framework: JUnit, TestNG, pytest, Jest, Go test, PHPUnit), returning structured pass/fail/error counts, exit code, and per-test results. (disabled by default)
 - `ide_refactor_rename` - Rename a symbol or file across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages. Two modes: **symbol rename** (file + line + column + newName) and **file rename** (file + newName, omit line/column). File rename mode works for all file types including binary files (images, etc.) and is especially useful for Android resource files where it updates all XML references. Supports `relatedRenamingStrategy` parameter to control automatic related renames: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"`.
 - `ide_move_file` - Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project. Supports automatic directory creation and optional reference update toggle.
@@ -481,6 +494,19 @@ Tools are organized by IDE availability.
 - `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects (disabled by default)
 - `ide_install_plugin` - Install a plugin zip into the IDE, replacing any existing version; auto-detects `build/distributions/*.zip` when no path is given (disabled by default)
 - `ide_restart` - Restart the IDE; terminates the MCP connection. Call after `ide_install_plugin` (disabled by default)
+
+**Lifecycle Management Tools (All Supported JetBrains IDEs):**
+
+Manage which open projects the MCP server keeps active, in the background, dormant, or closed (behavior gated on the `lifecycleEnabled` setting):
+- `ide_project_status` - Report the status of all known projects (open + lifecycle-managed) in one table
+- `ide_enroll_all_projects` - Enroll all currently open projects in MCP lifecycle management (disabled by default)
+- `ide_get_project_modes` - List all MCP-managed projects and their current lifecycle mode (disabled by default)
+- `ide_lifecycle_log` - Return recent lifecycle events (state transitions, open/close, focus changes, timer firings) from the in-memory ring buffer (disabled by default)
+- `ide_release_all_projects` - Release every managed project from MCP lifecycle management at once (disabled by default)
+- `ide_release_project` - Release a project from MCP lifecycle management, returning full control to the user (disabled by default)
+- `ide_set_all_project_modes` - Set the lifecycle mode for every currently managed open project at once (disabled by default)
+- `ide_set_lifecycle_log_file` - Enable or disable writing lifecycle events to a log file on disk (disabled by default)
+- `ide_set_project_mode` - Set the lifecycle mode (active/background/dormant/closed) for a specific managed project (disabled by default)
 
 **Extended Navigation Tools (Language-Aware):**
 
@@ -524,12 +550,13 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `CallHierarchyHandler` - Call hierarchy analysis
 - `SymbolReferenceHandler` - Resolve fully qualified symbol references (e.g., `com.example.MyClass#method(String)`) to PSI elements
 - `SuperMethodsHandler` - Method override hierarchy
+- `StructureHandler` - Hierarchical file structure (Structure view)
 
 **Registration Flow:**
 1. `LanguageHandlerRegistry.registerHandlers()` - Registers handlers for available language plugins
 2. `ToolRegistry.registerUniversalTools()` - Registers universal tools including `ide_refactor_rename`, `ide_sync_files`
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
-4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` if Java plugin available
+4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` and `ide_list_tests` if Java plugin available
 
 **Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
 
@@ -622,7 +649,7 @@ VirtualFileManager   // Virtual file system
 
 4. **Search misses newly created files** - PSI not synchronized with document
    - Cause: External tools modified files but PSI tree hasn't been updated
-   - Solution: Enable "Sync external file changes" in Settings → MCP Server (WARNING: significant performance impact)
+   - Solution: Enable "Sync external file changes" in Settings → Tools → Index MCP Server (WARNING: significant performance impact)
    - For custom code: `PsiDocumentManager.getInstance(project).commitAllDocuments()`
 
 ## Contributing / PR Checklist

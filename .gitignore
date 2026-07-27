@@ -10,6 +10,5 @@ tmp
 local.properties
 *.hprof
 docs/superpowers
-.idea/
 scripts/build-install.sh
 HANDOFF.md

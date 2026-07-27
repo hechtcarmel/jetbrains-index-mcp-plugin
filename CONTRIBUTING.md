@@ -107,8 +107,8 @@ Every item is required. CI will catch missing registrations and test count misma
 - [ ] Add constant to `ToolNames.kt` in the correct group
 - [ ] Add constant to `ToolNames.ALL` in **strict alphabetical order by full string value**
   (compare the complete `ide_*` string character by character:
-  `ide_release_all_projects` < `ide_release_project` < `ide_restart` because `all` < `project` < `start`
-  lexicographically at position 12). A sort test in `ConstantsUnitTest` will fail if the order is wrong.
+  `ide_release_all_projects` < `ide_release_project` (position 12: `a` < `p`) and both <
+  `ide_restart` (position 6: `l` < `s`)). A sort test in `ConstantsUnitTest` will fail if the order is wrong.
 - [ ] Add opt-in tools to `McpSettings.DEFAULT_DISABLED_TOOLS`
 - [ ] Bump `ToolSettingsDefaults.CURRENT_SCHEMA_VERSION` and add a migration entry so users with
   existing persisted settings also get the new tool disabled by default
@@ -164,8 +164,13 @@ confirm each has an entry: `README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`,
 - Assertions must **actually fail** if the implementation is deleted (no vacuous tests)
 - Do not simulate the system under test with a private helper and then assert on the helper
 - Do not leave placeholder tests with comments referencing non-existent code
-- `McpServerWatchdogTest`-style tests (simulate stop-handler locally, assert on local simulation)
-  should be deleted; the real integration test (`KtorMcpServerWatchdogTest`) is the one that counts
+- Tests that simulate the system under test locally and assert on the simulation get deleted
+  (a former `McpServerWatchdogTest` did exactly this; the real integration test,
+  `KtorMcpServerWatchdogTest`, is the one that counts)
+- Never place a test class at a `PluginDetector` fallback FQN (the `fallbackClass` values in
+  `PluginDetectors.kt`) — the detector's `Class.forName` fallback would then report that language
+  plugin as available for the entire test fork. Use a duck-typed fake in the test's own package.
+  Enforced by `PluginDetectorLeakUnitTest` and by `scripts/check-pr.sh` (test tree hygiene check).
 
 ---
 
@@ -300,6 +305,12 @@ requested items as "extra".
 
 - Use `ModalityState.nonModal()` — **not** `ModalityState.NON_MODAL` (deprecated field)
 - Use `ModalityState.any()` — **not** `ModalityState.ANY` (deprecated field)
+
+### Plugin availability detection
+
+- `PluginDetector` must use `PluginManagerCore.isLoaded` / `isDisabled` — **never**
+  `PluginManager.findEnabledPlugin`, which was rejected in JetBrains Marketplace review.
+  `scripts/check-pr.sh` fails if it reappears.
 
 ### Service registration
 
@@ -444,22 +455,20 @@ call sites". It is thin in these areas:
   `ide_restart`, `ide_lifecycle_log`, `ide_set_lifecycle_log_file`, and `ide_run_tests` (only its
   `parseTarget` helper is covered). `ide_reformat_code` has error paths only. Adding a behavior
   test for one is a genuinely useful first contribution — see the checklist above for the shape.
-- **`SafeDeleteTool.findUsages` fails open.** It catches every exception from `ReferencesSearch`
-  and treats it as "no usages found", which routes straight into the deletion branch — so an
-  `IndexNotReadyException` or a language-plugin resolver failure can make a destructive,
-  default-enabled tool delete a symbol that is still referenced and report success. The same
-  applies to files outside any content root, which the search scope cannot see.
-  `SafeDeleteToolBehaviorTest` now pins the correct behavior when the search *does* work; the
-  fail-open path is a deliberate open question for the owner, not an oversight.
+- **`SafeDeleteTool` cannot see references in files outside any content root.** The usage
+  search scope only covers content roots, so a reference living outside them will not block
+  deletion. (The former fail-open exception handling — treating a failed `ReferencesSearch` as
+  "no usages" — was fixed in 5.0.1: a failed search now aborts the deletion unless `force=true`,
+  and `SafeDeleteToolBehaviorTest` pins that behavior.)
 
 If you close one of these, delete its bullet in the same PR.
 
 ## Smoke test protocol
 
 After any `./gradlew buildPlugin` → install → restart cycle, run the smoke test at
-`docs/smoke-test-protocol.md` when changes touch:
+`smoke-tests/mcp-protocol.md` when changes touch:
 
-- HTTP transport (`KtorMcpServer.kt`, `JsonRpcHandler.kt`)
+- HTTP transport (`server/transport/KtorMcpServer.kt`, `LegacySseRoutes.kt`, `LocalOriginGuard.kt`)
 - Tool registration (`ToolRegistry.kt`, `McpServerService.kt`)
 - Any tool covered by the protocol
 
@@ -474,7 +483,9 @@ src/main/kotlin/.../
 ├── constants/          ToolNames.kt — all tool name constants + ALL list
 ├── history/            Per-project command history (bounded ring buffer)
 ├── lifecycle/          ProjectModeService, LifecycleEventLog, focus tracking
-├── server/             JsonRpcHandler, ProjectResolver, McpServerService, Ktor transport
+├── server/             McpServerService, ProjectResolver, PaginationService,
+│                       mcp/ (McpServerFactory, McpToolDispatcher),
+│                       transport/ (KtorMcpServer, LegacySseRoutes, LocalOriginGuard)
 ├── settings/           McpSettings (app-level persisted state)
 ├── tools/
 │   ├── AbstractMcpTool.kt   — extend this, implement doExecute()

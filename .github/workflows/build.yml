@@ -9,8 +9,6 @@
 # The workflow is triggered on push and pull_request events.
 #
 # GitHub Actions reference: https://help.github.com/en/actions
-#
-## JBIJPPTPL
 
 name: Build
 on:
@@ -19,6 +17,10 @@ on:
     branches: [ main ]
   # Trigger the workflow on any pull request
   pull_request:
+
+# Least privilege by default; jobs that need more re-elevate with their own permissions block
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -30,11 +32,12 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
 
       # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
@@ -76,16 +79,17 @@ jobs:
           name: ${{ steps.artifact.outputs.filename }}
           path: ./build/distributions/content/*/*
 
-  # Run tests and upload a code coverage report
+  # Run tests
   test:
     name: Test
     needs: [ build ]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
 
       # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
@@ -119,27 +123,21 @@ jobs:
           name: tests-result
           path: ${{ github.workspace }}/build/reports/tests
 
-      # Upload the Kover report to CodeCov
-      - name: Upload Code Coverage Report
-        uses: codecov/codecov-action@v5
-        with:
-          files: ${{ github.workspace }}/build/reports/kover/report.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
-
   # Run Qodana inspections and provide a report
   inspectCode:
     name: Inspect code
     needs: [ build ]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
-      contents: write
+      contents: read
       checks: write
       pull-requests: write
     steps:
 
       # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
@@ -169,11 +167,12 @@ jobs:
     name: Verify plugin
     needs: [ build ]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
 
       # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: true
@@ -214,6 +213,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [ build, test, inspectCode, verify ]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -221,6 +221,19 @@ jobs:
       # Check out the current repository
       - name: Fetch Sources
         uses: actions/checkout@v6
+
+      # Set up the Java environment for the next steps
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+
+      # Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: true
 
       # Remove old release drafts by using the curl request for the available releases with a draft flag
       - name: Remove Old Release Drafts

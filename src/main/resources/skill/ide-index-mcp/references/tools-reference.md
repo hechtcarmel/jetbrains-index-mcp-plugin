@@ -75,8 +75,9 @@ Find all usages of a symbol (semantic, not text search).
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ usages: [{ file, line, column, context, type, astPath }], totalCount, truncated, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
+**Returns**: `{ usages: [{ file, line, column, context, type, astPath }], totalCount, totalIsExact, resolvedSymbol, truncated, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
 **Pagination note**: `truncated` mirrors `hasMore`; when `hasMore` is `true`, pass `nextCursor` to fetch the next page.
+**Resolution note**: `resolvedSymbol` echoes the declaration that was actually searched — positions on comments or whitespace snap to the nearest enclosing named element, so check it matches the symbol you intended. When `totalIsExact` is `false`, `totalCount` is a lower bound.
 **type values**: `METHOD_CALL`, `FIELD_ACCESS`, `IMPORT`, `PARAMETER`, `VARIABLE`, `REFERENCE`
 
 ### ide_find_definition
@@ -138,15 +139,19 @@ Search for text using IntelliJ Find in Files. Plain-text queries do substring ma
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | yes | Text to search for; substring match unless `regex` is true |
+| `query` | string | conditional | Text to search for; substring match unless `regex` is true. Required for fresh search, ignored when `cursor` is provided |
 | `regex` | boolean | no | Treat `query` as a regular expression. Default false |
 | `context` | enum | no | `all` (default), `code`, `comments`, `strings` |
 | `caseSensitive` | boolean | no | Default true |
+| `wholeWord` | boolean | no | Match whole words only. Default false (substring match) |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
-| `limit` | integer | no | Default 100, max 500 |
+| `limit` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
+| `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
+| `pageSize` | integer | no | Results per page. Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ matches: [{file, line, column, context}], totalCount, query }`
+**Returns**: `{ matches: [{file, line, column, context}], totalCount, query, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
+**Pagination note**: when `hasMore` is `true`, pass `nextCursor` to fetch the next page.
 
 ### ide_find_implementations
 Find implementations of interfaces, abstract classes, or abstract methods.
@@ -273,18 +278,24 @@ Read file content by path or qualified name, including library/jar sources.
 ## Intelligence Tools
 
 ### ide_diagnostics
-Analyze a file for errors, warnings, and available quick fixes/intentions.
+Get code diagnostics from multiple sources: per-file analysis (errors, warnings, quick fixes/intentions), build output from the last build, and test results from open test run tabs. At least one source must be active: provide `file` for code analysis, `includeBuildErrors` for build output, or `includeTestResults` for test results. Can combine all three.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | yes | Relative file path |
-| `line` | integer | no | For intention lookup (default 1) |
-| `column` | integer | no | For intention lookup (default 1) |
-| `startLine` | integer | no | Filter problems to range |
-| `endLine` | integer | no | Filter problems to range |
+| `file` | string | no | Relative file path. Optional — enables per-file code analysis |
+| `line` | integer | no | For intention lookup (default 1, requires `file`) |
+| `column` | integer | no | For intention lookup (default 1, requires `file`) |
+| `startLine` | integer | no | Filter problems to range (requires `file`) |
+| `endLine` | integer | no | Filter problems to range (requires `file`) |
+| `includeBuildErrors` | boolean | no | Include errors/warnings from the last build. Default false |
+| `includeTestResults` | boolean | no | Include test results from open test run tabs. Default false |
+| `severity` | enum | no | Filter by severity across all sources: `all` (default), `errors`, `warnings` |
+| `testResultFilter` | enum | no | Filter test results: `failed` (default) or `all` |
+| `maxBuildErrors` | integer | no | Max build errors to return. Default 100, max 500 |
+| `maxTestResults` | integer | no | Max test results to return. Default 100, max 500 |
 | `project_path` | string | no | Project root path |
 
-**Returns**: `{ problems: [{message, severity, line, column, source}], intentions: [{name, description, familyName}], problemCount, intentionCount, analysisFresh, analysisTimedOut, analysisMessage }`
+**Returns**: `{ problems: [{message, severity, file, line, column, endLine?, endColumn?}], intentions: [{name, description}], problemCount, intentionCount, analysisFresh, analysisTimedOut, analysisMessage, buildErrors?, buildErrorCount?, buildWarningCount?, buildErrorsTruncated?, buildTimestamp?, testResults?, testResultsTruncated?, testSummary? }`
 **Notes**: Open files use fresh daemon highlights. Closed files use public batch analysis, so `WEAK_WARNING` results and quick-fix intentions may be less complete unless the file is already open in an editor.
 **Severity levels**: `ERROR`, `WARNING`, `WEAK_WARNING`
 
@@ -305,6 +316,7 @@ Rename a symbol or file and update ALL references (semantic rename, not find-rep
 | `column` | integer | no | 1-based column for symbol rename. |
 | `newName` | string | yes | New name for the symbol |
 | `overrideStrategy` | enum | no | `rename_base` (default), `rename_only_current`, `ask` |
+| `relatedRenamingStrategy` | enum | no | Controls automatic renaming of related symbols (same-named properties, getters/setters, test classes, variables): `all` (default) renames all related symbols, `none` renames only the targeted symbol, `accessors_and_tests` renames only getters/setters and test classes/methods, `ask` shows the IDE dialog for each related rename |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ success, affectedFiles: [paths], changesCount, message }`
@@ -352,6 +364,27 @@ Reformat code per project style (.editorconfig, IDE settings). Equivalent to Ctr
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ success, affectedFiles, changesCount, message }`
+
+### ide_optimize_imports (disabled by default)
+Optimize imports in a file: remove unused imports and organize remaining imports according to project code style. Equivalent to the IDE's "Optimize Imports" action (Ctrl+Alt+O / Cmd+Opt+O). Does NOT reformat code. Supports IDE undo (Ctrl+Z).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Relative file path |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, affectedFiles, changesCount, message }`
+
+### ide_convert_java_to_kotlin (disabled by default, Java + Kotlin plugins)
+Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Handles classes, interfaces, enums, annotations, methods, fields, and Java 8+ features (lambdas, streams). Automatically formats and optimizes imports. Original Java files are deleted after successful conversion; some advanced constructs may need manual adjustment.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | yes | Java files to convert (relative to project root) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ files: [{requestedPath, status, kotlinFile?, linesConverted?, javaFileDeleted?, reason?}], summary: {totalRequested, converted, skipped, failed} }`
+**status values**: `CONVERTED`, `SKIPPED`, `FAILED`
 
 ### ide_structural_search_replace (disabled by default)
 Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Search-only when `replacePattern` is omitted.
@@ -580,6 +613,101 @@ Open a project by absolute path and wait until indexing completes. Idempotent: r
 | `project_path` | string | no | JSON-RPC context project when multiple are open |
 
 **Returns**: text confirmation; on indexing timeout returns success with a note to check `ide_index_status`.
+
+---
+
+## Lifecycle Tools
+
+Lifecycle management sleeps and wakes open projects based on window focus and MCP activity. Modes: `active` (full IDE), `background` (Power Save on), `dormant` (editors closed, PSI caches dropped), `closed` (fully unloaded, auto-reopens on next MCP call).
+
+It is opt-in and disabled by default — enable "Enable lifecycle management" in Settings > Tools > Index MCP Server. Until then the tools below only report or alter persisted enrollment state; no automatic transitions occur.
+
+### ide_project_status
+Report the status of all known projects in one table. Combines open projects (currently loaded in the IDE) and managed projects (enrolled in MCP lifecycle management). Each row includes whether the project is open, whether it is managed, and its current lifecycle mode when managed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Routing hint, required when multiple projects are open |
+
+**Returns**: `{ projects: [{name, path, open, managed, mode?}], summary: {total, open, managed, open_not_managed, managed_closed, lifecycle_enabled, note?} }`
+
+### ide_get_project_modes (disabled by default)
+List all MCP-managed projects and their current lifecycle mode (active, background, dormant, or closed).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Routing hint when multiple projects are open; does not affect which projects are listed — all managed projects are always returned |
+
+**Returns**: `{ managed_projects: [{path, name, mode}], total }`. Plain-text message when no projects are managed.
+
+### ide_set_project_mode (disabled by default)
+Set the lifecycle mode for a specific managed project.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `mode` | enum | yes | Target mode: `active`, `background`, `dormant`, or `closed` |
+| `project_path` | string | no | Required when multiple projects are open |
+
+**Returns**: text confirmation of the mode transition.
+
+### ide_set_all_project_modes (disabled by default)
+Set the lifecycle mode for every currently managed open project at once. Closed projects are skipped — use `ide_open_project` or `ide_set_project_mode` on a specific project to bring a closed project back first.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `mode` | enum | yes | Target mode: `active`, `background`, or `dormant` (`closed` is not supported — use `ide_set_project_mode` per project) |
+| `project_path` | string | no | Routing hint required when multiple projects are open; does not limit which projects are affected |
+
+**Returns**: text confirmation of the applied transitions.
+
+### ide_enroll_all_projects (disabled by default)
+Enroll all currently open projects in MCP lifecycle management. Projects already managed are skipped. Only open projects can be enrolled — closed projects must be opened first (via `ide_open_project` or auto-open).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Routing hint when multiple projects are open |
+
+**Returns**: text summary of enrolled and skipped projects.
+
+### ide_release_project (disabled by default)
+Release a project from MCP lifecycle management, returning full control to the user. After release: Power Save Mode is disabled, all lifecycle timers are cancelled, and the project is no longer auto-slept or auto-closed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | no | Filesystem path of a closed managed project to release. Omit to release the routed project (must be open) |
+| `project_path` | string | no | Routing hint when multiple projects are open |
+
+**Returns**: text confirmation of the release.
+
+### ide_release_all_projects (disabled by default)
+Release every managed project from MCP lifecycle management at once, including projects currently closed by the lifecycle manager. Power Save Mode is disabled after all releases complete.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Routing hint when multiple projects are open |
+
+**Returns**: text summary of released projects.
+
+### ide_lifecycle_log (disabled by default)
+Return recent lifecycle events for all projects (ring buffer, last 500 events). Covers state transitions, open/close, focus changes, timer firings, and MCP-triggered wakes for all IntelliJ projects, not just managed ones. The same log is also written to a file (path returned as `log_file`) when file logging is enabled via `ide_set_lifecycle_log_file` or IDE debug logging.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | no | Number of recent events to return, newest first (default 50, max 500) |
+| `project` | string | no | Optional path filter (substring match against project path) |
+| `project_path` | string | no | Routing hint when multiple projects are open |
+
+**Returns**: `{ events: [{timestamp, project, path, event, from?, to?, trigger}], log_file, buffered }`. Event types: `open`, `closed`, `transition`, `enroll`, `release`, `wake`. Trigger values: `focus_gained`, `focus_lost`, `timer:focus`, `timer:inactivity`, `timer:close`, `mcp_call`, `auto_open`, `user`.
+
+### ide_set_lifecycle_log_file (disabled by default)
+Enable or disable writing lifecycle events to the log file on disk. The in-memory ring buffer (queryable via `ide_lifecycle_log`) is always active regardless of this setting; the file allows `tail -f` monitoring and post-mortem analysis even when no MCP connection is available.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `enabled` | boolean | yes | `true` to write events to the log file, `false` to stop |
+| `project_path` | string | no | Routing hint when multiple projects are open |
+
+**Returns**: text confirmation (includes the log file path when enabling).
 
 ---
 

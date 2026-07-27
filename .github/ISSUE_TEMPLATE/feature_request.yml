@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a new tool or improvement for the IDE Index MCP Server plugin
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that the plugin does not support today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed tool or behavior
+      description: Describe the new MCP tool or behavior change you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you have tried.
+    validations:
+      required: false
