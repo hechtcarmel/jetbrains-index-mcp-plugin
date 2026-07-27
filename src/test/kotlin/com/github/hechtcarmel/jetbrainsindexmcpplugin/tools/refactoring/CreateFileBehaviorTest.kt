@@ -4,6 +4,10 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
 
 import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -79,5 +83,51 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
         assertFalse("Create with nested dirs should succeed", result.isFailure)
         val basePath = requireNotNull(project.basePath)
         assertTrue("File should exist", Files.exists(Path.of(basePath, "src/deep/nested/path/NewFile.java")))
+    }
+
+    /**
+     * The creation must reach the VFS as a *refresh* event. VcsVFSListener ignores refresh
+     * events, so a refresh-originated file never hits the "When files are created" VCS
+     * confirmation — the app-modal "Add File to Git" dialog (which freezes the EDT and hangs
+     * every in-flight MCP call) when set to Ask, or a silent git stage when set to Add
+     * silently. A revert to createChildData() delivers a non-refresh event and fails here.
+     */
+    fun testCreationArrivesAsRefreshEventSoVcsConfirmationIsBypassed() = runBlocking {
+        // Cache the parent directory in the VFS first. Against an uncached parent the refresh
+        // merely *discovers* the file (no event at all — also VCS-invisible), but in a real IDE
+        // session source directories are always cached, and that cached-parent path is exactly
+        // the one that used to reach the VCS confirmation. Forcing the cache makes the test pin
+        // the production-relevant path deterministically.
+        val basePath = requireNotNull(project.basePath)
+        val srcDir = Path.of(basePath, "src")
+        Files.createDirectories(srcDir)
+        val parentVf = requireNotNull(
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByNioFile(srcDir)
+        )
+        parentVf.children
+
+        val createEvents = mutableListOf<Pair<String, Boolean>>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            VirtualFileManager.VFS_CHANGES,
+            object : BulkFileListener {
+                override fun after(events: List<VFileEvent>) {
+                    events.filterIsInstance<VFileCreateEvent>()
+                        .forEach { createEvents.add(it.path to it.isFromRefresh) }
+                }
+            }
+        )
+
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "src/VcsInvisible.java")
+            put("content", "public class VcsInvisible {}")
+        })
+
+        assertFalse("Create should succeed", result.isFailure)
+        val ourEvents = createEvents.filter { it.first.endsWith("VcsInvisible.java") }
+        assertTrue("Creation must publish a VFS create event", ourEvents.isNotEmpty())
+        assertTrue(
+            "Create event must be refresh-originated so VcsVFSListener ignores it; got: $ourEvents",
+            ourEvents.all { it.second }
+        )
     }
 }

@@ -256,6 +256,9 @@ description:
   Use this instead of the Write tool for creating .java, .kt, .ts, .tsx, .py files.
   The file must not already exist.
   
+  The file is NOT registered with version control: no "Add File to Git" prompt appears
+  and nothing is staged. Run git add yourself when you want it tracked.
+  
   Examples:
   - {"file": "src/main/java/com/example/NewService.java", "content": "package com.example;\n\npublic class NewService {\n}"}
   - {"file": "src/utils/helper.ts", "content": "export function helper(): string {\n    return 'help';\n}"}

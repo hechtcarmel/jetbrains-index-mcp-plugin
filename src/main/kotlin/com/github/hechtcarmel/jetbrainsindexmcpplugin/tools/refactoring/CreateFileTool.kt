@@ -7,14 +7,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
-import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.psi.PsiDocumentManager
+import com.intellij.openapi.vfs.LocalFileSystem
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
 
 class CreateFileTool : AbstractMcpTool() {
 
@@ -31,6 +31,9 @@ class CreateFileTool : AbstractMcpTool() {
 
         Use this instead of the Write tool for creating .java, .kt, .ts, .tsx, .py files.
         The file must not already exist.
+
+        The file is NOT registered with version control: no "Add File to Git" prompt appears
+        and nothing is staged. Run git add yourself when you want it tracked.
 
         Examples:
         - {"file": "src/main/java/com/example/NewService.java", "content": "package com.example;\n\npublic class NewService {\n}"}
@@ -72,30 +75,25 @@ class CreateFileTool : AbstractMcpTool() {
             return createErrorResult("File already exists: $filePath. Use ide_edit_member or ide_replace_member to modify existing files.")
         }
 
-        var relativePath = filePath
-        var savedDocument: com.intellij.openapi.editor.Document? = null
-
-        suspendingWriteAction(project, "Create file: $filePath") {
-            val parentDir = targetFile.parentFile
-            val parentVf = VfsUtil.createDirectoryIfMissing(parentDir.absolutePath)
-                ?: throw Exception("Cannot create directory: ${parentDir.absolutePath}")
-
-            val newVf = parentVf.createChildData(this, targetFile.name)
-            val document = FileDocumentManager.getInstance().getDocument(newVf)
-            if (document != null) {
-                document.setText(content)
-                PsiDocumentManager.getInstance(project).commitDocument(document)
-                savedDocument = document
-            } else {
-                newVf.setBinaryContent(content.toByteArray(Charsets.UTF_8))
-            }
-
-            relativePath = ProjectUtils.getToolFilePath(project, newVf)
+        // Write via NIO, then import into the VFS with a synchronous refresh. The IDE's VCS
+        // listener ignores refresh-originated create events, while a direct createChildData()
+        // is IDE-originated and goes through the "When files are created" confirmation — an
+        // app-modal "Add File to Git" dialog when set to Ask (which freezes the EDT and hangs
+        // every queued MCP call), or a silent git stage when set to Add silently. Refresh-based
+        // creation avoids both while the file is still indexed in the same call.
+        try {
+            Files.createDirectories(targetFile.parentFile.toPath())
+            Files.write(targetFile.toPath(), content.toByteArray(Charsets.UTF_8))
+        } catch (e: IOException) {
+            return createErrorResult("Cannot create file '$filePath': ${e.message}")
         }
 
-        if (savedDocument != null) {
-            edtAction { FileDocumentManager.getInstance().saveDocument(savedDocument!!) }
-        }
+        val newVf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(targetFile.toPath())
+            ?: return createErrorResult(
+                "File was written to disk but could not be loaded into the IDE's virtual file system: $filePath"
+            )
+
+        val relativePath = suspendingReadAction { ProjectUtils.getToolFilePath(project, newVf) }
 
         return createJsonResult(
             CreateFileResult(
