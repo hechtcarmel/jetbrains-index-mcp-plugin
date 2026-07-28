@@ -8,6 +8,7 @@
 
 - **`ide_install_plugin` rejects archives with zip-slip entries** (`../` traversal or absolute paths) that would write outside the IDE plugins directory. The whole archive is validated before the existing installation is removed, so a rejected archive leaves the current plugin intact, and extraction independently re-checks every normalized destination path.
 - **`ide_read_file` no longer reads local files outside the project.** Plain filesystem paths (including `~`-expanded ones) are now checked against the project's content roots and registered libraries; jar/library-source reads are unaffected.
+- **The local server's trust model is now documented** in the README (and therefore the Marketplace description) and in `SECURITY.md`: the server binds to `127.0.0.1` with no authentication, so any process on the machine can call its tools with the IDE user's file access.
 
 ### Fixed
 

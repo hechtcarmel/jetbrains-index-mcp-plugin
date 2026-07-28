@@ -83,6 +83,13 @@ Unlike simple text-based code analysis, this plugin gives AI assistants access t
 - **Safe refactoring operations** with automatic reference updates and undo support
 
 Perfect for AI-assisted development workflows where accuracy and safety matter.
+
+### Security
+
+The server binds to `127.0.0.1` with no authentication — any local process can call its
+tools with your IDE's file access. On a single-user dev machine that's the same trust
+boundary your shell already has; on a shared machine, it's worth weighing before you
+enable the write tools.
 <!-- Plugin description end -->
 
 ## Table of Contents
