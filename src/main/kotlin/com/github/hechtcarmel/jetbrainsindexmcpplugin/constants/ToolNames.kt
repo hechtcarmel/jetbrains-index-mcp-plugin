@@ -51,6 +51,9 @@ object ToolNames {
     const val SET_ALL_PROJECT_MODES = "ide_set_all_project_modes"
     const val SET_PROJECT_MODE = "ide_set_project_mode"
 
+    // Module management tools
+    const val CREATE_MODULE = "ide_create_module"
+
     // Plugin development tools
     const val INSTALL_PLUGIN = "ide_install_plugin"
     const val RESTART_IDE = "ide_restart"
@@ -64,6 +67,7 @@ object ToolNames {
         CALL_HIERARCHY,
         CLOSE_PROJECT,
         CONVERT_JAVA_TO_KOTLIN,
+        CREATE_MODULE,
         DIAGNOSTICS,
         ENROLL_ALL_PROJECTS,
         FILE_STRUCTURE,

@@ -48,6 +48,8 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
             "ide_enroll_all_projects", "ide_get_project_modes", "ide_lifecycle_log",
             "ide_set_lifecycle_log_file", "ide_release_all_projects",
             "ide_release_project", "ide_set_all_project_modes", "ide_set_project_mode",
+            // Module management (opt-in — creates IntelliJ module artifacts)
+            "ide_create_module",
             // Plugin development tools (opt-in — irreversible actions)
             "ide_install_plugin", "ide_restart"
         ),

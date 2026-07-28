@@ -24,6 +24,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProj
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetProjectModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CreateModuleTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.InstallPluginTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
@@ -252,6 +253,7 @@ class ToolRegistry {
         register(SetPowerSaveModeTool())
         register(SetLifecycleLogFileTool())
         register(CloseProjectTool())
+        register(CreateModuleTool())
         register(InstallPluginTool())
         register(OpenProjectTool())
         register(RestartIdeTool())
