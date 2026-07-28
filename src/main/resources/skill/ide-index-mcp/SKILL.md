@@ -159,7 +159,7 @@ When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or 
 
 ## Lifecycle Management
 
-When multiple projects are open simultaneously, the lifecycle manager automatically sleeps and wakes them based on window focus and MCP activity. Projects enroll automatically on first MCP use — no setup required.
+When multiple projects are open simultaneously, the lifecycle manager sleeps and wakes them based on window focus and MCP activity. It is opt-in and disabled by default — enable "Enable lifecycle management" in Settings > Tools > Index MCP Server. Once enabled, projects enroll automatically on first MCP use.
 
 **States:** `active` (full IDE) → `background` (Power Save on) → `dormant` (editors closed, PSI cache freed) → `closed` (fully unloaded). Projects auto-reopen transparently when an MCP tool targets a closed project.
 
