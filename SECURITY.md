@@ -23,5 +23,10 @@ before publishing details.
   (localhost) only. It is never exposed to the network by design.
 - Loopback Origin/Host validation is in place to mitigate DNS-rebinding
   attacks against the local server.
+- There is no authentication on the local server: any process on the machine
+  can call the tools with the IDE user's file access. This is a deliberate
+  trade-off for one-line client setup — keeping the machine free of untrusted
+  local processes is the user's call. Reports based on local unauthenticated
+  access, or on privilege escalation derived from it, are out of scope.
 - Reports that require the user to have deliberately reconfigured the server
   to a non-loopback bind are out of scope.
