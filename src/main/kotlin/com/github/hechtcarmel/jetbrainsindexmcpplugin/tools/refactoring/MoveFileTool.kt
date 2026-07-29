@@ -117,6 +117,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         // ═══════════════════════════════════════════════════════════════════════
         val sourceVirtualFile = resolveFile(project, file)
             ?: return createErrorResult("Source file not found: $file")
+        ensureWritable(sourceVirtualFile)?.let { return it }
         val sourceInfo = suspendingReadAction {
             val psiFile = PsiManager.getInstance(project).findFile(sourceVirtualFile)
             if (psiFile == null || !psiFile.isPhysical) {

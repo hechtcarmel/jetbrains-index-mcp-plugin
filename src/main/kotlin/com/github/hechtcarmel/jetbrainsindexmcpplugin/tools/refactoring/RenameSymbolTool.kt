@@ -383,6 +383,20 @@ class RenameSymbolTool : AbstractMcpTool() {
         column: Int,
         newName: String
     ): RenameValidation {
+        val psiFile = getPsiFile(project, file)
+            ?: return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "File not found: $file"
+            )
+        if (psiFile.virtualFile?.isWritable == false) {
+            return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "File is read-only and cannot be modified: ${psiFile.virtualFile.path}"
+            )
+        }
+
         val psiElement = findPsiElement(project, file, line, column)
             ?: return RenameValidation(
                 element = DummyNamedElement,
@@ -473,6 +487,13 @@ class RenameSymbolTool : AbstractMcpTool() {
                 oldName = "",
                 error = "File not found: $file"
             )
+        if (psiFile.virtualFile?.isWritable == false) {
+            return RenameValidation(
+                element = DummyNamedElement,
+                oldName = "",
+                error = "File is read-only and cannot be modified: ${psiFile.virtualFile.path}"
+            )
+        }
 
         val oldName = psiFile.name
 

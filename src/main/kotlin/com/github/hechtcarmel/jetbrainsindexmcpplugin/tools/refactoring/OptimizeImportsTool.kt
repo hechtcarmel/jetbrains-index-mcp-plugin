@@ -54,7 +54,9 @@ class OptimizeImportsTool : AbstractMcpTool() {
         // Refresh VFS for the target file to pick up external changes before PSI resolution.
         // Without this, the stub index can be stale when files are modified by external tools,
         // causing "Outdated stub in index" errors during import optimization.
-        resolveFile(project, file)?.refresh(false, false)
+        val virtualFile = resolveFile(project, file)
+        virtualFile?.refresh(false, false)
+        if (virtualFile != null) { ensureWritable(virtualFile)?.let { return it } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve file (suspending read action)

@@ -61,6 +61,7 @@ class EditMemberTool : AbstractMcpTool() {
 
         val virtualFile = resolveFile(project, filePath)
             ?: return createErrorResult("File not found: $filePath")
+        ensureWritable(virtualFile)?.let { return it }
 
         val prep = suspendingReadAction {
             prepareMemberEdit(project, virtualFile, filePath, className, memberName, parameterCount, line)

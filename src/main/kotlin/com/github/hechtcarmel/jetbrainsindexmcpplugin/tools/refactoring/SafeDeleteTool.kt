@@ -131,6 +131,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             val nearbySuggestions: List<SymbolSuggestion>
         ) : SymbolPreparationResult()
         data class FileNotFound(val file: String) : SymbolPreparationResult()
+        data class ReadOnly(val file: String) : SymbolPreparationResult()
         data class PositionOutOfBounds(val line: Int, val column: Int) : SymbolPreparationResult()
         data class UsageSearchFailed(val reason: String) : SymbolPreparationResult()
     }
@@ -141,6 +142,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     private sealed class FilePreparationResult {
         data class Success(val data: FileDeletePreparation) : FilePreparationResult()
         data object FileNotFound : FilePreparationResult()
+        data class ReadOnly(val file: String) : FilePreparationResult()
         data class NonPhysicalFile(val fileName: String) : FilePreparationResult()
         data class UsageSearchFailed(val reason: String) : FilePreparationResult()
     }
@@ -232,6 +234,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             is SymbolPreparationResult.FileNotFound -> {
                 createErrorResult("File not found: ${preparationResult.file}")
             }
+            is SymbolPreparationResult.ReadOnly -> {
+                createErrorResult("File is read-only and cannot be modified: ${preparationResult.file}")
+            }
             is SymbolPreparationResult.PositionOutOfBounds -> {
                 createErrorResult("Position out of bounds: line ${preparationResult.line}, column ${preparationResult.column}")
             }
@@ -282,6 +287,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             }
             is FilePreparationResult.FileNotFound -> {
                 createErrorResult("File not found: $file")
+            }
+            is FilePreparationResult.ReadOnly -> {
+                createErrorResult("File is read-only and cannot be modified: ${preparationResult.file}")
             }
             is FilePreparationResult.NonPhysicalFile -> {
                 createErrorResult("Cannot delete non-physical file '${preparationResult.fileName}' (e.g., in-memory or generated file)")
@@ -407,6 +415,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     ): SymbolPreparationResult {
         val psiFile = PsiUtils.getPsiFile(project, file)
             ?: return SymbolPreparationResult.FileNotFound(file)
+        if (psiFile.virtualFile?.isWritable == false) {
+            return SymbolPreparationResult.ReadOnly(psiFile.virtualFile.path)
+        }
 
         val leafElement = PsiUtils.findElementAtPosition(project, file, line, column)
             ?: return SymbolPreparationResult.PositionOutOfBounds(line, column)
@@ -554,6 +565,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     ): FilePreparationResult {
         val psiFile = PsiUtils.getPsiFile(project, file)
             ?: return FilePreparationResult.FileNotFound
+        if (psiFile.virtualFile?.isWritable == false) {
+            return FilePreparationResult.ReadOnly(psiFile.virtualFile.path)
+        }
 
         // Check if file is physical (can be deleted from disk)
         if (!psiFile.isPhysical) {

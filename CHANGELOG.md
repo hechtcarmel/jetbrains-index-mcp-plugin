@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Write tools now reject read-only files with a clear error** instead of failing deep inside the refactoring engine. Affected tools: `ide_replace_text_in_file`, `ide_edit_member`, `ide_insert_member`, `ide_replace_member`, `ide_move_file`, `ide_change_signature`, `ide_reformat_code`, `ide_optimize_imports`, `ide_refactor_rename` (both symbol and file modes), and `ide_refactor_safe_delete` (both symbol and file modes).
+
 ### Security
 
 - **`ide_install_plugin` rejects archives with zip-slip entries** (`../` traversal or absolute paths) that would write outside the IDE plugins directory. The whole archive is validated before the existing installation is removed, so a rejected archive leaves the current plugin intact, and extraction independently re-checks every normalized destination path.

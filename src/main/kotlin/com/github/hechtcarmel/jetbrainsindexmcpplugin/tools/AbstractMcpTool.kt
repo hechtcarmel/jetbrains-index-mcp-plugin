@@ -436,6 +436,14 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         return null
     }
 
+    /** Returns a "read-only" error when [file] is not writable, or `null` if the file is writable. */
+    protected fun ensureWritable(file: VirtualFile): CallToolResult? {
+        if (!file.isWritable) {
+            return createErrorResult("File is read-only and cannot be modified: ${file.path}")
+        }
+        return null
+    }
+
     /**
      * Gets the PSI file for a given path.
      *

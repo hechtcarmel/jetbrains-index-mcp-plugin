@@ -65,6 +65,7 @@ class InsertMemberTool : AbstractMcpTool() {
 
         val virtualFile = resolveFile(project, filePath)
             ?: return createErrorResult("File not found: $filePath")
+        ensureWritable(virtualFile)?.let { return it }
 
         val prep = suspendingReadAction {
             prepareInsertion(project, virtualFile, filePath, className, position, anchorName, anchorParamCount, anchorLine)

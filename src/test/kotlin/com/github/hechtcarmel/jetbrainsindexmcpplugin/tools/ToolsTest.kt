@@ -978,7 +978,7 @@ class ToolsTest : McpPlatformTestCase() {
         })
 
         assertTrue("Should error with invalid file", result.isFailure)
-        assertEquals("No element found at the specified position", errorText(result))
+        assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
     fun testRenameSymbolToolBlankName() = runBlocking {
