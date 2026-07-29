@@ -10,6 +10,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
 import com.intellij.ide.impl.OpenProjectTask
+import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
@@ -445,6 +446,7 @@ object ProjectResolver {
                 .find { normalizePath(it.basePath ?: "") == normalizePath(path) }
                 ?: withContext(NonCancellable) {
                     try {
+                        TrustedProjects.setProjectTrusted(Path.of(path), true)
                         ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
                     } catch (e: Throwable) {
                         if (e.message?.contains("already opened") == true) {

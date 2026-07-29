@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- **`ide_open_project`** — pre-trusts the target directory before opening, preventing the modal "Trust and Open Project?" dialog from freezing headless MCP sessions. The project is trusted per-path, not blanket.
 - **The settings page now appears under Settings → Tools → Index MCP Server**, where all documentation always said it was — it was previously registered as a top-level settings entry.
 - **Documentation corrections across README, USAGE, CLAUDE.md and the bundled skill**: the license is MIT (README claimed Apache 2.0), the minimum IDE version is 2025.3 (docs claimed 2025.1), lifecycle management is documented as opt-in (its master toggle defaults to off), stale tool counts/parameters were reconciled with the real tool schemas, and the pre-5.0 custom JSON-RPC error-code tables were replaced with the current `isError: true` behavior.
 - **MCP server lifecycle hardening.** Concurrent restarts (settings apply racing the watchdog) could orphan a bound Ktor engine, permanently occupying its port for the IDE session — server start/stop is now atomic. A failed start (e.g. port still in use at IDE startup) disarmed the watchdog and never retried, leaving the server down until an IDE restart — non-success starts now stop the failed instance and re-arm the watchdog, engine-side bind cancellations no longer kill the startup coroutine silently, and repeated failures no longer spam duplicate error balloons.

@@ -1402,6 +1402,10 @@ description:
   dialog, which only a human can answer; the call fails after timeoutSeconds if the
   project has not opened by then.
   
+  When invoked, this tool marks the target directory as trusted before opening,
+  so the trust dialog does not appear. Build scripts (Maven, Gradle) may execute
+  on import.
+  
   Parameters:
   - path: absolute filesystem path of the project directory to open (required)
   - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: 600.
