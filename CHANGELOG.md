@@ -7,15 +7,6 @@
 ### Fixed
 
 - **Write tools now reject read-only files with a clear error** instead of failing deep inside the refactoring engine. Affected tools: `ide_replace_text_in_file`, `ide_edit_member`, `ide_insert_member`, `ide_replace_member`, `ide_move_file`, `ide_change_signature`, `ide_reformat_code`, `ide_optimize_imports`, `ide_refactor_rename` (both symbol and file modes), and `ide_refactor_safe_delete` (both symbol and file modes).
-
-### Security
-
-- **`ide_install_plugin` rejects archives with zip-slip entries** (`../` traversal or absolute paths) that would write outside the IDE plugins directory. The whole archive is validated before the existing installation is removed, so a rejected archive leaves the current plugin intact, and extraction independently re-checks every normalized destination path.
-- **`ide_read_file` no longer reads local files outside the project.** Plain filesystem paths (including `~`-expanded ones) are now checked against the project's content roots and registered libraries; jar/library-source reads are unaffected.
-- **The local server's trust model is now documented** in the README (and therefore the Marketplace description) and in `SECURITY.md`: the server binds to `127.0.0.1` with no authentication, so any process on the machine can call its tools with the IDE user's file access.
-
-### Fixed
-
 - **`ide_open_project`** — pre-trusts the target directory before opening, preventing the modal "Trust and Open Project?" dialog from freezing headless MCP sessions. The project is trusted per-path, not blanket.
 - **The settings page now appears under Settings → Tools → Index MCP Server**, where all documentation always said it was — it was previously registered as a top-level settings entry.
 - **Documentation corrections across README, USAGE, CLAUDE.md and the bundled skill**: the license is MIT (README claimed Apache 2.0), the minimum IDE version is 2025.3 (docs claimed 2025.1), lifecycle management is documented as opt-in (its master toggle defaults to off), stale tool counts/parameters were reconciled with the real tool schemas, and the pre-5.0 custom JSON-RPC error-code tables were replaced with the current `isError: true` behavior.
@@ -38,6 +29,12 @@
 - **`ide_close_project` re-checks the last-open-project guard on the EDT at close time**, so concurrent close requests can no longer leave the IDE with zero open projects and an unreachable MCP server.
 - **The MCP tool window panel is disposed with its content**, releasing the application-level server-status and command-history listeners (previously leaked the Project after closing it), and its Refresh button actually refreshes again (was a silent no-op).
 - **Settings can be applied while the configured port is occupied by another process** as long as host/port are unchanged, and applying with Enter while the Server Host field has focus no longer fails with a perpetual "Validating server host" error.
+
+### Security
+
+- **`ide_install_plugin` rejects archives with zip-slip entries** (`../` traversal or absolute paths) that would write outside the IDE plugins directory. The whole archive is validated before the existing installation is removed, so a rejected archive leaves the current plugin intact, and extraction independently re-checks every normalized destination path.
+- **`ide_read_file` no longer reads local files outside the project.** Plain filesystem paths (including `~`-expanded ones) are now checked against the project's content roots and registered libraries; jar/library-source reads are unaffected.
+- **The local server's trust model is now documented** in the README (and therefore the Marketplace description) and in `SECURITY.md`: the server binds to `127.0.0.1` with no authentication, so any process on the machine can call its tools with the IDE user's file access.
 
 ## [5.0.1] - 2026-07-27
 
