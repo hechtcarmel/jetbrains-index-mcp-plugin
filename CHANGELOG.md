@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-07-31
+
 ### Added
 
 - **`ide_create_module`** — add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions (e.g., `node_modules`, `dist`). For Maven projects, use `ide_import_modules` instead. *(disabled by default)*
@@ -1078,7 +1080,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.1.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.0...HEAD
+[5.2.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v4.31.0...v5.0.0
