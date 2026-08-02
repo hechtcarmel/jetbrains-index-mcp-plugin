@@ -130,4 +130,48 @@ class CreateFileBehaviorTest : BasePlatformTestCase() {
             ourEvents.all { it.second }
         )
     }
+
+    fun testCreateFileWithProjectPathSubdirectoryUsesItAsBase() = runBlocking {
+        val basePath = requireNotNull(project.basePath)
+        val subDir = java.nio.file.Path.of(basePath, "module-a")
+        java.nio.file.Files.createDirectories(subDir.resolve("src"))
+
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "src/ModuleService.java")
+            put("content", "package src;\npublic class ModuleService {}")
+            put("project_path", subDir.toString())
+        })
+
+        assertFalse("Create with project_path subdirectory should succeed", result.isFailure)
+        assertTrue(
+            "File should be created under subdirectory",
+            java.nio.file.Files.exists(subDir.resolve("src/ModuleService.java"))
+        )
+        assertFalse(
+            "File should NOT be created directly under project basePath",
+            java.nio.file.Files.exists(java.nio.file.Path.of(basePath, "src/ModuleService.java"))
+        )
+    }
+
+    fun testCreateFileWithTraversalInProjectPathIsRejected() = runBlocking {
+        val basePath = requireNotNull(project.basePath)
+
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "evil.java")
+            put("content", "public class Evil {}")
+            put("project_path", "$basePath/../../../../../../tmp")
+        })
+
+        assertTrue("Traversal in project_path should be rejected", result.isFailure)
+    }
+
+    fun testCreateFileWithProjectPathOutsideProjectIsRejected() = runBlocking {
+        val result = CreateFileTool().execute(project, buildJsonObject {
+            put("file", "evil.java")
+            put("content", "public class Evil {}")
+            put("project_path", "/tmp")
+        })
+
+        assertTrue("project_path outside project should be rejected", result.isFailure)
+    }
 }
