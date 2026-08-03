@@ -4,15 +4,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_create_file`** — `project_path` outside every known project root or content root now returns a clear error instead of silently falling through to `basePath` and creating the file in the wrong location. Traversal paths (`../..`) are also rejected.
+
 ## [5.2.0] - 2026-07-31
 
 ### Added
 
 - **`ide_create_module`** — add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions (e.g., `node_modules`, `dist`). For Maven projects, use `ide_import_modules` instead. *(disabled by default)*
-
-### Fixed
-
-- **`ide_create_file`** — `project_path` outside every known project root or content root now returns a clear error instead of silently falling through to `basePath` and creating the file in the wrong location. Traversal paths (`../..`) are also rejected.
 
 ## [5.1.0] - 2026-07-30
 
