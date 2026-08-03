@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.2.1] - 2026-08-03
+
 ### Fixed
 
 - **`ide_create_file`** — `project_path` outside every known project root or content root now returns a clear error instead of silently falling through to `basePath` and creating the file in the wrong location. Traversal paths (`../..`) are also rejected.
@@ -1084,7 +1086,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.1...HEAD
+[5.2.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.1...v5.1.0
 [5.0.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.0...v5.0.1
