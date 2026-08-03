@@ -95,7 +95,7 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
         val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
             put("file", "src/Shift.java")
             put("searchText", "FOO")
-            put("replaceText", "LONG1\\nLONG2")
+            put("replaceText", "LONG1\nLONG2")
             put("regex", true)
         })
 
@@ -220,7 +220,7 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
         assertEquals("File not found: src/DoesNotExist.java", toolText(result))
     }
 
-    fun testReplaceTextEscapesNewlines() = runBlocking {
+    fun testReplaceTextWithJsonNewlineInsertsRealNewline() = runBlocking {
         writeProjectFile("src/Imports.java", """
             package io.example;
 
@@ -230,58 +230,24 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
         val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
             put("file", "src/Imports.java")
             put("searchText", "package io.example;")
-            put("replaceText", "package io.example;\\n\\nimport io.example.TaskStatus;")
+            put("replaceText", "package io.example;\n\nimport io.example.TaskStatus;")
         })
 
         assertToolSucceeded("Replace should succeed", result)
-        val payload = parseResult(result)
-        assertEquals(1, payload.replacements)
-
         val content = readProjectFileVfs("src/Imports.java")
         assertTrue("Should contain import on its own line", content.contains("\nimport io.example.TaskStatus;"))
-        assertFalse("Should not contain literal backslash-n", content.contains("\\n"))
     }
 
-    /**
-     * The identity pre-flight must compare the same semantics the replacement applies:
-     * replaceText is unescaped (\n, \t, \\) before use while searchText is not. Raw-equal
-     * inputs that differ after unescaping are a real replacement (a literal backslash-n in
-     * the file becomes a newline), not a no-op to be rejected.
-     */
-    fun testRawIdenticalTextsThatDifferAfterUnescapingAreReplaced() = runBlocking {
-        // The file contains the two characters backslash + n inside the string literal.
-        writeProjectFile("src/EscapedSame.java", "String s = \"a\\nb\";")
+    fun testIdenticalSearchAndReplaceIsRejected() = runBlocking {
+        writeProjectFile("src/Same.java", "String s = \"hello\";")
 
         val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
-            put("file", "src/EscapedSame.java")
-            put("searchText", "a\\nb")
-            put("replaceText", "a\\nb")
+            put("file", "src/Same.java")
+            put("searchText", "hello")
+            put("replaceText", "hello")
         })
 
-        assertToolSucceeded("Raw-identical texts differing after unescaping are a real replacement", result)
-        val payload = parseResult(result)
-        assertEquals(1, payload.replacements)
-        assertEquals("String s = \"a\nb\";", readProjectFileVfs("src/EscapedSame.java"))
-    }
-
-    /**
-     * Pins the documented escape hatch of the unescaping convention: a doubled backslash
-     * survives as a single literal backslash, so `\\n` in replaceText produces the two
-     * characters backslash + n instead of a newline.
-     */
-    fun testDoubledBackslashProducesLiteralBackslashSequence() = runBlocking {
-        writeProjectFile("src/EscapeHatch.java", "String sep = \"PLACEHOLDER\";")
-
-        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
-            put("file", "src/EscapeHatch.java")
-            put("searchText", "PLACEHOLDER")
-            put("replaceText", "a\\\\nb")
-        })
-
-        assertToolSucceeded("Replace should succeed", result)
-        val payload = parseResult(result)
-        assertEquals(1, payload.replacements)
-        assertEquals("String sep = \"a\\nb\";", readProjectFileVfs("src/EscapeHatch.java"))
+        assertToolFailed("Identical search and replace should be rejected", result)
     }
 
     fun testReplaceInvalidRegexFails() = runBlocking {
@@ -300,6 +266,52 @@ class ReplaceTextInFileBehaviorTest : McpPlatformTestCase() {
         assertTrue(
             "Error should name the invalid regex: ${toolText(result)}",
             toolText(result).startsWith("Invalid regex: ")
+        )
+    }
+
+    fun testReplacePreservesBackslashEscapesInReplaceText() = runBlocking {
+        writeProjectFile("src/Escapes.java", """
+            public class Escapes {
+                String msg = "hello";
+            }
+        """.trimIndent())
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/Escapes.java")
+            put("searchText", "\"hello\"")
+            put("replaceText", "\"hello\\nworld\"")
+        })
+
+        assertToolSucceeded("Replace should succeed", result)
+        val content = readProjectFileVfs("src/Escapes.java")
+        assertTrue(
+            "File should contain literal backslash-n (\\n), not a real newline. Got: ${content.replace("\n", "\\n")}",
+            content.contains("\"hello\\nworld\"")
+        )
+        assertFalse(
+            "File should NOT contain 'helloLFworld' (real newline inside the string literal)",
+            content.contains("hello\nworld")
+        )
+    }
+
+    fun testReplacePreservesBackslashesInReplaceText() = runBlocking {
+        writeProjectFile("src/Backslash.java", """
+            public class Backslash {
+                String path = "old";
+            }
+        """.trimIndent())
+
+        val result = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("file", "src/Backslash.java")
+            put("searchText", "\"old\"")
+            put("replaceText", "\"C:\\\\Users\\\\test\"")
+        })
+
+        assertToolSucceeded("Replace should succeed", result)
+        val content = readProjectFileVfs("src/Backslash.java")
+        assertTrue(
+            "File should contain double backslashes for Windows path. Got: $content",
+            content.contains("\"C:\\\\Users\\\\test\"")
         )
     }
 }

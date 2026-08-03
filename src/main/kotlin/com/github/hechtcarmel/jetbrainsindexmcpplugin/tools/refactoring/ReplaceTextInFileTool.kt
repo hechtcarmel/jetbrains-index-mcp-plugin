@@ -42,7 +42,7 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
         .projectPath()
         .file()
         .stringProperty("searchText", "Text to find. Treated as literal unless regex is true.", required = true)
-        .stringProperty("replaceText", "Replacement text. The escape sequences \\n, \\t, and \\\\ are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references ($1, $2) when regex is true.", required = true)
+        .stringProperty("replaceText", "Replacement text. Passed through as-is (no escape processing). Supports regex group references (\$1, \$2) when regex is true.", required = true)
         .booleanProperty(ParamNames.REGEX, "Treat searchText as a regular expression. Default: false.")
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case-sensitive matching. Default: true.")
         .build()
@@ -70,12 +70,7 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
             return createErrorResult("searchText must not be empty.")
         }
 
-        // The identity pre-flight must compare what will actually be written: replaceText is
-        // unescaped (\n, \t, \\) before use while searchText is not, so comparing the raw
-        // strings blocks legitimate replacements that differ only by escaping (literal \n
-        // becoming a newline) and misses genuine no-ops.
-        val effectiveReplaceText = unescapeText(replaceText)
-        if (searchText == effectiveReplaceText) {
+        if (searchText == replaceText) {
             return createErrorResult("searchText and replaceText are identical — nothing to replace.")
         }
 
@@ -109,7 +104,7 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
                 var offsetDelta = 0
                 regex.replace(text) { matchResult ->
                     replacements++
-                    val replacement = effectiveReplaceText.replace(Regex("\\$(\\d+)")) { groupRef ->
+                    val replacement = replaceText.replace(Regex("\\$(\\d+)")) { groupRef ->
                         val groupIndex = groupRef.groupValues[1].toIntOrNull() ?: 0
                         matchResult.groupValues.getOrElse(groupIndex) { groupRef.value }
                     }
@@ -126,7 +121,7 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
                     if (idx == -1) break
                     sb.append(text, pos, idx)
                     replacementOffsets.add(sb.length)
-                    sb.append(effectiveReplaceText)
+                    sb.append(replaceText)
                     replacements++
                     pos = idx + searchLen
                 }
@@ -170,22 +165,4 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
         const val MAX_AFFECTED_LINES = 100
     }
 
-    private fun unescapeText(text: String): String {
-        val sb = StringBuilder(text.length)
-        var i = 0
-        while (i < text.length) {
-            if (text[i] == '\\' && i + 1 < text.length) {
-                when (text[i + 1]) {
-                    'n' -> { sb.append('\n'); i += 2 }
-                    't' -> { sb.append('\t'); i += 2 }
-                    '\\' -> { sb.append('\\'); i += 2 }
-                    else -> { sb.append(text[i]); i++ }
-                }
-            } else {
-                sb.append(text[i])
-                i++
-            }
-        }
-        return sb.toString()
-    }
 }

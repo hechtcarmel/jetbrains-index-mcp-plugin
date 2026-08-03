@@ -2088,7 +2088,7 @@ Use this for mechanical text substitutions — e.g., replacing a method call wra
 |-----------|------|----------|-------------|
 | `file` | string | Yes | Path to the file relative to project root |
 | `searchText` | string | Yes | Text to find. Treated as literal unless `regex` is true |
-| `replaceText` | string | Yes | Replacement text. The escape sequences `\n`, `\t`, and `\\` are interpreted as newline, tab, and a single literal backslash — double each backslash that must stay literal (e.g. Windows paths). Supports regex group references (`$1`, `$2`) when `regex` is true |
+| `replaceText` | string | Yes | Replacement text. Passed through as-is (no escape processing). Supports regex group references (`$1`, `$2`) when `regex` is true |
 | `regex` | boolean | No | Treat `searchText` as a regular expression (default: false) |
 | `caseSensitive` | boolean | No | Case-sensitive matching (default: true) |
 
