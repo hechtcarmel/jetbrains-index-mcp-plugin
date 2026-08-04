@@ -19,8 +19,10 @@ import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
+import com.intellij.execution.runners.ProgramRunner
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import com.intellij.execution.testframework.sm.runner.ui.TestResultsViewer
+import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -35,6 +37,7 @@ import com.intellij.util.messages.MessageBusConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Duration
@@ -64,6 +67,27 @@ class RunTestsTool : AbstractMcpTool() {
             }
             return target to null
         }
+
+        /**
+         * Defaults to false: agent-driven runs return results in the response, so popping the Run
+         * tool window only steals the user's focus (issue #278). The run content is still added to
+         * the tool window — it just isn't activated.
+         */
+        internal fun shouldActivateToolWindow(arguments: JsonObject): Boolean =
+            arguments[ParamNames.ACTIVATE_TOOL_WINDOW]?.jsonPrimitive?.booleanOrNull ?: false
+
+        /**
+         * `ExecutionManagerImpl` copies the run configuration's activate/focus flags onto the
+         * descriptor and then invokes the environment callback, before `RunContentManagerImpl`
+         * reads [RunContentDescriptor.isActivateToolWindowWhenAdded] to decide whether to open the
+         * Run tool window. Overriding the flags here therefore suppresses activation for this run
+         * only, without mutating the user's persisted run configuration
+         * (`activateToolWindowBeforeRun`).
+         */
+        internal fun suppressToolWindowActivation() = ProgramRunner.Callback { descriptor ->
+            descriptor?.isActivateToolWindowWhenAdded = false
+            descriptor?.isAutoFocusContent = false
+        }
     }
 
     override val name = ToolNames.RUN_TESTS
@@ -87,6 +111,9 @@ class RunTestsTool : AbstractMcpTool() {
         - project_path (optional): required when multiple projects are open.
         - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
         - timeoutSeconds (optional, default 120): maximum seconds to wait for the test run to complete.
+        - activateToolWindow (optional, default false): open the Run tool window for this run. By default
+          the run stays in the background without stealing focus; its content is still added to the Run
+          tool window for manual inspection.
 
         Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
     """.trimIndent()
@@ -99,6 +126,11 @@ class RunTestsTool : AbstractMcpTool() {
             required = true
         )
         .intProperty(ParamNames.TIMEOUT_SECONDS, "Timeout in seconds. Default: $DEFAULT_TIMEOUT_SECONDS.")
+        .booleanProperty(
+            ParamNames.ACTIVATE_TOOL_WINDOW,
+            "Open (activate) the Run tool window for this run. Default: false — the run executes in " +
+                    "the background without stealing focus; its content is still added to the Run tool window."
+        )
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
@@ -116,7 +148,7 @@ class RunTestsTool : AbstractMcpTool() {
                         "Provide an existing run configuration name or a fully qualified Java/Kotlin class name."
             )
 
-        return runAndCollectResults(project, runConfiguration, timeoutSeconds.seconds)
+        return runAndCollectResults(project, runConfiguration, timeoutSeconds.seconds, shouldActivateToolWindow(arguments))
     }
 
     /**
@@ -126,11 +158,13 @@ class RunTestsTool : AbstractMcpTool() {
     private suspend fun runAndCollectResults(
         project: Project,
         runConfiguration: RunnerAndConfigurationSettings,
-        timeout: Duration
+        timeout: Duration,
+        activateToolWindow: Boolean
     ): CallToolResult {
         val configName = runConfiguration.name
         val executor = DefaultRunExecutor.getRunExecutorInstance()
-        val env = ExecutionEnvironmentBuilder.createOrNull(executor, runConfiguration)?.build()
+        val env = ExecutionEnvironmentBuilder.createOrNull(executor, runConfiguration)
+            ?.build(if (activateToolWindow) null else suppressToolWindowActivation())
             ?: return createErrorResult("Could not build execution environment for '$configName'.")
 
         val exitCodeDeferred = CompletableDeferred<Int>()

@@ -981,6 +981,7 @@ Results are read directly from the IDE's test runner rather than from report fil
 | `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
 | `target` | string | Yes | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
 | `timeoutSeconds` | integer | No | Max seconds to wait for test completion (default: 120) |
+| `activateToolWindow` | boolean | No | Open (activate) the Run tool window for this run. Default: `false` — the run executes in the background without stealing focus; its content is still added to the Run tool window |
 
 **Example Request:**
 

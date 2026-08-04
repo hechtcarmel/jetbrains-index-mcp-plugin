@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`ide_run_tests` no longer pops the Run tool window by default.** The run executes in the background — its content is still added to the Run tool window, just without activating it or stealing focus. Pass the new optional `activateToolWindow: true` parameter to open the tool window as before. The suppression is per-run and does not touch the run configuration's persisted `activateToolWindowBeforeRun` setting.
+
 ## [5.2.2] - 2026-08-04
 
 ### Fixed

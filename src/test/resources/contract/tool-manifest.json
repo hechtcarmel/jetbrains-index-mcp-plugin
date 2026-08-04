@@ -2093,12 +2093,20 @@ description:
   - project_path (optional): required when multiple projects are open.
   - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
   - timeoutSeconds (optional, default 120): maximum seconds to wait for the test run to complete.
+  - activateToolWindow (optional, default false): open the Run tool window for this run. By default
+    the run stays in the background without stealing focus; its content is still added to the Run
+    tool window for manual inspection.
   
   Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
 schema:
   {
     "properties":
     {
+      "activateToolWindow":
+      {
+        "description": "Open (activate) the Run tool window for this run. Default: false — the run executes in the background without stealing focus; its content is still added to the Run tool window.",
+        "type": "boolean"
+      },
       "project_path":
       {
         "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",

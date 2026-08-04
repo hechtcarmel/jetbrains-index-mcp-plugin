@@ -3,6 +3,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import junit.framework.TestCase
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class RunTestsUnitTest : TestCase() {
 
@@ -45,6 +47,24 @@ class RunTestsUnitTest : TestCase() {
         val (className, method) = RunTestsTool.parseTarget("")
         assertEquals("", className)
         assertNull(method)
+    }
+
+    // ── shouldActivateToolWindow ──────────────────────────────────────────────
+
+    /**
+     * The default is part of the tool contract (issue #278): agent runs must not pop the Run tool
+     * window unless explicitly requested. The literal wire name pins the schema parameter.
+     */
+    fun testActivateToolWindowDefaultsToFalse() {
+        assertFalse(RunTestsTool.shouldActivateToolWindow(buildJsonObject { }))
+    }
+
+    fun testActivateToolWindowExplicitTrue() {
+        assertTrue(RunTestsTool.shouldActivateToolWindow(buildJsonObject { put("activateToolWindow", true) }))
+    }
+
+    fun testActivateToolWindowExplicitFalse() {
+        assertFalse(RunTestsTool.shouldActivateToolWindow(buildJsonObject { put("activateToolWindow", false) }))
     }
 
     // ── TestStatus.isFailure ───────────────────────────────────────────────────

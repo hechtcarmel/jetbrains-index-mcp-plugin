@@ -548,6 +548,7 @@ Run tests via the IDE's run configuration infrastructure. Results are read from 
 | `project_path` | string | no | For workspace sub-projects |
 | `target` | string | yes | Existing run config name (any language), or a Java/Kotlin class FQN (`com.example.MyTest`) / method FQN (`com.example.MyTest#testFoo`) — FQN forms are Java/Kotlin-only |
 | `timeoutSeconds` | integer | no | Max seconds to wait for test completion (default 120) |
+| `activateToolWindow` | boolean | no | Open the Run tool window for this run (default `false` — the run stays in the background without stealing focus; content is still added to the Run tool window) |
 
 **Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?}] }`
 
