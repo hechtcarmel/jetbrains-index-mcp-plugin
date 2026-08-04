@@ -4,15 +4,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_replace_text_in_file`** — removed the `unescapeText` layer that double-processed escape sequences in `replaceText`. JSON string parsing already handles `\n`, `\t`, and `\\`; the extra unescape converted Java/Kotlin string literals like `"\n"` into real newlines and ate backslashes in paths and regex patterns. Replacement text is now passed through as-is, matching how every other tool handles text parameters — agents that previously sent `\\n` to insert a newline must now send an actual newline character (`\n` in the JSON string).
+
 ## [5.2.1] - 2026-08-03
 
 ### Fixed
 
-- **`ide_replace_text_in_file`** — removed the `unescapeText` layer that double-processed escape sequences in `replaceText`. JSON string parsing already handles `\n`, `\t`, and `\\`; the extra unescape converted Java/Kotlin string literals like `"\n"` into real newlines and ate backslashes in paths and regex patterns. Replacement text is now passed through as-is.
-
-### Breaking
-
-- **`ide_replace_text_in_file` `replaceText` no longer interprets `\n`/`\t`/`\\` escape sequences.** Agents that relied on sending `\\n` to insert a newline must now send an actual newline character in the JSON string (which JSON already supports as `\n`). This matches how every other tool handles text parameters.
+- **`ide_create_file`** — `project_path` outside every known project root or content root now returns a clear error instead of silently falling through to `basePath` and creating the file in the wrong location. Traversal paths (`../..`) are also rejected.
 
 ## [5.2.0] - 2026-07-31
 
