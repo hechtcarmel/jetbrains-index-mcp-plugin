@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.2.2] - 2026-08-04
+
 ### Fixed
 
 - **`ide_replace_text_in_file`** — removed the `unescapeText` layer that double-processed escape sequences in `replaceText`. JSON string parsing already handles `\n`, `\t`, and `\\`; the extra unescape converted Java/Kotlin string literals like `"\n"` into real newlines and ate backslashes in paths and regex patterns. Replacement text is now passed through as-is, matching how every other tool handles text parameters — agents that previously sent `\\n` to insert a newline must now send an actual newline character (`\n` in the JSON string).
@@ -1090,7 +1092,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.2...HEAD
+[5.2.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.1...v5.2.2
 [5.2.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.0.1...v5.1.0
