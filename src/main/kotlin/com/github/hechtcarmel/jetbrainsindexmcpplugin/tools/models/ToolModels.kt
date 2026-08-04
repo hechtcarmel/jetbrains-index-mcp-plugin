@@ -412,6 +412,20 @@ data class RunTestsResult(
     val tests: List<TestRunEntry>
 )
 
+/**
+ * Returned by ide_run_tests instead of blocking past the MCP client's own request timeout
+ * (issue #277): the run keeps executing in the IDE and the agent re-calls with [runId].
+ */
+@Serializable
+data class RunTestsInProgressResult(
+    val status: String,
+    val runId: String,
+    val configName: String,
+    val elapsedSeconds: Long,
+    val timeoutSeconds: Int,
+    val message: String
+)
+
 // ide_search_text output
 @Serializable
 data class SearchTextResult(

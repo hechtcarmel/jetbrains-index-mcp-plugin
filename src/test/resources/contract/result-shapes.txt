@@ -1,6 +1,6 @@
 # MCP tool response shapes — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ResultShapeContractUnitTest" -Dcontract.update=true
-# shapes: 61
+# shapes: 62
 
 ## ActiveFileInfo
   column: number?
@@ -272,6 +272,14 @@
   message: string
   replacements: number
   success: boolean
+
+## RunTestsInProgressResult
+  configName: string
+  elapsedSeconds: number
+  message: string
+  runId: string
+  status: string
+  timeoutSeconds: number
 
 ## RunTestsResult
   errors: number

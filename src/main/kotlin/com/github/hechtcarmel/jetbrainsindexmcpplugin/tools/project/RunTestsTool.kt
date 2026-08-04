@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -37,13 +38,23 @@ import com.intellij.util.messages.MessageBusConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import kotlin.time.Duration
+import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class RunTestsTool : AbstractMcpTool() {
+
+    /** How a single ide_run_tests call should behave: start a new run, or attach to a live one. */
+    internal sealed interface RequestMode {
+        data class Start(val target: String) : RequestMode
+        data class Attach(val runId: String) : RequestMode
+        data class Invalid(val message: String) : RequestMode
+    }
 
     companion object {
         private val LOG = logger<RunTestsTool>()
@@ -52,6 +63,55 @@ class RunTestsTool : AbstractMcpTool() {
 
         /** Grace period to let the IDE's test tree finalize after the process exits. Normally instant. */
         private val TEST_TREE_FINALIZE_TIMEOUT = 10.seconds
+
+        /**
+         * Per-call wait budget. MCP clients enforce their own request timeout (60s by default in
+         * Claude Code / the MCP TypeScript SDK) and the stateless Streamable HTTP transport cannot
+         * emit keep-alive progress notifications, so a call that blocks longer is killed
+         * client-side no matter what `timeoutSeconds` says — that is issue #277. Default + ceiling
+         * keep worst-case call time (wait + tree-finalize grace) under that client budget.
+         */
+        internal const val DEFAULT_WAIT_SECONDS = 45
+        internal const val MAX_WAIT_SECONDS = 55
+
+        private fun JsonObject.trimmedString(name: String): String? =
+            (this[name] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+
+        /** `target` starts a run, `runId` polls one already in flight — exactly one must be given. */
+        internal fun resolveRequestMode(arguments: JsonObject): RequestMode {
+            val target = arguments.trimmedString(ParamNames.TARGET)
+            val runId = arguments.trimmedString(ParamNames.RUN_ID)
+            return when {
+                target != null && runId != null -> RequestMode.Invalid(
+                    "Provide either 'target' (to start a test run) or 'runId' (to poll a running one), not both."
+                )
+                runId != null -> RequestMode.Attach(runId)
+                target != null -> RequestMode.Start(target)
+                else -> RequestMode.Invalid(
+                    "Either 'target' (to start a test run) or 'runId' (to poll a running one) is required."
+                )
+            }
+        }
+
+        internal fun resolveWaitSeconds(arguments: JsonObject): Int =
+            (arguments[ParamNames.WAIT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_WAIT_SECONDS)
+                .coerceIn(0, MAX_WAIT_SECONDS)
+
+        internal fun buildInProgressResult(
+            runId: String,
+            configName: String,
+            elapsedSeconds: Long,
+            timeoutSeconds: Int
+        ): RunTestsInProgressResult = RunTestsInProgressResult(
+            status = "running",
+            runId = runId,
+            configName = configName,
+            elapsedSeconds = elapsedSeconds,
+            timeoutSeconds = timeoutSeconds,
+            message = "Test run '$configName' is still executing (${elapsedSeconds}s elapsed, " +
+                    "${timeoutSeconds}s limit). The run continues in the IDE. Call ide_run_tests again " +
+                    "with {\"runId\": \"$runId\"} to keep waiting for its results."
+        )
 
         /**
          * Parses a target string into a class name and optional method name.
@@ -93,7 +153,7 @@ class RunTestsTool : AbstractMcpTool() {
     override val name = ToolNames.RUN_TESTS
 
     override val description = """
-        Run tests using the IDE's run configuration infrastructure. Waits for completion and returns results.
+        Run tests using the IDE's run configuration infrastructure and return structured results.
 
         The target can be:
         - An existing run configuration name (e.g. "All Tests") — works for ANY language/framework
@@ -103,29 +163,56 @@ class RunTestsTool : AbstractMcpTool() {
         Creating a run config from a class/method FQN is supported only for Java/Kotlin. For other
         languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
 
+        Long-running runs: each call blocks at most waitSeconds (default $DEFAULT_WAIT_SECONDS) so your MCP client's
+        request timeout is never hit. If the tests are still executing when the wait budget ends, the
+        call returns {"status": "running", "runId": "..."} while the run continues inside the IDE —
+        call this tool again with that runId (and no target) to keep waiting. The run itself is
+        bounded by timeoutSeconds: once it expires the process is killed and the next poll reports
+        timedOut: true.
+
         Returns: success status, exit code, pass/fail/error counts, and per-test results.
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 
         Parameters:
         - project_path (optional): required when multiple projects are open.
-        - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
-        - timeoutSeconds (optional, default 120): maximum seconds to wait for the test run to complete.
+        - target: existing run config name, fully qualified class (com.example.MyTest), or class#method
+          (com.example.MyTest#testFoo). Exactly one of target / runId is required.
+        - runId: id from a previous {"status": "running"} response; attaches to that run and keeps waiting.
+        - timeoutSeconds (optional, default $DEFAULT_TIMEOUT_SECONDS): maximum seconds the test RUN may take before its
+          process is killed. Applies to the whole run, across polls; ignored when runId is given.
+        - waitSeconds (optional, default $DEFAULT_WAIT_SECONDS, max $MAX_WAIT_SECONDS): maximum seconds THIS CALL may block before
+          returning results or a "running" status. Keep it below your MCP client's request timeout.
         - activateToolWindow (optional, default false): open the Run tool window for this run. By default
           the run stays in the background without stealing focus; its content is still added to the Run
           tool window for manual inspection.
 
-        Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
+        Example: {"target": "com.example.MyTest", "timeoutSeconds": 7200}, then if a "running" status
+        comes back: {"runId": "<runId from that response>"}
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(
             ParamNames.TARGET,
-            "Test target: existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).",
-            required = true
+            "Test target: existing run config name, fully qualified class (com.example.MyTest), or " +
+                    "class#method (com.example.MyTest#testFoo). Exactly one of target/runId is required."
         )
-        .intProperty(ParamNames.TIMEOUT_SECONDS, "Timeout in seconds. Default: $DEFAULT_TIMEOUT_SECONDS.")
+        .stringProperty(
+            ParamNames.RUN_ID,
+            "runId from a previous {\"status\": \"running\"} response: attaches to that run and keeps " +
+                    "waiting instead of starting a new one. Exactly one of target/runId is required."
+        )
+        .intProperty(
+            ParamNames.TIMEOUT_SECONDS,
+            "Maximum seconds the whole test run may take before its process is killed (enforced across " +
+                    "polls). Default: $DEFAULT_TIMEOUT_SECONDS. Ignored when runId is given."
+        )
+        .intProperty(
+            ParamNames.WAIT_SECONDS,
+            "Maximum seconds this call may block before returning results or a \"running\" status. " +
+                    "Default: $DEFAULT_WAIT_SECONDS, max: $MAX_WAIT_SECONDS. Keep below your MCP client's request timeout."
+        )
         .booleanProperty(
             ParamNames.ACTIVATE_TOOL_WINDOW,
             "Open (activate) the Run tool window for this run. Default: false — the run executes in " +
@@ -134,32 +221,60 @@ class RunTestsTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
-        val target = requiredStringArg(arguments, ParamNames.TARGET).getOrElse {
-            return createErrorResult(it.message ?: "target is required")
-        }
-        val timeoutSeconds = arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
-        if (timeoutSeconds <= 0) {
-            return createErrorResult("timeoutSeconds must be a positive integer.")
-        }
+        val callStartMs = System.currentTimeMillis()
+        val waitSeconds = resolveWaitSeconds(arguments)
 
-        val runConfiguration = resolveRunConfiguration(project, target)
-            ?: return createErrorResult(
-                "Could not find or create a run configuration for target '$target'. " +
-                        "Provide an existing run configuration name or a fully qualified Java/Kotlin class name."
-            )
+        return when (val mode = resolveRequestMode(arguments)) {
+            is RequestMode.Invalid -> createErrorResult(mode.message)
 
-        return runAndCollectResults(project, runConfiguration, timeoutSeconds.seconds, shouldActivateToolWindow(arguments))
+            is RequestMode.Attach -> {
+                val run = ActiveTestRunRegistry.getInstance(project).get(mode.runId)
+                    ?: return createErrorResult(
+                        "No active test run with id '${mode.runId}'. Its results may have already been " +
+                                "collected, the run may have been evicted after completing, or the IDE was " +
+                                "restarted. Start a new run by passing 'target' instead."
+                    )
+                awaitRunResult(project, run, waitSeconds, callStartMs)
+            }
+
+            is RequestMode.Start -> {
+                val timeoutSeconds =
+                    arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
+                if (timeoutSeconds <= 0) {
+                    return createErrorResult("timeoutSeconds must be a positive integer.")
+                }
+
+                val runConfiguration = resolveRunConfiguration(project, mode.target)
+                    ?: return createErrorResult(
+                        "Could not find or create a run configuration for target '${mode.target}'. " +
+                                "Provide an existing run configuration name or a fully qualified Java/Kotlin class name."
+                    )
+
+                startRun(
+                    project,
+                    runConfiguration,
+                    timeoutSeconds,
+                    shouldActivateToolWindow(arguments),
+                    waitSeconds,
+                    callStartMs
+                )
+            }
+        }
     }
 
     /**
-     * Launches the configuration, waits for termination or [timeout], and reads the test results
-     * straight from the IDE's live test tree (uses the same model that backs the IDE's test tool window).
+     * Launches the configuration and registers the run in [ActiveTestRunRegistry], which owns its
+     * lifetime from here on: the registry watchdog kills the process at `timeoutSeconds`, and the
+     * message-bus connection is disconnected when the run is collected or evicted. This call only
+     * borrows the run to wait on it within the call's wait budget.
      */
-    private suspend fun runAndCollectResults(
+    private suspend fun startRun(
         project: Project,
         runConfiguration: RunnerAndConfigurationSettings,
-        timeout: Duration,
-        activateToolWindow: Boolean
+        timeoutSeconds: Int,
+        activateToolWindow: Boolean,
+        waitSeconds: Int,
+        callStartMs: Long
     ): CallToolResult {
         val configName = runConfiguration.name
         val executor = DefaultRunExecutor.getRunExecutorInstance()
@@ -180,59 +295,104 @@ class RunTestsTool : AbstractMcpTool() {
         val connection = project.messageBus.connect()
         connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
 
-        try {
-            val handler = try {
-                edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
-                withTimeoutOrNull(PROCESS_START_TIMEOUT) { processHandlerDeferred.await() }
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: Exception) {
-                return createErrorResult(e.message ?: "Test process failed to start for '$configName'.")
-            } ?: return createErrorResult(
+        val startedAtMs = System.currentTimeMillis()
+        val handler = try {
+            edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
+            withTimeoutOrNull(PROCESS_START_TIMEOUT) { processHandlerDeferred.await() }
+        } catch (e: ProcessCanceledException) {
+            connection.disconnect()
+            throw e
+        } catch (e: Exception) {
+            connection.disconnect()
+            return createErrorResult(e.message ?: "Test process failed to start for '$configName'.")
+        } ?: run {
+            connection.disconnect()
+            return createErrorResult(
                 "Test process did not start within ${PROCESS_START_TIMEOUT.inWholeSeconds} seconds for '$configName'."
             )
-
-            val runContentDescriptor = RunContentManager.getInstance(project).allDescriptors.find { it.processHandler === handler }
-            val resultsViewer = extractTestRunnerResultsViewer(runContentDescriptor?.executionConsole)
-            resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
-                override fun onTestingFinished(sender: TestResultsViewer) {
-                    testCompletionDeferred.complete(sender.testsRootNode.root)
-                }
-            })
-
-            val exitCode = withTimeoutOrNull(timeout) { exitCodeDeferred.await() }
-            if (exitCode == null) {
-                handler.destroyProcess()
-            }
-
-            val smRoot = resultsViewer?.let {
-                withTimeoutOrNull(TEST_TREE_FINALIZE_TIMEOUT) { testCompletionDeferred.await() }
-            }
-            if (smRoot == null) {
-                LOG.debug("No SM test tree for '$configName'; returning empty structured results.")
-            }
-
-            val tests = smRoot?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
-            val passed = tests.count { it.status == TestStatus.PASSED }
-            val failed = tests.count { it.status == TestStatus.FAILED }
-            val errors = tests.count { it.status == TestStatus.ERROR }
-
-            return createJsonResult(
-                RunTestsResult(
-                    success = exitCode == 0 && failed == 0 && errors == 0,
-                    timedOut = exitCode == null,
-                    noTestsFound = tests.isEmpty() && exitCode == 0,
-                    exitCode = exitCode ?: -1,
-                    passed = passed,
-                    failed = failed,
-                    errors = errors,
-                    total = tests.size,
-                    tests = tests
-                )
-            )
-        } finally {
-            connection.disconnect()
         }
+
+        val runContentDescriptor = RunContentManager.getInstance(project).allDescriptors.find { it.processHandler === handler }
+        val resultsViewer = extractTestRunnerResultsViewer(runContentDescriptor?.executionConsole)
+        resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
+            override fun onTestingFinished(sender: TestResultsViewer) {
+                testCompletionDeferred.complete(sender.testsRootNode.root)
+            }
+        })
+
+        val run = ActiveTestRunRegistry.getInstance(project).register(
+            ActiveTestRunRegistry.ActiveTestRun(
+                id = UUID.randomUUID().toString(),
+                configName = configName,
+                startedAtMs = startedAtMs,
+                timeoutSeconds = timeoutSeconds,
+                handler = handler,
+                exitCode = exitCodeDeferred,
+                testRoot = testCompletionDeferred,
+                resultsViewer = resultsViewer,
+                connection = connection
+            )
+        )
+
+        return awaitRunResult(project, run, waitSeconds, callStartMs)
+    }
+
+    /**
+     * Waits for the run within what remains of this call's wait budget, then returns either the
+     * final [RunTestsResult] (and removes the run from the registry) or a
+     * [RunTestsInProgressResult] carrying the runId to poll with.
+     */
+    private suspend fun awaitRunResult(
+        project: Project,
+        run: ActiveTestRunRegistry.ActiveTestRun,
+        waitSeconds: Int,
+        callStartMs: Long
+    ): CallToolResult {
+        val waitLeftMs = waitSeconds * 1000L - (System.currentTimeMillis() - callStartMs)
+        val exitCode: Int? = when {
+            run.exitCode.isCompleted -> run.exitCode.await()
+            waitLeftMs > 0 -> withTimeoutOrNull(waitLeftMs.milliseconds) { run.exitCode.await() }
+            else -> null
+        }
+
+        if (exitCode == null && !run.timedOutByWatchdog) {
+            val elapsedSeconds = (System.currentTimeMillis() - run.startedAtMs) / 1000
+            return createJsonResult(
+                buildInProgressResult(run.id, run.configName, elapsedSeconds, run.timeoutSeconds)
+            )
+        }
+
+        // Terminal: the process exited, or the watchdog killed it at timeoutSeconds (even if the
+        // process has not confirmed its death yet).
+        val smRoot = run.resultsViewer?.let {
+            withTimeoutOrNull(TEST_TREE_FINALIZE_TIMEOUT) { run.testRoot.await() }
+        }
+        if (smRoot == null) {
+            LOG.debug("No SM test tree for '${run.configName}'; returning empty structured results.")
+        }
+
+        val tests = smRoot?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
+        val passed = tests.count { it.status == TestStatus.PASSED }
+        val failed = tests.count { it.status == TestStatus.FAILED }
+        val errors = tests.count { it.status == TestStatus.ERROR }
+
+        ActiveTestRunRegistry.getInstance(project).remove(run.id)
+
+        val timedOut = run.timedOutByWatchdog
+        val reportedExitCode = if (timedOut || exitCode == null) -1 else exitCode
+        return createJsonResult(
+            RunTestsResult(
+                success = reportedExitCode == 0 && failed == 0 && errors == 0,
+                timedOut = timedOut,
+                noTestsFound = tests.isEmpty() && reportedExitCode == 0,
+                exitCode = reportedExitCode,
+                passed = passed,
+                failed = failed,
+                errors = errors,
+                total = tests.size,
+                tests = tests
+            )
+        )
     }
 
     private suspend fun resolveRunConfiguration(project: Project, target: String): RunnerAndConfigurationSettings? {

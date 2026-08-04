@@ -2075,7 +2075,7 @@ schema:
 
 ## ide_run_tests
 description:
-  Run tests using the IDE's run configuration infrastructure. Waits for completion and returns results.
+  Run tests using the IDE's run configuration infrastructure and return structured results.
   
   The target can be:
   - An existing run configuration name (e.g. "All Tests") — works for ANY language/framework
@@ -2085,19 +2085,32 @@ description:
   Creating a run config from a class/method FQN is supported only for Java/Kotlin. For other
   languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
   
+  Long-running runs: each call blocks at most waitSeconds (default 45) so your MCP client's
+  request timeout is never hit. If the tests are still executing when the wait budget ends, the
+  call returns {"status": "running", "runId": "..."} while the run continues inside the IDE —
+  call this tool again with that runId (and no target) to keep waiting. The run itself is
+  bounded by timeoutSeconds: once it expires the process is killed and the next poll reports
+  timedOut: true.
+  
   Returns: success status, exit code, pass/fail/error counts, and per-test results.
   Results are read directly from the IDE's test runner, so they reflect this run (not stale report
   files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
   
   Parameters:
   - project_path (optional): required when multiple projects are open.
-  - target (required): existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).
-  - timeoutSeconds (optional, default 120): maximum seconds to wait for the test run to complete.
+  - target: existing run config name, fully qualified class (com.example.MyTest), or class#method
+    (com.example.MyTest#testFoo). Exactly one of target / runId is required.
+  - runId: id from a previous {"status": "running"} response; attaches to that run and keeps waiting.
+  - timeoutSeconds (optional, default 120): maximum seconds the test RUN may take before its
+    process is killed. Applies to the whole run, across polls; ignored when runId is given.
+  - waitSeconds (optional, default 45, max 55): maximum seconds THIS CALL may block before
+    returning results or a "running" status. Keep it below your MCP client's request timeout.
   - activateToolWindow (optional, default false): open the Run tool window for this run. By default
     the run stays in the background without stealing focus; its content is still added to the Run
     tool window for manual inspection.
   
-  Example: {"target": "com.example.MyTest"} or {"target": "All Tests", "timeoutSeconds": 60}
+  Example: {"target": "com.example.MyTest", "timeoutSeconds": 7200}, then if a "running" status
+  comes back: {"runId": "<runId from that response>"}
 schema:
   {
     "properties":
@@ -2112,21 +2125,27 @@ schema:
         "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
         "type": "string"
       },
+      "runId":
+      {
+        "description": "runId from a previous {\"status\": \"running\"} response: attaches to that run and keeps waiting instead of starting a new one. Exactly one of target/runId is required.",
+        "type": "string"
+      },
       "target":
       {
-        "description": "Test target: existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo).",
+        "description": "Test target: existing run config name, fully qualified class (com.example.MyTest), or class#method (com.example.MyTest#testFoo). Exactly one of target/runId is required.",
         "type": "string"
       },
       "timeoutSeconds":
       {
-        "description": "Timeout in seconds. Default: 120.",
+        "description": "Maximum seconds the whole test run may take before its process is killed (enforced across polls). Default: 120. Ignored when runId is given.",
+        "type": "integer"
+      },
+      "waitSeconds":
+      {
+        "description": "Maximum seconds this call may block before returning results or a \"running\" status. Default: 45, max: 55. Keep below your MCP client's request timeout.",
         "type": "integer"
       }
     },
-    "required":
-    [
-      "target"
-    ],
     "type": "object"
   }
 

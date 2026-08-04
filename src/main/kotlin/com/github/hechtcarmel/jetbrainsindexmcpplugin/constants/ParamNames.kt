@@ -92,6 +92,8 @@ object ParamNames {
     // Test parameters
     const val TARGET = "target"
     const val ACTIVATE_TOOL_WINDOW = "activateToolWindow"
+    const val RUN_ID = "runId"
+    const val WAIT_SECONDS = "waitSeconds"
 
     // Diagnostics parameters
     const val INCLUDE_BUILD_ERRORS = "includeBuildErrors"

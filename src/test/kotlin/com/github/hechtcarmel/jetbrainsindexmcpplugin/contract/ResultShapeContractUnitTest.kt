@@ -27,6 +27,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.PositionInput
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
@@ -828,6 +829,17 @@ class ResultShapeContractUnitTest : TestCase() {
                             errorMessage = "expected:<1> but was:<2>"
                         )
                     )
+                )
+            ),
+            struct(
+                RunTestsInProgressResult.serializer(),
+                RunTestsInProgressResult(
+                    status = "running",
+                    runId = "6f9c1f6e-0000-0000-0000-000000000000",
+                    configName = "com.example.ServiceTest",
+                    elapsedSeconds = 61,
+                    timeoutSeconds = 7200,
+                    message = "Test run 'com.example.ServiceTest' is still executing"
                 )
             ),
             struct(

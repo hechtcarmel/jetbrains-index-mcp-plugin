@@ -26,7 +26,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
-| `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name | Disabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
@@ -969,6 +969,8 @@ Results are read directly from the IDE's test runner rather than from report fil
 
 **Language support:** Passing an **existing run configuration name** works for any language/framework. Passing a **class or method FQN** (so the plugin creates the run config for you) is supported **only for Java/Kotlin** — for Python, JS/TS, Go, PHP, or Rust, create/select a run configuration in the IDE and pass its name.
 
+**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the tests are still executing when the wait budget ends, the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no `target`) to keep waiting. The run itself is bounded by `timeoutSeconds`: once it expires the test process is killed and the next poll reports `timedOut: true`.
+
 **Use when:**
 - Running a specific test class or method after a code change
 - Verifying that a fix resolves a test failure
@@ -979,9 +981,13 @@ Results are read directly from the IDE's test runner rather than from report fil
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
-| `target` | string | Yes | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
-| `timeoutSeconds` | integer | No | Max seconds to wait for test completion (default: 120) |
+| `target` | string | No* | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
+| `runId` | string | No* | `runId` from a previous `{"status": "running"}` response — attaches to that run and keeps waiting instead of starting a new one |
+| `timeoutSeconds` | integer | No | Max seconds the whole test run may take before its process is killed, enforced across polls (default: 120). Ignored with `runId` |
+| `waitSeconds` | integer | No | Max seconds this call may block before returning results or a `running` status (default: 45, max: 55). Keep below the MCP client's request timeout |
 | `activateToolWindow` | boolean | No | Open (activate) the Run tool window for this run. Default: `false` — the run executes in the background without stealing focus; its content is still added to the Run tool window |
+
+*Exactly one of `target` / `runId` is required.
 
 **Example Request:**
 
@@ -1014,6 +1020,19 @@ Results are read directly from the IDE's test runner rather than from report fil
     { "name": "com.example.MyTest.testBar", "status": "passed" },
     { "name": "com.example.MyTest.testBaz", "status": "passed" }
   ]
+}
+```
+
+**Example Response (run still executing after the wait budget):**
+
+```json
+{
+  "status": "running",
+  "runId": "6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f",
+  "configName": "MyTest.testFoo",
+  "elapsedSeconds": 45,
+  "timeoutSeconds": 7200,
+  "message": "Test run 'MyTest.testFoo' is still executing (45s elapsed, 7200s limit). The run continues in the IDE. Call ide_run_tests again with {\"runId\": \"6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f\"} to keep waiting for its results."
 }
 ```
 
