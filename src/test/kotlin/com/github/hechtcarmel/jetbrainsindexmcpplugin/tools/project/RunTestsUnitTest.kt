@@ -128,6 +128,50 @@ class RunTestsUnitTest : TestCase() {
         assertEquals(10, RunTestsTool.resolveWaitSeconds(buildJsonObject { put("waitSeconds", 10) }))
     }
 
+    // ── finalizeWaitMillis ─────────────────────────────────────────────────────
+
+    /**
+     * The tree-finalize grace after process exit must fit inside what remains of the call's wait
+     * budget — otherwise a late exit stacks up to ~65s total, the client aborts at 60s, and the
+     * collected-and-removed results are lost forever. A small floor keeps collection possible
+     * even when the budget is already spent (e.g. waitSeconds=0 polls).
+     */
+    fun testFinalizeWaitCappedAtTreeFinalizeTimeout() {
+        // 45s budget, 5s elapsed: plenty left, but never wait longer than the 10s finalize cap
+        assertEquals(10_000L, RunTestsTool.finalizeWaitMillis(45, callStartMs = 0, nowMs = 5_000))
+    }
+
+    fun testFinalizeWaitShrinksToRemainingBudget() {
+        // 45s budget, 40s elapsed: only 5s left — use it instead of the full 10s cap
+        assertEquals(5_000L, RunTestsTool.finalizeWaitMillis(45, callStartMs = 0, nowMs = 40_000))
+    }
+
+    fun testFinalizeWaitFlooredWhenBudgetExhausted() {
+        // 55s budget, 54.5s elapsed: remaining 500ms is too little to ever collect a tree —
+        // floor at 3s rather than returning with results silently dropped
+        assertEquals(3_000L, RunTestsTool.finalizeWaitMillis(55, callStartMs = 0, nowMs = 54_500))
+        assertEquals(3_000L, RunTestsTool.finalizeWaitMillis(0, callStartMs = 0, nowMs = 0))
+    }
+
+    // ── needsPsiSync ───────────────────────────────────────────────────────────
+
+    /**
+     * Attach polls touch no PSI until final collection, and with "Sync external file changes"
+     * enabled a full VFS refresh per poll costs seconds on large repos — a 2h run polls ~160
+     * times. Start calls resolve the target from PSI and must keep syncing.
+     */
+    fun testPollCallsSkipPsiSyncButStartCallsDoNot() {
+        val tool = RunTestsTool()
+        assertFalse(
+            "runId polls must not pay the PSI sync tax",
+            tool.needsPsiSync(buildJsonObject { put("runId", "abc-123") })
+        )
+        assertTrue(
+            "target starts resolve PSI and must sync",
+            tool.needsPsiSync(buildJsonObject { put("target", "com.example.MyTest") })
+        )
+    }
+
     // ── in-progress result composition ────────────────────────────────────────
 
     /**

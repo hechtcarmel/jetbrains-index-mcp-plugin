@@ -369,7 +369,7 @@ Three tiers, selected by class-name suffix:
      are covered by set-equality instead), and **inputs only**.
    - `ResultShapeContractUnitTest` snapshots the other half of the client contract — the response
      side — into `src/test/resources/contract/result-shapes.txt`: the wire key set, JSON value
-     kind, nullability and optionality of all 61 serializable result models, every enum's wire
+     kind, nullability and optionality of all 63 serializable result models, every enum's wire
      values, and the `UsageTypes` literals. Result models use plain Kotlin property names as their
      wire keys, so renaming `UsageLocation.file` to `.path` is a source-compatible refactor that
      breaks every MCP client; this is what turns red.
@@ -477,7 +477,7 @@ Tools are organized by IDE availability.
 - `ide_reload_project` - Force-reload the project build model (Maven, Gradle, or both) after modifying build files. Equivalent to "Reload All Maven Projects" / "Reload Gradle Project" in the IDE. Async — returns immediately, resolution happens in background. (disabled by default)
 - `ide_import_modules` - Import external Maven project directories as modules into the current IntelliJ window for cross-project code intelligence and refactoring. Already imported module roots are skipped. Requires Maven plugin. (disabled by default)
 - `ide_open_workspace` - Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence, or provide an explicit list of Maven project paths via `modules`. `path` and `modules` are mutually exclusive; `modules` uses SHA-based caching. Creates a temporary aggregator POM with relative module paths. Requires Maven plugin. (disabled by default)
-- `ide_build_project` - Build project using IDE's build system (JPS, Gradle, Maven). Returns structured errors/warnings with file locations when available (null counts = no messages captured, not 0). Uses CompilationStatusListener for JPS builds and BuildProgressListener for Gradle/Maven builds. Supports workspace sub-project targeting via `project_path`. (disabled by default)
+- `ide_build_project` - Build project using IDE's build system (JPS, Gradle, Maven). Returns structured errors/warnings with file locations when available (null counts = no messages captured, not 0). Uses CompilationStatusListener for JPS builds and BuildProgressListener for Gradle/Maven builds. Supports workspace sub-project targeting via `project_path`. Each call blocks at most `waitSeconds` (default 45): a still-running call returns `{"status": "running", "buildId": ...}` and the agent polls with `buildId` while the build continues in the IDE. (disabled by default)
 - `ide_change_signature` - Change method signature (name, return type, visibility, parameters) with automatic caller updates using IntelliJ's Change Signature refactoring. Java only. (disabled by default)
 - `ide_create_file` - Create a new source file with content, immediately indexed by IntelliJ. Created through IntelliJ's VFS, instantly available for all IDE tools without needing `ide_sync_files`. Use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. File must not already exist. (disabled by default)
 - `ide_replace_text_in_file` - Find and replace text in a file using IntelliJ's Document API. Plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to index, PSI, and all other IDE tools without needing `ide_sync_files`. (disabled by default)

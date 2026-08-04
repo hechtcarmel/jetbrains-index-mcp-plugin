@@ -25,7 +25,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Disabled |
-| `ide_build_project` | Build project with structured errors | Disabled |
+| `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Disabled |
 | `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
@@ -910,6 +910,8 @@ Workspace opened with 3 Maven projects from /Users/dev/monorepo. IntelliJ is ind
 
 Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 
+**Long-running builds:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the build is still executing when the wait budget ends, the call returns `{"status": "running", "buildId": "..."}` while the build continues inside the IDE — call the tool again with that `buildId` to keep waiting.
+
 **Use when:**
 - Checking for compilation errors after code changes
 - Verifying that refactoring didn't break anything
@@ -921,7 +923,9 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 |-----------|------|----------|-------------|
 | `rebuild` | boolean | No | Full rebuild instead of incremental build (default: false) |
 | `includeRawOutput` | boolean | No | Include raw build output log (default: false) |
-| `timeoutSeconds` | integer | No | Timeout in seconds. No timeout if omitted |
+| `timeoutSeconds` | integer | No | Max seconds the whole build may take before it is reported timed out, enforced across polls. No limit if omitted. Ignored with `buildId` |
+| `buildId` | string | No | `buildId` from a previous `{"status": "running"}` response — attaches to that build and keeps waiting instead of starting a new one |
+| `waitSeconds` | integer | No | Max seconds this call may block before returning results or a `running` status (default: 45, max: 55). Keep below the MCP client's request timeout |
 
 **Example Request:**
 

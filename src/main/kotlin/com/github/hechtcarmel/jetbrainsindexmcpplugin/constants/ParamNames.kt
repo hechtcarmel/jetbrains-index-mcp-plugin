@@ -88,6 +88,7 @@ object ParamNames {
     const val REBUILD = "rebuild"
     const val INCLUDE_RAW_OUTPUT = "includeRawOutput"
     const val TIMEOUT_SECONDS = "timeoutSeconds"
+    const val BUILD_ID = "buildId"
 
     // Test parameters
     const val TARGET = "target"

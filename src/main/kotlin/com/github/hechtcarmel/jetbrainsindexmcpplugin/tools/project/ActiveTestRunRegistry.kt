@@ -2,7 +2,6 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
-import com.intellij.execution.testframework.sm.runner.ui.TestResultsViewer
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -46,7 +45,12 @@ class ActiveTestRunRegistry(private val scope: CoroutineScope) : Disposable {
         val handler: ProcessHandler,
         val exitCode: CompletableDeferred<Int>,
         val testRoot: CompletableDeferred<SMTestProxy.SMRootTestProxy?>,
-        val resultsViewer: TestResultsViewer?,
+        /**
+         * Whether an SM results viewer was attached at start — a boolean rather than the viewer
+         * itself so a retained entry never pins a (possibly disposed) Swing component for the
+         * whole retention window; [testRoot] carries the actual results.
+         */
+        val hasResultsViewer: Boolean,
         private val connection: MessageBusConnection?
     ) {
         /** Set by the watchdog before killing the process; wins over any exit code the kill produces. */
@@ -75,7 +79,8 @@ class ActiveTestRunRegistry(private val scope: CoroutineScope) : Disposable {
     private val runs = ConcurrentHashMap<String, ActiveTestRun>()
 
     fun register(run: ActiveTestRun): ActiveTestRun {
-        runs[run.id] = run
+        // Watchdog is armed before the entry becomes visible so cleanup() can never observe a
+        // registered run with a null watchdog job.
         run.watchdog = scope.launch {
             val budgetLeft = (run.startedAtMs + run.timeoutSeconds * 1000L - System.currentTimeMillis())
                 .coerceAtLeast(0)
@@ -87,6 +92,7 @@ class ActiveTestRunRegistry(private val scope: CoroutineScope) : Disposable {
             delay(RETENTION)
             remove(run.id)
         }
+        runs[run.id] = run
         return run
     }
 

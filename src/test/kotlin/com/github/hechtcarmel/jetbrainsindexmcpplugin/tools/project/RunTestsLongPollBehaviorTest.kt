@@ -50,7 +50,7 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
                 handler = handler,
                 exitCode = CompletableDeferred(),
                 testRoot = CompletableDeferred(),
-                resultsViewer = null,
+                hasResultsViewer = false,
                 connection = null
             )
         )
@@ -95,6 +95,8 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
 
         val again = callTool("runId" to "run-in-flight", "waitSeconds" to 0)
         assertToolSucceeded("the run must remain pollable until it completes", again)
+        val againPayload = json.decodeFromString(RunTestsInProgressResult.serializer(), toolText(again))
+        assertEquals("second poll must still report running, not fabricate final results", "running", againPayload.status)
     }
 
     fun testAttachDeliversResultsOnceRunCompletes() {
@@ -135,5 +137,32 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         assertTrue("watchdog kill must surface as timedOut", payload.timedOut)
         assertEquals("timed-out runs report exit code -1", -1, payload.exitCode)
         assertFalse(payload.success)
+    }
+
+    /**
+     * When the watchdog has already declared a run dead but the process never confirmed its
+     * death (destroyProcess ignored — zombie), a poll must NOT sit out its whole wait budget
+     * before noticing the verdict: the fixture's un-wired handler leaves exitCode forever
+     * incomplete, so waiting at all would block the full waitSeconds.
+     */
+    fun testPollAfterWatchdogVerdictReturnsWithoutWaitingOutTheBudget() {
+        val run = registerRun("run-zombie", timeoutSeconds = 1)
+
+        val flagDeadline = System.currentTimeMillis() + 30_000
+        while (!run.timedOutByWatchdog && System.currentTimeMillis() < flagDeadline) {
+            Thread.sleep(100)
+        }
+        assertTrue("precondition: watchdog fired", run.timedOutByWatchdog)
+
+        val start = System.currentTimeMillis()
+        val result = callTool("runId" to "run-zombie", "waitSeconds" to 30)
+        val elapsedMs = System.currentTimeMillis() - start
+
+        val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(result))
+        assertTrue("verdict already known — must report timedOut", payload.timedOut)
+        assertTrue(
+            "poll took ${elapsedMs}ms; it must return promptly instead of waiting out the 30s budget",
+            elapsedMs < 10_000
+        )
     }
 }

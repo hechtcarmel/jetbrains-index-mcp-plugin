@@ -520,14 +520,18 @@ Call this when files were created/modified outside the IDE and search tools miss
 ### ide_build_project (disabled by default)
 Build project using IDE's build system (JPS, Gradle, Maven).
 
+Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit. If the build is still executing when the wait budget ends, the call returns `{"status": "running", "buildId": "..."}` while the build continues in the IDE — call the tool again with that `buildId` to keep waiting.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | no | For workspace sub-projects |
 | `rebuild` | boolean | no | Full rebuild (default false = incremental) |
 | `includeRawOutput` | boolean | no | Include raw build log (default false) |
-| `timeoutSeconds` | integer | no | Build timeout (no timeout if omitted) |
+| `timeoutSeconds` | integer | no | Max seconds for the whole build before it is reported timed out, enforced across polls (no limit if omitted). Ignored with `buildId` |
+| `buildId` | string | no | `buildId` from a previous `{"status": "running"}` response — attaches to that build and keeps waiting |
+| `waitSeconds` | integer | no | Max seconds this call may block before returning results or a `running` status (default 45, max 55) |
 
-**Returns**: `{ success, aborted, errors?, warnings?, buildMessages: [{message, file, line, column, severity}], truncated, rawOutput?, durationMs }`
+**Returns**: `{ success, aborted, errors?, warnings?, buildMessages: [{message, file, line, column, severity}], truncated, rawOutput?, durationMs }`, or while still executing: `{ status: "running", buildId, elapsedSeconds, timeoutSeconds?, message }`
 Note: `errors`/`warnings` are `null` when no messages were captured (not 0).
 
 ### ide_list_tests (disabled by default)

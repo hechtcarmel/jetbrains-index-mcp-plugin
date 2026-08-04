@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.LongPoll
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
@@ -38,9 +39,7 @@ import com.intellij.util.messages.MessageBusConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
@@ -64,23 +63,14 @@ class RunTestsTool : AbstractMcpTool() {
         /** Grace period to let the IDE's test tree finalize after the process exits. Normally instant. */
         private val TEST_TREE_FINALIZE_TIMEOUT = 10.seconds
 
-        /**
-         * Per-call wait budget. MCP clients enforce their own request timeout (60s by default in
-         * Claude Code / the MCP TypeScript SDK) and the stateless Streamable HTTP transport cannot
-         * emit keep-alive progress notifications, so a call that blocks longer is killed
-         * client-side no matter what `timeoutSeconds` says — that is issue #277. Default + ceiling
-         * keep worst-case call time (wait + tree-finalize grace) under that client budget.
-         */
-        internal const val DEFAULT_WAIT_SECONDS = 45
-        internal const val MAX_WAIT_SECONDS = 55
-
-        private fun JsonObject.trimmedString(name: String): String? =
-            (this[name] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+        /** See [LongPoll] for why every call must return well under the MCP client's own timeout. */
+        internal const val DEFAULT_WAIT_SECONDS = LongPoll.DEFAULT_WAIT_SECONDS
+        internal const val MAX_WAIT_SECONDS = LongPoll.MAX_WAIT_SECONDS
 
         /** `target` starts a run, `runId` polls one already in flight — exactly one must be given. */
         internal fun resolveRequestMode(arguments: JsonObject): RequestMode {
-            val target = arguments.trimmedString(ParamNames.TARGET)
-            val runId = arguments.trimmedString(ParamNames.RUN_ID)
+            val target = LongPoll.optionalTrimmedString(arguments, ParamNames.TARGET)
+            val runId = LongPoll.optionalTrimmedString(arguments, ParamNames.RUN_ID)
             return when {
                 target != null && runId != null -> RequestMode.Invalid(
                     "Provide either 'target' (to start a test run) or 'runId' (to poll a running one), not both."
@@ -93,9 +83,24 @@ class RunTestsTool : AbstractMcpTool() {
             }
         }
 
-        internal fun resolveWaitSeconds(arguments: JsonObject): Int =
-            (arguments[ParamNames.WAIT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_WAIT_SECONDS)
-                .coerceIn(0, MAX_WAIT_SECONDS)
+        internal fun resolveWaitSeconds(arguments: JsonObject): Int = LongPoll.resolveWaitSeconds(arguments)
+
+        /**
+         * Floor for [finalizeWaitMillis]: collecting the test tree after a late exit still gets a
+         * short grace even when the wait budget is spent, because the run is removed right after
+         * collection — returning empty-handed would drop the results permanently.
+         */
+        private const val MIN_FINALIZE_WAIT_MS = 3_000L
+
+        /**
+         * The tree-finalize grace must fit in what remains of the call's wait budget, or a process
+         * exit landing near the end of the window stacks wait + finalize past the MCP client's
+         * request timeout — the client aborts, and the just-collected-and-removed results are lost.
+         */
+        internal fun finalizeWaitMillis(waitSeconds: Int, callStartMs: Long, nowMs: Long): Long {
+            val budgetLeftMs = waitSeconds * 1000L - (nowMs - callStartMs)
+            return minOf(TEST_TREE_FINALIZE_TIMEOUT.inWholeMilliseconds, maxOf(MIN_FINALIZE_WAIT_MS, budgetLeftMs))
+        }
 
         internal fun buildInProgressResult(
             runId: String,
@@ -110,7 +115,8 @@ class RunTestsTool : AbstractMcpTool() {
             timeoutSeconds = timeoutSeconds,
             message = "Test run '$configName' is still executing (${elapsedSeconds}s elapsed, " +
                     "${timeoutSeconds}s limit). The run continues in the IDE. Call ide_run_tests again " +
-                    "with {\"runId\": \"$runId\"} to keep waiting for its results."
+                    "with {\"runId\": \"$runId\"} to keep waiting for its results (include the same " +
+                    "project_path if you provided one)."
         )
 
         /**
@@ -220,6 +226,10 @@ class RunTestsTool : AbstractMcpTool() {
         )
         .build()
 
+    /** Attach polls (`runId`) read no PSI until final collection — skip the per-call sync tax. */
+    override fun needsPsiSync(arguments: JsonObject): Boolean =
+        LongPoll.optionalTrimmedString(arguments, ParamNames.RUN_ID) == null
+
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val callStartMs = System.currentTimeMillis()
         val waitSeconds = resolveWaitSeconds(arguments)
@@ -295,7 +305,6 @@ class RunTestsTool : AbstractMcpTool() {
         val connection = project.messageBus.connect()
         connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
 
-        val startedAtMs = System.currentTimeMillis()
         val handler = try {
             edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
             withTimeoutOrNull(PROCESS_START_TIMEOUT) { processHandlerDeferred.await() }
@@ -312,27 +321,38 @@ class RunTestsTool : AbstractMcpTool() {
             )
         }
 
-        val runContentDescriptor = RunContentManager.getInstance(project).allDescriptors.find { it.processHandler === handler }
-        val resultsViewer = extractTestRunnerResultsViewer(runContentDescriptor?.executionConsole)
-        resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
-            override fun onTestingFinished(sender: TestResultsViewer) {
-                testCompletionDeferred.complete(sender.testsRootNode.root)
-            }
-        })
+        // From here to registration nothing may leak the connection: an exception (e.g. the
+        // project closing mid-call) would otherwise leave an untracked run with no watchdog.
+        val run = try {
+            // The run's timeoutSeconds budget starts when the process starts, not when the tool
+            // was called — config resolution and process spawn-up must not be billed to the run.
+            val startedAtMs = System.currentTimeMillis()
 
-        val run = ActiveTestRunRegistry.getInstance(project).register(
-            ActiveTestRunRegistry.ActiveTestRun(
-                id = UUID.randomUUID().toString(),
-                configName = configName,
-                startedAtMs = startedAtMs,
-                timeoutSeconds = timeoutSeconds,
-                handler = handler,
-                exitCode = exitCodeDeferred,
-                testRoot = testCompletionDeferred,
-                resultsViewer = resultsViewer,
-                connection = connection
+            val runContentDescriptor = RunContentManager.getInstance(project).allDescriptors.find { it.processHandler === handler }
+            val resultsViewer = extractTestRunnerResultsViewer(runContentDescriptor?.executionConsole)
+            resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
+                override fun onTestingFinished(sender: TestResultsViewer) {
+                    testCompletionDeferred.complete(sender.testsRootNode.root)
+                }
+            })
+
+            ActiveTestRunRegistry.getInstance(project).register(
+                ActiveTestRunRegistry.ActiveTestRun(
+                    id = UUID.randomUUID().toString(),
+                    configName = configName,
+                    startedAtMs = startedAtMs,
+                    timeoutSeconds = timeoutSeconds,
+                    handler = handler,
+                    exitCode = exitCodeDeferred,
+                    testRoot = testCompletionDeferred,
+                    hasResultsViewer = resultsViewer != null,
+                    connection = connection
+                )
             )
-        )
+        } catch (t: Throwable) {
+            connection.disconnect()
+            throw t
+        }
 
         return awaitRunResult(project, run, waitSeconds, callStartMs)
     }
@@ -351,6 +371,8 @@ class RunTestsTool : AbstractMcpTool() {
         val waitLeftMs = waitSeconds * 1000L - (System.currentTimeMillis() - callStartMs)
         val exitCode: Int? = when {
             run.exitCode.isCompleted -> run.exitCode.await()
+            // Verdict already in: don't wait out the budget for a process that ignored its kill.
+            run.timedOutByWatchdog -> null
             waitLeftMs > 0 -> withTimeoutOrNull(waitLeftMs.milliseconds) { run.exitCode.await() }
             else -> null
         }
@@ -364,8 +386,11 @@ class RunTestsTool : AbstractMcpTool() {
 
         // Terminal: the process exited, or the watchdog killed it at timeoutSeconds (even if the
         // process has not confirmed its death yet).
-        val smRoot = run.resultsViewer?.let {
-            withTimeoutOrNull(TEST_TREE_FINALIZE_TIMEOUT) { run.testRoot.await() }
+        val smRoot = if (run.hasResultsViewer) {
+            val finalizeMs = finalizeWaitMillis(waitSeconds, callStartMs, System.currentTimeMillis())
+            withTimeoutOrNull(finalizeMs.milliseconds) { run.testRoot.await() }
+        } else {
+            null
         }
         if (smRoot == null) {
             LOG.debug("No SM test tree for '${run.configName}'; returning empty structured results.")

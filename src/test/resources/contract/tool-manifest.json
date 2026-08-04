@@ -7,18 +7,30 @@ description:
   Build the project using the IDE's build system (supports JPS, Gradle, Maven).
   Use after making code changes to check for compilation errors.
   
+  Long-running builds: each call blocks at most waitSeconds (default 45) so your MCP
+  client's request timeout is never hit. If the build is still executing when the wait budget
+  ends, the call returns {"status": "running", "buildId": "..."} while the build continues
+  inside the IDE — call this tool again with that buildId to keep waiting.
+  
   Returns: success status, error/warning counts, and structured build messages with file locations.
   Note: errors/warnings are null when no compiler messages were captured (e.g. no-op incremental build where nothing was recompiled, or build system without compiler message integration). null does NOT mean 0.
   
   When project_path points to a workspace sub-project, that module and its dependencies are built.
   
-  Parameters: project_path (optional), rebuild (optional, default false), includeRawOutput (optional, default false), timeoutSeconds (optional, must be positive).
+  Parameters: project_path (optional), rebuild (optional, default false), includeRawOutput (optional, default false),
+  timeoutSeconds (optional, max seconds for the whole build before it is reported timed out; no limit if omitted),
+  waitSeconds (optional, default 45, max 55), buildId (optional, polls a running build; excludes all other parameters).
   
-  Example: {} or {"rebuild": true} or {"includeRawOutput": true, "timeoutSeconds": 120}
+  Example: {} or {"rebuild": true} — then if a "running" status comes back: {"buildId": "<buildId from that response>"}
 schema:
   {
     "properties":
     {
+      "buildId":
+      {
+        "description": "buildId from a previous {\"status\": \"running\"} response: attaches to that build and keeps waiting instead of starting a new one.",
+        "type": "string"
+      },
       "includeRawOutput":
       {
         "description": "Include raw build output log in response. Default: false.",
@@ -36,7 +48,12 @@ schema:
       },
       "timeoutSeconds":
       {
-        "description": "Timeout in seconds. Must be a positive integer. No timeout if omitted.",
+        "description": "Maximum seconds the whole build may take before it is reported timed out (enforced across polls). Must be a positive integer. No limit if omitted. Ignored when buildId is given.",
+        "type": "integer"
+      },
+      "waitSeconds":
+      {
+        "description": "Maximum seconds this call may block before returning results or a \"running\" status. Default: 45, max: 55. Keep below your MCP client's request timeout.",
         "type": "integer"
       }
     },

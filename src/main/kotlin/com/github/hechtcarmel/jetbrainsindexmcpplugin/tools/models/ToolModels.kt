@@ -426,6 +426,20 @@ data class RunTestsInProgressResult(
     val message: String
 )
 
+/**
+ * Returned by ide_build_project instead of blocking past the MCP client's own request timeout
+ * (same root cause as issue #277): the build keeps executing in the IDE and the agent re-calls
+ * with [buildId]. [timeoutSeconds] is null for unbounded builds (the tool's historical default).
+ */
+@Serializable
+data class BuildInProgressResult(
+    val status: String,
+    val buildId: String,
+    val elapsedSeconds: Long,
+    val timeoutSeconds: Int?,
+    val message: String
+)
+
 // ide_search_text output
 @Serializable
 data class SearchTextResult(

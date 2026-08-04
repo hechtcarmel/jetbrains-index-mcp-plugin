@@ -243,7 +243,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         }
 
         val settings = McpSettings.getInstance()
-        if (requiresPsiSync && settings.syncExternalChanges) {
+        if (needsPsiSync(arguments) && settings.syncExternalChanges) {
             ensurePsiUpToDate(project)
         }
         return try {
@@ -271,6 +271,16 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
             }
         }
     }
+
+    /**
+     * Per-call refinement of [requiresPsiSync]. Long-poll attach calls (`runId`/`buildId`) touch
+     * no PSI until final collection, so they skip the VFS refresh + commit that a fresh call
+     * pays when "Sync external file changes" is enabled — a poll every ~45s on a large repo
+     * would otherwise spend seconds per poll on refreshes that cannot change the outcome.
+     *
+     * Internal rather than protected so tests can pin the per-call decision directly.
+     */
+    internal open fun needsPsiSync(arguments: JsonObject): Boolean = requiresPsiSync
 
     /**
      * Implement this method with the tool's specific execution logic.
