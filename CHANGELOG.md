@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-08-05
+
 ### Fixed
 
 - **`ide_run_tests` no longer dies on long test runs** ([#277](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/277)). MCP clients enforce their own request timeout (60s by default in Claude Code), so a call that blocked until a long run finished was killed client-side no matter what `timeoutSeconds` said — and the stateless Streamable HTTP transport cannot send keep-alive progress notifications. Each call now blocks at most `waitSeconds` (new parameter, default 45, max 55) and, if the tests are still executing, returns `{"status": "running", "runId": ...}` while the run continues inside the IDE; calling the tool again with that `runId` (new parameter, mutually exclusive with `target`) keeps waiting. `timeoutSeconds` keeps its meaning — the maximum duration of the whole run — and is now enforced across polls by a per-project watchdog that kills the process even if the agent never polls again. Runs finishing within the wait budget return the exact same result shape as before.
@@ -1101,7 +1103,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.2...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.2...v5.3.0
 [5.2.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.1...v5.2.2
 [5.2.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.1.0...v5.2.0
