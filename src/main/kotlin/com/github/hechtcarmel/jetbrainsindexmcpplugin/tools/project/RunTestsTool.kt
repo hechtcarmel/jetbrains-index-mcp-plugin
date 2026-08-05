@@ -368,14 +368,7 @@ class RunTestsTool : AbstractMcpTool() {
         waitSeconds: Int,
         callStartMs: Long
     ): CallToolResult {
-        val waitLeftMs = waitSeconds * 1000L - (System.currentTimeMillis() - callStartMs)
-        val exitCode: Int? = when {
-            run.exitCode.isCompleted -> run.exitCode.await()
-            // Verdict already in: don't wait out the budget for a process that ignored its kill.
-            run.timedOutByWatchdog -> null
-            waitLeftMs > 0 -> withTimeoutOrNull(waitLeftMs.milliseconds) { run.exitCode.await() }
-            else -> null
-        }
+        val exitCode: Int? = run.awaitWithinBudget(run.exitCode, waitSeconds, callStartMs)
 
         if (exitCode == null && !run.timedOutByWatchdog) {
             val elapsedSeconds = (System.currentTimeMillis() - run.startedAtMs) / 1000

@@ -260,6 +260,33 @@ synchronized with external file changes. The setting is disabled by default.
   ```kotlin
   override val requiresPsiSync: Boolean = false
   ```
+- For per-call opt-out (e.g. long-poll attach calls that touch no PSI), override
+  `needsPsiSync(arguments)` instead.
+
+### Long-Running Tools (Long-Poll Pattern)
+
+MCP clients enforce their own request timeout (60s by default in Claude Code / the MCP
+TypeScript SDK), and the stateless Streamable HTTP transport cannot send keep-alive progress
+notifications (kotlin-sdk 0.10.0 drops them in JSON response mode). **No tool call may ever
+block past ~45–55s** — a longer operation must long-poll (issue #277).
+
+Shared infrastructure (used by `ide_run_tests` and `ide_build_project`):
+- `tools/LongPoll.kt` — the per-call wait-budget policy: `waitSeconds` parameter, default 45,
+  ceiling 55.
+- `tools/project/LongPollRegistry.kt` — `LongPollOperation` + `LongPollRegistry`: watchdog that
+  enforces the operation deadline even when nobody polls, retention-based eviction (30 min),
+  exactly-once cleanup, and `awaitWithinBudget` (completed result beats a stale timeout verdict,
+  which beats waiting).
+
+A new long-running tool plugs in with three pieces:
+1. An operation class extending `LongPollOperation` — payload plus `deadlineMs` / `onDeadline`
+   (kill, or nothing) / `onCleanup` (disconnect, dispose) hooks.
+2. A project-level `@Service` registry extending `LongPollRegistry<YourOp>` (a few lines; see
+   `ActiveTestRunRegistry` / `ActiveBuildRegistry`).
+3. A poll parameter (`runId` / `buildId` / …): the start path registers the operation and both
+   paths call `awaitWithinBudget`, returning either the tool's normal result (then
+   `registry.remove(id)`) or an in-progress model (`status: "running"` + the id + an actionable
+   poll instruction). Override `needsPsiSync(arguments)` to skip PSI sync on attach calls.
 
 ### Code Style
 - Follow Kotlin coding conventions

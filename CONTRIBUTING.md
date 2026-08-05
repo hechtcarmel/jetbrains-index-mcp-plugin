@@ -98,6 +98,10 @@ Every item is required. CI will catch missing registrations and test count misma
 - [ ] Extend `AbstractMcpTool`, implement `doExecute()` (never `execute()`)
 - [ ] Set `override val requiresPsiSync = false` unless the tool reads PSI indexes
 - [ ] Set `override val participatesInLifecycle = false` for infrastructure / observer tools
+- [ ] If the tool can block longer than ~45s, it MUST use the long-poll pattern
+      (`LongPollRegistry` + `waitSeconds` + a poll id) — MCP clients kill any call at their own
+      request timeout (60s in Claude Code) and the transport cannot stream progress. See
+      "Long-Running Tools" in CLAUDE.md and `ide_run_tests`/`ide_build_project` for the shape.
   (tools that manage lifecycle state, or bulk-operate across all projects)
 - [ ] Use `SchemaBuilder` for `inputSchema` — never construct `JsonObject` manually
 - [ ] Add `project_path` via `.projectPath()` on the builder for any multi-project tool

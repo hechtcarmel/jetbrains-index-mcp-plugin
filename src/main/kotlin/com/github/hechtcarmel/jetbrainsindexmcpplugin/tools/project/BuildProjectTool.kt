@@ -27,13 +27,11 @@ import com.intellij.task.ProjectTaskListener
 import com.intellij.task.ProjectTaskManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
-import kotlin.time.Duration.Companion.milliseconds
 
 class BuildProjectTool : AbstractMcpTool() {
 
@@ -206,15 +204,8 @@ class BuildProjectTool : AbstractMcpTool() {
         waitSeconds: Int,
         callStartMs: Long
     ): CallToolResult {
-        val waitLeftMs = waitSeconds * 1000L - (System.currentTimeMillis() - callStartMs)
         val result: ProjectTaskManager.Result? = try {
-            when {
-                build.result.isCompleted -> build.result.await()
-                // Verdict already in: don't wait out the budget for a build declared timed out.
-                build.timedOutByWatchdog -> null
-                waitLeftMs > 0 -> withTimeoutOrNull(waitLeftMs.milliseconds) { build.result.await() }
-                else -> null
-            }
+            build.awaitWithinBudget(build.result, waitSeconds, callStartMs)
         } catch (e: CancellationException) {
             // The MCP call was aborted (client hung up) — the build must stay pollable.
             throw e
