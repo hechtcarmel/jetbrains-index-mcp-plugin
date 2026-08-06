@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_find_references` now finds usages of Java record component accessors.** Symbol-mode lookup (`language`+`symbol`) for a record member (e.g. `com.example.Point#x`) resolved to the backing field instead of the record component, causing `ReferencesSearch` to return 0 results. The resolver now prefers the `PsiRecordComponent` over the synthetic field for record classes.
+
 ## [5.3.0] - 2026-08-05
 
 ### Fixed

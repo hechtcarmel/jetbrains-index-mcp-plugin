@@ -3,10 +3,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.diagnostic.logger
@@ -1710,6 +1710,12 @@ class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolRef
         classFqn: String,
         memberName: String
     ): Result<PsiNamedElement> {
+        // For records, first go over the component over the backing field (ReferencesSearch finds 0 on fields).
+        if (psiClass.isRecord) {
+            val component = psiClass.recordComponents.firstOrNull { it.name == memberName }
+            if (component != null) return Result.success(component)
+        }
+
         // Try field/enum constant first (true = search supertypes)
         val field = psiClass.findFieldByName(memberName, true)
         if (field != null && isInheritedBy(field, psiClass)) {
