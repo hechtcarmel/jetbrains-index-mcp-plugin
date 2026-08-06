@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.3.1] - 2026-08-06
+
 ### Fixed
 
 - **`ide_find_references` now finds usages of Java record component accessors.** Symbol-mode lookup (`language`+`symbol`) for a record member (e.g. `com.example.Point#x`) resolved to the backing field instead of the record component, causing `ReferencesSearch` to return 0 results. The resolver now prefers the `PsiRecordComponent` over the synthetic field for record classes.
@@ -1107,7 +1109,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.1...HEAD
+[5.3.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.0...v5.3.1
 [5.3.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.2...v5.3.0
 [5.2.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.1...v5.2.2
 [5.2.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.0...v5.2.1
