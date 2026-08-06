@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **EDT Freeze Watchdog** — detects frozen IDE UI via jstack thread analysis and auto-restarts. Installable from Settings → Index MCP Server → EDT Freeze Watchdog. Runs externally via cron (macOS/Linux) or Task Scheduler (Windows), so it survives IDE crashes. Uses the IDE's bundled JBR for jstack — no external dependencies.
+
 ## [5.2.2] - 2026-08-04
 
 ### Fixed

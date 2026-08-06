@@ -64,6 +64,10 @@ class McpSettingsConfigurable : Configurable {
     private var minimumOpenProjectsSpinner: JSpinner? = null
     private var managedProjectsContent: JPanel? = null
 
+    // Watchdog UI fields
+    private var watchdogButton: javax.swing.JButton? = null
+    private var watchdogStatusLabel: JBLabel? = null
+
     private var lastHostValidation: ValidationInfo? = null
     private var hostValidationErrorLabel: JBLabel? = null
     private var hostValidationIcon: AsyncProcessIcon? = null
@@ -153,6 +157,9 @@ class McpSettingsConfigurable : Configurable {
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("lifecycle.section.title")), 5)
             .addComponent(lifecyclePanel, 1)
+            .addSeparator(10)
+            .addComponent(JBLabel(McpBundle.message("watchdog.section.title")), 5)
+            .addComponent(createWatchdogPanel(), 1)
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
             .addComponent(availableToolsPanel, 5)
@@ -311,6 +318,57 @@ class McpSettingsConfigurable : Configurable {
 
         content.revalidate()
         content.repaint()
+    }
+
+    private fun createWatchdogPanel(): JComponent {
+        val installed = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.WatchdogInstaller.isInstalled()
+
+        watchdogStatusLabel = JBLabel(
+            if (installed) McpBundle.message("watchdog.status.installed")
+            else McpBundle.message("watchdog.status.notInstalled")
+        )
+
+        watchdogButton = javax.swing.JButton(
+            if (installed) McpBundle.message("watchdog.uninstall.label")
+            else McpBundle.message("watchdog.install.label")
+        ).apply {
+            addActionListener {
+                val installer = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.WatchdogInstaller
+                val result = if (installer.isInstalled()) installer.uninstall() else installer.install()
+
+                val nowInstalled = installer.isInstalled()
+                watchdogStatusLabel?.text = if (nowInstalled)
+                    McpBundle.message("watchdog.status.installed")
+                else
+                    McpBundle.message("watchdog.status.notInstalled")
+                text = if (nowInstalled)
+                    McpBundle.message("watchdog.uninstall.label")
+                else
+                    McpBundle.message("watchdog.install.label")
+
+                NotificationGroupManager.getInstance()
+                    .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                    .createNotification(
+                        McpConstants.PLUGIN_NAME,
+                        result.message,
+                        if (result.success) NotificationType.INFORMATION else NotificationType.ERROR
+                    )
+                    .notify(null)
+            }
+        }
+
+        val descLabel = JBLabel(McpBundle.message("watchdog.description")).apply {
+            foreground = JBColor.GRAY
+        }
+
+        return FormBuilder.createFormBuilder()
+            .addComponent(descLabel)
+            .addComponent(JPanel(FlowLayout(FlowLayout.LEFT, 0, 5)).apply {
+                add(watchdogButton)
+                add(javax.swing.Box.createHorizontalStrut(10))
+                add(watchdogStatusLabel)
+            })
+            .panel
     }
 
     private fun createToolsPanel(): JComponent {
@@ -634,6 +692,8 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogToFileCheckBox = null
         minimumOpenProjectsSpinner = null
         managedProjectsContent = null
+        watchdogButton = null
+        watchdogStatusLabel = null
         uiDisposable?.let { Disposer.dispose(it) }
         uiDisposable = null
     }
