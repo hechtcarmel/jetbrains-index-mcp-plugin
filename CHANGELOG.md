@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-08-07
+
 ### Added
 
 - **EDT heartbeat fail-fast gate** ([#300](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/300)) — when the IDE's UI thread (EDT) is frozen, tool calls now return an immediate error instead of hanging until the client timeout. A background heartbeat monitors EDT responsiveness; if it has been unresponsive for 90+ seconds, `McpToolDispatcher` short-circuits with an actionable message telling the agent to restart the IDE.
@@ -1113,7 +1115,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.4.0...HEAD
+[5.4.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.1...v5.4.0
 [5.3.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.0...v5.3.1
 [5.3.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.2...v5.3.0
 [5.2.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.1...v5.2.2
