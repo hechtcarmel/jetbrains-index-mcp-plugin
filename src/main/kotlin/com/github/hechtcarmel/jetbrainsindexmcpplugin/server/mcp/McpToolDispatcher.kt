@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyEx
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandStatus
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.EdtHeartbeatService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
@@ -47,6 +48,7 @@ import kotlinx.serialization.json.contentOrNull
  */
 class McpToolDispatcher @JvmOverloads constructor(
     private val toolRegistry: ToolRegistry,
+    private val edtUnresponsiveDurationMs: () -> Long? = Companion::defaultEdtCheck,
     private val recordHistory: (Project, CommandEntry) -> Unit = { project, entry ->
         CommandHistoryService.getInstance(project).recordCommand(entry)
     },
@@ -63,6 +65,12 @@ class McpToolDispatcher @JvmOverloads constructor(
          * 100 KB+, and every entry would otherwise sit in the per-project deque.
          */
         const val HISTORY_RESULT_LIMIT = 4096
+
+        private fun defaultEdtCheck(): Long? {
+            val app = ApplicationManager.getApplication() ?: return null
+            if (app.isUnitTestMode) return null
+            return EdtHeartbeatService.getInstance().edtUnresponsiveDurationMs()
+        }
     }
 
     /**
@@ -80,6 +88,14 @@ class McpToolDispatcher @JvmOverloads constructor(
         if (!McpSettings.getInstance().isToolEnabled(toolName)) {
             return CallToolResult.error(
                 "Tool '$toolName' is disabled. Enable it in Settings → Index MCP Server → Available Tools."
+            )
+        }
+
+        val unresponsiveMs = edtUnresponsiveDurationMs()
+        if (unresponsiveMs != null) {
+            return CallToolResult.error(
+                "IDE UI thread has been unresponsive for ${unresponsiveMs / 1000}s — " +
+                    "tool calls requiring the IDE are unavailable. Consider restarting the IDE."
             )
         }
 

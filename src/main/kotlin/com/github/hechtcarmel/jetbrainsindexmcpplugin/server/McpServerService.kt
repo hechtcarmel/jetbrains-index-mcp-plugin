@@ -102,6 +102,7 @@ class McpServerService(
         isInitialized = true
         val startServer = shouldStartServer()
         if (startServer) {
+            EdtHeartbeatService.getInstance()
             val settings = McpSettings.getInstance()
             val port = settings.serverPort
             val host = settings.serverHost

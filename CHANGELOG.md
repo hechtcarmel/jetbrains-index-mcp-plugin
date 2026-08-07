@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **EDT heartbeat fail-fast gate** ([#300](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/300)) — when the IDE's UI thread (EDT) is frozen, tool calls now return an immediate error instead of hanging until the client timeout. A background heartbeat monitors EDT responsiveness; if it has been unresponsive for 90+ seconds, `McpToolDispatcher` short-circuits with an actionable message telling the agent to restart the IDE.
+
 ## [5.3.1] - 2026-08-06
 
 ### Fixed
