@@ -145,6 +145,7 @@ data class DiagnosticsResult(
     val analysisFresh: Boolean? = null,
     val analysisTimedOut: Boolean? = null,
     val analysisMessage: String? = null,
+    val analysisMode: String? = null,
     val buildErrors: List<BuildMessage>? = null,
     val buildErrorCount: Int? = null,
     val buildWarningCount: Int? = null,
@@ -153,6 +154,48 @@ data class DiagnosticsResult(
     val testResults: List<TestResultInfo>? = null,
     val testSummary: TestSummary? = null,
     val testResultsTruncated: Boolean? = null
+)
+
+// ide_project_diagnostics output
+@Serializable
+data class FileCoverageInfo(
+    val file: String,
+    val state: String,
+    val reason: String? = null
+)
+
+@Serializable
+data class ProjectDiagnosticsResult(
+    val complete: Boolean,
+    val status: String,
+    val filesConsidered: Int,
+    val filesAnalyzed: Int,
+    val filesAnalyzedOpenDaemon: Int,
+    val filesAnalyzedClosedBatch: Int,
+    val filesTimedOut: Int,
+    val filesFailed: Int,
+    val filesSkipped: Int,
+    val filesNotAnalyzed: Int,
+    val incompleteFiles: List<FileCoverageInfo>,
+    val incompleteFilesTruncated: Boolean,
+    val problems: List<ProblemInfo>,
+    val problemCount: Int,
+    val errorCount: Int,
+    val warningCount: Int,
+    val problemsTruncated: Boolean,
+    val durationMs: Long,
+    val analysisMessage: String
+)
+
+@Serializable
+data class ProjectDiagnosticsInProgressResult(
+    val status: String,
+    val analysisId: String,
+    val elapsedSeconds: Long,
+    val filesProcessed: Int,
+    val filesConsidered: Int,
+    val timeoutSeconds: Int,
+    val message: String
 )
 
 @Serializable

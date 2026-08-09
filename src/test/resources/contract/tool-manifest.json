@@ -1,6 +1,6 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 48
+# tools: 49
 
 ## ide_build_project
 description:
@@ -1539,6 +1539,95 @@ schema:
     [
       "file"
     ],
+    "type": "object"
+  }
+
+## ide_project_diagnostics
+description:
+  Analyze many files — up to the whole project, including files not open in any editor — for code
+  problems (errors and warnings), with fail-closed coverage metadata.
+  
+  Coverage contract: every file in scope gets exactly one state — analyzed, timed_out, failed,
+  skipped (not eligible for analysis, with reason), or not_analyzed (maxFiles/timeoutSeconds cut it
+  off). The top-level "complete" flag is true only when every considered file was analyzed. An empty
+  problems list is a clean signal ONLY when complete=true; otherwise inspect incompleteFiles and the
+  per-state counts. filesAnalyzedOpenDaemon/filesAnalyzedClosedBatch report which analysis mode
+  covered each file; closed-file batch analysis does not include weak warnings or editor-only
+  annotators.
+  
+  Long-running analysis: each call blocks at most waitSeconds (default 45). If analysis is still
+  running when the wait budget ends, the call returns {"status": "running", "analysisId": "..."} while
+  analysis continues inside the IDE — call this tool again with that analysisId to keep waiting.
+  Only one analysis runs per project at a time.
+  
+  Returns: complete flag, status (completed | timed_out), per-state file counts, incompleteFiles
+  (every non-analyzed file with state and reason, capped at 100 entries), problems with severity
+  and location, problemCount, errorCount, warningCount, durationMs.
+  
+  Parameters: project_path (optional), paths (optional array of files/directories relative to project
+  root; omit to analyze all content roots), severity (optional, default 'all'), maxFiles (optional,
+  default 1000, max 10000), maxProblems (optional, default 1000, max 5000), timeoutSeconds (optional, default 600, max 3600),
+  waitSeconds (optional, default 45, max 55), analysisId (optional, polls a running analysis; excludes all
+  other parameters).
+  
+  Example: {"paths": ["src/main"]} or {} for the whole project — then if a "running" status comes
+  back: {"analysisId": "<analysisId from that response>"}
+schema:
+  {
+    "properties":
+    {
+      "analysisId":
+      {
+        "description": "analysisId from a previous {\"status\": \"running\"} response: attaches to that analysis and keeps waiting instead of starting a new one.",
+        "type": "string"
+      },
+      "maxFiles":
+      {
+        "description": "Maximum files to analyze. Files beyond the limit are reported as not_analyzed and complete becomes false. Default: 1000, max: 10000.",
+        "type": "integer"
+      },
+      "maxProblems":
+      {
+        "description": "Maximum problems to return across all files (problemCount keeps counting beyond it). Default: 1000, max: 5000.",
+        "type": "integer"
+      },
+      "paths":
+      {
+        "description": "Files or directories to analyze, relative to the project root. Omit to analyze every file in the project's content roots.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "severity":
+      {
+        "description": "Filter problems by severity. Default: all.",
+        "enum":
+        [
+          "all",
+          "errors",
+          "warnings"
+        ],
+        "type": "string"
+      },
+      "timeoutSeconds":
+      {
+        "description": "Maximum seconds the whole analysis may take; remaining files are reported as not_analyzed when it elapses. Default: 600, max: 3600. Ignored when analysisId is given.",
+        "type": "integer"
+      },
+      "waitSeconds":
+      {
+        "description": "Maximum seconds this call may block before returning results or a \"running\" status. Default: 45, max: 55. Keep below your MCP client's request timeout.",
+        "type": "integer"
+      }
+    },
     "type": "object"
   }
 

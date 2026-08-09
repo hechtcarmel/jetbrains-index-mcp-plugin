@@ -17,6 +17,7 @@ object ToolNames {
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"
+    const val PROJECT_DIAGNOSTICS = "ide_project_diagnostics"
 
     // Project tools
     const val INDEX_STATUS = "ide_index_status"
@@ -107,6 +108,7 @@ object ToolNames {
         OPEN_PROJECT,
         OPEN_WORKSPACE,
         OPTIMIZE_IMPORTS,
+        PROJECT_DIAGNOSTICS,
         PROJECT_STATUS,
         READ_FILE,
         REFACTOR_RENAME,

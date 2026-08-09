@@ -546,6 +546,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             ToolNames.SEARCH_TEXT,
             // Intelligence tools
             ToolNames.DIAGNOSTICS,
+            ToolNames.PROJECT_DIAGNOSTICS,
             // Project tools
             ToolNames.BUILD_PROJECT,
             ToolNames.CREATE_MODULE,

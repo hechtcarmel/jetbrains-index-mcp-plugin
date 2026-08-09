@@ -21,7 +21,7 @@ import java.io.File
  * fail here rather than silently shipping.
  *
  * Two limits worth knowing before trusting it:
- * - It covers the tools that register headlessly — currently 48 of the 51 in [ToolNames.ALL].
+ * - It covers the tools that register headlessly — currently 49 of the 52 in [ToolNames.ALL].
  *   The three in [NOT_REGISTRABLE_HEADLESS] are guarded by set-equality in
  *   [testEveryDeclaredToolNameIsRegistered] instead, so they cannot vanish unnoticed, but their
  *   schemas are not snapshotted.

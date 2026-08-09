@@ -273,4 +273,8 @@ class ToolsUnitTest : TestCase() {
     fun testCreateModuleToolIsDisabledByDefault() {
         assertTrue(ToolNames.CREATE_MODULE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
+
+    fun testProjectDiagnosticsToolIsDisabledByDefault() {
+        assertTrue(ToolNames.PROJECT_DIAGNOSTICS in McpSettings.DEFAULT_DISABLED_TOOLS)
+    }
 }

@@ -35,6 +35,10 @@ import kotlin.math.max
 class DiagnosticsAnalysisService(private val project: Project) {
 
     companion object {
+        /** Wire values for [FileAnalysisResult.analysisMode] — which provider produced the result. */
+        const val MODE_OPEN_DAEMON = "open_daemon"
+        const val MODE_CLOSED_BATCH = "closed_batch"
+
         private const val DEFAULT_ANALYSIS_TIMEOUT_MS = 30_000L
         private const val HIGHLIGHT_POLL_INTERVAL_MS = 50L
         private const val HIGHLIGHT_RESTART_GRACE_MS = 150L
@@ -276,7 +280,8 @@ class DiagnosticsAnalysisService(private val project: Project) {
             highlights = highlights,
             analysisFresh = true,
             analysisTimedOut = false,
-            analysisMessage = null
+            analysisMessage = null,
+            analysisMode = MODE_OPEN_DAEMON
         ))
     }
 
@@ -338,7 +343,8 @@ class DiagnosticsAnalysisService(private val project: Project) {
             highlights = emptyList(),
             analysisFresh = true,
             analysisTimedOut = false,
-            analysisMessage = closedFileMessage
+            analysisMessage = closedFileMessage,
+            analysisMode = MODE_CLOSED_BATCH
         )
     }
 
@@ -584,7 +590,9 @@ class DiagnosticsAnalysisService(private val project: Project) {
         val highlights: List<HighlightInfo>,
         val analysisFresh: Boolean,
         val analysisTimedOut: Boolean,
-        val analysisMessage: String?
+        val analysisMessage: String?,
+        /** [MODE_OPEN_DAEMON] or [MODE_CLOSED_BATCH]; null when no analysis actually ran. */
+        val analysisMode: String? = null
     )
 
     private data class FileContext(

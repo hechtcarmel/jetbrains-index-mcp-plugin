@@ -8,6 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallElement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DiagnosticsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileCoverageInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
@@ -25,6 +26,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.OpenFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.PositionInput
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagnosticsInProgressResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagnosticsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildInProgressResult
@@ -392,6 +395,11 @@ class ResultShapeContractUnitTest : TestCase() {
             endColumn = 24
         )
         val intentionInfo = IntentionInfo(name = "Remove unused import", description = "Deletes the import")
+        val fileCoverageInfo = FileCoverageInfo(
+            file = "src/main/java/com/example/Service.java",
+            state = "timed_out",
+            reason = "File analysis timed out."
+        )
         val testResultInfo = TestResultInfo(
             name = "testHandle",
             suite = "com.example.ServiceTest",
@@ -596,6 +604,7 @@ class ResultShapeContractUnitTest : TestCase() {
                     analysisFresh = true,
                     analysisTimedOut = true,
                     analysisMessage = "analysis finished",
+                    analysisMode = "closed_batch",
                     buildErrors = listOf(buildMessage),
                     buildErrorCount = 1,
                     buildWarningCount = 2,
@@ -610,6 +619,43 @@ class ResultShapeContractUnitTest : TestCase() {
             struct(IntentionInfo.serializer(), intentionInfo),
             struct(TestResultInfo.serializer(), testResultInfo),
             struct(TestSummary.serializer(), testSummary),
+            struct(
+                ProjectDiagnosticsResult.serializer(),
+                ProjectDiagnosticsResult(
+                    complete = false,
+                    status = "completed",
+                    filesConsidered = 12,
+                    filesAnalyzed = 9,
+                    filesAnalyzedOpenDaemon = 1,
+                    filesAnalyzedClosedBatch = 8,
+                    filesTimedOut = 1,
+                    filesFailed = 1,
+                    filesSkipped = 1,
+                    filesNotAnalyzed = 0,
+                    incompleteFiles = listOf(fileCoverageInfo),
+                    incompleteFilesTruncated = true,
+                    problems = listOf(problemInfo),
+                    problemCount = 3,
+                    errorCount = 1,
+                    warningCount = 2,
+                    problemsTruncated = true,
+                    durationMs = 5_150L,
+                    analysisMessage = "Closed files use the IDE's public batch analysis."
+                )
+            ),
+            struct(FileCoverageInfo.serializer(), fileCoverageInfo),
+            struct(
+                ProjectDiagnosticsInProgressResult.serializer(),
+                ProjectDiagnosticsInProgressResult(
+                    status = "running",
+                    analysisId = "9b2e4c1a-0000-0000-0000-000000000000",
+                    elapsedSeconds = 61,
+                    filesProcessed = 40,
+                    filesConsidered = 120,
+                    timeoutSeconds = 600,
+                    message = "Analysis is still executing"
+                )
+            ),
             struct(
                 RefactoringResult.serializer(),
                 RefactoringResult(

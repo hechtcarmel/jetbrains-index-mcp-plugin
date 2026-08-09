@@ -103,4 +103,10 @@ object ParamNames {
     const val TEST_RESULT_FILTER = "testResultFilter"
     const val MAX_BUILD_ERRORS = "maxBuildErrors"
     const val MAX_TEST_RESULTS = "maxTestResults"
+
+    // Project diagnostics parameters
+    const val PATHS = "paths"
+    const val MAX_FILES = "maxFiles"
+    const val MAX_PROBLEMS = "maxProblems"
+    const val ANALYSIS_ID = "analysisId"
 }

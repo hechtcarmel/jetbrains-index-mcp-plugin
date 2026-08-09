@@ -296,8 +296,27 @@ Get code diagnostics from multiple sources: per-file analysis (errors, warnings,
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ problems: [{message, severity, file, line, column, endLine?, endColumn?}], intentions: [{name, description}], problemCount, intentionCount, analysisFresh, analysisTimedOut, analysisMessage, buildErrors?, buildErrorCount?, buildWarningCount?, buildErrorsTruncated?, buildTimestamp?, testResults?, testResultsTruncated?, testSummary? }`
-**Notes**: Open files use fresh daemon highlights. Closed files use public batch analysis, so `WEAK_WARNING` results and quick-fix intentions may be less complete unless the file is already open in an editor.
+**Notes**: Open files use fresh daemon highlights. Closed files use public batch analysis, so `WEAK_WARNING` results and quick-fix intentions may be less complete unless the file is already open in an editor. The `analysisMode` field reports which path ran: `open_daemon` or `closed_batch` (null when no analysis ran).
 **Severity levels**: `ERROR`, `WARNING`, `WEAK_WARNING`
+
+### ide_project_diagnostics (disabled by default)
+Analyze many files — up to the whole project, including files not open in any editor — with fail-closed coverage metadata. Every file in scope gets exactly one coverage state (`analyzed`, `timed_out`, `failed`, `skipped`, `not_analyzed`) and the top-level `complete` flag is true only when every considered file was analyzed, so an empty `problems` list can never be mistaken for a clean project when analysis was partial.
+
+Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit. If analysis is still running when the wait budget ends, the call returns `{"status": "running", "analysisId": "..."}` while analysis continues in the IDE — call the tool again with that `analysisId` to keep waiting. Only one analysis runs per project at a time.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Project root path |
+| `paths` | string[] | no | Files or directories relative to the project root; omit to analyze every file in the project's content roots |
+| `severity` | enum | no | `all` (default), `errors`, `warnings` |
+| `maxFiles` | integer | no | Max files to analyze (default 1000, max 10000). Overflow files are reported `not_analyzed` and `complete` becomes false |
+| `maxProblems` | integer | no | Max problems returned across all files (default 1000, max 5000). `problemCount` keeps counting beyond it |
+| `timeoutSeconds` | integer | no | Max seconds for the whole analysis (default 600, max 3600). Remaining files are reported `not_analyzed` when it elapses. Ignored with `analysisId` |
+| `analysisId` | string | no | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis and keeps waiting |
+| `waitSeconds` | integer | no | Max seconds this call may block before returning results or a `running` status (default 45, max 55) |
+
+**Returns**: `{ complete, status: "completed"|"timed_out", filesConsidered, filesAnalyzed, filesAnalyzedOpenDaemon, filesAnalyzedClosedBatch, filesTimedOut, filesFailed, filesSkipped, filesNotAnalyzed, incompleteFiles: [{file, state, reason?}], incompleteFilesTruncated, problems: [{message, severity, file, line, column, endLine?, endColumn?}], problemCount, errorCount, warningCount, problemsTruncated, durationMs, analysisMessage }`, or while still executing: `{ status: "running", analysisId, elapsedSeconds, filesProcessed, filesConsidered, timeoutSeconds, message }`
+**Notes**: Open files are analyzed with fresh daemon highlights (`open_daemon`); closed files use the IDE's public batch analysis (`closed_batch`), which covers errors and warnings but not weak warnings or editor-only annotators. Binary files are excluded from scope. Treat empty `problems` as a clean signal only when `complete` is true.
 
 ---
 

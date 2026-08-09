@@ -113,6 +113,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         var analysisFresh: Boolean? = null
         var analysisTimedOut: Boolean? = null
         var analysisMessage: String? = null
+        var analysisMode: String? = null
 
         if (filePath != null) {
             requireSmartMode(project)
@@ -133,6 +134,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
             analysisFresh = analysisResult.analysisFresh
             analysisTimedOut = analysisResult.analysisTimedOut
             analysisMessage = analysisResult.analysisMessage
+            analysisMode = analysisResult.analysisMode
             intentions = analyzeIntentions(
                 project = project,
                 fileEditorManager = fileEditorManager,
@@ -194,6 +196,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
             analysisFresh = analysisFresh,
             analysisTimedOut = analysisTimedOut,
             analysisMessage = analysisMessage,
+            analysisMode = analysisMode,
             buildErrors = buildErrors,
             buildErrorCount = buildErrorCount,
             buildWarningCount = buildWarningCount,

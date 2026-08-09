@@ -79,6 +79,11 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             "Closed-file analysis should explain missing intentions",
             diagnostics.analysisMessage?.contains("Intentions are unavailable because the file is not open in an editor.") == true
         )
+        assertEquals(
+            "Closed-file analysis must report the closed_batch mode",
+            DiagnosticsAnalysisService.MODE_CLOSED_BATCH,
+            diagnostics.analysisMode
+        )
         assertFalse("Diagnostics should not auto-open the file", fileEditorManager.isFileOpen(brokenFile.virtualFile))
     }
 
@@ -112,6 +117,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             val diagnostics = decodeDiagnostics(result)
             assertTrue("Analysis should be marked timed out", diagnostics.analysisTimedOut == true)
             assertFalse("Timed out analysis should not be marked fresh", diagnostics.analysisFresh == true)
+            assertNull("A timed-out analysis produced no result, so analysisMode must be null", diagnostics.analysisMode)
             assertTrue(
                 "Expected timeout explanation",
                 diagnostics.analysisMessage?.contains("timed out", ignoreCase = true) == true
@@ -165,6 +171,11 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             assertEquals("Expected one synthetic problem", 1, diagnostics.problemCount)
             assertEquals("Synthetic weak warning", diagnostics.problems?.singleOrNull()?.message)
             assertEquals("WEAK_WARNING", diagnostics.problems?.singleOrNull()?.severity)
+            assertEquals(
+                "Open-editor analysis must report the open_daemon mode",
+                DiagnosticsAnalysisService.MODE_OPEN_DAEMON,
+                diagnostics.analysisMode
+            )
             assertFalse(
                 "Open-editor analysis should not advertise closed-file limitations",
                 diagnostics.analysisMessage?.contains("Closed-file diagnostics use public batch analysis") == true

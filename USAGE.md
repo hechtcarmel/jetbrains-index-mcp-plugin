@@ -19,6 +19,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
 | `ide_search_text` | Text search using IntelliJ Find in Files (substring + regex) | Enabled |
 | `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
+| `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata; long analyses return an `analysisId` to poll | Disabled |
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
 | `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
@@ -101,6 +102,7 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_search_text](#ide_search_text)
   - [ide_find_symbol](#ide_find_symbol)
   - [ide_diagnostics](#ide_diagnostics)
+  - [ide_project_diagnostics](#ide_project_diagnostics)
   - [ide_index_status](#ide_index_status)
   - [ide_sync_files](#ide_sync_files)
   - [ide_reload_project](#ide_reload_project)
@@ -705,6 +707,109 @@ File problems are collected through explicit daemon analysis, so they do not dep
 - `WARNING` - Potential problem
 - `WEAK_WARNING` - Minor issue
 - `INFO` - Informational
+
+- `analysisMode` reports which analysis path produced the file problems: `open_daemon` (file open in an editor, fresh daemon highlights) or `closed_batch` (public batch analysis); `null` when no analysis ran.
+
+---
+
+### ide_project_diagnostics
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Analyzes many files — up to the whole project, including files not open in any editor — for code problems, with fail-closed coverage metadata (issue #246).
+
+**Coverage contract:** every file in scope gets exactly one state — `analyzed`, `timed_out`, `failed`, `skipped` (not eligible for analysis, with reason), or `not_analyzed` (cut off by `maxFiles`/`timeoutSeconds`). The top-level `complete` flag is `true` only when every considered file was analyzed. **An empty `problems` list is a clean signal only when `complete` is `true`** — otherwise inspect `incompleteFiles` and the per-state counts. Open files are analyzed with fresh daemon highlights (`filesAnalyzedOpenDaemon`); closed files use the IDE's public batch analysis (`filesAnalyzedClosedBatch`), which covers errors and warnings but not weak warnings or editor-only annotators. Binary files are excluded from scope.
+
+Long analyses use the same long-poll pattern as `ide_build_project`: each call blocks at most `waitSeconds` (default 45); a still-running call returns `{"status": "running", "analysisId": "..."}` and you poll with that `analysisId` while analysis continues in the IDE. Only one analysis runs per project at a time.
+
+**Use when:**
+- Verifying the whole project (or a directory) is clean before committing, without opening files
+- Getting diagnostics for files that are not open in any editor
+- Needing proof of analysis coverage, not just an empty result
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `paths` | string[] | No | Files or directories relative to the project root; omit to analyze every file in the project's content roots |
+| `severity` | string | No | Filter problems by `all`, `errors`, or `warnings` (default: `all`) |
+| `maxFiles` | integer | No | Maximum files to analyze (default: 1000, max: 10000). Overflow files are reported `not_analyzed` and `complete` becomes `false` |
+| `maxProblems` | integer | No | Maximum problems returned across all files (default: 1000, max: 5000). `problemCount` keeps counting beyond it |
+| `timeoutSeconds` | integer | No | Maximum seconds for the whole analysis (default: 600, max: 3600). Remaining files are reported `not_analyzed` when it elapses |
+| `analysisId` | string | No | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis instead of starting a new one |
+| `waitSeconds` | integer | No | Maximum seconds this call may block (default: 45, max: 55). Keep below your MCP client's request timeout |
+| `project_path` | string | No | Project root path |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_project_diagnostics",
+    "arguments": {
+      "paths": ["src/main"]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "complete": false,
+  "status": "completed",
+  "filesConsidered": 214,
+  "filesAnalyzed": 213,
+  "filesAnalyzedOpenDaemon": 2,
+  "filesAnalyzedClosedBatch": 211,
+  "filesTimedOut": 1,
+  "filesFailed": 0,
+  "filesSkipped": 0,
+  "filesNotAnalyzed": 0,
+  "incompleteFiles": [
+    {
+      "file": "src/main/java/com/example/Huge.java",
+      "state": "timed_out",
+      "reason": "File diagnostics analysis timed out after 30000ms."
+    }
+  ],
+  "incompleteFilesTruncated": false,
+  "problems": [
+    {
+      "message": "Cannot resolve symbol 'UnknownType'",
+      "severity": "ERROR",
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 42,
+      "column": 9,
+      "endLine": 42,
+      "endColumn": 20
+    }
+  ],
+  "problemCount": 1,
+  "errorCount": 1,
+  "warningCount": 0,
+  "problemsTruncated": false,
+  "durationMs": 48230,
+  "analysisMessage": "Files open in an editor are analyzed with fresh daemon highlights (open_daemon); closed files use the IDE's public batch analysis (closed_batch), which reports errors and warnings but not weak warnings or editor-only annotators. Binary files are excluded from scope. Treat an empty problems list as a clean signal only when complete=true."
+}
+```
+
+**In-Progress Response** (poll with the returned `analysisId`):
+
+```json
+{
+  "status": "running",
+  "analysisId": "1f0d5b1e-3f9a-4a9e-9d3b-8a1c2e4f5a6b",
+  "elapsedSeconds": 46,
+  "filesProcessed": 118,
+  "filesConsidered": 214,
+  "timeoutSeconds": 600,
+  "message": "Analysis is still executing (118/214 files processed, 46s elapsed, 600s limit). Call ide_project_diagnostics again with {\"analysisId\": \"1f0d5b1e-3f9a-4a9e-9d3b-8a1c2e4f5a6b\"} to keep waiting for its results (include the same project_path if you provided one)."
+}
+```
 
 ---
 
