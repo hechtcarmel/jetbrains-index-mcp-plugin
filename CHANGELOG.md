@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-08-09
+
 ### Added
 
 - **New `ide_project_diagnostics` tool** ([#246](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/246)) — batch/project-scope diagnostics for many files, including files not open in any editor, with fail-closed coverage metadata. Every file in scope gets exactly one coverage state (`analyzed`, `timed_out`, `failed`, `skipped`, `not_analyzed` with reason) and the top-level `complete` flag is true only when every considered file was analyzed, so an empty problems list can never be mistaken for a clean project when analysis was partial. Scope is the whole project by default or a `paths` array of files/directories; results include per-mode counts (`filesAnalyzedOpenDaemon`/`filesAnalyzedClosedBatch`), per-state counts, `incompleteFiles` with reasons, and severity totals. Long analyses use the established long-poll pattern (`{"status": "running", "analysisId": ...}` + polling); one analysis runs per project at a time. Disabled by default.
@@ -1120,7 +1122,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.4.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.0...HEAD
+[5.5.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.4.0...v5.5.0
 [5.4.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.1...v5.4.0
 [5.3.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.0...v5.3.1
 [5.3.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.2.2...v5.3.0
