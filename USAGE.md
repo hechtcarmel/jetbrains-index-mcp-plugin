@@ -700,6 +700,7 @@ File problems are collected through explicit daemon analysis, so they do not dep
 - `analysisFresh = true` means the file problems came from a fresh explicit IDE analysis pass instead of cached editor highlights.
 - `analysisTimedOut = true` means the file analysis budget was exceeded; build/test sections may still be returned.
 - `analysisMessage` explains degraded cases such as timeouts or missing live editor context for intentions.
+- `analysisMode` reports which analysis path produced the file problems: `open_daemon` (file open in an editor, fresh daemon highlights) or `closed_batch` (public batch analysis); `null` when no analysis ran.
 - `line` and `column` affect intention lookup only; file problems are collected for the whole file, then filtered by `startLine` / `endLine` if provided.
 
 **Severity Values:**
@@ -707,8 +708,6 @@ File problems are collected through explicit daemon analysis, so they do not dep
 - `WARNING` - Potential problem
 - `WEAK_WARNING` - Minor issue
 - `INFO` - Informational
-
-- `analysisMode` reports which analysis path produced the file problems: `open_daemon` (file open in an editor, fresh daemon highlights) or `closed_batch` (public batch analysis); `null` when no analysis ran.
 
 ---
 

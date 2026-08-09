@@ -8,7 +8,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Shared per-call wait-budget policy for long-poll tools (ide_run_tests, ide_build_project).
+ * Shared per-call wait-budget policy for long-poll tools (ide_run_tests, ide_build_project,
+ * ide_project_diagnostics).
  *
  * MCP clients enforce their own request timeout (60s by default in Claude Code / the MCP
  * TypeScript SDK) and the stateless Streamable HTTP transport cannot emit keep-alive progress

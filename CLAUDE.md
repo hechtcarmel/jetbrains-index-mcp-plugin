@@ -270,7 +270,7 @@ TypeScript SDK), and the stateless Streamable HTTP transport cannot send keep-al
 notifications (kotlin-sdk 0.10.0 drops them in JSON response mode). **No tool call may ever
 block past ~45–55s** — a longer operation must long-poll (issue #277).
 
-Shared infrastructure (used by `ide_run_tests` and `ide_build_project`):
+Shared infrastructure (used by `ide_run_tests`, `ide_build_project`, and `ide_project_diagnostics`):
 - `tools/LongPoll.kt` — the per-call wait-budget policy: `waitSeconds` parameter, default 45,
   ceiling 55.
 - `tools/project/LongPollRegistry.kt` — `LongPollOperation` + `LongPollRegistry`: watchdog that
@@ -392,11 +392,11 @@ Three tiers, selected by class-name suffix:
      schema into `src/test/resources/contract/tool-manifest.json`. This is the regression net
      for large refactors: one assertion covers every registered tool × every schema property, so
      a dropped `register(...)` call or a mutated parameter type fails here instead of shipping.
-     Scope: 48 of the 51 tools in `ToolNames.ALL` (the three needing the Kotlin or Maven plugin
+     Scope: 49 of the 52 tools in `ToolNames.ALL` (the three needing the Kotlin or Maven plugin
      are covered by set-equality instead), and **inputs only**.
    - `ResultShapeContractUnitTest` snapshots the other half of the client contract — the response
      side — into `src/test/resources/contract/result-shapes.txt`: the wire key set, JSON value
-     kind, nullability and optionality of all 63 serializable result models, every enum's wire
+     kind, nullability and optionality of all 66 serializable result models, every enum's wire
      values, and the `UsageTypes` literals. Result models use plain Kotlin property names as their
      wire keys, so renaming `UsageLocation.file` to `.path` is a source-compatible refactor that
      breaks every MCP client; this is what turns red.

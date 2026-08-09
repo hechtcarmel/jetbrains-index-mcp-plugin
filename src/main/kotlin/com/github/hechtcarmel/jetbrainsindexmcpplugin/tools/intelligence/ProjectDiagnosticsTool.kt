@@ -18,6 +18,8 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -169,12 +171,9 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
             return awaitAnalysisResult(project, analysis, waitSeconds, callStartMs)
         }
 
+        // Fast path only — the authoritative, race-free claim is tryStartExclusive below.
         registry.mostRecent?.takeIf { !it.result.isCompleted }?.let { running ->
-            return createErrorResult(
-                "Analysis '${running.id}' is already running for this project " +
-                        "(${running.filesProcessed.get()}/${running.filesConsidered} files processed). " +
-                        "Poll it with {\"analysisId\": \"${running.id}\"} or wait for it to finish."
-            )
+            return alreadyRunningResult(running)
         }
 
         requireSmartMode(project)
@@ -208,7 +207,9 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
             filesConsidered = targets.size,
             result = CompletableDeferred()
         )
-        registry.registerAnalysis(analysis)
+        registry.tryStartExclusive(analysis)?.let { running ->
+            return alreadyRunningResult(running)
+        }
 
         registry.launchAnalysis {
             try {
@@ -230,6 +231,13 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
 
         return awaitAnalysisResult(project, analysis, waitSeconds, callStartMs)
     }
+
+    private fun alreadyRunningResult(running: ActiveProjectAnalysisRegistry.ActiveProjectAnalysis): CallToolResult =
+        createErrorResult(
+            "Analysis '${running.id}' is already running for this project " +
+                    "(${running.filesProcessed.get()}/${running.filesConsidered} files processed). " +
+                    "Poll it with {\"analysisId\": \"${running.id}\"} or wait for it to finish."
+        )
 
     private data class TargetFile(val virtualFile: VirtualFile, val relativePath: String)
 
@@ -315,6 +323,10 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
         val overflow = targets.drop(maxFiles)
 
         for ((index, target) in toAnalyze.withIndex()) {
+            // Deterministic exit when the registry scope dies (project closing, plugin unload)
+            // instead of relying on the next suspension point inside analyzeFile.
+            currentCoroutineContext().ensureActive()
+
             if (System.currentTimeMillis() >= analysis.deadlineAtMs) {
                 deadlineHit = true
                 for (remaining in toAnalyze.subList(index, toAnalyze.size)) {
@@ -341,6 +353,10 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Includes ProcessCanceledException from the file's own analysis run: this loop
+                // is not under that indicator, so the cancellation is per-file, not ours — the
+                // file is reported failed and coverage stays fail-closed. A cancelled registry
+                // scope exits via ensureActive() above.
                 failed++
                 recordIncomplete(target, STATE_FAILED, e.message ?: e.javaClass.simpleName)
                 analysis.filesProcessed.incrementAndGet()

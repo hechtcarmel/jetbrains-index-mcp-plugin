@@ -159,6 +159,36 @@ class ProjectDiagnosticsToolBehaviorTest : McpPlatformTestCase() {
         assertEquals(ProjectDiagnosticsTool.STATUS_COMPLETED, payload.status)
     }
 
+    fun testAnalysisExceptionMarksFileFailedAndKeepsGoing() {
+        writeProjectFile("src/failscope/Boom.java", "class Boom {}")
+        writeProjectFile("src/failscope/Fine.java", "class Fine {}")
+
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        service.closedFileAnalysisOverride = { request ->
+            if (request.filePath.endsWith("Boom.java")) {
+                throw RuntimeException("synthetic analysis crash")
+            }
+            emptyList()
+        }
+
+        val result = callTool { putJsonArray("paths") { add("src/failscope") } }
+
+        assertToolSucceeded("a per-file crash is reported in-band, not as a tool error", result)
+        val payload = decodeFinal(result)
+
+        assertFalse("a failed file must fail the completeness gate", payload.complete)
+        assertEquals(2, payload.filesConsidered)
+        assertEquals(1, payload.filesAnalyzed)
+        assertEquals(1, payload.filesFailed)
+        val entry = payload.incompleteFiles.single()
+        assertEquals("src/failscope/Boom.java", entry.file)
+        assertEquals(ProjectDiagnosticsTool.STATE_FAILED, entry.state)
+        assertTrue(
+            "failure reason must carry the exception message, got: ${entry.reason}",
+            entry.reason.orEmpty().contains("synthetic analysis crash")
+        )
+    }
+
     fun testMaxFilesOverflowIsReportedNotAnalyzed() {
         writeProjectFile("src/capscope/A.java", "class A {}")
         writeProjectFile("src/capscope/B.java", "class B {}")

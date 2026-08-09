@@ -52,9 +52,17 @@ class ActiveProjectAnalysisRegistry(private val analysisScope: CoroutineScope) :
     var mostRecent: ActiveProjectAnalysis? = null
         private set
 
-    fun registerAnalysis(analysis: ActiveProjectAnalysis): ActiveProjectAnalysis {
+    /**
+     * Atomically claims the single per-project analysis slot. Returns null when [analysis] was
+     * registered, or the still-running analysis that holds the slot — synchronized because the
+     * tool's pre-flight check is only a fast path and two concurrent starts must not both pass it.
+     */
+    @Synchronized
+    fun tryStartExclusive(analysis: ActiveProjectAnalysis): ActiveProjectAnalysis? {
+        mostRecent?.takeIf { !it.result.isCompleted }?.let { return it }
         mostRecent = analysis
-        return register(analysis)
+        register(analysis)
+        return null
     }
 
     fun launchAnalysis(block: suspend () -> Unit): Job = analysisScope.launch { block() }

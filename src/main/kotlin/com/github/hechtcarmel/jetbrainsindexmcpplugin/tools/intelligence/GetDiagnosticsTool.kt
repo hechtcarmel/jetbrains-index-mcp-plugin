@@ -57,11 +57,11 @@ class GetDiagnosticsTool : AbstractMcpTool() {
     override val description = """
         Get code diagnostics from multiple sources: file analysis (errors, warnings, intentions), build output (compiler errors/warnings from last build), and test results (from open test run tabs).
 
-        Returns: problems with severity and location, available intentions/quick fixes, build errors, and test results with error messages and stack traces.
+        Returns: problems with severity and location, available intentions/quick fixes, build errors, and test results with error messages and stack traces. The analysisMode field reports which provider produced the file problems: "open_daemon" (file open in an editor) or "closed_batch" (public batch analysis); null when no analysis ran.
 
         At least one source must be active: provide 'file' for code analysis, 'includeBuildErrors' for build output, or 'includeTestResults' for test results. Can combine all three.
 
-        File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open.
+        File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open. For diagnostics across many files or the whole project with per-file coverage metadata, use ide_project_diagnostics.
 
         Parameters: file (optional, enables code analysis), line + column (optional, for intentions, requires file), startLine/endLine (optional, requires file), includeBuildErrors (optional), includeTestResults (optional), severity (optional, default 'all'), testResultFilter (optional, default 'failed'), maxBuildErrors (optional, default 100), maxTestResults (optional, default 100).
 
