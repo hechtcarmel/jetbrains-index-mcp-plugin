@@ -63,27 +63,31 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
      * `0 == 0` for any predicate you write when there is only one row.
      */
     private fun withSyntheticManagedProjects(
-        vararg managedPaths: String,
-        closedPaths: Set<String> = managedPaths.toSet(),
+        count: Int,
+        closedCount: Int = count,
         lifecycleEnabled: Boolean = true,
-        body: () -> Unit
+        body: (paths: List<String>) -> Unit
     ) {
         val settings = McpSettings.getInstance()
         val service = ProjectModeService.getInstance()
         val previousLifecycle = settings.lifecycleEnabled
         val previousState = service.getAllManagedModes().keys.toSet()
+        val tempDirs = (1..count).map { java.nio.file.Files.createTempDirectory("aaa-lifecycle-synth-$it") }
+        val paths = tempDirs.map { it.toAbsolutePath().toString() }
+        val closedPaths = paths.take(closedCount).toSet()
         try {
             settings.lifecycleEnabled = lifecycleEnabled
             service.loadState(
                 ProjectModeService.State(
                     closedProjectPaths = ConcurrentHashMap.newKeySet<String>().apply { addAll(closedPaths) },
-                    managedProjectPaths = ConcurrentHashMap.newKeySet<String>().apply { addAll(managedPaths) }
+                    managedProjectPaths = ConcurrentHashMap.newKeySet<String>().apply { addAll(paths) }
                 )
             )
-            body()
+            body(paths)
         } finally {
             service.loadState(ProjectModeService.State())
             settings.lifecycleEnabled = previousLifecycle
+            tempDirs.forEach { it.toFile().deleteRecursively() }
             assertTrue(
                 "Lifecycle state must be restored so later tests are unaffected",
                 service.getAllManagedModes().keys.none { it !in previousState }
@@ -92,13 +96,13 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
     }
 
     fun testManagedButClosedProjectIsReportedWithItsMode() = runBlocking {
-        withSyntheticManagedProjects("/synthetic/closed-project") {
+        withSyntheticManagedProjects(1) { paths ->
             val result = runBlocking { ProjectStatusTool().execute(project, buildJsonObject { }) }
             assertToolSucceeded("project_status should succeed", result)
 
             val projects = json.parseToJsonElement(toolText(result)).jsonObject["projects"]!!
                 .jsonArray.map { it.jsonObject }
-            val closed = projects.singleOrNull { it["path"]?.jsonPrimitive?.content == "/synthetic/closed-project" }
+            val closed = projects.singleOrNull { it["path"]?.jsonPrimitive?.content == paths[0] }
             assertNotNull("A managed-but-closed project must still be reported", closed)
             assertFalse("It is not open", closed!!["open"]!!.jsonPrimitive.boolean)
             assertTrue("It is managed", closed["managed"]!!.jsonPrimitive.boolean)
@@ -107,12 +111,16 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
                 "closed",
                 closed["mode"]?.jsonPrimitive?.content
             )
-            assertEquals("Name falls back to the last path segment", "closed-project", closed["name"]!!.jsonPrimitive.content)
+            assertEquals(
+                "Name falls back to the last path segment",
+                paths[0].substringAfterLast("/"),
+                closed["name"]!!.jsonPrimitive.content
+            )
         }
     }
 
     fun testSummaryCountsAgreeWithTheProjectRows() = runBlocking {
-        withSyntheticManagedProjects("/synthetic/closed-a", "/synthetic/closed-b") {
+        withSyntheticManagedProjects(2) { _ ->
             val result = runBlocking { ProjectStatusTool().execute(project, buildJsonObject { }) }
             val payload = json.parseToJsonElement(toolText(result)).jsonObject
             val projects = payload["projects"]!!.jsonArray.map { it.jsonObject }
@@ -163,17 +171,17 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
      */
     fun testManagedProjectsAreReportedEvenWhenLifecycleAutomationIsDisabled() = runBlocking {
         withSyntheticManagedProjects(
-            "/synthetic/enrolled-elsewhere",
-            closedPaths = emptySet(),
+            1,
+            closedCount = 0,
             lifecycleEnabled = false
-        ) {
+        ) { paths ->
             val result = runBlocking { ProjectStatusTool().execute(project, buildJsonObject { }) }
             assertToolSucceeded("project_status should succeed", result)
 
             val payload = json.parseToJsonElement(toolText(result)).jsonObject
             val projects = payload["projects"]!!.jsonArray.map { it.jsonObject }
             val enrolled = projects.singleOrNull {
-                it["path"]?.jsonPrimitive?.content == "/synthetic/enrolled-elsewhere"
+                it["path"]?.jsonPrimitive?.content == paths[0]
             }
             assertNotNull("An enrolled project must be reported even while automation is paused", enrolled)
             assertTrue(
@@ -214,14 +222,15 @@ class ProjectStatusToolBehaviorTest : McpPlatformTestCase() {
     }
 
     fun testOpenProjectsAreListedBeforeClosedOnes() = runBlocking {
-        withSyntheticManagedProjects("/synthetic/aaa-closed-sorts-first-alphabetically") {
+        // The synthetic path prefix "aaa-" sorts before the fixture project by name, so a
+        // name-only sort would put the closed row first. Only the open-first ordering yields
+        // [true, false].
+        withSyntheticManagedProjects(1) { _ ->
             val result = runBlocking { ProjectStatusTool().execute(project, buildJsonObject { }) }
 
             val openFlags = json.parseToJsonElement(toolText(result)).jsonObject["projects"]!!
                 .jsonArray.map { it.jsonObject["open"]!!.jsonPrimitive.boolean }
 
-            // The synthetic path sorts before the fixture project by name, so a name-only sort
-            // would put the closed row first. Only the open-first ordering yields [true, false].
             assertEquals(
                 "Open projects must sort ahead of closed ones so the useful rows come first",
                 listOf(true, false),

@@ -84,23 +84,29 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
     }
 
     fun testClosedProjectRegistryRoundTrip() {
-        // Simulates what happens across an IDE restart: state is persisted and reloaded
-        val path = "/persisted/project"
-        service.markClosed(path)
+        // Simulates what happens across an IDE restart: state is persisted and reloaded.
+        // Uses a real temp directory — loadState prunes non-existent paths on startup.
+        val dir = java.io.File.createTempFile("lifecycle-roundtrip-", "").apply { delete(); mkdirs() }
+        try {
+            val path = dir.absolutePath
+            service.markClosed(path)
 
-        val persistedState = service.getState()
-        assertTrue(persistedState.closedProjectPaths.contains(path))
+            val persistedState = service.getState()
+            assertTrue(persistedState.closedProjectPaths.contains(path))
 
-        // Simulate restart: create fresh service, load persisted state
-        val fresh = ProjectModeService()
-        fresh.loadState(persistedState)
+            // Simulate restart: create fresh service, load persisted state
+            val fresh = ProjectModeService()
+            fresh.loadState(persistedState)
 
-        assertTrue("Closed path must survive state round-trip", fresh.wasClosedByUs(path))
-        assertEquals(
-            "Mode must be CLOSED after loading state with closed path",
-            ProjectMode.CLOSED,
-            fresh.getMode(path)
-        )
+            assertTrue("Closed path must survive state round-trip", fresh.wasClosedByUs(path))
+            assertEquals(
+                "Mode must be CLOSED after loading state with closed path",
+                ProjectMode.CLOSED,
+                fresh.getMode(path)
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 
     // ── Mode queries ─────────────────────────────────────────────────────────

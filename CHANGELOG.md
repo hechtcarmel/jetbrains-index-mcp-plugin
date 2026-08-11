@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lifecycle manager no longer accumulates ghost entries for deleted project directories.** Temporary projects (worktrees, slots, ephemeral checkouts) that were opened and later deleted from disk remained in the managed projects registry forever. On startup, `loadState` now prunes any managed path whose directory no longer exists, preventing unbounded growth of the persisted state.
+
 ## [5.5.0] - 2026-08-09
 
 ### Added

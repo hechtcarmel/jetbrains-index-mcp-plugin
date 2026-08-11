@@ -51,9 +51,22 @@ class ProjectModeService : PersistentStateComponent<ProjectModeService.State>, D
     override fun loadState(state: State) {
         // IntelliJ collapses real paths to macros (e.g. $USER_HOME$) when persisting but does
         // not expand them back automatically for plain Set<String> fields — expand explicitly.
+        val expandedClosed = state.closedProjectPaths.mapTo(ConcurrentHashMap.newKeySet(), ::expandMacros)
+        val expandedManaged = state.managedProjectPaths.mapTo(ConcurrentHashMap.newKeySet(), ::expandMacros)
+
+        val ghostPaths = expandedManaged.filter { !java.io.File(it).isDirectory }
+        if (ghostPaths.isNotEmpty()) {
+            LOG.info("Pruning ${ghostPaths.size} managed project(s) whose path no longer exists on disk")
+            ghostPaths.forEach { path ->
+                expandedManaged.remove(path)
+                expandedClosed.remove(path)
+                LOG.info("  pruned: $path")
+            }
+        }
+
         persistedState = State(
-            closedProjectPaths = state.closedProjectPaths.mapTo(ConcurrentHashMap.newKeySet(), ::expandMacros),
-            managedProjectPaths = state.managedProjectPaths.mapTo(ConcurrentHashMap.newKeySet(), ::expandMacros)
+            closedProjectPaths = expandedClosed,
+            managedProjectPaths = expandedManaged
         )
         persistedState.closedProjectPaths.forEach { modes[it] = ProjectMode.CLOSED }
     }
