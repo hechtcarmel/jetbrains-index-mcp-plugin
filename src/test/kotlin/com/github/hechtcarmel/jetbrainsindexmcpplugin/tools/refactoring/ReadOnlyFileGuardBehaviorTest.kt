@@ -110,6 +110,106 @@ class ReadOnlyFileGuardBehaviorTest : McpPlatformTestCase() {
         assertEquals("File must be unchanged", original, readProjectFileVfs("src/Locked.java"))
     }
 
+    // ── RenameSymbolTool — read-only file in scope, not the target (issue #310) ──
+
+    fun testRenameSymbolRejectsReadOnlyReferencingFile() = runBlocking {
+        registerSourceRoot("ro-scope-rename")
+        writeProjectFile(
+            "ro-scope-rename/roscope/Target.java", """
+            package roscope;
+
+            public class Target {
+                public String getDisplayName() {
+                    return "name";
+                }
+            }
+            """.trimIndent()
+        )
+        val callerOriginal = """
+            package roscope;
+
+            public class Caller {
+                public String describe(Target target) {
+                    return target.getDisplayName();
+                }
+            }
+        """.trimIndent()
+        writeProjectFile("ro-scope-rename/roscope/Caller.java", callerOriginal)
+        markReadOnly("ro-scope-rename/roscope/Caller.java")
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "ro-scope-rename/roscope/Target.java")
+            put("line", 4)
+            put("column", 19)
+            put("newName", "getFullName")
+        })
+
+        assertToolFailed("Should reject read-only referencing file", result)
+        assertTrue(
+            "Error should name the read-only scope, was: ${toolText(result)}",
+            toolText(result).contains("read-only files in the refactoring scope")
+        )
+        assertTrue(
+            "Error should list the read-only file, was: ${toolText(result)}",
+            toolText(result).contains("Caller.java")
+        )
+        assertEquals("Caller must be unchanged", callerOriginal, readProjectFileVfs("ro-scope-rename/roscope/Caller.java"))
+        assertFalse(
+            "Target must be unchanged",
+            readProjectFileVfs("ro-scope-rename/roscope/Target.java").contains("getFullName")
+        )
+    }
+
+    // ── ChangeSignatureTool — read-only file in scope, not the target (issue #310) ──
+
+    fun testChangeSignatureRejectsReadOnlyReferencingFile() = runBlocking {
+        registerSourceRoot("ro-scope-sig")
+        writeProjectFile(
+            "ro-scope-sig/rosig/Api.java", """
+            package rosig;
+
+            public class Api {
+                public int compute(int value) {
+                    return value;
+                }
+            }
+            """.trimIndent()
+        )
+        val clientOriginal = """
+            package rosig;
+
+            public class ApiClient {
+                public int use(Api api) {
+                    return api.compute(1);
+                }
+            }
+        """.trimIndent()
+        writeProjectFile("ro-scope-sig/rosig/ApiClient.java", clientOriginal)
+        markReadOnly("ro-scope-sig/rosig/ApiClient.java")
+
+        val result = ChangeSignatureTool().execute(project, buildJsonObject {
+            put("file", "ro-scope-sig/rosig/Api.java")
+            put("line", 4)
+            put("column", 16)
+            put("newName", "calculate")
+        })
+
+        assertToolFailed("Should reject read-only referencing file", result)
+        assertTrue(
+            "Error should name the read-only scope, was: ${toolText(result)}",
+            toolText(result).contains("read-only files in the refactoring scope")
+        )
+        assertTrue(
+            "Error should list the read-only file, was: ${toolText(result)}",
+            toolText(result).contains("ApiClient.java")
+        )
+        assertEquals("Client must be unchanged", clientOriginal, readProjectFileVfs("ro-scope-sig/rosig/ApiClient.java"))
+        assertFalse(
+            "Api must be unchanged",
+            readProjectFileVfs("ro-scope-sig/rosig/Api.java").contains("calculate")
+        )
+    }
+
     // ── SafeDeleteTool — symbol mode ──
 
     fun testSafeDeleteSymbolRejectsReadOnlyFile() = runBlocking {

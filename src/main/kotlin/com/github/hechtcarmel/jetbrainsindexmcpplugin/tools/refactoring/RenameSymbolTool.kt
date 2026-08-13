@@ -707,6 +707,16 @@ class RenameSymbolTool : AbstractMcpTool() {
             .createSmartPsiElementPointer(targetElement)
         val targetNameBeforeRename = targetElement.name
 
+        // Pre-check the full refactoring scope for read-only files (issue #310):
+        // run() would route them through ReadonlyStatusHandler's modal dialog,
+        // blocking the EDT in headless MCP sessions. findUsages() is idempotent
+        // (it clears the internal renamer list on entry), so run() repeating the
+        // search is safe.
+        val readOnlyInScope = RefactoringScopeGuard.readOnlyFilesIn(project, renameProcessor.findUsages())
+        if (readOnlyInScope.isNotEmpty()) {
+            throw Exception(RefactoringScopeGuard.blockedMessage(readOnlyInScope))
+        }
+
         // RenameProcessor manages its own write actions and progress. Starting it inside
         // WriteCommandAction can deadlock in modern IDE builds.
         val hook = processorRunHook

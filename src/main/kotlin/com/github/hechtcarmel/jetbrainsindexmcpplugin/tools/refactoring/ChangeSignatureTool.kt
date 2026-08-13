@@ -315,6 +315,19 @@ class ChangeSignatureTool : AbstractMcpTool() {
                     .newInstance(project, changeInfo) as com.intellij.refactoring.BaseRefactoringProcessor
 
                 processor.setPreviewUsages(false)
+
+                // Pre-check the full refactoring scope for read-only files (issue #310):
+                // run() would route them through ReadonlyStatusHandler's modal dialog,
+                // blocking the EDT in headless MCP sessions. Fails open when
+                // findUsages() cannot be invoked reflectively.
+                val usages = RefactoringScopeGuard.findUsagesReflectively(processor)
+                val readOnlyInScope = usages
+                    ?.let { RefactoringScopeGuard.readOnlyFilesIn(project, it) }
+                    .orEmpty()
+                if (readOnlyInScope.isNotEmpty()) {
+                    throw Exception(RefactoringScopeGuard.blockedMessage(readOnlyInScope))
+                }
+
                 val hook = processorRunHook
                 if (hook != null) hook() else processor.run()
 
