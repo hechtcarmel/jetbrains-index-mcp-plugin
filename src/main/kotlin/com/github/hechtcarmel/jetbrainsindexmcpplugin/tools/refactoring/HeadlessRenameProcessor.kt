@@ -27,6 +27,8 @@ internal class HeadlessRenameProcessor(
      */
     val capturedConflicts = mutableListOf<String>()
 
+    override fun isPreviewUsages(usages: Array<out UsageInfo>): Boolean = false
+
     override fun showAutomaticRenamingDialog(automaticVariableRenamer: AutomaticRenamer): Boolean {
         for (element in automaticVariableRenamer.elements) {
             val suggestedName = automaticVariableRenamer.getNewName(element) ?: continue

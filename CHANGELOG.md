@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_refactor_rename` no longer blocks on modal dialogs in headless MCP sessions.** ([#310](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/310)) Two dialog-blocking paths fixed: (1) when the rename scope includes read-only files, the tool now pre-checks all usage files for writability and returns an actionable error listing the blocking files; (2) when the language processor forces a refactoring preview, `HeadlessRenameProcessor` now suppresses it instead of opening the preview tool window.
+
 ## [5.5.1] - 2026-08-12
 
 ### Fixed

@@ -696,6 +696,24 @@ class RenameSymbolTool : AbstractMcpTool() {
         // Disable preview dialog for headless operation
         renameProcessor.setPreviewUsages(false)
 
+        // Pre-check: find all files that the rename would touch and verify they're writable.
+        // Without this, the platform shows a modal "read-only files" dialog that blocks the
+        // EDT indefinitely in headless MCP sessions.
+        val usages = renameProcessor.findUsages()
+        val readOnlyUsageFiles = usages
+            .mapNotNull { it.virtualFile }
+            .filter { !it.isWritable }
+            .map { ProjectUtils.getRelativePath(project, it.path) }
+            .distinct()
+        if (readOnlyUsageFiles.isNotEmpty()) {
+            throw Exception(
+                "Rename blocked by read-only files in rename scope: " +
+                    readOnlyUsageFiles.joinToString(", ") +
+                    ". Remove generated sources (mvn clean + ide_sync_files) or " +
+                    "exclude immutable files from the project's content roots."
+            )
+        }
+
         // Collected partial-success data from JS/TS import retargeting.
         val retargetWarnings = mutableListOf<String>()
         val unretargetedImporters = mutableListOf<String>()
