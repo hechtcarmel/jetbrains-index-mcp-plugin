@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Auto-sync of external file changes is now enabled automatically.** The plugin sets `GeneralSettings.isSyncOnFrameActivation = true` on startup, preventing the "Load File System Changes" modal dialog that blocks headless MCP sessions when agents modify files externally.
+
 ## [5.5.1] - 2026-08-12
 
 ### Fixed

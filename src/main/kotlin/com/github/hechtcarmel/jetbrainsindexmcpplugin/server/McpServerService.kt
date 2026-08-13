@@ -103,6 +103,7 @@ class McpServerService(
         val startServer = shouldStartServer()
         if (startServer) {
             EdtHeartbeatService.getInstance()
+            ensureAutoSyncEnabled()
             val settings = McpSettings.getInstance()
             val port = settings.serverPort
             val host = settings.serverHost
@@ -110,6 +111,14 @@ class McpServerService(
             LOG.info("MCP Server Service initialized with Ktor CIO server")
         } else {
             LOG.info("Initialized MCP tool metadata without starting server in unit test mode")
+        }
+    }
+
+    private fun ensureAutoSyncEnabled() {
+        val gs = com.intellij.ide.GeneralSettings.getInstance()
+        if (!gs.isSyncOnFrameActivation) {
+            gs.isSyncOnFrameActivation = true
+            LOG.info("Enabled auto-sync of external file changes for MCP operation")
         }
     }
 
