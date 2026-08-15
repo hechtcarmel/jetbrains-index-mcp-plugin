@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.5.2] - 2026-08-15
+
 ### Fixed
 
 - **`ide_refactor_rename` and `ide_change_signature` no longer hang on the "read-only files" dialog** ([#310](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/310)) — when the refactoring scope contained read-only files (generated metamodel classes in `target/`, Flyway migration SQL, files from other content roots), the IntelliJ refactoring engine showed a modal read-only dialog that blocked the EDT until the MCP client timed out. Both tools now pre-check every file discovered by `findUsages()` before executing and return an actionable error listing the read-only files instead.
@@ -1132,7 +1134,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.2...HEAD
+[5.5.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.1...v5.5.2
 [5.5.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.0...v5.5.1
 [5.5.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.4.0...v5.5.0
 [5.4.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.1...v5.4.0
