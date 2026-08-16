@@ -865,7 +865,9 @@ class ResultShapeContractUnitTest : TestCase() {
                 TestRunEntry(
                     name = "com.example.ServiceTest.testHandle",
                     status = TestStatus.FAILED,
-                    errorMessage = "expected:<1> but was:<2>"
+                    errorMessage = "expected:<1> but was:<2>",
+                    stackTrace = "java.lang.AssertionError: expected:<1> but was:<2>\n" +
+                            "\tat com.example.ServiceTest.testHandle(ServiceTest.java:21)"
                 )
             ),
             struct(

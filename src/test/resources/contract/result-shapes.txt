@@ -473,6 +473,7 @@
 ## TestRunEntry
   errorMessage: string? (optional)
   name: string
+  stackTrace: string? (optional)
   status: string
 
 ## TestStatus (enum)

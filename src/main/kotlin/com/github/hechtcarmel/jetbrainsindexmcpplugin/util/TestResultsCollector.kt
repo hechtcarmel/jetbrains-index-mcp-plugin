@@ -26,6 +26,12 @@ object TestResultsCollector {
 
     private const val MAX_STACKTRACE_LENGTH = 500
 
+    /**
+     * Per-test cap for ide_run_tests stack traces (issue #316). Generous enough that real traces
+     * pass through untouched; only pathological ones (deeply chained causes) are trimmed.
+     */
+    internal const val MAX_RUN_ENTRY_STACKTRACE_LENGTH = 10_000
+
     fun collect(
         project: Project,
         testResultFilter: String,
@@ -60,10 +66,28 @@ object TestResultsCollector {
                     TestRunEntry(
                         name = composeName(test.name, test.parent?.name),
                         status = it,
-                        errorMessage = if (it.isFailure) test.errorMessage else null
+                        errorMessage = if (it.isFailure) test.errorMessage else null,
+                        stackTrace = if (it.isFailure) {
+                            test.stacktrace?.takeIf(String::isNotBlank)?.let(::truncateStackTrace)
+                        } else null
                     )
                 }
             }
+
+    /**
+     * Head+tail truncation: for chained exceptions the root cause sits at the BOTTOM of the trace
+     * (the issue #316 repro is 500 nested causes), so keeping only the head would drop exactly the
+     * part that explains the failure. Two thirds head keeps the message and throw site, one third
+     * tail keeps the deepest causes.
+     */
+    internal fun truncateStackTrace(trace: String, maxLength: Int = MAX_RUN_ENTRY_STACKTRACE_LENGTH): String {
+        if (trace.length <= maxLength) return trace
+        val head = maxLength * 2 / 3
+        val tail = maxLength - head
+        return trace.take(head) +
+                "\n... [${trace.length - head - tail} chars truncated] ...\n" +
+                trace.takeLast(tail)
+    }
 
     /** Composes a test display name from the test name and its optional parent (suite) name. */
     internal fun composeName(testName: String, parentName: String?): String {

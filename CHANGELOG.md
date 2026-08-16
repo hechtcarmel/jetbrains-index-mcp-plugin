@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_run_tests` results now include the failure stack trace** ([#316](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/316)) — each failed or errored test entry carries a new `stackTrace` field with the trace reported by the test framework, alongside the existing `errorMessage` (which only holds the exception message). Very long traces (e.g. deeply chained causes) are trimmed in the middle so both the throw site and the root cause survive.
+
 ## [5.5.2] - 2026-08-15
 
 ### Fixed

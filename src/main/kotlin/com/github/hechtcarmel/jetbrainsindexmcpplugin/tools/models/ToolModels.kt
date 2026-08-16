@@ -439,7 +439,8 @@ enum class TestStatus {
 data class TestRunEntry(
     val name: String,
     val status: TestStatus,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val stackTrace: String? = null
 )
 
 @Serializable

@@ -58,4 +58,32 @@ class TestResultsCollectorUnitTest : TestCase() {
         // so value 1 is unambiguously PASSED at this layer.
         assertEquals(TestStatus.PASSED, TestResultsCollector.magnitudeIndexToStatus(1))
     }
+
+    // ── truncateStackTrace (issue #316) ───────────────────────────────────────
+
+    fun testShortStackTracePassesThroughUntouched() {
+        val trace = "java.lang.RuntimeException: boom\n\tat com.example.FooTest.test(FooTest.java:12)"
+        assertEquals(trace, TestResultsCollector.truncateStackTrace(trace))
+    }
+
+    fun testStackTraceAtExactCapPassesThroughUntouched() {
+        val trace = "x".repeat(100)
+        assertEquals(trace, TestResultsCollector.truncateStackTrace(trace, maxLength = 100))
+    }
+
+    fun testLongStackTraceKeepsHeadAndTail() {
+        // Chained exceptions put the root cause at the END of the trace — truncation must keep
+        // both the top (message + throw site) and the bottom (deepest causes).
+        val head = "java.lang.RuntimeException: depth 500\n"
+        val tail = "Caused by: java.lang.RuntimeException: depth 0\n"
+        val trace = head + "\tat com.example.FooTest.recurse(FooTest.java:44)\n".repeat(2000) + tail
+
+        val truncated = TestResultsCollector.truncateStackTrace(trace, maxLength = 300)
+
+        assertTrue("must keep the trace head", truncated.startsWith(head))
+        assertTrue("must keep the trace tail (root cause)", truncated.endsWith(tail))
+        assertTrue("must mark the elision", truncated.contains("chars truncated"))
+        // 300 cap + the elision marker line — far below the original ~90KB
+        assertTrue("must actually shrink the trace", truncated.length < 400)
+    }
 }
