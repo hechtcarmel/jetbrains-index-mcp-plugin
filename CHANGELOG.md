@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-08-16
+
 ### Added
 
 - **`ide_run_tests` results now include the failure stack trace** ([#316](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/316)) — each failed or errored test entry carries a new `stackTrace` field with the trace reported by the test framework, alongside the existing `errorMessage` (which only holds the exception message). Very long traces (e.g. deeply chained causes) are trimmed in the middle so both the throw site and the root cause survive, and a per-run size budget keeps mass failures (hundreds of failing tests) from producing a response too large for MCP clients — earlier failures keep their traces, later entries fall back to `errorMessage` only.
@@ -1139,7 +1141,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.2...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.6.0...HEAD
+[5.6.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.2...v5.6.0
 [5.5.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.1...v5.5.2
 [5.5.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.0...v5.5.1
 [5.5.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.4.0...v5.5.0
