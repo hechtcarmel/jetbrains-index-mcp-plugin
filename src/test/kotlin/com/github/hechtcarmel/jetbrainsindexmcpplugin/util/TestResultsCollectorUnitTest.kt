@@ -110,4 +110,13 @@ class TestResultsCollectorUnitTest : TestCase() {
             }
         }
     }
+
+    fun testDegenerateCapDoesNotCrash() {
+        // The helper is shared by two call sites with different caps and formats *error* output:
+        // a crash here would replace a real test failure with an internal error.
+        for (cap in listOf(0, 1, 2, 3)) {
+            val out = TestResultsCollector.truncateStackTrace("abcdefghij", maxLength = cap)
+            assertTrue("cap=$cap must still mark the elision", out.contains("chars truncated"))
+        }
+    }
 }

@@ -103,8 +103,10 @@ object TestResultsCollector {
         if (trace.length <= maxLength) return trace
         var head = maxLength * 2 / 3
         var tailStart = trace.length - (maxLength - head)
-        if (trace[head - 1].isHighSurrogate()) head--
-        if (trace[tailStart].isLowSurrogate()) tailStart++
+        // Bounds-guarded: a degenerate cap collapses head to 0 / tailStart to the end, and this
+        // helper formats *error* output — crashing here would mask the real test failure.
+        if (head > 0 && trace[head - 1].isHighSurrogate()) head--
+        if (tailStart < trace.length && trace[tailStart].isLowSurrogate()) tailStart++
         return trace.substring(0, head) +
                 "\n... [${tailStart - head} chars truncated] ...\n" +
                 trace.substring(tailStart)
