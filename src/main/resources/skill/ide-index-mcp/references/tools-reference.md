@@ -579,7 +579,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's own requ
 
 *Exactly one of `target` / `runId` is required.
 
-**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?, stackTrace?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, message }`. `stackTrace` is set for failed/errored tests; very long traces are trimmed in the middle, keeping the throw site and the root cause.
+**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?, stackTrace?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, message }`. `stackTrace` is set for failed/errored tests; very long traces are trimmed in the middle, keeping the throw site and the root cause. On mass failures a per-run size budget applies: earlier failures keep their traces, later entries carry `errorMessage` only.
 
 ### ide_reload_project (disabled by default)
 Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.

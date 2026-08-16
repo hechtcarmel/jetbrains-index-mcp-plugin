@@ -87,4 +87,51 @@ class TestResultsCollectorRunEntriesTest : McpPlatformTestCase() {
         assertTrue("must keep the tail (root cause)", trace.endsWith("Caused by: java.lang.RuntimeException: depth 0"))
         assertTrue("must mark the elision", trace.contains("chars truncated"))
     }
+
+    fun testAggregateBudgetDropsTracesOnceSpent() {
+        val root = SMTestProxy.SMRootTestProxy()
+        root.setStarted()
+        val suite = SMTestProxy("FooTest", true, null)
+        root.addChild(suite)
+        suite.setStarted()
+        repeat(3) { i ->
+            val test = SMTestProxy("test$i", false, null)
+            suite.addChild(test)
+            test.setStarted()
+            test.setTestFailed("boom $i", stackTrace, false)
+        }
+        suite.setFinished()
+        root.setFinished()
+
+        // Budget fits exactly one trace: the first failure keeps it, the rest fall back to
+        // errorMessage only — a mass failure must not produce an unbounded response.
+        val entries = TestResultsCollector.collectRunEntries(root, totalStackTraceBudget = stackTrace.length)
+
+        assertEquals(3, entries.size)
+        assertEquals(stackTrace, entries[0].stackTrace)
+        assertNull("budget spent — trace must be dropped", entries[1].stackTrace)
+        assertNull("budget spent — trace must be dropped", entries[2].stackTrace)
+        assertEquals("errorMessage survives the budget cut", "boom 1", entries[1].errorMessage)
+    }
+
+    fun testDiagnosticsPathTruncationKeepsRootCause() {
+        // ide_diagnostics shares the same truncation helper: its 500-char cap must also keep
+        // the root cause at the bottom of a chained trace, not just the head.
+        val monster = "java.lang.RuntimeException: depth 500\n" +
+                "\tat com.example.FooTest.recurse(FooTest.java:44)\n".repeat(50) +
+                "Caused by: java.lang.RuntimeException: depth 0"
+        val proxy = SMTestProxy("testX", false, null)
+        proxy.setStarted()
+        proxy.setTestFailed("depth 500", monster, false)
+
+        val info = TestResultsCollector.toTestResultInfo(proxy, project)
+
+        val trace = info.stacktrace!!
+        assertTrue("must keep the head", trace.startsWith("java.lang.RuntimeException: depth 500"))
+        assertTrue(
+            "diagnostics traces must keep the root cause",
+            trace.endsWith("Caused by: java.lang.RuntimeException: depth 0")
+        )
+        assertTrue("must mark the elision", trace.contains("chars truncated"))
+    }
 }

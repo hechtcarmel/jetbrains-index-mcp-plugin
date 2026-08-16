@@ -1071,9 +1071,11 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
-Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages.
+Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages and failure stack traces.
 
 Results are read directly from the IDE's test runner rather than from report files on disk, so they always reflect this run and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
+
+Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long traces are trimmed in the middle (keeping the throw site and the root cause of chained exceptions), and on mass failures a per-run size budget applies: earlier failures keep their traces, later entries carry `errorMessage` only.
 
 **Language support:** Passing an **existing run configuration name** works for any language/framework. Passing a **class or method FQN** (so the plugin creates the run config for you) is supported **only for Java/Kotlin** — for Python, JS/TS, Go, PHP, or Rust, create/select a run configuration in the IDE and pass its name.
 
@@ -1115,18 +1117,23 @@ Results are read directly from the IDE's test runner rather than from report fil
 
 ```json
 {
-  "success": true,
+  "success": false,
   "timedOut": false,
   "noTestsFound": false,
-  "exitCode": 0,
-  "passed": 3,
-  "failed": 0,
+  "exitCode": 1,
+  "passed": 2,
+  "failed": 1,
   "errors": 0,
   "total": 3,
   "tests": [
     { "name": "com.example.MyTest.testFoo", "status": "passed" },
     { "name": "com.example.MyTest.testBar", "status": "passed" },
-    { "name": "com.example.MyTest.testBaz", "status": "passed" }
+    {
+      "name": "com.example.MyTest.testBaz",
+      "status": "failed",
+      "errorMessage": "expected:<1> but was:<2>",
+      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)"
+    }
   ]
 }
 ```

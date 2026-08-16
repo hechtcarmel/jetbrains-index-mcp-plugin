@@ -6,7 +6,8 @@
 
 ### Added
 
-- **`ide_run_tests` results now include the failure stack trace** ([#316](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/316)) — each failed or errored test entry carries a new `stackTrace` field with the trace reported by the test framework, alongside the existing `errorMessage` (which only holds the exception message). Very long traces (e.g. deeply chained causes) are trimmed in the middle so both the throw site and the root cause survive.
+- **`ide_run_tests` results now include the failure stack trace** ([#316](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/316)) — each failed or errored test entry carries a new `stackTrace` field with the trace reported by the test framework, alongside the existing `errorMessage` (which only holds the exception message). Very long traces (e.g. deeply chained causes) are trimmed in the middle so both the throw site and the root cause survive, and a per-run size budget keeps mass failures (hundreds of failing tests) from producing a response too large for MCP clients — earlier failures keep their traces, later entries fall back to `errorMessage` only.
+- **`ide_diagnostics` test-result stack traces now keep the root cause.** The test-results path previously truncated traces head-only at 500 chars, so chained exceptions lost their deepest `Caused by`. It now uses the same middle-trimming as `ide_run_tests` (same 500-char cap).
 
 ## [5.5.2] - 2026-08-15
 

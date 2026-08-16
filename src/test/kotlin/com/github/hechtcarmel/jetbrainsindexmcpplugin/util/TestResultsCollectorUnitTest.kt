@@ -86,4 +86,28 @@ class TestResultsCollectorUnitTest : TestCase() {
         // 300 cap + the elision marker line — far below the original ~90KB
         assertTrue("must actually shrink the trace", truncated.length < 400)
     }
+
+    fun testTruncationNeverSplitsSurrogatePairs() {
+        // "😀" is a surrogate pair (2 chars). maxLength=101 puts the head cut mid-pair,
+        // maxLength=103 puts the tail cut mid-pair — both must shift instead of splitting.
+        val trace = "😀".repeat(400)
+        for (maxLength in listOf(101, 103)) {
+            val truncated = TestResultsCollector.truncateStackTrace(trace, maxLength = maxLength)
+            for (i in truncated.indices) {
+                val c = truncated[i]
+                if (c.isHighSurrogate()) {
+                    assertTrue(
+                        "unpaired high surrogate at $i (maxLength=$maxLength)",
+                        i + 1 < truncated.length && truncated[i + 1].isLowSurrogate()
+                    )
+                }
+                if (c.isLowSurrogate()) {
+                    assertTrue(
+                        "unpaired low surrogate at $i (maxLength=$maxLength)",
+                        i > 0 && truncated[i - 1].isHighSurrogate()
+                    )
+                }
+            }
+        }
+    }
 }
