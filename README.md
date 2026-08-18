@@ -383,6 +383,8 @@ For detailed tool documentation with parameters and examples, see [USAGE.md](USA
 
 For Claude Code users: [hooks](docs/claude-code-hooks.md) that enforce IDE tool usage over bash/grep/sed fallbacks.
 
+For agent-heavy workflows: [recommended IDE settings](docs/recommended-ide-settings.md) that prevent modal dialogs from blocking headless MCP sessions.
+
 ## Multi-Project Support
 
 When multiple projects are open in a single IDE window, you must specify which project to use with the `project_path` parameter:
