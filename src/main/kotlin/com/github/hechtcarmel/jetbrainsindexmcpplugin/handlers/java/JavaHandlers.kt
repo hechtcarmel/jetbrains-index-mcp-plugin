@@ -1719,7 +1719,7 @@ class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolRef
         // Try field/enum constant first (true = search supertypes)
         val field = psiClass.findFieldByName(memberName, true)
         if (field != null && isInheritedBy(field, psiClass)) {
-            return Result.success(field)
+            return Result.success(sourceDeclarationOf(field))
         }
 
         // Try methods (searches supertypes, collapses overrides to most derived; includes constructors)
@@ -1733,6 +1733,16 @@ class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolRef
                 ErrorMessages.multipleMethodsMatch(memberName, classFqn, signatures).toArgumentFailure()
             }
         }
+    }
+
+    /**
+     * Non-Java classes expose properties as light backing fields, and `ReferencesSearch` finds
+     * nothing on those - the usages point at the property/accessors instead (issue #322). The
+     * navigation element is the real declaration (e.g. Kotlin's `KtProperty`).
+     */
+    internal fun sourceDeclarationOf(field: PsiField): PsiNamedElement {
+        if (field.language.id == "JAVA") return field
+        return field.navigationElement as? PsiNamedElement ?: field
     }
 
     private fun findMostDerivedMethods(psiClass: PsiClass, name: String): List<PsiMethod> {

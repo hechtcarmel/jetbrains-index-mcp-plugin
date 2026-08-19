@@ -1,5 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java
 
+import com.intellij.lang.Language
+import com.intellij.psi.PsiField
+import com.intellij.psi.PsiNamedElement
+import io.mockk.every
+import io.mockk.mockk
 import junit.framework.TestCase
 
 class JavaSymbolReferenceHandlerUnitTest : TestCase() {
@@ -219,5 +224,28 @@ class JavaSymbolReferenceHandlerUnitTest : TestCase() {
     fun testStripGenericsUnclosedNestedReturnsOriginal() {
         val input = "Map<String, List<Integer>"
         assertEquals(input, handler.stripGenerics(input))
+    }
+
+    // ── sourceDeclarationOf: light backing fields (issue #322) ─────────────────
+
+    private fun field(languageId: String, navigationElement: PsiNamedElement? = null): PsiField =
+        mockk<PsiField>().also { field ->
+            every { field.language } returns mockk<Language>().also { every { it.id } returns languageId }
+            every { field.navigationElement } returns (navigationElement ?: field)
+        }
+
+    fun testSourceDeclarationOfJavaFieldReturnsField() {
+        val javaField = field("JAVA", navigationElement = mockk<PsiNamedElement>())
+        assertSame(javaField, handler.sourceDeclarationOf(javaField))
+    }
+
+    fun testSourceDeclarationOfNonJavaFieldReturnsNavigationElement() {
+        val property = mockk<PsiNamedElement>()
+        assertSame(property, handler.sourceDeclarationOf(field("kotlin", navigationElement = property)))
+    }
+
+    fun testSourceDeclarationOfNonJavaFieldWithoutNamedNavigationElementReturnsField() {
+        val compiledField = field("kotlin")
+        assertSame(compiledField, handler.sourceDeclarationOf(compiledField))
     }
 }
