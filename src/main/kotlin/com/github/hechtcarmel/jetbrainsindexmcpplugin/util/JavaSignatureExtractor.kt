@@ -42,6 +42,8 @@ internal object JavaSignatureExtractor {
         PsiModifier.PROTECTED,
         PsiModifier.PRIVATE,
         PsiModifier.ABSTRACT,
+        PsiModifier.SEALED,
+        PsiModifier.NON_SEALED,
         PsiModifier.DEFAULT,
         PsiModifier.STATIC,
         PsiModifier.FINAL,
