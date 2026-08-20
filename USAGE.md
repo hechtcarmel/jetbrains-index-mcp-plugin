@@ -921,6 +921,29 @@ Build model reload scheduled for Maven in 'engine'. IntelliJ is resolving depend
 
 ---
 
+### ide_link_build_system
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+
+Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. Use when `ide_reload_project` reports "build file found on disk but project is not linked" — this tool does the equivalent of clicking "Load Maven/Gradle Project" in the IDE notification bar.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No | Absolute path of the project directory to link. Defaults to the resolved project's base path. |
+| `project_path` | string | No | Selects the project when multiple are open. |
+
+**Example request:**
+```json
+{ "path": "/Users/dev/myproject" }
+```
+
+**Example response:**
+```json
+"Maven project linked — dependency resolution scheduled."
+```
+
+---
+
 ### ide_import_modules
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server

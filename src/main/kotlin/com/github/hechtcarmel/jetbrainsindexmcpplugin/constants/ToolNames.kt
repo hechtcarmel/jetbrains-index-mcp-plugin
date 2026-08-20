@@ -25,6 +25,7 @@ object ToolNames {
     const val BUILD_PROJECT = "ide_build_project"
     const val CREATE_MODULE = "ide_create_module"
     const val IMPORT_MODULES = "ide_import_modules"
+    const val LINK_BUILD_SYSTEM = "ide_link_build_system"
     const val RELOAD_PROJECT = "ide_reload_project"
     const val LIST_TESTS = "ide_list_tests"
     const val RUN_TESTS = "ide_run_tests"
@@ -102,6 +103,7 @@ object ToolNames {
         INSERT_MEMBER,
         INSTALL_PLUGIN,
         LIFECYCLE_LOG,
+        LINK_BUILD_SYSTEM,
         LIST_TESTS,
         REFACTOR_MOVE,
         OPEN_FILE,

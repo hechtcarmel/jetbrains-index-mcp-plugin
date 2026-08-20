@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **New `ide_link_build_system` tool** ([#319](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/319)) — links an unlinked Maven or Gradle project using the platform's `ExternalSystemUnlinkedProjectAware` EP, the same code path the IDE's own "Load Maven/Gradle Project" notification uses. Detects the build system automatically from build files. Use when `ide_reload_project` reports "build file found but project is not linked". *(disabled by default)*
+- **`ide_open_project` gains an optional `autoLink` parameter** ([#319](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/319)) — when `true`, automatically links an unlinked Maven/Gradle build system after opening. Default: `false`. `ide_reload_project`'s "not linked" message now points at `ide_link_build_system` instead of telling agents to click IDE UI they can't reach.
+
 ## [5.6.0] - 2026-08-16
 
 ### Added

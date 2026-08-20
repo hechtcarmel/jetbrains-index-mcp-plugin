@@ -1,6 +1,6 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 49
+# tools: 50
 
 ## ide_build_project
 description:
@@ -1342,6 +1342,60 @@ schema:
     "type": "object"
   }
 
+## ide_link_build_system
+description:
+  Link an unlinked Maven or Gradle project so the IDE resolves its dependencies.
+  
+  Use this when ide_reload_project reports "build file found on disk but project
+  is not linked" — this tool does the equivalent of clicking "Load Maven/Gradle
+  Project" in the IDE notification bar.
+  
+  Detects the build system automatically from build files in the project directory.
+  If the project is already linked, returns successfully without re-linking.
+  If neither Maven nor Gradle plugin is available, reports which plugins are missing.
+  
+  Two modes:
+  - Start: provide path (or omit to use current project). If the link completes within
+    waitSeconds, returns the result directly. Otherwise returns {"status": "running",
+    "linkId": ...} — call again with that linkId to poll.
+  - Poll: provide linkId from a previous call.
+  
+  Parameters:
+  - path (optional): absolute path of the project directory to link. Defaults to the resolved project's base path.
+  - linkId (optional): poll a link operation started by a previous call. Mutually exclusive with path.
+  - waitSeconds (optional): max seconds to wait per call. Default: 45, max: 55.
+  - project_path (optional): selects the project when multiple are open.
+  
+  Example: { "path": "/Users/dev/myproject" }
+  Example: { "linkId": "abc123" }
+schema:
+  {
+    "properties":
+    {
+      "linkId":
+      {
+        "description": "Poll a link operation started by a previous call.",
+        "type": "string"
+      },
+      "path":
+      {
+        "description": "Absolute path of the project directory to link. Defaults to the resolved project's base path.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "waitSeconds":
+      {
+        "description": "Max seconds to wait per call. Default: 45, max: 55.",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  }
+
 ## ide_list_tests
 description:
   List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
@@ -1480,14 +1534,20 @@ description:
   
   Parameters:
   - path: absolute filesystem path of the project directory to open (required)
+  - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
   - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: 600.
   - project_path (optional): selects the JSON-RPC context project when multiple are open
   
-  Example: { "path": "/Users/dev/myproject" }
+  Example: { "path": "/Users/dev/myproject", "autoLink": true }
 schema:
   {
     "properties":
     {
+      "autoLink":
+      {
+        "description": "Automatically link an unlinked Maven/Gradle build system after opening. Default: false.",
+        "type": "boolean"
+      },
       "path":
       {
         "description": "Absolute filesystem path of the project directory to open.",

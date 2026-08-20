@@ -1,6 +1,6 @@
 # MCP tool response shapes — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ResultShapeContractUnitTest" -Dcontract.update=true
-# shapes: 66
+# shapes: 67
 
 ## ActiveFileInfo
   column: number?
@@ -197,6 +197,13 @@
 ## JavaToKotlinConversionResult
   files: array
   summary: object
+
+## LinkInProgressResult
+  elapsedSeconds: number
+  linkId: string
+  message: string
+  status: string
+  systemName: string
 
 ## ListTestsResult
   count: number

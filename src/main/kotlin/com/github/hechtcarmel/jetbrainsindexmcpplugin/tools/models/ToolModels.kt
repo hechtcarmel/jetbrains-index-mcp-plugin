@@ -484,6 +484,15 @@ data class BuildInProgressResult(
     val message: String
 )
 
+@Serializable
+data class LinkInProgressResult(
+    val status: String,
+    val linkId: String,
+    val systemName: String,
+    val elapsedSeconds: Long,
+    val message: String
+)
+
 // ide_search_text output
 @Serializable
 data class SearchTextResult(

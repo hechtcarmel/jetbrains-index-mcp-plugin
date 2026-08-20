@@ -590,6 +590,16 @@ Force-reload the project build model (Maven, Gradle, or both). Use after changin
 
 **Returns**: text summary of scheduled Maven/Gradle reloads or skipped unlinked build systems.
 
+### ide_link_build_system (disabled by default)
+Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. Use when `ide_reload_project` reports "build file found but project is not linked". Detects the build system automatically from build files in the project directory.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | no | Absolute path of the project directory to link. Defaults to the resolved project's base path. |
+| `project_path` | string | no | Project root path |
+
+**Returns**: text confirming link status ("Maven project linked — dependency resolution scheduled.", "already linked", or error).
+
 ### ide_import_modules (disabled by default, Maven plugin only)
 Import one or more external Maven project directories as modules into the current IntelliJ project window. Already imported module roots are skipped.
 

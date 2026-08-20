@@ -5,14 +5,19 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildSystemLinker
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.LinkResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.intellij.ide.trustedProjects.TrustedProjects
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import com.intellij.ide.trustedProjects.TrustedProjects
 import java.io.File
 import java.nio.file.Path
 
@@ -46,14 +51,16 @@ class OpenProjectTool : AbstractMcpTool() {
 
         Parameters:
         - path: absolute filesystem path of the project directory to open (required)
+        - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
         - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: $DEFAULT_TIMEOUT_SECONDS.
         - project_path (optional): selects the JSON-RPC context project when multiple are open
 
-        Example: { "path": "/Users/dev/myproject" }
+        Example: { "path": "/Users/dev/myproject", "autoLink": true }
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .stringProperty("path", "Absolute filesystem path of the project directory to open.", required = true)
+        .booleanProperty("autoLink", "Automatically link an unlinked Maven/Gradle build system after opening. Default: false.")
         .intProperty(
             ParamNames.TIMEOUT_SECONDS,
             "Maximum seconds to wait for the project to open and finish indexing. " +
@@ -72,6 +79,7 @@ class OpenProjectTool : AbstractMcpTool() {
             return createErrorResult("path must be an absolute path, got: $path")
         }
 
+        val autoLink = arguments["autoLink"]?.jsonPrimitive?.booleanOrNull ?: false
         val timeoutSeconds = arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull
             ?: DEFAULT_TIMEOUT_SECONDS
         if (timeoutSeconds <= 0) {
@@ -89,16 +97,24 @@ class OpenProjectTool : AbstractMcpTool() {
         TrustedProjects.setProjectTrusted(Path.of(path), true)
 
         var openedProject: Project? = null
+        var linkMsg: String? = null
         val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
             val opened = ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
                 ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
             openedProject = opened
-            if (ProjectUtils.awaitSmartMode(opened)) OpenOutcome.READY else OpenOutcome.CLOSED_WHILE_WAITING
+            if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
+            if (autoLink) {
+                linkMsg = tryAutoLink(opened, path)
+                ProjectUtils.awaitSmartMode(opened)
+            }
+            OpenOutcome.READY
         }
 
         return when (outcome) {
-            OpenOutcome.READY ->
-                createSuccessResult("Project '${openedProject!!.name}' is open and ready.")
+            OpenOutcome.READY -> {
+                val msg = "Project '${openedProject!!.name}' is open and ready."
+                if (linkMsg != null) createSuccessResult("$msg $linkMsg") else createSuccessResult(msg)
+            }
 
             OpenOutcome.OPEN_FAILED ->
                 createErrorResult("Failed to open project at: $path")
@@ -121,6 +137,24 @@ class OpenProjectTool : AbstractMcpTool() {
                     )
                 }
             }
+        }
+    }
+
+    private suspend fun tryAutoLink(project: Project, path: String): String? {
+        return try {
+            when (val result = BuildSystemLinker.linkBuildSystem(project, path)) {
+                is LinkResult.Linked -> "${result.systemName} project linked."
+                is LinkResult.AlreadyLinked -> null
+                is LinkResult.NoBuildFile -> null
+                is LinkResult.PluginUnavailable -> "Auto-link skipped: ${result.systemName} plugin not available."
+                is LinkResult.Failed -> "Auto-link failed: ${result.error}"
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            "Auto-link failed: ${e.message}"
         }
     }
 

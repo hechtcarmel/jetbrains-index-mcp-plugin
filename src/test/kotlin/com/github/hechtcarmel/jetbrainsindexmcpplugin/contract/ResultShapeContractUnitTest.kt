@@ -31,6 +31,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagno
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildInProgressResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.LinkInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
@@ -701,6 +702,16 @@ class ResultShapeContractUnitTest : TestCase() {
                     elapsedSeconds = 61,
                     timeoutSeconds = 600,
                     message = "Build is still executing"
+                )
+            ),
+            struct(
+                LinkInProgressResult.serializer(),
+                LinkInProgressResult(
+                    status = "running",
+                    linkId = "a1b2c3d4",
+                    systemName = "Maven",
+                    elapsedSeconds = 12,
+                    message = "Maven link in progress"
                 )
             ),
             struct(

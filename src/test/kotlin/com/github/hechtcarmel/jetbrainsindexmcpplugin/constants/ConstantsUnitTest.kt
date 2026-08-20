@@ -35,6 +35,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.BUILD_PROJECT,
             ToolNames.CREATE_MODULE,
             ToolNames.IMPORT_MODULES,
+            ToolNames.LINK_BUILD_SYSTEM,
             ToolNames.CHANGE_SIGNATURE,
             ToolNames.CREATE_FILE,
             ToolNames.STRUCTURAL_SEARCH_REPLACE,
