@@ -64,6 +64,56 @@ data class DefinitionResult(
     val astPath: List<String>
 )
 
+// ide_symbol_info output
+
+/**
+ * One parameter of a resolved callable signature.
+ *
+ * [type] is the type as the extractor resolved it — for Java PSI that is
+ * `PsiType.getCanonicalText()`, i.e. fully qualified and resolved through imports, type
+ * aliases and generics, which is the whole point of the tool.
+ */
+@Serializable
+data class SymbolParameterInfo(
+    val name: String?,
+    val type: String
+)
+
+/**
+ * Resolved declaration facts for a symbol at a position: what `ide_find_definition` cannot
+ * give because it returns source text as written.
+ *
+ * [signatureSource] states how [signature] was produced, so a client can tell a fully
+ * resolved signature from an IDE-rendered one from a raw source line:
+ * - `java_psi` — built from Java PSI. [parameters] and [returnType] are fully qualified.
+ * - `quick_navigation` — the language's own documentation provider rendered it (the
+ *   Ctrl/Cmd-hover text). Resolved by that language's rules; type names are as the provider
+ *   chooses to render them, so they may be short.
+ * - `element_text` — no documentation provider produced anything; the declaration's own
+ *   source line is echoed back.
+ */
+@Serializable
+data class SymbolInfoResult(
+    val name: String,
+    val kind: String?,
+    val qualifiedName: String?,
+    val signature: String,
+    val signatureSource: String,
+    val parameters: List<SymbolParameterInfo>? = null,
+    val returnType: String? = null,
+    val typeParameters: List<String>? = null,
+    val thrownTypes: List<String>? = null,
+    val modifiers: List<String>? = null,
+    val visibility: String? = null,
+    val containingDeclaration: String? = null,
+    val documentation: String? = null,
+    val documentationTruncated: Boolean = false,
+    val file: String? = null,
+    val line: Int? = null,
+    val column: Int? = null,
+    val language: String? = null
+)
+
 // ide_read_file output
 @Serializable
 data class ReadFileResult(

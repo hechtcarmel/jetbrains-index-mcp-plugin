@@ -99,6 +99,39 @@ Go to where a symbol is defined.
 **Returns**: `{ file, line, column, preview, symbolName, astPath }`
 Handles: packages, compiled classes, library sources (jar: URLs).
 
+### ide_symbol_info (disabled by default)
+Resolved signature and documentation of the symbol at a position — the declaration facts
+`ide_find_definition` cannot give, because its preview is source text with unresolved short type
+names and no doc comment.
+
+**Target (mutually exclusive):** `file`+`line`+`column` OR `language`+`symbol`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
+| `line` | integer | conditional | 1-based line. Required for position-based lookup. |
+| `column` | integer | conditional | 1-based column. Required for position-based lookup. |
+| `language` | string | conditional | Symbol language (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `includeDoc` | boolean | no | Include the rendered doc comment. Default true |
+| `maxDocLength` | integer | no | Truncate documentation beyond this many characters. Default 4000, max 20000 |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ name, kind, qualifiedName, signature, signatureSource, parameters: [{name, type}], returnType, typeParameters, thrownTypes, modifiers, visibility, containingDeclaration, documentation, documentationTruncated, file, line, column, language }`
+
+**Type resolution**: `signatureSource` says how far the types were resolved.
+- `java_psi` — Java declarations. Parameter and return types are fully qualified
+  (`java.util.List<com.example.Request>`), and `parameters` / `returnType` are populated.
+- `quick_navigation` — any language with a documentation provider (Kotlin, Python, JS/TS, Go, PHP,
+  Rust). The signature is what that language's Quick Documentation renders; type names may be short
+  and the structured fields are absent.
+- `element_text` — no documentation provider answered; the declaration's own source line.
+
+**Overloads**: address them by position — each overload's own `line`/`column` selects it.
+
+**Chaining**: `qualifiedName` is in this plugin's `symbol` format, so it can be passed straight to
+`ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations` as `symbol`.
+
 ### ide_find_class
 Search for classes/interfaces by name using IDE's class index. Equivalent to Ctrl+N / Cmd+O.
 

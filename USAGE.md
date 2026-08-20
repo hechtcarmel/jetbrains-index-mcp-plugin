@@ -14,6 +14,7 @@ These tools work in every supported JetBrains IDE:
 |------|-------------|---------|
 | `ide_find_references` | Find all references to a symbol | Enabled |
 | `ide_find_definition` | Find symbol definition location | Enabled |
+| `ide_symbol_info` | Resolved signature + docs for the symbol at a position, without reading the file | Disabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
 | `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
@@ -97,6 +98,7 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
 - [Universal Tools](#universal-tools)
   - [ide_find_references](#ide_find_references)
   - [ide_find_definition](#ide_find_definition)
+  - [ide_symbol_info](#ide_symbol_info)
   - [ide_find_class](#ide_find_class)
   - [ide_find_file](#ide_find_file)
   - [ide_search_text](#ide_search_text)
@@ -403,6 +405,90 @@ Finds the definition/declaration location of a symbol at a given source location
 ```
 
 **Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+
+---
+
+### ide_symbol_info
+
+Returns the resolved signature and documentation of the symbol at a position, so a signature check
+does not cost a whole-file read.
+
+**Use when:**
+- Checking whether a call site is compatible before changing it
+- Picking between overloads
+- Reading a declaration's doc comment without opening the declaring file
+
+**How it differs from `ide_find_definition`:** that tool returns *source text* — parameter types
+appear as the short names the author imported, and no doc comment is included. This tool returns
+types as the IDE resolved them.
+
+**Type resolution by language:**
+
+| `signatureSource` | When | Type names |
+|-------------------|------|------------|
+| `java_psi` | Java declarations (and Kotlin light elements) | Fully qualified, plus structured `parameters` and `returnType` |
+| `quick_navigation` | Any language with a documentation provider — Kotlin, Python, JS/TS, Go, PHP, Rust | As that language's Quick Documentation renders them; often short |
+| `element_text` | No documentation provider answered | The declaration's own source line |
+
+**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `includeDoc` | boolean | No | Include the rendered doc comment (default: true) |
+| `maxDocLength` | integer | No | Truncate documentation beyond this many characters (default: 4000, max: 20000) |
+| `project_path` | string | No | Project root path |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_symbol_info",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 17
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "name": "findUser",
+  "kind": "method",
+  "qualifiedName": "com.example.UserService#findUser",
+  "signature": "public com.example.model.User findUser(java.lang.String id) throws com.example.NotFoundException",
+  "signatureSource": "java_psi",
+  "parameters": [
+    { "name": "id", "type": "java.lang.String" }
+  ],
+  "returnType": "com.example.model.User",
+  "thrownTypes": ["com.example.NotFoundException"],
+  "modifiers": ["public"],
+  "visibility": "public",
+  "containingDeclaration": "com.example.UserService",
+  "documentation": "Looks up a user by id.\n\nParams:\nid - the user id\nReturns:\nthe user, never null",
+  "documentationTruncated": false,
+  "file": "src/main/java/com/example/UserService.java",
+  "line": 15,
+  "column": 35,
+  "language": "Java"
+}
+```
+
+**Note:** `qualifiedName` uses this plugin's `symbol` format, so it can be passed straight back to
+`ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations` as the `symbol` argument.
 
 ---
 

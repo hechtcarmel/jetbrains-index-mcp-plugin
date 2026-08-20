@@ -331,7 +331,14 @@ object OptimizedSymbolSearch {
         return null
     }
 
-    private fun getLanguageName(element: PsiElement): String {
+    /**
+     * The normalized language label used across tool responses — the same spelling the
+     * `language` parameter accepts, so a returned value can be fed straight back into a
+     * `language` + `symbol` lookup.
+     *
+     * Internal rather than private because `ide_symbol_info` reports the same label.
+     */
+    internal fun getLanguageName(element: PsiElement): String {
         return when (element.language.id) {
             "JAVA" -> "Java"
             "kotlin" -> "Kotlin"

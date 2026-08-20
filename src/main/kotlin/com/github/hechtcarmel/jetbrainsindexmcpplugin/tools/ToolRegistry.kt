@@ -15,6 +15,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SymbolInfoTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.EnrollAllProjectsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.GetProjectModesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.LifecycleLogTool
@@ -69,6 +70,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * - `ide_find_references` - Find all usages of a symbol
  * - `ide_find_definition` - Find symbol definition location
+ * - `ide_symbol_info` - Resolved signature and documentation for the symbol at a position
  * - `ide_find_class` - Class search using CLASS_EP_NAME index
  * - `ide_find_file` - File search using FILE_EP_NAME index
  * - `ide_find_symbol` - Search for symbols by name (universal, popup-backed)
@@ -248,6 +250,7 @@ class ToolRegistry {
         // Navigation tools (universal)
         register(FindUsagesTool())
         register(FindDefinitionTool())
+        register(SymbolInfoTool())
 
         // Intelligence tools
         register(GetDiagnosticsTool())

@@ -39,7 +39,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolInfoResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolParameterInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SyncFilesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInfo
@@ -553,6 +555,33 @@ class ResultShapeContractUnitTest : TestCase() {
                     preview = "public Response handle(Request request) {",
                     symbolName = "handle",
                     astPath = listOf("PsiClass:Service", "PsiMethod:handle")
+                )
+            ),
+            struct(
+                SymbolParameterInfo.serializer(),
+                SymbolParameterInfo(name = "request", type = "com.example.model.Request")
+            ),
+            struct(
+                SymbolInfoResult.serializer(),
+                SymbolInfoResult(
+                    name = "handle",
+                    kind = "method",
+                    qualifiedName = "com.example.Service#handle",
+                    signature = "public com.example.model.Result handle(com.example.model.Request request)",
+                    signatureSource = "java_psi",
+                    parameters = listOf(SymbolParameterInfo(name = "request", type = "com.example.model.Request")),
+                    returnType = "com.example.model.Result",
+                    typeParameters = listOf("T extends java.lang.Number"),
+                    thrownTypes = listOf("java.io.IOException"),
+                    modifiers = listOf("public"),
+                    visibility = "public",
+                    containingDeclaration = "com.example.Service",
+                    documentation = "Handles one request and reports the outcome.",
+                    documentationTruncated = true,
+                    file = "src/main/java/com/example/Service.java",
+                    line = 42,
+                    column = 17,
+                    language = "Java"
                 )
             ),
             struct(

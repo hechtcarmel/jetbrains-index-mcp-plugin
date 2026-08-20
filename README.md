@@ -258,7 +258,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **51 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **52 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
 
 ### Universal Tools
 
@@ -268,6 +268,7 @@ These tools work in all supported JetBrains IDEs.
 |------|-------------|
 | `ide_find_references` | Find all references to a symbol across the entire project |
 | `ide_find_definition` | Find the definition/declaration location of a symbol |
+| `ide_symbol_info` | Resolved signature and documentation for the symbol at a position — parameter and return types expanded to fully qualified names (Java), structured `parameters`, modifiers, containing declaration, and the doc comment as plain text, without reading the file *(disabled by default)* |
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
 | `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching *(disabled by default)* |

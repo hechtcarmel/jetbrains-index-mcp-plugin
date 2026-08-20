@@ -76,6 +76,10 @@ object ParamNames {
     const val PARAMETER_COUNT = "parameterCount"
     const val REFORMAT = "reformat"
 
+    // Symbol info parameters
+    const val INCLUDE_DOC = "includeDoc"
+    const val MAX_DOC_LENGTH = "maxDocLength"
+
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
     const val MAX_PREVIEW_LINES = "maxPreviewLines"

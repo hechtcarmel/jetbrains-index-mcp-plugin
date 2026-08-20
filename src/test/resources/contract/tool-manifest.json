@@ -1,6 +1,6 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 50
+# tools: 51
 
 ## ide_build_project
 description:
@@ -2624,6 +2624,78 @@ schema:
     [
       "searchPattern"
     ],
+    "type": "object"
+  }
+
+## ide_symbol_info
+description:
+  Get the resolved signature and documentation of the symbol at a position, without reading the file. Use before changing a call site, picking an overload, or checking what a parameter actually accepts.
+  
+  Returns: name, kind, qualified name, resolved signature, structured parameters (name + type), return type, modifiers, visibility, containing declaration, the doc comment as plain text, and the declaration's file/line/column.
+  
+  Type resolution: for Java, every parameter and return type is expanded to its fully qualified name — `java.util.List<com.example.model.Request>` for a parameter written as `List<Request>`. Other languages fall back to the signature their own Quick Documentation renders, where type names may stay short. The `signatureSource` field reports which happened: `java_psi` (fully resolved, with structured `parameters`), `quick_navigation` (IDE-rendered), or `element_text` (raw declaration line, when no documentation provider answers).
+  
+  Prefer this over ide_find_definition + reading the file when you only need the signature or the docs.
+  
+  Target (mutually exclusive):
+  - file + line + column: position-based lookup, so overloads are addressable
+  - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript)
+  
+  Example: {"file": "src/Main.java", "line": 15, "column": 10}
+  Example: {"language": "Java", "symbol": "com.example.MyClass#processData(String)"}
+  Example: {"file": "src/Main.java", "line": 15, "column": 10, "includeDoc": false}
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
+        "type": "string"
+      },
+      "includeDoc":
+      {
+        "description": "Include the rendered doc comment. Set false when only the signature is needed. Optional, defaults to true.",
+        "type": "boolean"
+      },
+      "language":
+      {
+        "description": "Language of the symbol. Required when using 'symbol' parameter. Currently supported languages: Java, Kotlin, JavaScript, TypeScript.",
+        "enum":
+        [
+          "Java",
+          "Kotlin",
+          "JavaScript",
+          "TypeScript"
+        ],
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "maxDocLength":
+      {
+        "description": "Maximum characters of documentation to return; longer docs are truncated and documentationTruncated is set. Default: 4000, max: 20000.",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute path to the project root. Required when multiple projects are open. For workspace projects, use the sub-project path.",
+        "type": "string"
+      },
+      "symbol":
+      {
+        "description": "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters.",
+        "type": "string"
+      }
+    },
     "type": "object"
   }
 

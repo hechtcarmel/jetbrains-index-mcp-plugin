@@ -356,6 +356,26 @@ object PsiUtils {
         return element.navigationElement ?: element
     }
 
+    /**
+     * Resolves [element] to the element a client should be shown: the source declaration where
+     * one exists, rather than a compiled stand-in.
+     *
+     * [getNavigationElement] handles the common case — a library `.class` element whose sources
+     * are attached. The second hop covers Kotlin light classes and import directives, where the
+     * first navigation element is itself a compiled element with no virtual file while *its*
+     * navigation element has one.
+     */
+    fun resolveNavigationTarget(element: PsiElement): PsiElement {
+        val target = getNavigationElement(element)
+        if (target.containingFile?.virtualFile != null) return target
+        val navigationElement = target.navigationElement
+        return if (navigationElement != target && navigationElement.containingFile?.virtualFile != null) {
+            navigationElement
+        } else {
+            target
+        }
+    }
+
     // Java/Kotlin PSI classes — loaded lazily to avoid a compile-time dependency on those plugins.
     // PsiClass lives in the Java plugin, not the platform: an `element is PsiClass` check would
     // throw NoClassDefFoundError in IDEs without it (e.g. PhpStorm resolving a PhpClass here).

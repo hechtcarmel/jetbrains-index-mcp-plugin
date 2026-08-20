@@ -70,21 +70,9 @@ class FindDefinitionTool : AbstractMcpTool() {
                 ?: (PsiUtils.resolveTargetElement(element)
                     ?: return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED))
 
-            // Prefer source files (.java) over compiled files (.class) for library classes
-            val targetElement = PsiUtils.getNavigationElement(resolvedElement)
-
-            // Try the target element first, then its navigationElement (for Kotlin light classes
-            // and import directives where the resolved element may be a compiled class without a virtual file)
-            val effectiveTarget = if (targetElement.containingFile?.virtualFile != null) {
-                targetElement
-            } else {
-                val navElement = targetElement.navigationElement
-                if (navElement != targetElement && navElement.containingFile?.virtualFile != null) {
-                    navElement
-                } else {
-                    targetElement
-                }
-            }
+            // Prefer source files (.java) over compiled files (.class) for library classes,
+            // and hop past a compiled stand-in that has no virtual file of its own.
+            val effectiveTarget = PsiUtils.resolveNavigationTarget(resolvedElement)
 
             // Handle package/directory references (e.g., cursor on package segment in import statement)
             if (effectiveTarget is PsiDirectory) {

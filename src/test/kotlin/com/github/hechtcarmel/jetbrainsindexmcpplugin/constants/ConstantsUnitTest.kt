@@ -27,6 +27,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.FIND_FILE,
             ToolNames.SEARCH_TEXT,
             ToolNames.READ_FILE,
+            ToolNames.SYMBOL_INFO,
             ToolNames.DIAGNOSTICS,
             ToolNames.PROJECT_DIAGNOSTICS,
             ToolNames.EDIT_MEMBER,

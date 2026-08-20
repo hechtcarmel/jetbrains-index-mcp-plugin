@@ -1,6 +1,6 @@
 # MCP tool response shapes — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ResultShapeContractUnitTest" -Dcontract.update=true
-# shapes: 67
+# shapes: 69
 
 ## ActiveFileInfo
   column: number?
@@ -437,6 +437,26 @@
   name: string
   type: string
 
+## SymbolInfoResult
+  column: number? (optional)
+  containingDeclaration: string? (optional)
+  documentation: string? (optional)
+  documentationTruncated: boolean (optional)
+  file: string? (optional)
+  kind: string?
+  language: string? (optional)
+  line: number? (optional)
+  modifiers: array? (optional)
+  name: string
+  parameters: array? (optional)
+  qualifiedName: string?
+  returnType: string? (optional)
+  signature: string
+  signatureSource: string
+  thrownTypes: array? (optional)
+  typeParameters: array? (optional)
+  visibility: string? (optional)
+
 ## SymbolMatch
   column: number
   containerName: string?
@@ -446,6 +466,10 @@
   line: number
   name: string
   qualifiedName: string?
+
+## SymbolParameterInfo
+  name: string?
+  type: string
 
 ## SymbolSuggestion
   column: number

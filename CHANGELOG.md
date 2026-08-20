@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **New `ide_symbol_info` tool** ([#327](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/327)) — returns the resolved signature and documentation of the symbol at a position, so a signature check no longer costs a whole-file read. `ide_find_definition` returns *source text*: with `fullElementPreview` the declaration comes back exactly as written, so parameter and return types stay as the short names the author imported, and no doc comment is included. This tool reports what the IDE resolved. For Java every parameter and return type is expanded to its fully qualified name (`java.util.List<com.example.model.Request>` for a parameter written as `List<Request>`), with structured `parameters`, `returnType`, `typeParameters`, `thrownTypes`, `modifiers` and `visibility`; for every other language with a documentation provider — Kotlin, Python, JS/TS, Go, PHP, Rust — the signature is the one that language's Quick Documentation renders. The `signatureSource` field (`java_psi` / `quick_navigation` / `element_text`) states which path produced the result, so a client can tell a fully resolved signature from an IDE-rendered one. Doc comments come back as plain text, bounded by `maxDocLength` and suppressible with `includeDoc: false`. Addressed like every other navigation tool — `file`+`line`+`column`, so overloads are selectable, or `language`+`symbol`. *(disabled by default)*
+
 ## [5.7.0] - 2026-08-20
 
 ### Added

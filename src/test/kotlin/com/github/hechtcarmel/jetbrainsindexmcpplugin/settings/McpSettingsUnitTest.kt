@@ -120,6 +120,10 @@ class McpSettingsUnitTest : TestCase() {
     fun testDefaultDisabledToolsComeFromSingleConstant() {
         assertEquals(McpSettings.DEFAULT_DISABLED_TOOLS, McpSettings.State().disabledTools)
         assertTrue(McpSettings.DEFAULT_DISABLED_TOOLS.contains(ToolNames.IMPORT_MODULES))
+        assertTrue(
+            "New tools ship opt-in",
+            McpSettings.DEFAULT_DISABLED_TOOLS.contains(ToolNames.SYMBOL_INFO)
+        )
     }
 
     fun testLoadStateMigratesLegacyDisabledTools() {
@@ -173,7 +177,7 @@ class McpSettingsUnitTest : TestCase() {
         settings.setToolEnabled(ToolNames.IMPORT_MODULES, true)
 
         assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
-        assertEquals(8, settings.state.settingsSchemaVersion)
+        assertEquals(9, settings.state.settingsSchemaVersion)
     }
 
     fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
@@ -191,7 +195,7 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.IMPORT_MODULES))
         assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
         assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
-        assertEquals(8, settings.state.settingsSchemaVersion)
+        assertEquals(9, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {
@@ -244,6 +248,18 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse(
             "${ToolNames.PROJECT_DIAGNOSTICS} should be disabled after v6→v7 migration",
             settings.isToolEnabled(ToolNames.PROJECT_DIAGNOSTICS)
+        )
+    }
+
+    fun testSchemaVersion8MigrationKeepsSymbolInfoDisabled() {
+        val settings = McpSettings()
+        val disabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.SYMBOL_INFO).toMutableSet()
+
+        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 8))
+
+        assertFalse(
+            "${ToolNames.SYMBOL_INFO} should be disabled after v8\u2192v9 migration",
+            settings.isToolEnabled(ToolNames.SYMBOL_INFO)
         )
     }
 
