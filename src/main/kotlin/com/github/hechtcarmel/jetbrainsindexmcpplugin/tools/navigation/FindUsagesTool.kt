@@ -2,10 +2,13 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -82,9 +85,10 @@ class FindUsagesTool : AbstractMcpTool() {
         - language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
-        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/UserService.java", "line": 25, "column": 18}
+        Example: {"file": "src/UserService.java", "line": 25, "column": 18, "paths": ["src/main/**", "!**/generated/**"]}
         Example: {"language": "Java", "symbol": "com.example.UserService#findUser(String)", "scope": "project_and_libraries"}
         Example: {"language": "TypeScript", "symbol": "src/api#default"}
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
@@ -97,6 +101,7 @@ class FindUsagesTool : AbstractMcpTool() {
         .languageAndSymbol(required = false)
         .scopeProperty("Search scope. Default: project_files.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: true — keeps valid runtime references (Dagger, MapStruct, gRPC, serializers). Set false to drop generated output when it dominates the result set.")
+        .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
         .intProperty("maxResults", "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
@@ -137,6 +142,9 @@ class FindUsagesTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val pathMatcher = resolvePathGlobMatcher(project, arguments).getOrElse {
+            return createErrorResult(it.message ?: "Invalid '${ParamNames.PATHS}' parameter")
+        }
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
@@ -168,7 +176,9 @@ class FindUsagesTool : AbstractMcpTool() {
             val usages = ConcurrentLinkedQueue<UsageLocation>()
             val totalFound = AtomicInteger(0)
             val totalCountLimit = collectLimit * 10
-            val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
+            val searchScope = PathGlobScope.wrap(
+                project, BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated), pathMatcher
+            )
 
             try {
                 ReferencesSearch.search(targetElement, searchScope).forEach(Processor { reference ->
@@ -228,7 +238,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 suspendingReadAction {
                     val el = smartPointer.element
                         ?: throw IllegalStateException("Target element no longer valid")
-                    extendFindUsages(project, el, seenKeys, limit, scope, excludeGenerated)
+                    extendFindUsages(project, el, seenKeys, limit, scope, excludeGenerated, pathMatcher)
                 }
             }
 
@@ -294,11 +304,14 @@ class FindUsagesTool : AbstractMcpTool() {
         seenKeys: Set<String>,
         limit: Int,
         scope: BuiltInSearchScope,
-        excludeGenerated: Boolean
+        excludeGenerated: Boolean,
+        pathMatcher: PathGlobMatcher?
     ): List<PaginationService.SerializedResult> {
         val newResults = ConcurrentLinkedQueue<PaginationService.SerializedResult>()
         val count = AtomicInteger(0)
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
+        val searchScope = PathGlobScope.wrap(
+            project, BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated), pathMatcher
+        )
 
         try {
             ReferencesSearch.search(targetElement, searchScope).forEach(Processor { reference ->

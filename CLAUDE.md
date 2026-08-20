@@ -491,12 +491,12 @@ tests that could not fail:
 Tools are organized by IDE availability.
 
 **Universal Tools (All Supported JetBrains IDEs):**
-- `ide_find_references` - Find all usages of a symbol. Supports `language`+`symbol` as alternative to `file`+`line`+`column`. Includes generated sources by default (`includeGenerated: true`) so valid runtime references (Dagger/MapStruct/gRPC/serializers) aren't missed; set `includeGenerated: false` to drop generated DI factories/mappers/stubs when they dominate results.
+- `ide_find_references` - Find all usages of a symbol. Supports `language`+`symbol` as alternative to `file`+`line`+`column`. Includes generated sources by default (`includeGenerated: true`) so valid runtime references (Dagger/MapStruct/gRPC/serializers) aren't missed; set `includeGenerated: false` to drop generated DI factories/mappers/stubs when they dominate results. Optional `paths` restricts results to project-relative globs (`!` prefix excludes).
 - `ide_find_definition` - Find symbol definition location. Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
 - `ide_find_class` - Search for classes/interfaces by name with camelCase/substring/wildcard matching
 - `ide_find_file` - Search for files by name using IDE's file index
 - `ide_find_symbol` - Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching (disabled by default)
-- `ide_search_text` - Text search using IntelliJ Find in Files with context filtering (substring matching for plain text, regex matching when enabled)
+- `ide_search_text` - Text search using IntelliJ Find in Files with context filtering (substring matching for plain text, regex matching when enabled). Optional `paths` restricts the search to project-relative globs (`!` prefix excludes)
 - `ide_read_file` - Read file content by path or qualified name, including library/jar sources (disabled by default)
 - `ide_diagnostics` - Unified diagnostics tool: per-file code analysis (errors, warnings, intentions), build output from last build, and test results from open test run tabs. Supports `includeBuildErrors`, `includeTestResults`, `severity` filter, `testResultFilter`, `maxBuildErrors`, `maxTestResults`. The `file` parameter is now optional. The result's `analysisMode` reports which path produced file problems: `open_daemon` or `closed_batch`.
 - `ide_project_diagnostics` - Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata (issue #246): every file in scope gets exactly one state (`analyzed`/`timed_out`/`failed`/`skipped`/`not_analyzed`) and `complete` is true only when every considered file was analyzed, so an empty problems list can never be mistaken for a clean project. Reuses the per-file analysis engine (open files get daemon highlights, closed files the public batch pass). Long analyses long-poll via `analysisId` (same pattern as `ide_build_project`); one analysis per project at a time. (disabled by default)
@@ -515,7 +515,7 @@ Tools are organized by IDE availability.
 - `ide_move_file` - Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project. Supports automatic directory creation and optional reference update toggle.
 - `ide_reformat_code` - Reformat code using project code style (.editorconfig, IDE settings). Supports optional import optimization and code rearrangement. (disabled by default)
 - `ide_optimize_imports` - Optimize imports (remove unused, organize) without reformatting code. Equivalent to IDE's Ctrl+Alt+O. (disabled by default)
-- `ide_structural_search_replace` - Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Search-only when `replacePattern` is omitted. Java, Kotlin. (disabled by default)
+- `ide_structural_search_replace` - Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Search-only when `replacePattern` is omitted. Optional `paths` restricts matching (and rewriting) to project-relative globs (`!` prefix excludes). Java, Kotlin. (disabled by default)
 - `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
 - `ide_open_file` - Open a file in the editor with optional line/column navigation (disabled by default)
 - `ide_set_power_save_mode` - Enable/disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis while keeping the index and code intelligence operational (disabled by default)

@@ -102,6 +102,7 @@ When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or 
 3. **Column must point to the symbol name**, not whitespace or punctuation. For `public void myMethod()`, column should land on `m` of `myMethod`. For dotted expressions like `json.dumps()` or `os.path.join()`, put the column on the member token (`dumps`, `join`) when you want the member definition rather than the module/package.
 4. **project_path is only needed** for multi-project workspaces. Omit for single-project setups. When needed, use the absolute path to the project root.
 5. **Use built-in search scope intentionally**: `ide_find_references`, `ide_find_implementations`, `ide_type_hierarchy`, `ide_call_hierarchy`, `ide_find_class`, `ide_find_file`, and `ide_find_symbol` accept `scope`. Use `project_files` for the default project-only view, `project_and_libraries` when dependency code matters, `project_production_files` to stay out of tests, and `project_test_files` when you want test-only results.
+6. **Narrow by directory with `paths`**: `ide_search_text`, `ide_find_references`, and `ide_structural_search_replace` accept `paths`, an array of project-relative globs where a leading `!` excludes — e.g. `{"paths": ["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]}`. Prefer one scoped call over a project-wide search you filter yourself: filtering client-side pays tokens for every discarded hit, and with pagination a whole page can be filtered away and look like an empty result. Composes with `scope` and `filePattern`.
 
 ## Tool Selection by Task
 

@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createFilteredScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
@@ -60,13 +63,14 @@ class SearchTextTool : AbstractMcpTool() {
 
         Context filtering: search only in code, comments, or string literals.
         File filtering: pass filePattern with an IntelliJ file mask such as "*.kt" or "*.java,!*Test.java".
+        Path filtering: pass paths with project-relative globs to search only under given directories ('!' prefix excludes).
 
         Returns: matching locations with file, line, column, context snippet, and context type.
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), paths (optional array of project-relative globs, '!' prefix excludes), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
-        Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "Runtime\\.getRuntime\\(\\)\\.exec\\(", "regex": true, "filePattern": "*.java"}
+        Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "createScope", "paths": ["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]}
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
@@ -77,6 +81,7 @@ class SearchTextTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.CASE_SENSITIVE, "Case sensitive search. Default: true.")
         .booleanProperty(ParamNames.WHOLE_WORD, "Match whole words only. Default: false (substring match).")
         .stringProperty(ParamNames.FILE_PATTERN, "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".")
+        .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
@@ -103,6 +108,10 @@ class SearchTextTool : AbstractMcpTool() {
             return createErrorResult("Query cannot be empty")
         }
 
+        val pathMatcher = resolvePathGlobMatcher(project, arguments).getOrElse {
+            return createErrorResult(it.message ?: "Invalid '${ParamNames.PATHS}' parameter")
+        }
+
         val usageSearchContext = parseUsageSearchContext(contextStr)
         val findSearchContext = parseFindSearchContext(contextStr)
 
@@ -113,14 +122,14 @@ class SearchTextTool : AbstractMcpTool() {
         // because underscores are word characters and the whole identifier is one token.
         val findModel = if (regex) {
             try {
-                createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = true)
+                createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = true, pathMatcher = pathMatcher)
             } catch (e: PatternSyntaxException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             } catch (e: IllegalArgumentException) {
                 return createErrorResult("Invalid regex query: ${e.message}")
             }
         } else {
-            createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = false)
+            createFindModel(project, query, caseSensitive, wholeWord, filePattern, findSearchContext, isRegex = false, pathMatcher = pathMatcher)
         }
 
         requireSmartMode(project)
@@ -218,7 +227,8 @@ class SearchTextTool : AbstractMcpTool() {
         wholeWord: Boolean,
         filePattern: String?,
         searchContext: FindModel.SearchContext,
-        isRegex: Boolean
+        isRegex: Boolean,
+        pathMatcher: PathGlobMatcher?
     ): FindModel {
         return FindModel().apply {
             stringToFind = query
@@ -229,7 +239,7 @@ class SearchTextTool : AbstractMcpTool() {
             isFindAll = true
             isMultiline = true
             this.searchContext = searchContext
-            customScope = createFilteredScope(project)
+            customScope = PathGlobScope.wrap(project, createFilteredScope(project), pathMatcher)
             isCustomScope = true
             fileFilter = filePattern?.trim().orEmpty()
             if (isRegex) compileRegExp()

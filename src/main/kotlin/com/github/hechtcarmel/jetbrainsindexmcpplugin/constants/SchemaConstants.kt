@@ -33,4 +33,9 @@ object SchemaConstants {
     const val DESC_MAX_RESULTS = "Maximum number of results to return"
     const val DESC_SYMBOL = "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters."
     const val DESC_LANGUAGE = "Language of the symbol. Required when using 'symbol' parameter."
+    const val DESC_PATHS = "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. " +
+        "'*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, " +
+        "and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else " +
+        "is searched. Combines with the tool's other filters (scope, filePattern). An include glob whose literal directory " +
+        "prefix does not exist in the project is reported as an error."
 }

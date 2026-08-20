@@ -13,8 +13,10 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobScope
 import com.intellij.psi.search.GlobalSearchScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -36,10 +38,12 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
 
         Search-only mode (no replacePattern): returns all matches with file locations.
         Replace mode: applies the replacement pattern to all matches and returns the count.
+        Pass paths with project-relative globs ('!' prefix excludes) to restrict matching to given directories.
 
         Examples:
         - Search: {"searchPattern": "System.out.println(${'$'}arg${'$'})"}
         - Replace: {"searchPattern": "new Sync(${'$'}fn${'$'})", "replacePattern": "new Sync<>(Map.class, ${'$'}fn${'$'})", "filePattern": "*.java"}
+        - Scoped: {"searchPattern": "System.out.println(${'$'}arg${'$'})", "paths": ["src/main/**", "!**/generated/**"]}
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
@@ -48,6 +52,7 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
         .stringProperty(ParamNames.REPLACE_PATTERN, "SSR replacement pattern. If omitted, returns matches without replacing.")
         .stringProperty(ParamNames.FILE_PATTERN, "File mask filter (e.g., '*.java', '*.kt'). Default: '*.java'.")
         .scopeProperty("Search scope. Default: project_files.")
+        .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
         .build()
 
     @Serializable
@@ -93,7 +98,12 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
         } catch (_: IllegalArgumentException) {
             return createErrorResult("Unsupported scope '$scopeStr'. Supported values: ${BuiltInSearchScope.supportedWireValues().joinToString(", ")}")
         }
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, builtInScope)
+        val pathMatcher = resolvePathGlobMatcher(project, arguments).getOrElse {
+            return createErrorResult(it.message ?: "Invalid '${ParamNames.PATHS}' parameter")
+        }
+        val searchScope = PathGlobScope.wrap(
+            project, BuiltInSearchScopeResolver.resolveGlobalScope(project, builtInScope), pathMatcher
+        )
 
         val matches = suspendingReadAction {
             executeSearch(project, matchOptionsClass, matcherClass, searchPattern, filePattern, searchScope)
