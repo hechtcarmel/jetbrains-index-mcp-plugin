@@ -454,6 +454,20 @@ call sites". It is thin in these areas:
   are reached only through reflection against plugins absent from the test classpath. The Python
   hierarchy and call-hierarchy handlers have no automated coverage at all — verify changes to them
   in the corresponding IDE by hand.
+- **No test exercises real Kotlin PSI.** The Kotlin plugin is not on the test classpath, so every
+  Kotlin-specific code path — light-class handling in `JavaHandlers.kt`, `KtProperty` resolution in
+  `JavaSymbolReferenceHandler`, the Kotlin branches of the refactoring tools — is covered only by
+  unit tests over the surrounding helpers, or not at all. Verify Kotlin changes by hand in the IDE.
+  Two routes have been tried and both are closed:
+  - `testBundledPlugin("org.jetbrains.kotlin")` fails `compileTestKotlin`. The bundled plugin's jars
+    carry newer Kotlin metadata than the generation this platform build compiles against — the same
+    pin documented in `gradle/libs.versions.toml` and in `docs/mcp-kotlin-sdk-migration.md` §11.1.
+  - Filtering those jars off the `compileTestKotlin` classpath does compile, and the plugin loads
+    (`PluginDetectors.kotlin.isAvailable` is true, fixtures parse to real Kotlin PSI). But a real
+    `ReferencesSearch` then dies inside the platform's `KotlinReferencesSearcher` with
+    `NoSuchMethodError: SequencesKt.sequenceOf`, via `LightClassUtil.getWrappingClasses`. A real IDE
+    loads bundled plugins through isolated per-plugin classloaders with matched dependencies; a
+    Gradle test JVM flattens them onto one classpath.
 - **Some tools are still never executed by any test**, only schema- and response-shape-checked:
   `ide_build_project`, `ide_reload_project`, `ide_import_modules`, `ide_open_workspace`,
   `ide_restart`, `ide_lifecycle_log`, `ide_set_lifecycle_log_file`, and `ide_run_tests` (only its
