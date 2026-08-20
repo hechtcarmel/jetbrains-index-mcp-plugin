@@ -228,24 +228,28 @@ class JavaSymbolReferenceHandlerUnitTest : TestCase() {
 
     // ── sourceDeclarationOf: light backing fields (issue #322) ─────────────────
 
-    private fun field(languageId: String, navigationElement: PsiNamedElement? = null): PsiField =
+    private fun named(languageId: String): PsiNamedElement =
+        mockk<PsiNamedElement>().also { element ->
+            every { element.language } returns mockk<Language>().also { every { it.id } returns languageId }
+        }
+
+    private fun field(navigationElement: PsiNamedElement? = null): PsiField =
         mockk<PsiField>().also { field ->
-            every { field.language } returns mockk<Language>().also { every { it.id } returns languageId }
             every { field.navigationElement } returns (navigationElement ?: field)
         }
 
     fun testSourceDeclarationOfJavaFieldReturnsField() {
-        val javaField = field("JAVA", navigationElement = mockk<PsiNamedElement>())
+        val javaField = field(navigationElement = named("JAVA"))
         assertSame(javaField, handler.sourceDeclarationOf(javaField))
     }
 
-    fun testSourceDeclarationOfNonJavaFieldReturnsNavigationElement() {
-        val property = mockk<PsiNamedElement>()
-        assertSame(property, handler.sourceDeclarationOf(field("kotlin", navigationElement = property)))
+    fun testSourceDeclarationOfKotlinBackingFieldReturnsProperty() {
+        val property = named("kotlin")
+        assertSame(property, handler.sourceDeclarationOf(field(navigationElement = property)))
     }
 
-    fun testSourceDeclarationOfNonJavaFieldWithoutNamedNavigationElementReturnsField() {
-        val compiledField = field("kotlin")
+    fun testSourceDeclarationOfSelfNavigatingFieldReturnsField() {
+        val compiledField = field()
         assertSame(compiledField, handler.sourceDeclarationOf(compiledField))
     }
 }

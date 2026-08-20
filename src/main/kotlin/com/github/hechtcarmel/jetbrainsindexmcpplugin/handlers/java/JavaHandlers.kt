@@ -336,7 +336,8 @@ class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHiera
         val subtypes = getSubtypes(project, psiClass, searchScope)
 
         // Detect language from the navigation element (original source), not the light class wrapper.
-        // Light classes for Kotlin report language as "JAVA", but navigationElement preserves the original language.
+        // What a light class reports for getLanguage() varies by platform version; navigationElement
+        // always preserves the original language.
         val language = if (psiClass.navigationElement.language.id == "kotlin") "Kotlin" else "Java"
 
         return TypeHierarchyData(
@@ -1739,10 +1740,15 @@ class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolRef
      * Non-Java classes expose properties as light backing fields, and `ReferencesSearch` finds
      * nothing on those - the usages point at the property/accessors instead (issue #322). The
      * navigation element is the real declaration (e.g. Kotlin's `KtProperty`).
+     *
+     * The guard keys on the *navigation element's* language rather than the field's: what a light
+     * field reports for `getLanguage()` varies by platform version, while the declaration it
+     * navigates to is unambiguous. A Java field navigates to a Java field, so Java is untouched.
      */
     internal fun sourceDeclarationOf(field: PsiField): PsiNamedElement {
-        if (field.language.id == "JAVA") return field
-        return field.navigationElement as? PsiNamedElement ?: field
+        val declaration = field.navigationElement
+        if (declaration === field || declaration !is PsiNamedElement) return field
+        return if (declaration.language.id == "JAVA") field else declaration
     }
 
     private fun findMostDerivedMethods(psiClass: PsiClass, name: String): List<PsiMethod> {
