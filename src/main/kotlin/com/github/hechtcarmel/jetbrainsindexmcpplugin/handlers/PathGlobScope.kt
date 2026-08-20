@@ -46,8 +46,15 @@ class PathGlob private constructor(
             } else {
                 pattern.take(wildcardIndex).substringBeforeLast('/', "")
             }
-            // The pattern also matches as a directory prefix — "(?:/.*)?" is the implicit "/**".
-            val regex = Regex("^(?:${globToRegex(pattern)})(?:/.*)?$")
+            // The pattern also matches as a directory prefix — the trailing optional group is
+            // the implicit trailing double-star segment.
+            //
+            // The generated fragment is concatenated directly under "^...$" rather than wrapped
+            // in a group: globToRegex only ever emits concatenation, because a literal "|" in a
+            // glob is escaped via REGEX_METACHARS. Anything added there that CAN emit a
+            // top-level alternation has to be parenthesised, or "^" would bind to the first
+            // branch alone.
+            val regex = Regex("^${globToRegex(pattern)}(?:/.*)?$")
             return PathGlob(original, pattern, literalPrefix, regex)
         }
 
