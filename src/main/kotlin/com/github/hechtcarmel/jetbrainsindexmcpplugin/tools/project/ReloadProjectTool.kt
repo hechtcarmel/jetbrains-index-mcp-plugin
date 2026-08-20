@@ -63,7 +63,7 @@ class ReloadProjectTool : AbstractMcpTool() {
                 if (hasBuildFile) {
                     lines.add(
                         "$label: skipped — build file found on disk but project is not linked in IntelliJ. " +
-                        "Open the ${label} tool window and click 'Import' or 'Link' to register it first."
+                        "Use ide_link_build_system to link it, or use ide_open_project with autoLink: true."
                     )
                 }
                 // if no build file and not linked, simply don't mention it

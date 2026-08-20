@@ -439,7 +439,8 @@ enum class TestStatus {
 data class TestRunEntry(
     val name: String,
     val status: TestStatus,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val stackTrace: String? = null
 )
 
 @Serializable
@@ -480,6 +481,15 @@ data class BuildInProgressResult(
     val buildId: String,
     val elapsedSeconds: Long,
     val timeoutSeconds: Int?,
+    val message: String
+)
+
+@Serializable
+data class LinkInProgressResult(
+    val status: String,
+    val linkId: String,
+    val systemName: String,
+    val elapsedSeconds: Long,
     val message: String
 )
 

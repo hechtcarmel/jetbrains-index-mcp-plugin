@@ -550,6 +550,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             // Project tools
             ToolNames.BUILD_PROJECT,
             ToolNames.CREATE_MODULE,
+            ToolNames.LINK_BUILD_SYSTEM,
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             ToolNames.RUN_TESTS,

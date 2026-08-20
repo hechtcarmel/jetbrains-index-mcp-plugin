@@ -176,7 +176,10 @@ class RunTestsTool : AbstractMcpTool() {
         bounded by timeoutSeconds: once it expires the process is killed and the next poll reports
         timedOut: true.
 
-        Returns: success status, exit code, pass/fail/error counts, and per-test results.
+        Returns: success status, exit code, pass/fail/error counts, and per-test results. Failed or
+        errored tests include errorMessage and stackTrace (very long traces are trimmed in the
+        middle, keeping the throw site and the root cause). On mass failures a per-run size budget
+        applies: earlier failures keep their traces, later entries carry errorMessage only.
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 

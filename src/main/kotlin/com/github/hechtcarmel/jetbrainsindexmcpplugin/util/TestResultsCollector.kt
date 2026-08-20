@@ -26,6 +26,20 @@ object TestResultsCollector {
 
     private const val MAX_STACKTRACE_LENGTH = 500
 
+    /**
+     * Per-test cap for ide_run_tests stack traces (issue #316). Generous enough that real traces
+     * pass through untouched; only pathological ones (deeply chained causes) are trimmed.
+     */
+    internal const val MAX_RUN_ENTRY_STACKTRACE_LENGTH = 10_000
+
+    /**
+     * Aggregate stack-trace budget for one ide_run_tests result. A mass failure (broken shared
+     * fixture, hundreds of failed tests) must not become a multi-MB response that MCP clients
+     * truncate mid-JSON: earlier failures keep their traces, later ones fall back to
+     * errorMessage only once the budget is spent.
+     */
+    internal const val MAX_RUN_TOTAL_STACKTRACE_CHARS = 100_000
+
     fun collect(
         project: Project,
         testResultFilter: String,
@@ -51,19 +65,52 @@ object TestResultsCollector {
         )
     }
 
-    fun collectRunEntries(root: SMTestProxy.SMRootTestProxy): List<TestRunEntry> =
-        root.allTests
+    fun collectRunEntries(
+        root: SMTestProxy.SMRootTestProxy,
+        totalStackTraceBudget: Int = MAX_RUN_TOTAL_STACKTRACE_CHARS
+    ): List<TestRunEntry> {
+        var traceBudget = totalStackTraceBudget
+        return root.allTests
             .filter { it !== root && it.isLeaf && !it.isSuite && !it.isConfig }
             .mapNotNull { test ->
                 // TODO: Use `test.magnitudeInfo` once API is stable
-                magnitudeIndexToStatus(test.magnitude)?.let {
+                magnitudeIndexToStatus(test.magnitude)?.let { status ->
+                    // Budget check before the stacktrace read: once spent, the (possibly huge)
+                    // trace string is never materialized. Soft budget — the last attached trace
+                    // may overshoot by at most one per-test cap.
+                    val stackTrace = if (status.isFailure && traceBudget > 0) {
+                        test.stacktrace?.takeIf(String::isNotBlank)?.let(::truncateStackTrace)
+                            ?.also { traceBudget -= it.length }
+                    } else null
                     TestRunEntry(
                         name = composeName(test.name, test.parent?.name),
-                        status = it,
-                        errorMessage = if (it.isFailure) test.errorMessage else null
+                        status = status,
+                        errorMessage = if (status.isFailure) test.errorMessage else null,
+                        stackTrace = stackTrace
                     )
                 }
             }
+    }
+
+    /**
+     * Head+tail truncation: for chained exceptions the root cause sits at the BOTTOM of the trace
+     * (the issue #316 repro is 500 nested causes), so keeping only the head would drop exactly the
+     * part that explains the failure. Two thirds head keeps the message and throw site, one third
+     * tail keeps the deepest causes. A cut point shifts by one char when it would split a
+     * surrogate pair, so the output never carries an unpaired surrogate.
+     */
+    internal fun truncateStackTrace(trace: String, maxLength: Int = MAX_RUN_ENTRY_STACKTRACE_LENGTH): String {
+        if (trace.length <= maxLength) return trace
+        var head = maxLength * 2 / 3
+        var tailStart = trace.length - (maxLength - head)
+        // Bounds-guarded: a degenerate cap collapses head to 0 / tailStart to the end, and this
+        // helper formats *error* output — crashing here would mask the real test failure.
+        if (head > 0 && trace[head - 1].isHighSurrogate()) head--
+        if (tailStart < trace.length && trace[tailStart].isLowSurrogate()) tailStart++
+        return trace.substring(0, head) +
+                "\n... [${tailStart - head} chars truncated] ...\n" +
+                trace.substring(tailStart)
+    }
 
     /** Composes a test display name from the test name and its optional parent (suite) name. */
     internal fun composeName(testName: String, parentName: String?): String {
@@ -160,9 +207,7 @@ object TestResultsCollector {
             else -> "FAILED"
         }
 
-        val stacktrace = test.stacktrace?.let {
-            if (it.length > MAX_STACKTRACE_LENGTH) it.substring(0, MAX_STACKTRACE_LENGTH) + "..." else it
-        }
+        val stacktrace = test.stacktrace?.let { truncateStackTrace(it, MAX_STACKTRACE_LENGTH) }
 
         var file: String? = null
         var line: Int? = null

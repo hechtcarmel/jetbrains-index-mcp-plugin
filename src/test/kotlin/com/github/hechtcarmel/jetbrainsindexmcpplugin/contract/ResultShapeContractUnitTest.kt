@@ -31,6 +31,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagno
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ReadFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildInProgressResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.LinkInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
@@ -704,6 +705,16 @@ class ResultShapeContractUnitTest : TestCase() {
                 )
             ),
             struct(
+                LinkInProgressResult.serializer(),
+                LinkInProgressResult(
+                    status = "running",
+                    linkId = "a1b2c3d4",
+                    systemName = "Maven",
+                    elapsedSeconds = 12,
+                    message = "Maven link in progress"
+                )
+            ),
+            struct(
                 FindSymbolResult.serializer(),
                 FindSymbolResult(
                     symbols = listOf(symbolMatch),
@@ -865,7 +876,9 @@ class ResultShapeContractUnitTest : TestCase() {
                 TestRunEntry(
                     name = "com.example.ServiceTest.testHandle",
                     status = TestStatus.FAILED,
-                    errorMessage = "expected:<1> but was:<2>"
+                    errorMessage = "expected:<1> but was:<2>",
+                    stackTrace = "java.lang.AssertionError: expected:<1> but was:<2>\n" +
+                            "\tat com.example.ServiceTest.testHandle(ServiceTest.java:21)"
                 )
             ),
             struct(

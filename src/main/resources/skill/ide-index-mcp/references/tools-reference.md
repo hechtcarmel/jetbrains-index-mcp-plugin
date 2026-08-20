@@ -579,7 +579,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's own requ
 
 *Exactly one of `target` / `runId` is required.
 
-**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, message }`
+**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, tests: [{name, status, errorMessage?, stackTrace?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, message }`. `stackTrace` is set for failed/errored tests; very long traces are trimmed in the middle, keeping the throw site and the root cause. On mass failures a per-run size budget applies: earlier failures keep their traces, later entries carry `errorMessage` only.
 
 ### ide_reload_project (disabled by default)
 Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.
@@ -589,6 +589,16 @@ Force-reload the project build model (Maven, Gradle, or both). Use after changin
 | `project_path` | string | no | Project root path |
 
 **Returns**: text summary of scheduled Maven/Gradle reloads or skipped unlinked build systems.
+
+### ide_link_build_system (disabled by default)
+Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. Use when `ide_reload_project` reports "build file found but project is not linked". Detects the build system automatically from build files in the project directory.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | no | Absolute path of the project directory to link. Defaults to the resolved project's base path. |
+| `project_path` | string | no | Project root path |
+
+**Returns**: text confirming link status ("Maven project linked — dependency resolution scheduled.", "already linked", or error).
 
 ### ide_import_modules (disabled by default, Maven plugin only)
 Import one or more external Maven project directories as modules into the current IntelliJ project window. Already imported module roots are skipped.

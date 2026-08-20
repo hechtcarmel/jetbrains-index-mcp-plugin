@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- **New `ide_link_build_system` tool** ([#319](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/319)) — links an unlinked Maven or Gradle project using the platform's `ExternalSystemUnlinkedProjectAware` EP, the same code path the IDE's own "Load Maven/Gradle Project" notification uses. Detects the build system automatically from build files. Use when `ide_reload_project` reports "build file found but project is not linked". *(disabled by default)*
+- **`ide_open_project` gains an optional `autoLink` parameter** ([#319](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/319)) — when `true`, automatically links an unlinked Maven/Gradle build system after opening. Default: `false`. `ide_reload_project`'s "not linked" message now points at `ide_link_build_system` instead of telling agents to click IDE UI they can't reach.
+
+## [5.6.0] - 2026-08-16
+
+### Added
+
+- **`ide_run_tests` results now include the failure stack trace** ([#316](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/316)) — each failed or errored test entry carries a new `stackTrace` field with the trace reported by the test framework, alongside the existing `errorMessage` (which only holds the exception message). Very long traces (e.g. deeply chained causes) are trimmed in the middle so both the throw site and the root cause survive, and a per-run size budget keeps mass failures (hundreds of failing tests) from producing a response too large for MCP clients — earlier failures keep their traces, later entries fall back to `errorMessage` only.
+- **`ide_diagnostics` test-result stack traces now keep the innermost frames.** The test-results path previously truncated traces head-only at 500 chars, so for a chained exception you saw only the outermost frames. It now uses the same middle-trimming helper as `ide_run_tests` (unchanged 500-char cap), so the deepest frames — where the root cause was actually thrown — survive alongside the top of the trace.
+
+## [5.5.2] - 2026-08-15
+
+### Fixed
+
+- **`ide_refactor_rename` and `ide_change_signature` no longer hang on the "read-only files" dialog** ([#310](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/310)) — when the refactoring scope contained read-only files (generated metamodel classes in `target/`, Flyway migration SQL, files from other content roots), the IntelliJ refactoring engine showed a modal read-only dialog that blocked the EDT until the MCP client timed out. Both tools now pre-check every file discovered by `findUsages()` before executing and return an actionable error listing the read-only files instead.
+
+## [5.5.1] - 2026-08-12
+
 ### Fixed
 
 - **Kotlin property FQNs no longer resolve to the light backing field.** `ide_find_references` (and every other tool taking a `language`+`symbol` argument) resolved `com.example.Subject#probeName` to the private light field Kotlin generates for a property, on which `ReferencesSearch` finds nothing - so the call returned `0 usages` with `totalIsExact: true`. Non-Java fields now resolve to their navigation element (the `KtProperty`), which returns the real usages.
@@ -1127,7 +1147,10 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.6.0...HEAD
+[5.6.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.2...v5.6.0
+[5.5.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.1...v5.5.2
+[5.5.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.0...v5.5.1
 [5.5.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.4.0...v5.5.0
 [5.4.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.1...v5.4.0
 [5.3.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.3.0...v5.3.1
