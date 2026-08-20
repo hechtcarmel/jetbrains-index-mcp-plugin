@@ -9,6 +9,10 @@
 - **New `ide_link_build_system` tool** ([#319](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/319)) — links an unlinked Maven or Gradle project using the platform's `ExternalSystemUnlinkedProjectAware` EP, the same code path the IDE's own "Load Maven/Gradle Project" notification uses. Detects the build system automatically from build files. Use when `ide_reload_project` reports "build file found but project is not linked". *(disabled by default)*
 - **`ide_open_project` gains an optional `autoLink` parameter** ([#319](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/319)) — when `true`, automatically links an unlinked Maven/Gradle build system after opening. Default: `false`. `ide_reload_project`'s "not linked" message now points at `ide_link_build_system` instead of telling agents to click IDE UI they can't reach.
 
+### Fixed
+
+- **Kotlin property FQNs no longer resolve to the light backing field.** `ide_find_references` (and every other tool taking a `language`+`symbol` argument) resolved `com.example.Subject#probeName` to the private light field Kotlin generates for a property, on which `ReferencesSearch` finds nothing - so the call returned `0 usages` with `totalIsExact: true`. Non-Java fields now resolve to their navigation element (the `KtProperty`), which returns the real usages.
+
 ## [5.6.0] - 2026-08-16
 
 ### Added
@@ -26,7 +30,6 @@
 
 ### Fixed
 
-- **Kotlin property FQNs no longer resolve to the light backing field.** `ide_find_references` (and every other tool taking a `language`+`symbol` argument) resolved `com.example.Subject#probeName` to the private light field Kotlin generates for a property, on which `ReferencesSearch` finds nothing - so the call returned `0 usages` with `totalIsExact: true`. Non-Java fields now resolve to their navigation element (the `KtProperty`), which returns the real usages.
 - **Lifecycle manager no longer accumulates ghost entries for deleted project directories.** Temporary projects (worktrees, slots, ephemeral checkouts) that were opened and later deleted from disk remained in the managed projects registry forever. On startup, `loadState` now prunes any managed path whose directory no longer exists, preventing unbounded growth of the persisted state.
 
 ## [5.5.0] - 2026-08-09
