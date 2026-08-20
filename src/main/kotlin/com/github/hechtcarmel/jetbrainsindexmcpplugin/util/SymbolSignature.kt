@@ -98,7 +98,7 @@ object SymbolSignatureResolver {
         val text = element.text.orEmpty()
         val head = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
         val cut = head.indexOfFirst { it == '{' }
-        val line = if (cut > 0) head.substring(0, cut).trim() else head
+        val line = if (cut > 0) head.take(cut).trim() else head
         return line.take(MAX_TEXT_FALLBACK_CHARS)
     }
 
