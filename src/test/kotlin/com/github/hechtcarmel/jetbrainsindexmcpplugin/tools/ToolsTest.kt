@@ -577,7 +577,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", column)
         })
 
-        assertFalse("Scala type hierarchy lookup should succeed: ${errorText(result)}", result.isError)
+        assertFalse("Scala type hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<TypeHierarchyResult>(errorTextless(result))
         assertEquals("CLASS", payload.element.kind)
         assertTrue("Hierarchy element should resolve BaseService", payload.element.name.contains("BaseService"))
@@ -595,7 +595,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", column)
         })
 
-        assertFalse("Scala implementations lookup should succeed: ${errorText(result)}", result.isError)
+        assertFalse("Scala implementations lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
         assertNotNull("Implementations payload should decode", payload.implementations)
     }
@@ -614,7 +614,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("depth", 2)
         })
 
-        assertFalse("Scala call hierarchy lookup should succeed: ${errorText(result)}", result.isError)
+        assertFalse("Scala call hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertTrue(
             "Call hierarchy root should resolve runAll",
@@ -634,7 +634,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("column", column)
         })
 
-        assertFalse("Scala find super methods lookup should succeed: ${errorText(result)}", result.isError)
+        assertFalse("Scala find super methods lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<SuperMethodsResult>(errorTextless(result))
         assertTrue(
             "Worker trait super method should be included",
@@ -652,7 +652,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", scalaFixtureProjectPath("scala2-usage.scala"))
         })
 
-        assertFalse("Scala file structure lookup should succeed: ${errorText(result)}", result.isError)
+        assertFalse("Scala file structure lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
         assertEquals("Scala", payload.language)
         assertTrue("Structure payload should not be blank", payload.structure.isNotBlank())
