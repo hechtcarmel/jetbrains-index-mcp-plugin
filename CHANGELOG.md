@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.8.0] - 2026-08-21
+
 ### Added
 
 - **Path/directory scoping via a new `paths` parameter on `ide_search_text`, `ide_find_references` and `ide_structural_search_replace`** ([#328](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/328)) — an optional array of project-relative globs where a leading `!` excludes, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a path segment, `**` crosses directories, and a plain directory path includes everything beneath it. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Until now no search tool could be limited to a directory: `filePattern` is a filename mask and `scope` offers only production/test/library splits, so "search under `tools/refactoring/` but not `tools/project/`" meant a project-wide search filtered client-side — paying tokens for every discarded hit, and with pagination a whole page could be filtered away and look like an empty result. The globs are applied as a `GlobalSearchScope` intersected with the scope each tool already computes, so they compose with `scope`, `filePattern` and `includeGenerated`, apply to paginated follow-up pages, and restrict what `ide_structural_search_replace` rewrites rather than merely what it reports. Windows-style `\` separators are normalized to `/`. An include glob whose literal directory prefix does not exist in the project — or resolves under a different relative name than it was written with, as happens when a nested module content root is addressed from the project root — returns an error naming the glob and the path that does work, so a mistyped or misrooted path cannot masquerade as "no matches". Because globs are project-relative, an include glob also drops results with no project-relative path (library and jar hits under `project_and_libraries`); an exclude-only filter leaves those alone. Omitting `paths` keeps existing behaviour exactly. The parameter name and semantics match the `paths` argument of the IDE's built-in MCP server, keeping the two servers' contracts aligned.
@@ -1157,7 +1159,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.7.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.0...HEAD
+[5.8.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.7.0...v5.8.0
 [5.7.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.6.0...v5.7.0
 [5.6.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.2...v5.6.0
 [5.5.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.1...v5.5.2
