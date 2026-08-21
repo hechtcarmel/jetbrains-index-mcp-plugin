@@ -473,6 +473,15 @@ call sites". It is thin in these areas:
   `ide_restart`, `ide_lifecycle_log`, `ide_set_lifecycle_log_file`, and `ide_run_tests` (only its
   `parseTarget` helper is covered). `ide_reformat_code` has error paths only. Adding a behavior
   test for one is a genuinely useful first contribution — see the checklist above for the shape.
+- **`ide_symbol_info` is tested only on its `java_psi` tier.** The `quick_navigation` and
+  `element_text` fallbacks in `SymbolSignatureResolver` have no automated coverage. A TypeScript
+  fixture does reach `quick_navigation`, but adding one made a JS/TS background task throw on an
+  application pooled thread during teardown — `BackendThreadPoolExecutor.afterExecute` logged it
+  and `TestLoggerFactory$TestLogger.error` then failed inside `AsyncLog`. The build stayed green
+  (the throw lands outside any test method), so it was a permanent unexplained error in the log
+  rather than a failure; the test was removed instead of shipped. `element_text` needs an element
+  no documentation provider answers for, which the fixture platform does not produce reliably.
+  Verify both tiers by hand in the corresponding IDE.
 - **`SafeDeleteTool` cannot see references in files outside any content root.** The usage
   search scope only covers content roots, so a reference living outside them will not block
   deletion. (The former fail-open exception handling — treating a failed `ReferencesSearch` as

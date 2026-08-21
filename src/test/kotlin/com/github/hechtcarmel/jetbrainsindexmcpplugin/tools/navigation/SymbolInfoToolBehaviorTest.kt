@@ -308,44 +308,6 @@ class SymbolInfoToolBehaviorTest : McpPlatformTestCase() {
         )
     }
 
-    fun testNonJavaDeclarationUsesALanguageRenderedSignature() = runBlocking {
-        Assume.assumeTrue("JavaScript/TypeScript plugin required", PluginDetectors.javaScript.isAvailable)
-        registerSourceRoot("src")
-        writeProjectFile(
-            "src/ts/format.ts",
-            """
-                export function formatDate(input: string): string {
-                    return input;
-                }
-            """.trimIndent()
-        )
-
-        val result = SymbolInfoTool().execute(project, buildJsonObject {
-            put("file", "src/ts/format.ts")
-            put("line", 1)
-            put("column", 17)
-        })
-        assertToolSucceeded("ide_symbol_info should succeed on a TypeScript function", result)
-        val info = json.decodeFromString<SymbolInfoResult>(toolText(result))
-
-        // The Java extractor must decline a non-Java element rather than claiming it.
-        assertFalse(
-            "A TypeScript declaration must not be reported as java_psi; got '${info.signatureSource}'",
-            info.signatureSource == SignatureSources.JAVA_PSI
-        )
-        assertTrue(
-            "signatureSource must be one of the declared fallback tiers; got '${info.signatureSource}'",
-            info.signatureSource in setOf(SignatureSources.QUICK_NAVIGATION, SignatureSources.ELEMENT_TEXT)
-        )
-        // Structured type data is a java_psi-only guarantee and must not leak onto other tiers.
-        assertNull("parameters is populated only on the java_psi path", info.parameters)
-        assertNull("returnType is populated only on the java_psi path", info.returnType)
-        assertTrue(
-            "The rendered signature should still name the function; got '${info.signature}'",
-            info.signature.contains("formatDate")
-        )
-    }
-
     fun testMissingTargetArgumentsAreRejected() = runBlocking {
         val result = SymbolInfoTool().execute(project, buildJsonObject { })
 
