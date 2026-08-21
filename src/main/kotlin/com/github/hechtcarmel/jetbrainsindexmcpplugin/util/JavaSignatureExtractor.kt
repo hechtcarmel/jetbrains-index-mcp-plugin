@@ -127,7 +127,7 @@ internal object JavaSignatureExtractor {
             source = SignatureSources.JAVA_PSI,
             returnType = type,
             modifiers = modifiers.takeIf { it.isNotEmpty() },
-            containingDeclaration = containingDeclarationFor(variable)
+            containingDeclaration = SymbolSignatureResolver.containingDeclarationFromAstPath(variable)
         )
     }
 
@@ -216,7 +216,4 @@ internal object JavaSignatureExtractor {
         // A top-level type has no containing class; its package is the meaningful container.
         return (member.containingFile as? PsiJavaFile)?.packageName?.takeIf { it.isNotEmpty() }
     }
-
-    private fun containingDeclarationFor(element: PsiElement): String? =
-        PsiUtils.getAstPath(element).joinToString(".").takeIf { it.isNotEmpty() }
 }

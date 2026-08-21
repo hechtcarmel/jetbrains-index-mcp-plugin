@@ -468,7 +468,7 @@ types as the IDE resolved them.
 {
   "name": "findUser",
   "kind": "method",
-  "qualifiedName": "com.example.UserService#findUser",
+  "qualifiedName": "com.example.UserService#findUser(java.lang.String)",
   "signature": "public com.example.model.User findUser(java.lang.String id) throws com.example.NotFoundException",
   "signatureSource": "java_psi",
   "parameters": [
@@ -488,8 +488,12 @@ types as the IDE resolved them.
 }
 ```
 
-**Note:** `qualifiedName` uses this plugin's `symbol` format, so it can be passed straight back to
-`ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations` as the `symbol` argument.
+**Note:** on the `java_psi` path `qualifiedName` uses this plugin's `symbol` format, so it can be
+passed straight back to `ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations`
+as the `symbol` argument. A callable includes its resolved parameter list, because the bare
+`Container#name` form is rejected as ambiguous as soon as the method is overloaded. On the other
+`signatureSource` paths the container is a best-effort dotted AST path rather than a resolved FQN,
+so address those symbols by position instead.
 
 ---
 

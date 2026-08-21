@@ -7,11 +7,12 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolInfoResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResolvedSignature
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.SymbolDocumentation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.SymbolSignatureResolver
 import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
 import com.intellij.usageView.UsageViewUtil
@@ -111,18 +112,16 @@ class SymbolInfoTool : AbstractMcpTool() {
         val truncatedDocumentation = documentation?.takeIf { it.length > maxDocLength }
             ?.let { it.take(maxDocLength) + TRUNCATION_MARKER }
 
-        val containingFile = target.containingFile
-        val virtualFile = containingFile?.virtualFile
-        val document = containingFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
-        val position = document?.let { doc ->
-            val lineIndex = doc.getLineNumber(target.textOffset)
-            (lineIndex + 1) to (target.textOffset - doc.getLineStartOffset(lineIndex) + 1)
-        }
+        val virtualFile = target.containingFile?.virtualFile
+        // The shared helper, not an inline getLineNumber: it rejects a negative textOffset and an
+        // offset past the document end, both of which make Document.getLineNumber throw. A document
+        // can legitimately run ahead of PSI here, since PSI sync is off by default.
+        val position = PsiSourcePosition.position(project, target)
 
         return SymbolInfoResult(
             name = name,
             kind = UsageViewUtil.getType(target).takeIf { it.isNotBlank() },
-            qualifiedName = qualifiedName(target, name, resolved.containingDeclaration),
+            qualifiedName = qualifiedName(target, name, resolved),
             signature = resolved.signature,
             signatureSource = resolved.source,
             parameters = resolved.parameters,
@@ -135,8 +134,8 @@ class SymbolInfoTool : AbstractMcpTool() {
             documentation = truncatedDocumentation ?: documentation,
             documentationTruncated = truncatedDocumentation != null,
             file = virtualFile?.let { getRelativePath(project, it) },
-            line = position?.first,
-            column = position?.second,
+            line = position?.line,
+            column = position?.column,
             language = OptimizedSymbolSearch.getLanguageName(target)
         )
     }
@@ -145,9 +144,20 @@ class SymbolInfoTool : AbstractMcpTool() {
      * The symbol's own qualified name for a type, or `Container#member` for a member — the
      * format this plugin's `symbol` parameter accepts, so the value can be passed straight back
      * to `ide_find_references` or `ide_call_hierarchy`.
+     *
+     * A callable carries its parameter list, because the bare `Container#name` form is ambiguous
+     * exactly where this tool is most useful: `JavaSymbolReferenceHandler` rejects it with
+     * "Multiple methods match" as soon as the name is overloaded. The types are the same resolved
+     * canonical names reported in `parameters`, which that resolver accepts alongside short names.
      */
-    private fun qualifiedName(target: PsiElement, name: String, container: String?): String? {
+    private fun qualifiedName(target: PsiElement, name: String, resolved: ResolvedSignature): String? {
         PsiUtils.qualifiedName(target)?.let { return it }
-        return container?.let { "$it#$name" }
+        val container = resolved.containingDeclaration ?: return null
+        // parameters is populated only on the java_psi path, and only for callables — a field or a
+        // non-Java declaration must not grow an empty argument list it cannot be looked up by.
+        val member = resolved.parameters
+            ?.joinToString(", ", "$name(", ")") { it.type }
+            ?: name
+        return "$container#$member"
     }
 }

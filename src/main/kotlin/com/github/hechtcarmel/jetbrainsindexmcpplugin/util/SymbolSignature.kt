@@ -105,7 +105,10 @@ object SymbolSignatureResolver {
     /**
      * Enclosing named declarations, dotted — the language-agnostic stand-in for a containing
      * class when no language-specific container is available.
+     *
+     * Internal because [JavaSignatureExtractor] needs the same fallback for a local variable or
+     * parameter, which has no containing class to report.
      */
-    private fun containingDeclarationFromAstPath(element: PsiElement): String? =
+    internal fun containingDeclarationFromAstPath(element: PsiElement): String? =
         PsiUtils.getAstPath(element).joinToString(".").takeIf { it.isNotEmpty() }
 }

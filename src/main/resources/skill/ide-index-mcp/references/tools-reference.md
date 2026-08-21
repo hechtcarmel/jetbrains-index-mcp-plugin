@@ -130,8 +130,12 @@ names and no doc comment.
 
 **Overloads**: address them by position — each overload's own `line`/`column` selects it.
 
-**Chaining**: `qualifiedName` is in this plugin's `symbol` format, so it can be passed straight to
-`ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations` as `symbol`.
+**Chaining**: on the `java_psi` path `qualifiedName` is in this plugin's `symbol` format and can be
+passed straight to `ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations` as
+`symbol`. A callable includes its resolved parameter list (`com.example.Service#handle(com.example.Request)`),
+because the bare name is rejected as ambiguous once a method is overloaded. On the
+`quick_navigation` / `element_text` paths the container is a best-effort dotted AST path, not a
+resolved FQN, so it is descriptive rather than round-trippable — address those by position.
 
 ### ide_find_class
 Search for classes/interfaces by name using IDE's class index. Equivalent to Ctrl+N / Cmd+O.

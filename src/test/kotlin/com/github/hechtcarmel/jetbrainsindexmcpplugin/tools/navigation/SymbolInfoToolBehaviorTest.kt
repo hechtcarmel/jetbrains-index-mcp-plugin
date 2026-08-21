@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolInfoResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
@@ -22,6 +23,19 @@ import org.junit.Assume
 class SymbolInfoToolBehaviorTest : McpPlatformTestCase() {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    override fun setUp() {
+        super.setUp()
+        LanguageHandlerRegistry.registerHandlers()
+    }
+
+    override fun tearDown() {
+        try {
+            LanguageHandlerRegistry.clear()
+        } finally {
+            super.tearDown()
+        }
+    }
 
     private fun writeServiceFixture() {
         registerSourceRoot("src")
@@ -79,6 +93,18 @@ class SymbolInfoToolBehaviorTest : McpPlatformTestCase() {
             json.decodeFromString<SymbolInfoResult>(toolText(result))
         }
 
+    /** Reads `Verbose.documented`, optionally capping the documentation budget. */
+    private suspend fun verboseDocInfo(maxDocLength: Int?): SymbolInfoResult {
+        val result = SymbolInfoTool().execute(project, buildJsonObject {
+            put("file", "src/svc/Verbose.java")
+            put("line", 7)
+            put("column", 17)
+            if (maxDocLength != null) put("maxDocLength", maxDocLength)
+        })
+        assertToolSucceeded("ide_symbol_info should succeed on Verbose.documented", result)
+        return json.decodeFromString<SymbolInfoResult>(toolText(result))
+    }
+
     fun testMethodParameterAndReturnTypesAreQualified() {
         Assume.assumeTrue("Java plugin required for this fixture", PluginDetectors.java.isAvailable)
         writeServiceFixture()
@@ -89,7 +115,7 @@ class SymbolInfoToolBehaviorTest : McpPlatformTestCase() {
         assertEquals("handle", info.name)
         assertEquals(SignatureSources.JAVA_PSI, info.signatureSource)
         assertEquals("svc.Service", info.containingDeclaration)
-        assertEquals("svc.Service#handle", info.qualifiedName)
+        assertEquals("svc.Service#handle(svc.model.Request)", info.qualifiedName)
         assertEquals("public", info.visibility)
 
         // The declaration says `Result`; only a resolved signature says `svc.model.Result`.
@@ -212,6 +238,112 @@ class SymbolInfoToolBehaviorTest : McpPlatformTestCase() {
         assertEquals(listOf("private", "static", "final"), info.modifiers)
         assertEquals("src/svc/Holder.java", info.file)
         assertEquals("The reported line must be the declaration's own line", 6, info.line!!.toInt())
+    }
+
+    fun testEmittedQualifiedNameResolvesBackToTheSameOverload() = runBlocking {
+        Assume.assumeTrue("Java plugin required for this fixture", PluginDetectors.java.isAvailable)
+        writeServiceFixture()
+
+        // The two-argument overload, addressed by position.
+        val byPosition = symbolInfoAt(line = 14, column = 19)
+        val emitted = byPosition.qualifiedName
+        assertNotNull("A method must report a qualified name to chain from", emitted)
+
+        // The documented contract: feed that value straight back as `symbol`. The bare
+        // `svc.Service#handle` form fails here with "Multiple methods match", so this assertion
+        // is what keeps the parameter list in the emitted value.
+        val result = SymbolInfoTool().execute(project, buildJsonObject {
+            put("language", "Java")
+            put("symbol", emitted!!)
+        })
+        assertToolSucceeded("The emitted qualifiedName must resolve as a symbol; got '$emitted'", result)
+
+        val bySymbol = json.decodeFromString<SymbolInfoResult>(toolText(result))
+        assertEquals("Round-trip must land on the same overload", 2, bySymbol.parameters!!.size)
+        assertEquals(
+            listOf("svc.model.Request", "boolean"),
+            bySymbol.parameters?.map { it.type }
+        )
+        assertEquals(byPosition.signature, bySymbol.signature)
+    }
+
+    fun testLongDocumentationIsTruncatedAtMaxDocLength() = runBlocking {
+        Assume.assumeTrue("Java plugin required for this fixture", PluginDetectors.java.isAvailable)
+        registerSourceRoot("src")
+        writeProjectFile(
+            "src/svc/Verbose.java",
+            """
+                package svc;
+
+                public class Verbose {
+                    /**
+                     * ${"Sentence one describing the behaviour in detail. ".repeat(20)}
+                     */
+                    public void documented() {
+                    }
+                }
+            """.trimIndent()
+        )
+
+        val truncated = verboseDocInfo(60)
+        assertTrue("A doc longer than maxDocLength must set documentationTruncated", truncated.documentationTruncated)
+        val text = truncated.documentation
+        assertNotNull("Truncated documentation is still returned, not dropped", text)
+        assertTrue(
+            "Truncated documentation should be marked as such; got '$text'",
+            text!!.endsWith("(documentation truncated)")
+        )
+        assertTrue(
+            "Truncation must respect the requested budget; got ${text.length} chars",
+            text.length <= 60 + "\n… (documentation truncated)".length
+        )
+
+        // Control: the same symbol under the default budget is not truncated, so an
+        // always-truncate regression cannot pass.
+        val untruncated = verboseDocInfo(null)
+        assertFalse("The default budget must not truncate this doc", untruncated.documentationTruncated)
+        assertTrue(
+            "The untruncated doc must be longer than the capped one",
+            (untruncated.documentation?.length ?: 0) > text.length
+        )
+    }
+
+    fun testNonJavaDeclarationUsesALanguageRenderedSignature() = runBlocking {
+        Assume.assumeTrue("JavaScript/TypeScript plugin required", PluginDetectors.javaScript.isAvailable)
+        registerSourceRoot("src")
+        writeProjectFile(
+            "src/ts/format.ts",
+            """
+                export function formatDate(input: string): string {
+                    return input;
+                }
+            """.trimIndent()
+        )
+
+        val result = SymbolInfoTool().execute(project, buildJsonObject {
+            put("file", "src/ts/format.ts")
+            put("line", 1)
+            put("column", 17)
+        })
+        assertToolSucceeded("ide_symbol_info should succeed on a TypeScript function", result)
+        val info = json.decodeFromString<SymbolInfoResult>(toolText(result))
+
+        // The Java extractor must decline a non-Java element rather than claiming it.
+        assertFalse(
+            "A TypeScript declaration must not be reported as java_psi; got '${info.signatureSource}'",
+            info.signatureSource == SignatureSources.JAVA_PSI
+        )
+        assertTrue(
+            "signatureSource must be one of the declared fallback tiers; got '${info.signatureSource}'",
+            info.signatureSource in setOf(SignatureSources.QUICK_NAVIGATION, SignatureSources.ELEMENT_TEXT)
+        )
+        // Structured type data is a java_psi-only guarantee and must not leak onto other tiers.
+        assertNull("parameters is populated only on the java_psi path", info.parameters)
+        assertNull("returnType is populated only on the java_psi path", info.returnType)
+        assertTrue(
+            "The rendered signature should still name the function; got '${info.signature}'",
+            info.signature.contains("formatDate")
+        )
     }
 
     fun testMissingTargetArgumentsAreRejected() = runBlocking {
