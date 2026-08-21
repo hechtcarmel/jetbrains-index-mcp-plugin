@@ -6,6 +6,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailur
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
 import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
@@ -43,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -586,6 +588,59 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     protected fun resolveExcludeGenerated(arguments: JsonObject, default: Boolean): Boolean {
         val includeGenerated = arguments[ParamNames.INCLUDE_GENERATED]?.jsonPrimitive?.booleanOrNull ?: default
         return !includeGenerated
+    }
+
+    /**
+     * Parses the optional `paths` argument — an array of project-relative globs where a
+     * leading `!` excludes — into a [PathGlobMatcher]. Returns success(`null`) when the
+     * argument is absent, so tools keep today's behaviour exactly.
+     *
+     * Every include glob's literal directory prefix (the wildcard-free leading part) must
+     * resolve inside the project **and** be addressable under the name the caller wrote;
+     * otherwise the call fails with the offending globs listed, so a typo'd path errors
+     * loudly instead of looking like "no matches" (issue #328).
+     *
+     * Existing is not sufficient, because [resolveFile] searches module content roots while
+     * matching relativizes against the project base path first (both mirror
+     * [ProjectUtils.getRelativePath], which produces the paths the tools return). In a
+     * `/repo` project owning a `/repo/moduleA` content root, a glob rooted at `src/main`
+     * resolves via that content root, yet every file under it is named
+     * `moduleA/src/main/...` for matching — so the glob would validate and then match
+     * nothing. Comparing the resolved directory's relative path against the prefix catches
+     * that and names the path that does work.
+     *
+     * Exclude globs are not existence-checked: defensively excluding a directory that does
+     * not exist (e.g. `!build`) is legitimate and harmless.
+     */
+    protected fun resolvePathGlobMatcher(project: Project, arguments: JsonObject): Result<PathGlobMatcher?> {
+        val pathsArg = arguments[ParamNames.PATHS] ?: return Result.success(null)
+        if (pathsArg == JsonNull) return Result.success(null)
+        if (pathsArg !is JsonArray) {
+            return "'${ParamNames.PATHS}' must be an array of glob strings.".toArgumentFailure()
+        }
+        val entries = pathsArg.map { entry ->
+            (entry as? JsonPrimitive)?.contentOrNull
+                ?: return "'${ParamNames.PATHS}' must be an array of glob strings.".toArgumentFailure()
+        }
+        val matcher = PathGlobMatcher.parse(entries).getOrElse { return Result.failure(it) }
+        val unresolved = matcher.includes.mapNotNull { glob ->
+            if (glob.literalPrefix.isEmpty()) return@mapNotNull null
+            val dir = resolveFile(project, glob.literalPrefix)
+                ?: return@mapNotNull "'${glob.original}' ('${glob.literalPrefix}' does not exist in the project)"
+            val addressableAs = ProjectUtils.getRelativePath(project, dir)
+            if (addressableAs == glob.literalPrefix) null
+            else "'${glob.original}' ('${glob.literalPrefix}' resolves to '$addressableAs' in this project — " +
+                "globs match that name, so write the glob against it)"
+        }
+        if (unresolved.isNotEmpty()) {
+            return unresolved.joinToString(
+                prefix = "Unresolvable 'paths' glob(s): ",
+                separator = "; ",
+                postfix = ". Globs are project-relative with '/' separators; '*' matches within a path segment, " +
+                    "'**' crosses directories, and a leading '!' excludes."
+            ).toArgumentFailure()
+        }
+        return Result.success(matcher)
     }
 
     /**

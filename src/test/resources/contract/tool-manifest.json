@@ -898,9 +898,10 @@ description:
   - language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript; necessary for fresh search, ignored when cursor is provided)
   - cursor: pagination cursor from a previous response
   
-  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), pageSize (optional, default: 100, max: 500).
   
   Example: {"file": "src/UserService.java", "line": 25, "column": 18}
+  Example: {"file": "src/UserService.java", "line": 25, "column": 18, "paths": ["src/main/**", "!**/generated/**"]}
   Example: {"language": "Java", "symbol": "com.example.UserService#findUser(String)", "scope": "project_and_libraries"}
   Example: {"language": "TypeScript", "symbol": "src/api#default"}
   Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
@@ -954,6 +955,16 @@ schema:
       {
         "description": "Results per page. Default: 100, max: 500.",
         "type": "integer"
+      },
+      "paths":
+      {
+        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). Because globs are project-relative, any include glob also drops results that have no project-relative path — library and jar hits under scope project_and_libraries; an exclude-only filter leaves those alone. An include glob whose literal directory prefix does not exist in the project, or resolves under a different relative name than it was written with, is reported as an error.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
       },
       "project_path":
       {
@@ -2326,13 +2337,14 @@ description:
   
   Context filtering: search only in code, comments, or string literals.
   File filtering: pass filePattern with an IntelliJ file mask such as "*.kt" or "*.java,!*Test.java".
+  Path filtering: pass paths with project-relative globs to search only under given directories ('!' prefix excludes).
   
   Returns: matching locations with file, line, column, context snippet, and context type.
   
   Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-  Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+  Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), paths (optional array of project-relative globs, '!' prefix excludes), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
   
-  Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "Runtime\\.getRuntime\\(\\)\\.exec\\(", "regex": true, "filePattern": "*.java"}
+  Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "createScope", "paths": ["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]}
 schema:
   {
     "properties":
@@ -2373,6 +2385,16 @@ schema:
       {
         "description": "Results per page. Default: 100, max: 500.",
         "type": "integer"
+      },
+      "paths":
+      {
+        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). Because globs are project-relative, any include glob also drops results that have no project-relative path — library and jar hits under scope project_and_libraries; an exclude-only filter leaves those alone. An include glob whose literal directory prefix does not exist in the project, or resolves under a different relative name than it was written with, is reported as an error.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
       },
       "project_path":
       {
@@ -2579,10 +2601,12 @@ description:
   
   Search-only mode (no replacePattern): returns all matches with file locations.
   Replace mode: applies the replacement pattern to all matches and returns the count.
+  Pass paths with project-relative globs ('!' prefix excludes) to restrict matching to given directories.
   
   Examples:
   - Search: {"searchPattern": "System.out.println($arg$)"}
   - Replace: {"searchPattern": "new Sync($fn$)", "replacePattern": "new Sync<>(Map.class, $fn$)", "filePattern": "*.java"}
+  - Scoped: {"searchPattern": "System.out.println($arg$)", "paths": ["src/main/**", "!**/generated/**"]}
 schema:
   {
     "properties":
@@ -2591,6 +2615,16 @@ schema:
       {
         "description": "File mask filter (e.g., '*.java', '*.kt'). Default: '*.java'.",
         "type": "string"
+      },
+      "paths":
+      {
+        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). Because globs are project-relative, any include glob also drops results that have no project-relative path — library and jar hits under scope project_and_libraries; an exclude-only filter leaves those alone. An include glob whose literal directory prefix does not exist in the project, or resolves under a different relative name than it was written with, is reported as an error.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
       },
       "project_path":
       {

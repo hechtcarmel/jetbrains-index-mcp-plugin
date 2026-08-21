@@ -92,6 +92,16 @@ class SchemaBuilder private constructor() {
         if (required) requiredFields.add(name)
     }
 
+    fun stringArrayProperty(name: String, description: String, required: Boolean = false) = apply {
+        properties[name] = buildJsonObject {
+            put(SchemaConstants.TYPE, SchemaConstants.TYPE_ARRAY)
+            put(SchemaConstants.DESCRIPTION, description)
+            put(SchemaConstants.ITEMS, buildJsonObject { put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING) })
+            put("minItems", 1)
+        }
+        if (required) requiredFields.add(name)
+    }
+
     fun enumProperty(name: String, description: String, values: List<String>, required: Boolean = false) = apply {
         properties[name] = buildJsonObject {
             put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
