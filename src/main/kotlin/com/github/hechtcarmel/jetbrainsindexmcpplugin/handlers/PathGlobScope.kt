@@ -111,9 +111,16 @@ class PathGlobMatcher private constructor(
      * equal — `DelegatingGlobalSearchScope.equals` only looks at the delegate and this
      * discriminator — and `GlobalSearchScope.intersectWith`/`union` short-circuit on
      * equality, so one filter would silently stand in for the other.
+     *
+     * A pair of pattern *lists*, not a joined string: any single-character separator can
+     * appear inside a glob, so joining collides — the single glob `src/a,b/x` against the
+     * two globs `src/a` and `b/x` — which defeats the very guard this exists to provide.
+     *
+     * (Glob examples here avoid a literal slash-star-star: Kotlin block comments nest, so
+     * that sequence opens a nested comment and swallows the rest of the file.)
      */
-    internal val equalityKey: String =
-        includes.joinToString(",") { it.pattern } + "|!" + excludes.joinToString(",!") { it.pattern }
+    internal val equalityKey: Any =
+        Pair(includes.map { it.pattern }, excludes.map { it.pattern })
 
     /**
      * Whether a file at [relativePath] is inside the requested path set.
@@ -144,6 +151,14 @@ class PathGlobMatcher private constructor(
                 val pattern = entry
                     .removePrefix("!")
                     .trim()
+                    // Windows-style separators are normalized rather than rejected. Left as-is
+                    // they are catastrophic-but-silent: "\\" is escaped as a literal by
+                    // globToRegex so the glob matches nothing, and literalPrefix (which splits on
+                    // '/') comes back empty, so the unresolvable-glob guard skips it too — a
+                    // typo'd separator would return "no matches" instead of an error. IntelliJ's
+                    // VirtualFile.path always uses '/', even on Windows, so a backslash here is
+                    // never a path the caller could have meant literally.
+                    .replace('\\', '/')
                     .removePrefix("./")
                     .removePrefix("/")
                     .removeSuffix("/")

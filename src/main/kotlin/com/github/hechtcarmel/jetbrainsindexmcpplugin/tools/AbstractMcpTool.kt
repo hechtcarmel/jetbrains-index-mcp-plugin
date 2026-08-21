@@ -596,8 +596,19 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * argument is absent, so tools keep today's behaviour exactly.
      *
      * Every include glob's literal directory prefix (the wildcard-free leading part) must
-     * resolve inside the project; otherwise the call fails with the offending globs listed,
-     * so a typo'd path errors loudly instead of looking like "no matches" (issue #328).
+     * resolve inside the project **and** be addressable under the name the caller wrote;
+     * otherwise the call fails with the offending globs listed, so a typo'd path errors
+     * loudly instead of looking like "no matches" (issue #328).
+     *
+     * Existing is not sufficient, because [resolveFile] searches module content roots while
+     * matching relativizes against the project base path first (both mirror
+     * [ProjectUtils.getRelativePath], which produces the paths the tools return). In a
+     * `/repo` project owning a `/repo/moduleA` content root, a glob rooted at `src/main`
+     * resolves via that content root, yet every file under it is named
+     * `moduleA/src/main/...` for matching — so the glob would validate and then match
+     * nothing. Comparing the resolved directory's relative path against the prefix catches
+     * that and names the path that does work.
+     *
      * Exclude globs are not existence-checked: defensively excluding a directory that does
      * not exist (e.g. `!build`) is legitimate and harmless.
      */
@@ -612,8 +623,14 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
                 ?: return "'${ParamNames.PATHS}' must be an array of glob strings.".toArgumentFailure()
         }
         val matcher = PathGlobMatcher.parse(entries).getOrElse { return Result.failure(it) }
-        val unresolved = matcher.includes.filter { glob ->
-            glob.literalPrefix.isNotEmpty() && resolveFile(project, glob.literalPrefix) == null
+        val unresolved = matcher.includes.mapNotNull { glob ->
+            if (glob.literalPrefix.isEmpty()) return@mapNotNull null
+            val dir = resolveFile(project, glob.literalPrefix)
+                ?: return@mapNotNull "'${glob.original}' ('${glob.literalPrefix}' does not exist in the project)"
+            val addressableAs = ProjectUtils.getRelativePath(project, dir)
+            if (addressableAs == glob.literalPrefix) null
+            else "'${glob.original}' ('${glob.literalPrefix}' resolves to '$addressableAs' in this project — " +
+                "globs match that name, so write the glob against it)"
         }
         if (unresolved.isNotEmpty()) {
             return unresolved.joinToString(
@@ -621,7 +638,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
                 separator = "; ",
                 postfix = ". Globs are project-relative with '/' separators; '*' matches within a path segment, " +
                     "'**' crosses directories, and a leading '!' excludes."
-            ) { "'${it.original}' ('${it.literalPrefix}' does not exist in the project)" }.toArgumentFailure()
+            ).toArgumentFailure()
         }
         return Result.success(matcher)
     }

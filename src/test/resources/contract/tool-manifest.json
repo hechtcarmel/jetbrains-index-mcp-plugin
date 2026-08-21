@@ -958,7 +958,7 @@ schema:
       },
       "paths":
       {
-        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). An include glob whose literal directory prefix does not exist in the project is reported as an error.",
+        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). Because globs are project-relative, any include glob also drops results that have no project-relative path \u2014 library and jar hits under scope project_and_libraries; an exclude-only filter leaves those alone. An include glob whose literal directory prefix does not exist in the project, or resolves under a different relative name than it was written with, is reported as an error.",
         "items":
         {
           "type": "string"
@@ -2388,7 +2388,7 @@ schema:
       },
       "paths":
       {
-        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). An include glob whose literal directory prefix does not exist in the project is reported as an error.",
+        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). Because globs are project-relative, any include glob also drops results that have no project-relative path \u2014 library and jar hits under scope project_and_libraries; an exclude-only filter leaves those alone. An include glob whose literal directory prefix does not exist in the project, or resolves under a different relative name than it was written with, is reported as an error.",
         "items":
         {
           "type": "string"
@@ -2618,7 +2618,7 @@ schema:
       },
       "paths":
       {
-        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). An include glob whose literal directory prefix does not exist in the project is reported as an error.",
+        "description": "Project-relative path globs restricting the search, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' matches within a path segment, '**' crosses directories, a plain directory path includes everything beneath it, and a leading '!' excludes. Includes are unioned, then excludes are subtracted; with only excludes, everything else is searched. Combines with the tool's other filters (scope, filePattern). Because globs are project-relative, any include glob also drops results that have no project-relative path \u2014 library and jar hits under scope project_and_libraries; an exclude-only filter leaves those alone. An include glob whose literal directory prefix does not exist in the project, or resolves under a different relative name than it was written with, is reported as an error.",
         "items":
         {
           "type": "string"

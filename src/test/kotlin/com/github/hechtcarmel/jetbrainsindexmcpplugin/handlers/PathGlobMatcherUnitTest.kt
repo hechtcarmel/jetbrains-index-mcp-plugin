@@ -89,6 +89,35 @@ class PathGlobMatcherUnitTest : TestCase() {
         assertTrue(matcherOf("src/main/").matches("src/main/A.kt"))
     }
 
+    /**
+     * Backslash separators must normalize to `/`. Left alone they fail twice over and
+     * silently: `\\` is escaped as a literal so the glob matches nothing, AND
+     * [PathGlob.literalPrefix] splits on `/` so it comes back empty, which makes the
+     * unresolvable-glob guard in `AbstractMcpTool.resolvePathGlobMatcher` skip the entry —
+     * turning a mistyped separator into "no matches" rather than an error.
+     */
+    fun testWindowsStyleSeparatorsAreNormalized() {
+        val matcher = matcherOf("src\\main\\**")
+        assertTrue("backslash glob must match a normal '/' path", matcher.matches("src/main/A.kt"))
+        assertTrue(matcher.matches("src/main/kotlin/x/A.kt"))
+        assertFalse(matcher.matches("src/test/A.kt"))
+
+        assertEquals(
+            "literalPrefix must survive normalization, or the unresolvable-glob guard skips the entry",
+            "src/main",
+            PathGlob.compile("src\\main\\**", "src/main/**").literalPrefix
+        )
+        assertEquals(
+            "the compiled pattern must carry '/' separators",
+            "src/main/**",
+            matcher.includes.single().pattern
+        )
+
+        assertTrue("mixed separators normalize too", matcherOf("src\\main/kotlin\\**").matches("src/main/kotlin/A.kt"))
+        assertTrue("negated entries normalize too", matcherOf("!src\\main").matches("src/test/A.kt"))
+        assertFalse(matcherOf("!src\\main").matches("src/main/A.kt"))
+    }
+
     fun testMatchingIsCaseSensitive() {
         assertFalse(matcherOf("src/**").matches("SRC/A.kt"))
     }
@@ -141,6 +170,12 @@ class PathGlobMatcherUnitTest : TestCase() {
         assertFalse(
             "adding an exclude must change the key",
             matcherOf("src/**").equalityKey == matcherOf("src/**", "!**/*Test.kt").equalityKey
+        )
+        // A joined-string key collides here, because the join separator is itself a legal
+        // character inside a glob — which would let two different filters compare equal.
+        assertFalse(
+            "one glob containing a comma must not collide with two globs split on it",
+            matcherOf("src/a,b/**").equalityKey == matcherOf("src/a", "b/**").equalityKey
         )
     }
 

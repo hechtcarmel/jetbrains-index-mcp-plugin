@@ -102,6 +102,30 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
         )
     }
 
+    /**
+     * A Windows-style glob must work end to end rather than returning a silent empty result —
+     * the exact failure this feature exists to prevent, on the platform where a caller is
+     * most likely to write separators that way.
+     */
+    fun testWindowsStyleSeparatorsAreNormalizedEndToEnd() = runBlocking {
+        registerSourceRoot("stx-win-src")
+        writeProjectFile("stx-win-src/alpha/WinHit.java", "class WinHit { String s = \"stxWinNeedle\"; }")
+        writeProjectFile("stx-win-src/beta/WinMiss.java", "class WinMiss { String s = \"stxWinNeedle\"; }")
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "stxWinNeedle")
+            putJsonArray("paths") { add("stx-win-src\\alpha\\**") }
+        })
+
+        assertToolSucceeded("Backslash separators should be normalized, not silently match nothing", result)
+        val parsed = decode(toolText(result))
+        assertEquals(
+            "Only the alpha file may match, exactly as with '/' separators",
+            listOf("stx-win-src/alpha/WinHit.java"),
+            parsed.matches.map { it.file }
+        )
+    }
+
     fun testUnresolvableIncludeGlobFailsInsteadOfReturningNoMatches() = runBlocking {
         registerSourceRoot("stx-bad-src")
         writeProjectFile("stx-bad-src/real/RealHit.java", "class RealHit { String s = \"stxBadNeedle\"; }")
