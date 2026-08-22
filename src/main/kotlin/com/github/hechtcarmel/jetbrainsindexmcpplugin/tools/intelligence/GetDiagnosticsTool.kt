@@ -43,7 +43,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * - Test results from open test run tabs
  *
  * File diagnostics use open-editor daemon highlights when the file is already
- * open, and public batch code-smell analysis for closed files.
+ * open, and public batch code-smell analysis for closed files. Either way the file is
+ * re-read from disk first, so an out-of-band edit is analyzed as written.
  */
 class GetDiagnosticsTool : AbstractMcpTool() {
 
@@ -61,7 +62,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
 
         At least one source must be active: provide 'file' for code analysis, 'includeBuildErrors' for build output, or 'includeTestResults' for test results. Can combine all three.
 
-        File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open. For diagnostics across many files or the whole project with per-file coverage metadata, use ide_project_diagnostics.
+        File analysis uses fresh daemon highlights for files that are already open in an editor. Closed files use public batch analysis, so weak warnings and quick-fix intentions may be less complete unless the file is open. The analyzed file is re-read from disk first, so results reflect edits made outside the IDE without calling ide_sync_files. For diagnostics across many files or the whole project with per-file coverage metadata, use ide_project_diagnostics.
 
         Parameters: file (optional, enables code analysis), line + column (optional, for intentions, requires file), startLine/endLine (optional, requires file), includeBuildErrors (optional), includeTestResults (optional), severity (optional, default 'all'), testResultFilter (optional, default 'failed'), maxBuildErrors (optional, default 100), maxTestResults (optional, default 100).
 

@@ -406,6 +406,68 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         }
     }
 
+    fun testRefreshesTargetFileFromDiskWhenAutoSyncDisabled() = runBlocking {
+        createProjectFile(
+            "StaleExample.java",
+            """
+            class StaleExample {
+                void test() {
+                    AlphaType value = null;
+                }
+            }
+            """.trimIndent()
+        )
+
+        val settings = McpSettings.getInstance()
+        val originalSyncSetting = settings.syncExternalChanges
+        val filePath = sourceRootPath().resolve("StaleExample.java")
+
+        try {
+            settings.syncExternalChanges = false
+
+            // The first call loads the file into the VFS content cache and the document, which is
+            // what makes a later out-of-band disk write invisible.
+            val baseline = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/StaleExample.java")
+            })
+            assertFalse("Baseline diagnostics should succeed: ${renderResult(baseline)}", baseline.isFailure)
+            assertTrue(
+                "Baseline should report the pre-edit symbol: ${renderResult(baseline)}",
+                decodeDiagnostics(baseline).problems.orEmpty().any { it.message.contains("AlphaType") }
+            )
+
+            // An external agent rewrote the file and nothing told the VFS about it.
+            Files.writeString(
+                filePath,
+                """
+                class StaleExample {
+                    void test() {
+                        BetaType value = null;
+                    }
+                }
+                """.trimIndent()
+            )
+
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/StaleExample.java")
+            })
+
+            assertFalse("Diagnostics should succeed: ${renderResult(result)}", result.isFailure)
+
+            val problems = decodeDiagnostics(result).problems.orEmpty()
+            assertTrue(
+                "Diagnostics missed the post-edit symbol, so it analyzed stale VFS content: ${renderResult(result)}",
+                problems.any { it.message.contains("BetaType") }
+            )
+            assertFalse(
+                "Diagnostics still reports the pre-edit symbol, so it analyzed stale VFS content: ${renderResult(result)}",
+                problems.any { it.message.contains("AlphaType") }
+            )
+        } finally {
+            settings.syncExternalChanges = originalSyncSetting
+        }
+    }
+
     fun testFiltersClosedFileProblemsByRequestedSeverity() = runBlocking {
         createProjectFile(
             "SeverityExample.java",

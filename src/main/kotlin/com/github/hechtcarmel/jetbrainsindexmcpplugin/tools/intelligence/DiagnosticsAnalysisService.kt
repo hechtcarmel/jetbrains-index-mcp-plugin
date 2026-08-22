@@ -9,8 +9,12 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.ide.PowerSaveMode
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.progress.ProgressManager
@@ -18,6 +22,7 @@ import com.intellij.openapi.progress.util.ProgressIndicatorBase
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vcs.CodeSmellDetector
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
@@ -105,6 +110,8 @@ class DiagnosticsAnalysisService(private val project: Project) {
         endLine: Int?,
         maxProblems: Int
     ): FileAnalysisResult {
+        refreshFromDisk(virtualFile)
+
         val openTextEditor = currentTextEditor(virtualFile)
         val powerSaveMode = PowerSaveMode.isEnabled()
         val fileContext = ReadAction.compute<FileContext?, Throwable> {
@@ -440,6 +447,33 @@ class DiagnosticsAnalysisService(private val project: Project) {
     private suspend fun edtHighlightingCompleted(textEditor: TextEditor): Boolean {
         return invokeOnEdt {
             !textEditor.editor.isDisposed && DaemonCodeAnalyzerEx.isHighlightingCompleted(textEditor, project)
+        }
+    }
+
+    /**
+     * Pulls [virtualFile] back from disk before it is analyzed.
+     *
+     * Tools resolve paths through `LocalFileSystem.findFileByPath`, which hands back the cached
+     * `VirtualFile` without re-reading it. A file an agent rewrote out of band is therefore
+     * analyzed as its pre-edit self, so diagnostics report problems that were already fixed — or,
+     * far more often, none at all for a file that does not compile (issue #333).
+     *
+     * The project-wide "sync external file changes" setting also cures this, but it refreshes
+     * every content root recursively and is off by default for that reason. Refreshing the one
+     * file about to be analyzed costs a stat, so it needs no setting of its own.
+     */
+    private suspend fun refreshFromDisk(virtualFile: VirtualFile) {
+        VfsUtil.markDirtyAndRefresh(false, false, false, virtualFile)
+
+        // The refresh reloads the Document, but PSI — which the highlighting passes actually read —
+        // stays on the pre-reload tree until the Document is committed. Only a Document that was
+        // already loaded can be stale; when there is none, PSI is built from the refreshed content.
+        val document = FileDocumentManager.getInstance().getCachedDocument(virtualFile) ?: return
+        val commit = { PsiDocumentManager.getInstance(project).commitDocument(document) }
+        if (ApplicationManager.getApplication().isDispatchThread) {
+            commit()
+        } else {
+            withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { commit() }
         }
     }
 

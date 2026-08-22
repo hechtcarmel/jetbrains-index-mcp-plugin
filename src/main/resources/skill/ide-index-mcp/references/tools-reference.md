@@ -335,7 +335,7 @@ Get code diagnostics from multiple sources: per-file analysis (errors, warnings,
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ problems: [{message, severity, file, line, column, endLine?, endColumn?}], intentions: [{name, description}], problemCount, intentionCount, analysisFresh, analysisTimedOut, analysisMessage, buildErrors?, buildErrorCount?, buildWarningCount?, buildErrorsTruncated?, buildTimestamp?, testResults?, testResultsTruncated?, testSummary? }`
-**Notes**: Open files use fresh daemon highlights. Closed files use public batch analysis, so `WEAK_WARNING` results and quick-fix intentions may be less complete unless the file is already open in an editor. The `analysisMode` field reports which path ran: `open_daemon` or `closed_batch` (null when no analysis ran).
+**Notes**: Open files use fresh daemon highlights. Closed files use public batch analysis, so `WEAK_WARNING` results and quick-fix intentions may be less complete unless the file is already open in an editor. The `analysisMode` field reports which path ran: `open_daemon` or `closed_batch` (null when no analysis ran). The file is refreshed from disk before analysis, so no `ide_sync_files` call is needed after editing it with an external tool.
 **Severity levels**: `ERROR`, `WARNING`, `WEAK_WARNING`
 
 ### ide_project_diagnostics (disabled by default)

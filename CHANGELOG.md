@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_diagnostics` no longer analyzes a stale copy of the file** ([#333](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/333)) — tools resolve a path through `LocalFileSystem.findFileByPath`, which returns the cached `VirtualFile` without re-reading it from disk. A file that a coding agent had just rewritten through its own write tool was therefore analyzed as its pre-edit self, so `ide_diagnostics` reported problems that were already fixed or, far more often, `problemCount: 0` for a file that does not compile. Agents read that empty result as "this tool is broken" and stop calling it. The file about to be analyzed is now refreshed from disk and its document committed to PSI first, so results always describe what is on disk. This was previously only curable with the project-wide "Sync external file changes" setting, which refreshes every content root recursively and is off by default for that reason; refreshing the one file being analyzed costs a stat, so it is unconditional and needs no setting. `ide_project_diagnostics` gets the same guarantee, since both share the analysis service.
+
 ## [5.8.0] - 2026-08-21
 
 ### Added
