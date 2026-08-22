@@ -7,8 +7,10 @@
 build
 tmp
 .claude
+.opencode
 local.properties
 *.hprof
 docs/superpowers
 scripts/build-install.sh
 HANDOFF.md
+/out/

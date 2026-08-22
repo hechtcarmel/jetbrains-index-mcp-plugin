@@ -143,7 +143,7 @@ class SchemaBuilderUnitTest : TestCase() {
     fun testLanguageAndSymbol() {
         mockkObject(LanguageHandlerRegistry)
         try {
-            every { LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference() } returns listOf("Java", "Kotlin", "JavaScript", "TypeScript")
+            every { LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference() } returns listOf("Java", "Kotlin", "JavaScript", "TypeScript", "Scala")
 
             val schema = SchemaBuilder.tool()
                 .projectPath()
@@ -156,10 +156,10 @@ class SchemaBuilderUnitTest : TestCase() {
 
             val languageProp = properties[ParamNames.LANGUAGE]?.jsonObject!!
             val enumValues = languageProp["enum"]?.jsonArray?.map { it.jsonPrimitive.content }!!
-            assertEquals(listOf("Java", "Kotlin", "JavaScript", "TypeScript"), enumValues)
+            assertEquals(listOf("Java", "Kotlin", "JavaScript", "TypeScript", "Scala"), enumValues)
             assertTrue(
                 "language description should list supported languages",
-                languageProp[SchemaConstants.DESCRIPTION]?.jsonPrimitive?.content?.contains("Currently supported languages: Java, Kotlin, JavaScript, TypeScript.") == true
+                languageProp[SchemaConstants.DESCRIPTION]?.jsonPrimitive?.content?.contains("Currently supported languages: Java, Kotlin, JavaScript, TypeScript, Scala.") == true
             )
 
             val required = schema[SchemaConstants.REQUIRED]?.jsonArray?.map { it.jsonPrimitive.content }!!
