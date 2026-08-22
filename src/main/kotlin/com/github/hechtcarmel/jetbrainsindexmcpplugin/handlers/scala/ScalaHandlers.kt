@@ -38,7 +38,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
  * `<depends optional="true" config-file="scala-features.xml">org.intellij.scala</depends>`
  *
  * This class itself has no Scala PSI imports, so it can be loaded safely even if the Scala
- * plugin is absent (the registry guards against that via [ScalaPluginDetector]).
+ * plugin is absent (the registry guards against that via [PluginDetectors.scala]).
  * The handler classes (ScalaTypeHierarchyHandler etc.) do import Scala PSI types, but they
  * are only instantiated after the plugin-availability check passes — JVM lazy class loading
  * ensures they are never loaded when the Scala plugin is absent.
@@ -103,6 +103,11 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     companion object {
         private val LOG = logger<BaseScalaHandler<*>>()
     }
+
+    override val languageId = "Scala"
+
+    override fun canHandle(element: PsiElement): Boolean =
+        isAvailable() && isScalaLanguage(element)
 
     protected fun isScalaLanguage(element: PsiElement): Boolean =
         element.language.id == "Scala"
@@ -253,11 +258,6 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         private const val MAX_HIERARCHY_DEPTH = 100
     }
 
-    override val languageId = "Scala"
-
-    override fun canHandle(element: PsiElement): Boolean =
-        isAvailable() && isScalaLanguage(element)
-
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
@@ -353,11 +353,6 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
  */
 class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>(), ImplementationsHandler {
 
-    override val languageId = "Scala"
-
-    override fun canHandle(element: PsiElement): Boolean =
-        isAvailable() && isScalaLanguage(element)
-
     override fun findImplementations(
         element: PsiElement,
         project: Project,
@@ -442,11 +437,6 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         private const val MAX_SUPER_METHODS = 10
         private val LOG = logger<ScalaCallHierarchyHandler>()
     }
-
-    override val languageId = "Scala"
-
-    override fun canHandle(element: PsiElement): Boolean =
-        isAvailable() && isScalaLanguage(element)
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -605,11 +595,6 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
         private val LOG = logger<ScalaSuperMethodsHandler>()
     }
 
-    override val languageId = "Scala"
-
-    override fun canHandle(element: PsiElement): Boolean =
-        isAvailable() && isScalaLanguage(element)
-
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val containingClass = findContainingScTypeDefinition(scFunction) ?: return null
@@ -683,11 +668,6 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
     companion object {
         private val LOG = logger<ScalaStructureHandler>()
     }
-
-    override val languageId = "Scala"
-
-    override fun canHandle(element: PsiElement): Boolean =
-        isAvailable() && isScalaLanguage(element)
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         if (file !is ScalaFile) {
