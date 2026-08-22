@@ -139,10 +139,11 @@ class DiagnosticsAnalysisService(private val project: Project) {
         }
 
         if (fileContext == null || (!fileContext.openEditorEligible && !fileContext.batchEligible)) {
-            val ineligibleMessage = if (fileContext?.powerSaveBlocked == true) {
-                "Power Save Mode is on, so the editor highlighting daemon is inactive, and the file is not eligible for batch analysis."
-            } else {
-                "File is not eligible for IDE diagnostics analysis."
+            val ineligibleMessage = when {
+                fileContext?.powerSaveBlocked == true ->
+                    "Power Save Mode is on, so the editor highlighting daemon is inactive, and the file is not eligible for batch analysis."
+                !virtualFile.isValid -> "File no longer exists on disk."
+                else -> "File is not eligible for IDE diagnostics analysis."
             }
             return FileAnalysisResult(
                 problems = emptyList(),
@@ -463,12 +464,26 @@ class DiagnosticsAnalysisService(private val project: Project) {
      * file about to be analyzed costs a stat, so it needs no setting of its own.
      */
     private suspend fun refreshFromDisk(virtualFile: VirtualFile) {
+        val fileDocumentManager = FileDocumentManager.getInstance()
+
+        // An unsaved editor document is the newer copy, and it is what the daemon analyzes anyway.
+        // Pulling disk content over it only triggers IntelliJ's memory-vs-disk conflict handling —
+        // a reload prompt in the IDE, a hard IllegalStateException under the test framework.
+        if (fileDocumentManager.isFileModified(virtualFile)) {
+            return
+        }
+
         VfsUtil.markDirtyAndRefresh(false, false, false, virtualFile)
+
+        // The refresh can discover the file was deleted, which invalidates it.
+        if (!virtualFile.isValid) {
+            return
+        }
 
         // The refresh reloads the Document, but PSI — which the highlighting passes actually read —
         // stays on the pre-reload tree until the Document is committed. Only a Document that was
         // already loaded can be stale; when there is none, PSI is built from the refreshed content.
-        val document = FileDocumentManager.getInstance().getCachedDocument(virtualFile) ?: return
+        val document = fileDocumentManager.getCachedDocument(virtualFile) ?: return
         val commit = { PsiDocumentManager.getInstance(project).commitDocument(document) }
         if (ApplicationManager.getApplication().isDispatchThread) {
             commit()

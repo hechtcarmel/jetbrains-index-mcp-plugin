@@ -131,6 +131,12 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                 endLine = endLine,
                 maxProblems = MAX_PROBLEMS
             )
+            // analyzeFile refreshes the file from disk, so it can discover the file is gone; the
+            // VirtualFile is then invalid and every PSI lookup below it throws.
+            if (!virtualFile.isValid) {
+                return createErrorResult("File no longer exists on disk: $filePath")
+            }
+
             problems = analysisResult.problems
             analysisFresh = analysisResult.analysisFresh
             analysisTimedOut = analysisResult.analysisTimedOut

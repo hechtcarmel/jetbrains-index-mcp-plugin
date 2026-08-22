@@ -15,6 +15,8 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfoType
 import com.intellij.ide.PowerSaveMode
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -466,6 +468,94 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         } finally {
             settings.syncExternalChanges = originalSyncSetting
         }
+    }
+
+    fun testUnsavedEditorChangesSurviveTheDiskRefresh() = runBlocking {
+        val psiFile = createProjectFile(
+            "UnsavedExample.java",
+            """
+            class UnsavedExample {
+                void test() {
+                    DiskType value = null;
+                }
+            }
+            """.trimIndent()
+        )
+        val virtualFile = psiFile.virtualFile
+        val fileEditorManager = FileEditorManager.getInstance(project)
+        val editorText = "class UnsavedExample { void test() { EditorOnlyType value = null; } }"
+
+        try {
+            ApplicationManager.getApplication().invokeAndWait { fileEditorManager.openFile(virtualFile, true) }
+            val document = FileDocumentManager.getInstance().getDocument(virtualFile)!!
+            WriteAction.runAndWait<Throwable> { document.setText(editorText) }
+            assertTrue(
+                "Precondition: the document must be unsaved",
+                FileDocumentManager.getInstance().isFileModified(virtualFile)
+            )
+
+            // Disk moves underneath the unsaved editor.
+            Files.writeString(
+                sourceRootPath().resolve("UnsavedExample.java"),
+                "class UnsavedExample { void test() { NewDiskType value = null; } }"
+            )
+
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                put("file", "src/UnsavedExample.java")
+            })
+
+            // Refreshing over an unsaved document raises IntelliJ's memory-vs-disk conflict —
+            // a hard error under the test framework, a reload prompt in the IDE.
+            assertFalse("Diagnostics must not raise a memory-disk conflict: ${renderResult(result)}", result.isFailure)
+            assertEquals(
+                "The editor's unsaved text is the newer copy and must win over disk",
+                editorText,
+                FileDocumentManager.getInstance().getDocument(virtualFile)!!.text
+            )
+            assertTrue(
+                "The document must still be unsaved — the refresh must not have reloaded it",
+                FileDocumentManager.getInstance().isFileModified(virtualFile)
+            )
+        } finally {
+            // Deliberately NOT FileDocumentManager.reloadFiles(): that resolves the memory-disk
+            // conflict, and the conflict surfacing at teardown is what proves the guard works.
+            // Matching disk to the document leaves nothing divergent for later tests instead.
+            ApplicationManager.getApplication().invokeAndWait { fileEditorManager.closeFile(virtualFile) }
+            Files.writeString(sourceRootPath().resolve("UnsavedExample.java"), editorText)
+        }
+    }
+
+    fun testReportsFileDeletedOnDiskInsteadOfAnalyzingTheStaleCopy() = runBlocking {
+        createProjectFile(
+            "VanishExample.java",
+            """
+            class VanishExample {
+                void test() {
+                    GoneType value = null;
+                }
+            }
+            """.trimIndent()
+        )
+
+        // Warm the VFS/document caches through a real call, so the file survives in cache.
+        val baseline = GetDiagnosticsTool().execute(project, buildJsonObject {
+            put("file", "src/VanishExample.java")
+        })
+        assertFalse("Baseline diagnostics should succeed: ${renderResult(baseline)}", baseline.isFailure)
+
+        Files.delete(sourceRootPath().resolve("VanishExample.java"))
+
+        val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+            put("file", "src/VanishExample.java")
+        })
+
+        // Refreshing invalidates the VirtualFile; every PSI lookup past that point throws
+        // InvalidVirtualFileAccessException unless the tool checks.
+        assertTrue("A deleted file must be reported, not analyzed from cache", result.isFailure)
+        assertTrue(
+            "The error should name the deleted file, got: ${renderResult(result)}",
+            renderResult(result).contains("no longer exists")
+        )
     }
 
     fun testFiltersClosedFileProblemsByRequestedSeverity() = runBlocking {
