@@ -1,10 +1,4 @@
 !.opencode/
-!.eslintrc.js
 !.editorconfig
 !.gitattributes
 !.gitignore
-!.prettierignore
-!.prettierrc.js
-!.nvmrc
-!.yarnrc.yml
-!.yarn

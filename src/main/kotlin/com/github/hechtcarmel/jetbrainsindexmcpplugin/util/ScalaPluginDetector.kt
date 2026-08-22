@@ -1,9 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.extensions.PluginId
-
 /**
  * Utility for detecting Scala plugin availability.
  *
@@ -44,44 +40,16 @@ import com.intellij.openapi.extensions.PluginId
  */
 object ScalaPluginDetector {
 
-    private val LOG = logger<ScalaPluginDetector>()
-
-    /**
-     * Plugin ID for the official Scala plugin.
-     */
-    private const val SCALA_PLUGIN_ID = "org.intellij.scala"
-
     /**
      * Cached result of Scala plugin availability check.
      *
-     * This is computed once at class initialization using a lazy delegate
-     * that is thread-safe by default (LazyThreadSafetyMode.SYNCHRONIZED).
+     * Delegates to [PluginDetectors.scala], which uses only the public
+     * `PluginManagerCore.isLoaded`/`isDisabled` APIs (see `PluginDetector`) —
+     * never the `@ApiStatus.Internal` `PluginManagerCore.getPlugin`, which the
+     * plugin verifier rejects.
      */
-    val isScalaPluginAvailable: Boolean by lazy {
-        checkScalaPluginAvailable()
-    }
-
-    /**
-     * Performs the actual check for Scala plugin availability.
-     *
-     * Checks if the official Scala plugin is installed and enabled.
-     */
-    private fun checkScalaPluginAvailable(): Boolean {
-        return try {
-            val pluginId = PluginId.getId(SCALA_PLUGIN_ID)
-            val plugin = PluginManagerCore.getPlugin(pluginId)
-            if (plugin != null && plugin.isEnabled) {
-                LOG.info("Scala plugin detected (version: ${plugin.version}) - Scala-specific tools will be available")
-                return true
-            }
-
-            LOG.info("Scala plugin not available - Scala-specific features will be disabled")
-            false
-        } catch (e: Exception) {
-            LOG.warn("Failed to check Scala plugin availability: ${e.message}")
-            false
-        }
-    }
+    val isScalaPluginAvailable: Boolean
+        get() = PluginDetectors.scala.isAvailable
 
     /**
      * Executes the given block only if the Scala plugin is available.

@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import org.junit.Assume
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -31,7 +32,7 @@ class ScalaHandlersTest : BasePlatformTestCase() {
     }
 
     fun testTypeHierarchyIncludesTraitAndCaseClassKinds() {
-        if (!requireScalaCapability("testTypeHierarchyIncludesTraitAndCaseClassKinds")) return
+        requireScalaCapability("testTypeHierarchyIncludesTraitAndCaseClassKinds")
 
         val modelsFixture = addScalaFixture("scala2-models.scala")
         val typeHandler = ScalaTypeHierarchyHandler()
@@ -54,7 +55,7 @@ class ScalaHandlersTest : BasePlatformTestCase() {
     }
 
     fun testFindImplementationsForTraitAndMethod() {
-        if (!requireScalaCapability("testFindImplementationsForTraitAndMethod")) return
+        requireScalaCapability("testFindImplementationsForTraitAndMethod")
 
         val modelsFixture = addScalaFixture("scala2-models.scala")
         val implHandler = ScalaImplementationsHandler()
@@ -79,7 +80,7 @@ class ScalaHandlersTest : BasePlatformTestCase() {
     }
 
     fun testCallHierarchyFindsScalaCallersAndCallees() {
-        if (!requireScalaCapability("testCallHierarchyFindsScalaCallersAndCallees")) return
+        requireScalaCapability("testCallHierarchyFindsScalaCallersAndCallees")
 
         val modelsFixture = addScalaFixture("scala2-models.scala")
         val usageFixture = addScalaFixture("scala2-usage.scala")
@@ -115,7 +116,7 @@ class ScalaHandlersTest : BasePlatformTestCase() {
     }
 
     fun testSuperMethodsIncludesTraitAndAbstractClassChain() {
-        if (!requireScalaCapability("testSuperMethodsIncludesTraitAndAbstractClassChain")) return
+        requireScalaCapability("testSuperMethodsIncludesTraitAndAbstractClassChain")
 
         val modelsFixture = addScalaFixture("scala2-models.scala")
         val superMethodsHandler = ScalaSuperMethodsHandler()
@@ -140,7 +141,7 @@ class ScalaHandlersTest : BasePlatformTestCase() {
     }
 
     fun testStructureIncludesScalaSpecificKindsAndMembers() {
-        if (!requireScalaCapability("testStructureIncludesScalaSpecificKindsAndMembers")) return
+        requireScalaCapability("testStructureIncludesScalaSpecificKindsAndMembers")
 
         val modelsFixture = addScalaFixture("scala2-models.scala")
         val usageFixture = addScalaFixture("scala2-usage.scala")
@@ -166,6 +167,22 @@ class ScalaHandlersTest : BasePlatformTestCase() {
         )
         assertTrue("Runner-like object should contain method member", runnerLikeObject!!.children.any { it.kind == StructureKind.METHOD && it.name == "runAll" })
         assertTrue("Runner-like object should expose non-method members", runnerLikeObject.children.any { it.kind != StructureKind.METHOD })
+
+        // Regression coverage: val/var names must resolve to their real declared name,
+        // not fall back to "unknown" (ScValueOrVariable does not itself implement
+        // PsiNamedElement; the name lives on declaredElements).
+        val fieldNodes = runnerLikeObject.children.filter { it.kind == StructureKind.VAL || it.kind == StructureKind.VAR }
+        assertTrue(
+            "No val/var member should fall back to 'unknown'. Field nodes: ${fieldNodes.map { "${it.kind}:${it.name}" }}",
+            fieldNodes.none { it.name == "unknown" }
+        )
+        assertTrue("defaultTask val should resolve its real name", fieldNodes.any { it.kind == StructureKind.VAL && it.name == "defaultTask" })
+        assertTrue("runCount var should resolve its real name", fieldNodes.any { it.kind == StructureKind.VAR && it.name == "runCount" })
+        assertTrue(
+            "Multi-name val declaration (`val minRetries, maxRetries = 3`) should emit both names",
+            fieldNodes.any { it.kind == StructureKind.VAL && it.name == "minRetries" } &&
+                fieldNodes.any { it.kind == StructureKind.VAL && it.name == "maxRetries" }
+        )
     }
 
     private data class ScalaFixture(val source: String, val psiFile: PsiFile)
@@ -184,23 +201,18 @@ class ScalaHandlersTest : BasePlatformTestCase() {
         return psiFile.findElementAt(offset) ?: error("No PSI element at offset $offset for marker '$needle'")
     }
 
-    private fun requireScalaCapability(testName: String): Boolean {
-        if (!ScalaPluginDetector.isScalaPluginAvailable) {
-            System.err.println("$testName: skipped - Scala plugin not available")
-            return false
-        }
-        return try {
+    private fun requireScalaCapability(testName: String) {
+        Assume.assumeTrue("$testName: skipped - Scala plugin not available", ScalaPluginDetector.isScalaPluginAvailable)
+
+        val scalaPsiAvailable = try {
             Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
-            val hasScalaTypeHierarchy = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy().contains("Scala")
-            if (!hasScalaTypeHierarchy) {
-                System.err.println("$testName: skipped - Scala handlers are not registered")
-                false
-            } else {
-                true
-            }
+            true
         } catch (_: ClassNotFoundException) {
-            System.err.println("$testName: skipped - Scala PSI classes unavailable")
             false
         }
+        Assume.assumeTrue("$testName: skipped - Scala PSI classes unavailable", scalaPsiAvailable)
+
+        val hasScalaTypeHierarchy = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy().contains("Scala")
+        Assume.assumeTrue("$testName: skipped - Scala handlers are not registered", hasScalaTypeHierarchy)
     }
 }
