@@ -3,7 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.scala
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -202,7 +202,7 @@ class ScalaHandlersTest : BasePlatformTestCase() {
     }
 
     private fun requireScalaCapability(testName: String) {
-        Assume.assumeTrue("$testName: skipped - Scala plugin not available", ScalaPluginDetector.isScalaPluginAvailable)
+        Assume.assumeTrue("$testName: skipped - Scala plugin not available", PluginDetectors.scala.isAvailable)
 
         val scalaPsiAvailable = try {
             Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")

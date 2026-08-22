@@ -21,12 +21,6 @@ class PluginDetectorApiPolicyUnitTest : TestCase() {
         )
     }
 
-    fun testScalaPluginDetectorDoesNotUseRejectedInternalPluginManagerApi() {
-        assertNoRejectedApiUsage(
-            "src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/ScalaPluginDetector.kt"
-        )
-    }
-
     private fun assertNoRejectedApiUsage(relativePath: String) {
         val source = Files.readString(Paths.get(relativePath))
         val lines = source.lineSequence().map { it.trim() }.toList()

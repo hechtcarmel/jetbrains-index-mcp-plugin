@@ -36,7 +36,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructure
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.lang.java.JavaLanguage
 import org.junit.Assume
 import com.intellij.navigation.ChooseByNameContributor
@@ -1776,7 +1776,7 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     private fun requireScalaToolCapability(testName: String) {
-        Assume.assumeTrue("$testName: skipped - Scala plugin not available", ScalaPluginDetector.isScalaPluginAvailable)
+        Assume.assumeTrue("$testName: skipped - Scala plugin not available", PluginDetectors.scala.isAvailable)
 
         val scalaPsiAvailable = try {
             Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
