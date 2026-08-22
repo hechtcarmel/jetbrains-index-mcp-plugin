@@ -35,7 +35,10 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchy
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
 import com.intellij.lang.java.JavaLanguage
+import org.junit.Assume
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -77,6 +80,8 @@ class ToolsTest : McpPlatformTestCase() {
     private companion object {
         const val JS_TS_FIXTURE_SOURCE_ROOT = "src/test/testData/javascript/webstormIntegration"
         const val JS_TS_FIXTURE_PROJECT_ROOT = "src/webstormIntegration"
+        const val SCALA_FIXTURE_SOURCE_ROOT = "src/test/testData/scala"
+        const val SCALA_FIXTURE_PROJECT_ROOT = "src/scalaFixtures"
     }
 
     override fun setUp() {
@@ -558,6 +563,100 @@ class ToolsTest : McpPlatformTestCase() {
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
+    fun testTypeHierarchyToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testTypeHierarchyToolScalaFixtureCoverageHook")
+        val modelsSource = materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(modelsSource, "BaseService extends Worker")
+
+        val tool = TypeHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-models.scala"))
+            put("line", line)
+            put("column", column)
+        })
+
+        assertFalse("Scala type hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<TypeHierarchyResult>(errorTextless(result))
+        assertEquals("CLASS", payload.element.kind)
+        assertTrue("Hierarchy element should resolve BaseService", payload.element.name.contains("BaseService"))
+    }
+
+    fun testFindImplementationsToolScalaTraitFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testFindImplementationsToolScalaTraitFixtureCoverageHook")
+        val modelsSource = materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(modelsSource, "Worker extends Named")
+        val tool = FindImplementationsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-models.scala"))
+            put("line", line)
+            put("column", column)
+        })
+
+        assertFalse("Scala implementations lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
+        assertNotNull("Implementations payload should decode", payload.implementations)
+    }
+
+    fun testCallHierarchyToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testCallHierarchyToolScalaFixtureCoverageHook")
+        materializeScalaFixture("scala2-models.scala")
+        val usageSource = materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(usageSource, "runAll(worker: Worker)")
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-usage.scala"))
+            put("line", line)
+            put("column", column)
+            put("direction", "callees")
+            put("depth", 2)
+        })
+
+        assertFalse("Scala call hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        assertTrue(
+            "Call hierarchy root should resolve runAll",
+            payload.element.name.contains("runAll")
+        )
+    }
+
+    fun testFindSuperMethodsToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testFindSuperMethodsToolScalaFixtureCoverageHook")
+        val modelsSource = materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(modelsSource, "work(task: String): String = s\"${'$'}name handled ${'$'}task\"")
+        val tool = FindSuperMethodsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-models.scala"))
+            put("line", line)
+            put("column", column)
+        })
+
+        assertFalse("Scala find super methods lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<SuperMethodsResult>(errorTextless(result))
+        assertTrue(
+            "Worker trait super method should be included",
+            payload.hierarchy.any { it.containingClass.contains("Worker") && it.isInterface }
+        )
+    }
+
+    fun testFileStructureToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testFileStructureToolScalaFixtureCoverageHook")
+        materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+
+        val tool = FileStructureTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-usage.scala"))
+        })
+
+        assertFalse("Scala file structure lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
+        assertEquals("Scala", payload.language)
+        assertTrue("Structure payload should not be blank", payload.structure.isNotBlank())
     }
 
     fun testFindClassToolInvalidScopeReturnsStructuredError() = runBlocking {
@@ -1603,7 +1702,29 @@ class ToolsTest : McpPlatformTestCase() {
         writeProjectFile(fixtureProjectPath(relativePath), content)
     }
 
+    /**
+     * Materializes Scala fixture content on the real filesystem and waits for indexing to
+     * finish, like [writeProjectFile] — without this, a tool call issued right after writing
+     * the file can race the background reindex and fail with [IndexNotReadyException].
+     */
+    private fun materializeScalaFixture(relativePath: String): String {
+        val sourcePath = Path.of(SCALA_FIXTURE_SOURCE_ROOT).resolve(relativePath)
+        val source = Files.readString(sourcePath)
+        writeProjectFile(scalaFixtureProjectPath(relativePath), source)
+        return source
+    }
+
     private fun fixtureProjectPath(relativePath: String): String = "$JS_TS_FIXTURE_PROJECT_ROOT/$relativePath"
+    private fun scalaFixtureProjectPath(relativePath: String): String = "$SCALA_FIXTURE_PROJECT_ROOT/$relativePath"
+
+    private fun findLineColumn(source: String, marker: String): Pair<Int, Int> {
+        val offset = source.indexOf(marker)
+        check(offset >= 0) { "Could not find marker '$marker'" }
+        val line = source.substring(0, offset).count { it == '\n' } + 1
+        val lineStart = source.lastIndexOf('\n', offset - 1).let { if (it == -1) 0 else it + 1 }
+        val column = offset - lineStart + 1
+        return line to column
+    }
 
     private fun fixtureSymbol(relativePath: String, exportName: String): String {
         return "$JS_TS_FIXTURE_PROJECT_ROOT/${relativePath.removeJsTsExtension()}#$exportName"
@@ -1652,5 +1773,20 @@ class ToolsTest : McpPlatformTestCase() {
             project: com.intellij.openapi.project.Project,
             includeNonProjectItems: Boolean
         ): Array<NavigationItem> = itemsByName[name] ?: emptyArray()
+    }
+
+    private fun requireScalaToolCapability(testName: String) {
+        Assume.assumeTrue("$testName: skipped - Scala plugin not available", ScalaPluginDetector.isScalaPluginAvailable)
+
+        val scalaPsiAvailable = try {
+            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
+            true
+        } catch (_: ClassNotFoundException) {
+            false
+        }
+        Assume.assumeTrue("$testName: skipped - Scala PSI classes unavailable", scalaPsiAvailable)
+
+        val hasScalaTypeHierarchy = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy().contains("Scala")
+        Assume.assumeTrue("$testName: skipped - Scala handlers not registered", hasScalaTypeHierarchy)
     }
 }

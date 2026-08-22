@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Scala 2 support for `ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, `ide_find_super_methods`, and `ide_file_structure`** — these tools now recognize Scala classes, traits, objects, and case classes (reported as `TRAIT`/`OBJECT`/`CASE_CLASS`/`PACKAGE_OBJECT` kinds alongside the existing `CLASS`) when the Scala plugin is installed. Type hierarchy and find-implementations resolve trait/abstract-class inheritance; call hierarchy and find-super-methods follow Scala method overrides; file structure lists top-level types, methods, and `val`/`var` members. Unlike the reflection-based Python/JavaScript/Go/PHP/Rust handlers, the Scala handler compiles directly against the Scala plugin's PSI API, gated by plugin-availability detection so the classes are never loaded when the Scala plugin is absent.
+
 ## [5.8.1] - 2026-08-22
 
 ### Fixed
