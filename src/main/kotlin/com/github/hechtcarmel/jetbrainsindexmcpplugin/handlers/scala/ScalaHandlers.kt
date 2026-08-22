@@ -3,8 +3,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.scala
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -24,12 +24,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValue
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValueOrVariable
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScVariable
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScClass
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScMember
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScObject
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTemplateDefinition
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTrait
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
 
 /**
  * Registration entry point for Scala language handlers.
@@ -59,7 +54,7 @@ object ScalaHandlers {
      */
     @JvmStatic
     fun register(registry: LanguageHandlerRegistry) {
-        if (!ScalaPluginDetector.isScalaPluginAvailable) {
+        if (!PluginDetectors.scala.isAvailable) {
             LOG.info("Scala plugin not available, skipping Scala handler registration")
             return
         }
@@ -240,6 +235,8 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
         }
         return modifiers
     }
+
+    override fun isAvailable(): Boolean = PluginDetectors.scala.isAvailable
 }
 
 // ---------------------------------------------------------------------------
@@ -260,8 +257,6 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
 
     override fun canHandle(element: PsiElement): Boolean =
         isAvailable() && isScalaLanguage(element)
-
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun getTypeHierarchy(
         element: PsiElement,
@@ -363,8 +358,6 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
     override fun canHandle(element: PsiElement): Boolean =
         isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
-
     override fun findImplementations(
         element: PsiElement,
         project: Project,
@@ -454,8 +447,6 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
 
     override fun canHandle(element: PsiElement): Boolean =
         isAvailable() && isScalaLanguage(element)
-
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun getCallHierarchy(
         element: PsiElement,
@@ -619,8 +610,6 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
     override fun canHandle(element: PsiElement): Boolean =
         isAvailable() && isScalaLanguage(element)
 
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
-
     override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val containingClass = findContainingScTypeDefinition(scFunction) ?: return null
@@ -699,8 +688,6 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
 
     override fun canHandle(element: PsiElement): Boolean =
         isAvailable() && isScalaLanguage(element)
-
-    override fun isAvailable(): Boolean = ScalaPluginDetector.isScalaPluginAvailable
 
     override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
         if (file !is ScalaFile) {
