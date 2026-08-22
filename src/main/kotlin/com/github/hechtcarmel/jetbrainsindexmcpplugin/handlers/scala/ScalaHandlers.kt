@@ -378,10 +378,11 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
     override fun getTypeHierarchy(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): TypeHierarchyData? {
         val scTypeDef = findContainingScTypeDefinition(element) ?: return null
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val supertypes = getSupertypes(project, scTypeDef, searchScope = searchScope)
         val subtypes = getSubtypes(project, scTypeDef, searchScope)
@@ -495,9 +496,10 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
     override fun findImplementations(
         element: PsiElement,
         project: Project,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): List<ImplementationData>? {
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
         val function = findContainingScFunction(element)
         if (function != null) {
             return findMethodImplementations(project, function, searchScope)
@@ -615,11 +617,12 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         project: Project,
         direction: String,
         depth: Int,
-        scope: BuiltInSearchScope
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
     ): CallHierarchyData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val visited = mutableSetOf<String>()
-        val searchScope = createNavigationSearchScope(project, scope)
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
 
         val calls = if (direction == "callers") {
             findCallersRecursive(project, scFunction, depth, visited, searchScope = searchScope)
@@ -1055,7 +1058,7 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
                         children.add(extractTypeStructure(member, project))
                     }
                     isScValue(member) || isScVariable(member) -> {
-                        children.add(extractFieldStructure(member, project))
+                        children.addAll(extractFieldStructures(member, project))
                     }
                 }
             }
@@ -1099,10 +1102,19 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         )
     }
 
-    private fun extractFieldStructure(field: PsiElement, project: Project): StructureNode {
-        val name = getName(field) ?: "unknown"
+    private fun extractFieldStructures(field: PsiElement, project: Project): List<StructureNode> {
+        val names = getDeclaredNamesForValueOrVariable(field)
         val kind = if (isScVariable(field)) StructureKind.VAR else StructureKind.VAL
 
+        if (names.isEmpty()) {
+            val fallback = getName(field) ?: "unknown"
+            return listOf(createValVarNode(fallback, kind, field, project))
+        }
+
+        return names.map { name -> createValVarNode(name, kind, field, project) }
+    }
+
+    private fun createValVarNode(name: String, kind: StructureKind, field: PsiElement, project: Project): StructureNode {
         return StructureNode(
             name = name,
             kind = kind,
@@ -1111,6 +1123,48 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
             line = getLineNumber(project, field) ?: 0,
             children = emptyList()
         )
+    }
+
+    /**
+     * Gets the declared names for a ScValue or ScVariable.
+     * ScValueOrVariable itself does not implement PsiNamedElement when it declares multiple names
+     * (e.g. `val a, b = 3`). The individual names are on the elements returned by declaredElements().
+     */
+    private fun getDeclaredNamesForValueOrVariable(field: PsiElement): List<String> {
+        return try {
+            // Try direct .name first (works for simple single-name cases on some PSI nodes)
+            val direct = getName(field)
+            if (!direct.isNullOrBlank() && direct != "unknown") {
+                return listOf(direct)
+            }
+
+            // Use declaredElements via reflection (this is the correct path for ScValue/ScVariable)
+            val declaredMethod = try {
+                field.javaClass.getMethod("declaredElements")
+            } catch (_: NoSuchMethodException) {
+                return emptyList()
+            }
+
+            val seq = declaredMethod.invoke(field) ?: return emptyList()
+            val declaredElems = scalaSeqToList(seq)
+
+            declaredElems.mapNotNull { elem ->
+                try {
+                    // declared elements are typically PsiNamedElement (or have .name)
+                    if (elem is com.intellij.psi.PsiNamedElement) {
+                        elem.name
+                    } else {
+                        val nameMethod = elem.javaClass.getMethod("name")
+                        nameMethod.invoke(elem) as? String
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            }.filter { !it.isNullOrBlank() && it != "unknown" }
+        } catch (e: Exception) {
+            LOG.debug("Failed to get declared names for value/var: ${e.message}")
+            emptyList()
+        }
     }
 
     private fun extractModifiers(element: PsiElement): List<String> {

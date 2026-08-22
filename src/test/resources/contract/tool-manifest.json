@@ -64,7 +64,7 @@ schema:
 description:
   Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
   
   Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
   
@@ -554,7 +554,7 @@ description:
   
   Shows classes, methods, fields, functions, PHP namespaces, constants, enum cases, Markdown headings, and their nesting relationships in a tree format.
   
-  Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown
+  Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Scala
   
   Returns: Formatted tree string with element types, modifiers, signatures, and line numbers.
   
@@ -796,7 +796,7 @@ schema:
 description:
   Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
   
   Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
   
@@ -996,7 +996,7 @@ schema:
 description:
   Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Scala.
   
   NOT supported for Rust: Rust uses trait implementations rather than classical inheritance, so there are no "super methods" in the traditional sense. Use ide_find_definition or ide_type_hierarchy instead.
   
@@ -1059,7 +1059,7 @@ schema:
 description:
   Search for symbols by name across the codebase. Use when you know a symbol name but not its location—finds classes, methods, fields, and functions. Faster and more accurate than grep for code navigation.
   
-  Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, and Rust; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
+  Works in any supported JetBrains IDE. Result quality is best for Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, and Scala; other IDE-supplied languages (Ruby, C/C++, SQL, …) are also returned with their IDE-provided metadata.
   
   Matching and ranking follow IntelliJ's Go to Symbol popup, including qualified queries like "BasicSolver.run".
   
@@ -2765,7 +2765,7 @@ schema:
 description:
   Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
   
   Rust note: className parameter not supported for Rust; use file + line + column instead.
   
