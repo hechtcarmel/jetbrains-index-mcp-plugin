@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Scala 2 support** — `ide_type_hierarchy`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`, and `ide_file_structure` now work on Scala sources when the IntelliJ Scala plugin is installed. Uses reflection (same pattern as Python/JS/etc.) so the MCP plugin has no hard dependency and continues to work in IDEs without Scala. Added test fixtures and updated docs in README, USAGE, CLAUDE.md, and tools-reference.md.
+
 ## [5.8.1] - 2026-08-22
 
 ### Fixed
