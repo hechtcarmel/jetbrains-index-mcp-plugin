@@ -13,6 +13,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
@@ -246,6 +248,29 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
         data class Error(val message: String) : ScopeResolution
     }
 
+    /**
+     * Re-reads the requested scope from disk before it is enumerated.
+     *
+     * Scope collection runs through [ProjectFileIndex], which only sees files the VFS already
+     * knows about. A file an agent created out of band is invisible to it, and the tool then
+     * reports `complete = true` over a scope that silently omitted it — precisely the false
+     * "clean project" signal the coverage metadata exists to prevent.
+     *
+     * Recursive, unlike the single-file refresh in [DiagnosticsAnalysisService]: new files are
+     * only discovered by re-reading directories. The cost is bounded by the requested scope and
+     * is small next to the per-file analysis that follows, which runs in the hundreds of
+     * milliseconds per file.
+     */
+    private fun refreshScopeFromDisk(project: Project, requestedRoots: List<VirtualFile>) {
+        val roots = requestedRoots.ifEmpty {
+            ProjectUtils.getModuleContentRoots(project)
+                .mapNotNull { LocalFileSystem.getInstance().findFileByPath(it) }
+        }
+        if (roots.isNotEmpty()) {
+            VfsUtil.markDirtyAndRefresh(false, true, true, *roots.toTypedArray())
+        }
+    }
+
     private suspend fun collectTargetFiles(project: Project, paths: List<String>?): ScopeResolution {
         // Resolve path arguments outside the read action so error messages stay precise.
         val roots = mutableListOf<Pair<String, VirtualFile>>()
@@ -256,6 +281,8 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                 roots.add(path to vf)
             }
         }
+
+        refreshScopeFromDisk(project, roots.map { it.second })
 
         return suspendingReadAction {
             val fileIndex = ProjectFileIndex.getInstance(project)

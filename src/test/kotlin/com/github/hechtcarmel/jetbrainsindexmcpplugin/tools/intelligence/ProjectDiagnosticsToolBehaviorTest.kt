@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * End-to-end coverage of ide_project_diagnostics (issue #246). The tool's contract is that an
@@ -123,6 +125,50 @@ class ProjectDiagnosticsToolBehaviorTest : McpPlatformTestCase() {
         )
         assertTrue("unresolved symbols must count as errors", payload.errorCount > 0)
         assertFalse(payload.problemsTruncated)
+    }
+
+    fun testDiscoversFilesCreatedOutsideTheIdeInScope() {
+        // Known to the VFS, so the scope directory itself is indexed.
+        writeProjectFile(
+            "src/newscope/Known.java",
+            """
+            class Known {
+                void test() {}
+            }
+            """.trimIndent()
+        )
+
+        // Created out of band — nothing has told the VFS this exists, which is exactly what an
+        // agent's own write tool does.
+        Files.writeString(
+            Path.of(requireNotNull(project.basePath), "src/newscope/Unseen.java"),
+            """
+            class Unseen {
+                void test() {
+                    NeverIndexedType value = null;
+                }
+            }
+            """.trimIndent()
+        )
+
+        val result = callTool { putJsonArray("paths") { add("src/newscope") } }
+
+        assertToolSucceeded("project diagnostics over src/newscope must succeed", result)
+        val payload = decodeFinal(result)
+
+        // Scope collection runs through ProjectFileIndex, which only sees what the VFS knows.
+        // Without a scope refresh the out-of-band file is invisible and the tool still reports
+        // complete = true — a false "clean project" signal over a file it never looked at.
+        assertEquals("the out-of-band file must be in scope", 2, payload.filesConsidered)
+        assertEquals("both files must be analyzed", 2, payload.filesAnalyzed)
+        assertTrue("coverage must be complete once both are analyzed", payload.complete)
+        assertTrue(
+            "the out-of-band file's problem must be reported, got: ${payload.problems}",
+            payload.problems.any {
+                it.file == "src/newscope/Unseen.java" &&
+                    (it.message.contains("NeverIndexedType") || it.message.contains("Cannot resolve"))
+            }
+        )
     }
 
     fun testEmptyProblemsWithTimedOutFileIsNotComplete() {
