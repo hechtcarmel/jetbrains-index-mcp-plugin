@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.8.1] - 2026-08-22
+
 ### Fixed
 
 - **`ide_diagnostics` no longer analyzes a stale copy of the file** ([#333](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/333)) — tools resolve a path through `LocalFileSystem.findFileByPath`, which returns the cached `VirtualFile` without re-reading it from disk. A file that a coding agent had just rewritten through its own write tool was therefore analyzed as its pre-edit self, so `ide_diagnostics` reported problems that were already fixed or, far more often, `problemCount: 0` for a file that does not compile. Agents read that empty result as "this tool is broken" and stop calling it. The file about to be analyzed is now refreshed from disk and its document committed to PSI first, so results always describe what is on disk. This was previously only curable with the project-wide "Sync external file changes" setting, which refreshes every content root recursively and is off by default for that reason; refreshing the one file being analyzed costs a stat, so it is unconditional and needs no setting. `ide_project_diagnostics` gets the same guarantee, since both share the analysis service. Two cases are handled explicitly rather than left to the refresh: a file with **unsaved editor changes** is left alone, because the in-memory copy is the newer one and is what the daemon analyzes anyway — refreshing over it would pop the IDE's "file changed on disk, reload?" prompt as a side effect of a read-only query; and a file **deleted on disk** is now reported as `File no longer exists on disk: <path>` instead of being analyzed from the stale cache.
@@ -1164,7 +1166,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.1...HEAD
+[5.8.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.0...v5.8.1
 [5.8.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.7.0...v5.8.0
 [5.7.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.6.0...v5.7.0
 [5.6.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.5.2...v5.6.0
