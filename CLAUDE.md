@@ -544,12 +544,12 @@ Manage which open projects the MCP server keeps active, in the background, dorma
 
 **Extended Navigation Tools (Language-Aware):**
 
-These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Markdown):
-- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)
-- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view with start/end line numbers (Java, Kotlin, Python, JS/TS, Markdown) (disabled by default)
+These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Scala, Markdown):
+- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala)
+- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, Scala — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, Scala — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view with start/end line numbers (Java, Kotlin, Python, JS/TS, Markdown, Scala) (disabled by default)
 
 **Java/Kotlin-Only Tools:**
 - `ide_list_tests` - List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.). Optional `file` parameter limits scan to a single file. Returns entries with className, methodName, framework, file path, and line number. Requires Java plugin — the `com.intellij.testFramework` extension point is declared by the Java plugin. (disabled by default)
@@ -577,6 +577,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
+- `handlers/scala/ScalaHandlers.kt` - Direct Scala PSI access (compiled against the Scala plugin's API; not reflection-based)
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
@@ -592,7 +593,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
 4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` and `ide_list_tests` if Java plugin available
 
-**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins. Scala handlers instead compile directly against the Scala plugin's PSI API; [`PluginDetectors.scala`](src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/PluginDetectors.kt) still gates registration so the classes are never loaded when the Scala plugin is absent, and `BaseScalaHandler.safeScalaCall` catches `LinkageError` (not just `Exception`) around each direct PSI call to degrade gracefully if the installed Scala plugin's bytecode drifts from what this handler compiled against.
 
 ### Optimized Symbol Search
 

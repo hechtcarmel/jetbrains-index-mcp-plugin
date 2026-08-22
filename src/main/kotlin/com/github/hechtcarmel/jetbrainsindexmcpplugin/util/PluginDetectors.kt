@@ -54,4 +54,10 @@ object PluginDetectors {
         pluginIds = listOf("org.jetbrains.idea.maven"),
         fallbackClass = "org.jetbrains.idea.maven.project.MavenProjectsManager"
     )
+
+    val scala = PluginDetector(
+        name = "Scala",
+        pluginIds = listOf("org.intellij.scala"),
+        fallbackClass = "org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition"
+    )
 }
