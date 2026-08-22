@@ -3,6 +3,7 @@ package fixture.scala2
 object ServiceRunner {
   val defaultTask: String = "job"
   var runCount: Int = 0
+  val minRetries, maxRetries: Int = 3
 
   def runAll(worker: Worker): String = {
     runCount = runCount + 1

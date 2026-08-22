@@ -38,6 +38,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsR
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
 import com.intellij.lang.java.JavaLanguage
+import org.junit.Assume
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -565,7 +566,7 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     fun testTypeHierarchyToolScalaFixtureCoverageHook() = runBlocking {
-        if (!requireScalaToolCapability("testTypeHierarchyToolScalaFixtureCoverageHook")) return@runBlocking
+        requireScalaToolCapability("testTypeHierarchyToolScalaFixtureCoverageHook")
         val modelsSource = materializeScalaFixture("scala2-models.scala")
         materializeScalaFixture("scala2-usage.scala")
         val (line, column) = findLineColumn(modelsSource, "BaseService extends Worker")
@@ -584,7 +585,7 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     fun testFindImplementationsToolScalaTraitFixtureCoverageHook() = runBlocking {
-        if (!requireScalaToolCapability("testFindImplementationsToolScalaTraitFixtureCoverageHook")) return@runBlocking
+        requireScalaToolCapability("testFindImplementationsToolScalaTraitFixtureCoverageHook")
         val modelsSource = materializeScalaFixture("scala2-models.scala")
         materializeScalaFixture("scala2-usage.scala")
         val (line, column) = findLineColumn(modelsSource, "Worker extends Named")
@@ -601,7 +602,7 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     fun testCallHierarchyToolScalaFixtureCoverageHook() = runBlocking {
-        if (!requireScalaToolCapability("testCallHierarchyToolScalaFixtureCoverageHook")) return@runBlocking
+        requireScalaToolCapability("testCallHierarchyToolScalaFixtureCoverageHook")
         materializeScalaFixture("scala2-models.scala")
         val usageSource = materializeScalaFixture("scala2-usage.scala")
         val (line, column) = findLineColumn(usageSource, "runAll(worker: Worker)")
@@ -623,7 +624,7 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     fun testFindSuperMethodsToolScalaFixtureCoverageHook() = runBlocking {
-        if (!requireScalaToolCapability("testFindSuperMethodsToolScalaFixtureCoverageHook")) return@runBlocking
+        requireScalaToolCapability("testFindSuperMethodsToolScalaFixtureCoverageHook")
         val modelsSource = materializeScalaFixture("scala2-models.scala")
         materializeScalaFixture("scala2-usage.scala")
         val (line, column) = findLineColumn(modelsSource, "work(task: String): String = s\"${'$'}name handled ${'$'}task\"")
@@ -643,7 +644,7 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     fun testFileStructureToolScalaFixtureCoverageHook() = runBlocking {
-        if (!requireScalaToolCapability("testFileStructureToolScalaFixtureCoverageHook")) return@runBlocking
+        requireScalaToolCapability("testFileStructureToolScalaFixtureCoverageHook")
         materializeScalaFixture("scala2-models.scala")
         materializeScalaFixture("scala2-usage.scala")
 
@@ -1701,14 +1702,15 @@ class ToolsTest : McpPlatformTestCase() {
         writeProjectFile(fixtureProjectPath(relativePath), content)
     }
 
+    /**
+     * Materializes Scala fixture content on the real filesystem and waits for indexing to
+     * finish, like [writeProjectFile] — without this, a tool call issued right after writing
+     * the file can race the background reindex and fail with [IndexNotReadyException].
+     */
     private fun materializeScalaFixture(relativePath: String): String {
         val sourcePath = Path.of(SCALA_FIXTURE_SOURCE_ROOT).resolve(relativePath)
         val source = Files.readString(sourcePath)
-        val projectBasePath = checkNotNull(project.basePath) { "Project base path is not available" }
-        val targetPath = Path.of(projectBasePath).resolve(scalaFixtureProjectPath(relativePath))
-        Files.createDirectories(targetPath.parent)
-        Files.writeString(targetPath, source)
-        LocalFileSystem.getInstance().refreshAndFindFileByNioFile(targetPath)
+        writeProjectFile(scalaFixtureProjectPath(relativePath), source)
         return source
     }
 
@@ -1773,22 +1775,18 @@ class ToolsTest : McpPlatformTestCase() {
         ): Array<NavigationItem> = itemsByName[name] ?: emptyArray()
     }
 
-    private fun requireScalaToolCapability(testName: String): Boolean {
-        if (!ScalaPluginDetector.isScalaPluginAvailable) {
-            System.err.println("$testName: skipped - Scala plugin not available")
-            return false
-        }
-        return try {
+    private fun requireScalaToolCapability(testName: String) {
+        Assume.assumeTrue("$testName: skipped - Scala plugin not available", ScalaPluginDetector.isScalaPluginAvailable)
+
+        val scalaPsiAvailable = try {
             Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
-            if (!LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy().contains("Scala")) {
-                System.err.println("$testName: skipped - Scala handlers not registered")
-                false
-            } else {
-                true
-            }
+            true
         } catch (_: ClassNotFoundException) {
-            System.err.println("$testName: skipped - Scala PSI classes unavailable")
             false
         }
+        Assume.assumeTrue("$testName: skipped - Scala PSI classes unavailable", scalaPsiAvailable)
+
+        val hasScalaTypeHierarchy = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy().contains("Scala")
+        Assume.assumeTrue("$testName: skipped - Scala handlers not registered", hasScalaTypeHierarchy)
     }
 }

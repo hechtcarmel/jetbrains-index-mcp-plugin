@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ScalaPluginDetector
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -119,6 +120,30 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     protected fun isScObject(element: PsiElement): Boolean = element is ScObject
     protected fun isScFunction(element: PsiElement): Boolean = element is ScFunction
 
+    /**
+     * Executes [action], degrading to [default] if it fails.
+     *
+     * Catches both [Exception] (an unresolved reference, a cancelled search, ...) and
+     * [LinkageError] (`NoSuchMethodError`/`AbstractMethodError`/`NoSuchFieldError`), which is
+     * what a Scala-plugin version mismatch throws when this handler's *directly compiled*
+     * Scala PSI calls no longer match the installed plugin's bytecode. The reflection-based
+     * access this handler replaced used to turn that exact failure into a catchable
+     * [Exception] (`InvocationTargetException`); direct PSI access does not, so it must be
+     * caught explicitly here to keep degrading gracefully instead of crashing the whole tool
+     * call (`AbstractMcpTool.execute` only catches [Exception], not [Error]).
+     */
+    protected fun <R> safeScalaCall(default: R, label: String, log: Logger = LOG, action: () -> R): R {
+        return try {
+            action()
+        } catch (e: Exception) {
+            log.debug("$label failed: ${e.message}")
+            default
+        } catch (e: LinkageError) {
+            log.warn("$label failed due to a Scala plugin API mismatch (possible version drift): ${e.message}")
+            default
+        }
+    }
+
     // Navigation helpers
 
     protected fun findContainingScTypeDefinition(element: PsiElement): ScTypeDefinition? {
@@ -136,9 +161,13 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     protected fun getName(element: PsiElement): String? =
         (element as? ScTypeDefinition)?.name
             ?: (element as? ScFunction)?.name
-            ?: (element as? ScValueOrVariable)?.let {
-                // ScValueOrVariable implements ScDeclaredElementsHolder; name is on the first declared element
-                try { (element as com.intellij.psi.PsiNamedElement).name } catch (_: Exception) { null }
+            ?: (element as? ScValueOrVariable)?.let { valueOrVariable ->
+                // ScValueOrVariable does not itself implement PsiNamedElement (it can bind more
+                // than one name, e.g. `val a, b = 1`) — the name lives on declaredElements.
+                safeScalaCall<String?>(null, "getName") {
+                    valueOrVariable.declaredElements().toKotlinList()
+                        .firstNotNullOfOrNull { (it as? com.intellij.psi.PsiNamedElement)?.name }
+                }
             }
 
     protected fun getQualifiedName(element: PsiElement): String? =
@@ -181,14 +210,12 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     // Parameter signature builder
 
     protected fun buildMethodSignature(function: ScFunction): String {
-        return try {
+        return safeScalaCall(function.name ?: "unknown", "buildMethodSignature") {
             val params = function.paramClauses().clauses().toKotlinList()
                 .flatMap { clause -> clause.parameters().toKotlinList() }
                 .mapNotNull { param -> param.name }
                 .joinToString(", ")
             "${function.name}($params)"
-        } catch (_: Exception) {
-            function.name ?: "unknown"
         }
     }
 
@@ -203,14 +230,14 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
         if (modifierList.hasModifierProperty(PsiModifier.ABSTRACT)) modifiers.add("abstract")
         if (modifierList.hasModifierProperty(PsiModifier.FINAL)) modifiers.add("final")
         // Scala-specific modifiers via ScModifierList
-        try {
+        safeScalaCall(Unit, "extractModifiers") {
             val scModList = modifierList as? org.jetbrains.plugins.scala.lang.psi.api.base.ScModifierList
             if (scModList != null) {
                 if (scModList.hasModifierProperty("implicit")) modifiers.add("implicit")
                 if (scModList.hasModifierProperty("override")) modifiers.add("override")
                 if (scModList.hasModifierProperty("sealed")) modifiers.add("sealed")
             }
-        } catch (_: Exception) {}
+        }
         return modifiers
     }
 }
@@ -273,7 +300,7 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         visited.add(typeName)
 
         val result = mutableListOf<TypeElementData>()
-        try {
+        safeScalaCall(Unit, "getSupertypes") {
             for (superType in getSupers(scTypeDef)) {
                 val superName = getQualifiedName(superType) ?: getName(superType)
                 if (superName != null && superName != "scala.AnyRef" && superName != "scala.Any") {
@@ -292,7 +319,7 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
                     ))
                 }
             }
-        } catch (_: Exception) {}
+        }
         return result
     }
 
@@ -302,7 +329,7 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         searchScope: GlobalSearchScope
     ): List<TypeElementData> {
         val results = mutableListOf<TypeElementData>()
-        try {
+        safeScalaCall(Unit, "getSubtypes") {
             ClassInheritorsSearch.search(scTypeDef, searchScope, true).forEach(Processor { inheritor ->
                 if (inheritor is ScTypeDefinition && shouldIncludeNavigationElement(searchScope, inheritor)) {
                     results.add(TypeElementData(
@@ -316,7 +343,7 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
                 }
                 results.size < 100
             })
-        } catch (_: Exception) {}
+        }
         return results
     }
 }
@@ -357,7 +384,7 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
         searchScope: GlobalSearchScope
     ): List<ImplementationData> {
         val results = mutableListOf<ImplementationData>()
-        try {
+        safeScalaCall(Unit, "findMethodImplementations") {
             OverridingMethodsSearch.search(function, searchScope, true).forEach(Processor { overriding ->
                 if (overriding is ScFunction && shouldIncludeNavigationElement(searchScope, overriding)) {
                     overriding.containingFile?.virtualFile?.let { file ->
@@ -375,7 +402,7 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
                 }
                 results.size < 100
             })
-        } catch (_: Exception) {}
+        }
         return results
     }
 
@@ -385,7 +412,7 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
         searchScope: GlobalSearchScope
     ): List<ImplementationData> {
         val results = mutableListOf<ImplementationData>()
-        try {
+        safeScalaCall(Unit, "findTypeImplementations") {
             ClassInheritorsSearch.search(typeDef, searchScope, true).forEach(Processor { inheritor ->
                 if (inheritor is ScTypeDefinition && shouldIncludeNavigationElement(searchScope, inheritor)) {
                     inheritor.containingFile?.virtualFile?.let { file ->
@@ -401,7 +428,7 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
                 }
                 results.size < 100
             })
-        } catch (_: Exception) {}
+        }
         return results
     }
 }
@@ -452,11 +479,8 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
     }
 
     private fun getSuperMethods(function: ScFunction): List<PsiElement> {
-        return try {
+        return safeScalaCall(emptyList(), "getSuperMethods(${function.name})", LOG) {
             function.superMethods().toKotlinList().take(MAX_SUPER_METHODS)
-        } catch (_: Exception) {
-            LOG.debug("Failed to get super methods for ${function.name}")
-            emptyList()
         }
     }
 
@@ -474,7 +498,7 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         if (functionKey in visited) return emptyList()
         visited.add(functionKey)
 
-        return try {
+        return safeScalaCall(emptyList(), "findCallersRecursive", LOG) {
             val methodsToSearch = mutableSetOf<PsiElement>(scFunction)
             methodsToSearch.addAll(getSuperMethods(scFunction))
 
@@ -503,9 +527,6 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
                     } else null
                 }
                 .distinctBy { it.name + it.file + it.line }
-        } catch (e: Exception) {
-            LOG.debug("Failed to find callers: ${e.message}")
-            emptyList()
         }
     }
 
@@ -524,7 +545,7 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         visited.add(functionKey)
 
         val callees = mutableListOf<CallElementData>()
-        try {
+        safeScalaCall(Unit, "findCalleesRecursive", LOG) {
             val callExpressions = PsiTreeUtil.findChildrenOfType(scFunction, ScMethodCall::class.java)
             callExpressions.take(MAX_RESULTS_PER_LEVEL).forEach { callExpr ->
                 val calledFunction = resolveCallExpression(callExpr)
@@ -539,22 +560,17 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
                     }
                 }
             }
-        } catch (e: Exception) {
-            LOG.debug("Failed to find callees: ${e.message}")
         }
         return callees
     }
 
     private fun resolveCallExpression(callExpr: ScMethodCall): PsiElement? {
-        return try {
+        return safeScalaCall<PsiElement?>(null, "resolveCallExpression", LOG) {
             val invokedExpr = callExpr.getInvokedExpr()
             when (invokedExpr) {
                 is com.intellij.psi.PsiReference -> invokedExpr.resolve()
                 else -> invokedExpr.reference?.resolve()
             }
-        } catch (e: Exception) {
-            LOG.debug("Failed to resolve call expression: ${e.message}")
-            null
         }
     }
 
@@ -632,7 +648,7 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
         depth: Int = 1
     ): List<SuperMethodData> {
         val hierarchy = mutableListOf<SuperMethodData>()
-        try {
+        safeScalaCall(Unit, "buildHierarchy", LOG) {
             for (superMethod in scFunction.superMethods().toKotlinList()) {
                 val containingClass = findContainingScTypeDefinition(superMethod)
                 val className = containingClass?.let { getQualifiedName(it) ?: getName(it) } ?: "unknown"
@@ -660,8 +676,6 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
                     hierarchy.addAll(buildHierarchy(project, superMethod, visited, depth + 1))
                 }
             }
-        } catch (e: Exception) {
-            LOG.debug("Failed to build super method hierarchy: ${e.message}")
         }
         return hierarchy
     }
@@ -695,7 +709,7 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         }
 
         val structure = mutableListOf<StructureNode>()
-        try {
+        safeScalaCall(Unit, "getFileStructure", LOG) {
             // Top-level type definitions
             PsiTreeUtil.findChildrenOfType(file, ScTypeDefinition::class.java)
                 .filter { isTopLevel(it, file) }
@@ -705,9 +719,6 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
             PsiTreeUtil.findChildrenOfType(file, ScFunction::class.java)
                 .filter { isTopLevel(it, file) }
                 .forEach { structure.add(extractFunctionStructure(it, project)) }
-
-        } catch (e: Exception) {
-            LOG.warn("Failed to extract Scala file structure: ${e.message}")
         }
         return structure.sortedBy { it.line }
     }
@@ -723,18 +734,16 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
 
     private fun extractTypeStructure(typeDef: ScTypeDefinition, project: Project): StructureNode {
         val children = mutableListOf<StructureNode>()
-        try {
+        safeScalaCall(Unit, "extractTypeStructure", LOG) {
             typeDef.members().toKotlinList().forEach { member ->
                 when (member) {
                     is ScFunction -> children.add(extractFunctionStructure(member, project))
                     is ScTypeDefinition -> children.add(extractTypeStructure(member, project))
-                    is ScValue -> children.add(extractFieldStructure(member, project, isVar = false))
-                    is ScVariable -> children.add(extractFieldStructure(member, project, isVar = true))
+                    is ScValue -> children.addAll(extractFieldStructures(member, project, isVar = false))
+                    is ScVariable -> children.addAll(extractFieldStructures(member, project, isVar = true))
                     else -> {}
                 }
             }
-        } catch (e: Exception) {
-            LOG.debug("Failed to extract Scala type members: ${e.message}")
         }
 
         val kind = when {
@@ -766,26 +775,38 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         )
     }
 
-    private fun extractFieldStructure(field: ScValueOrVariable, project: Project, isVar: Boolean): StructureNode {
-        return StructureNode(
-            name = (field as? com.intellij.psi.PsiNamedElement)?.name ?: "unknown",
-            kind = if (isVar) StructureKind.VAR else StructureKind.VAL,
-            modifiers = extractModifiers(field),
-            signature = null,
-            line = getLineNumber(project, field) ?: 0,
-            children = emptyList()
-        )
+    /**
+     * A single `val`/`var` declaration can bind more than one name
+     * (e.g. `val a, b = computeBoth()`), so this returns one [StructureNode] per
+     * declared element instead of collapsing them into a single node.
+     */
+    private fun extractFieldStructures(field: ScValueOrVariable, project: Project, isVar: Boolean): List<StructureNode> {
+        val declaredNames = safeScalaCall(emptyList(), "extractFieldStructures", LOG) {
+            field.declaredElements().toKotlinList()
+                .mapNotNull { (it as? com.intellij.psi.PsiNamedElement)?.name }
+        }
+        val names = declaredNames.ifEmpty { listOf("unknown") }
+        val modifiers = extractModifiers(field)
+        val line = getLineNumber(project, field) ?: 0
+        return names.map { name ->
+            StructureNode(
+                name = name,
+                kind = if (isVar) StructureKind.VAR else StructureKind.VAL,
+                modifiers = modifiers,
+                signature = null,
+                line = line,
+                children = emptyList()
+            )
+        }
     }
 
     private fun buildSignature(function: ScFunction): String {
-        return try {
+        return safeScalaCall("()", "buildSignature", LOG) {
             val params = function.paramClauses().clauses().toKotlinList()
                 .flatMap { clause -> clause.parameters().toKotlinList() }
                 .mapNotNull { param -> param.name }
                 .joinToString(", ")
             "($params)"
-        } catch (_: Exception) {
-            "()"
         }
     }
 }

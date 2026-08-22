@@ -577,7 +577,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
-- `handlers/scala/ScalaHandlers.kt` - Reflection-based Scala PSI access
+- `handlers/scala/ScalaHandlers.kt` - Direct Scala PSI access (compiled against the Scala plugin's API; not reflection-based)
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
@@ -593,7 +593,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
 4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` and `ide_list_tests` if Java plugin available
 
-**Reflection Pattern:** Python, JavaScript, Go, PHP, Rust, and Scala handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins. Scala handlers instead compile directly against the Scala plugin's PSI API; [`PluginDetectors.scala`](src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/PluginDetectors.kt) still gates registration so the classes are never loaded when the Scala plugin is absent, and `BaseScalaHandler.safeScalaCall` catches `LinkageError` (not just `Exception`) around each direct PSI call to degrade gracefully if the installed Scala plugin's bytecode drifts from what this handler compiled against.
 
 ### Optimized Symbol Search
 
