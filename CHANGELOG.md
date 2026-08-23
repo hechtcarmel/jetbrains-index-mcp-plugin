@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.8.2] - 2026-08-23
+
 ### Fixed
 
 - **`ide_refactor_safe_delete` in `target_type: "file"` mode no longer deletes files whose declarations it never enumerated** ([#336](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/336)) — file mode looks for external usages in three layers, and for an ordinary source file only the third one fires: search every top-level declaration in the file. That enumeration walked `psiFile.children` and stopped there, so any language that nests its top-level declarations one node below the file produced *zero* declarations to search — the scan found nothing, `externalUsages` stayed empty, and the tool deleted a still-referenced file while reporting success. Scala hits this whenever the file has a `package` clause (every definition then lives inside an `ScPackaging` node), and so do `export const X = …` in JS/TS (the name is on the `JSVariable` inside a `JSVarStatement`), `type Foo struct{}` in Go, and Python module-level constants. The walk now descends through unnamed wrapper nodes — stopping at the first named element on each path, so it never walks into a class or function body — and unions in `PsiClassOwner.getClasses()`, the language's own authoritative answer for Java, Kotlin, Scala and Groovy. Symbol mode was never affected.
@@ -1172,7 +1174,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.2...HEAD
+[5.8.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.1...v5.8.2
 [5.8.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.0...v5.8.1
 [5.8.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.7.0...v5.8.0
 [5.7.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.6.0...v5.7.0
