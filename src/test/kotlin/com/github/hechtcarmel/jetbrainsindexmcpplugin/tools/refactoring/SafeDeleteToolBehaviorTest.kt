@@ -643,15 +643,22 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
     // ── Issue #336: the file-mode usage scan must actually enumerate the file's declarations ──
     //
     // File mode looks for external usages in three layers, and layer 3 — "search every
-    // top-level declaration" — was the only one that fires for an ordinary source file.
+    // top-level declaration" — is the only one that fires for an ordinary source file.
     // It walked `psiFile.children` and stopped there, so any language that nests its
     // top-level declarations below the file node produced *zero* declarations to search:
     // the scan found nothing, `externalUsages` stayed empty, and the tool deleted a file
     // that the rest of the project still referenced while reporting success.
     //
-    // TypeScript reproduces it exactly. `export const X = …` names the `JSVariable` inside a
-    // `JSVarStatement`, never the file's own child. Scala (the language in the report) has
-    // the same shape via `ScPackaging`, but its plugin is not on the test classpath.
+    // JS/TS reproduces it: `const X = …` names the `JSVariable` inside a `JSVarStatement`,
+    // never the file's own child. Scala (the language in the report) has the same shape via
+    // `ScPackaging`, but its plugin is not on the test classpath.
+    //
+    // Both tests below were confirmed to FAIL against the pre-fix `SafeDeleteTool` by reverting
+    // it and running them. That check is what caught a third test which did *not* fail: an
+    // ES-module fixture whose `import … from "./config"` is a reference to the file itself, so
+    // layer 1 blocked the delete and layer 3 was never exercised. It now lives below as
+    // `testModuleImportingTheFileByPathRefusesFileDelete`, labelled for the layer it covers.
+    // Keep fixtures here free of module imports, or they stop testing this fix.
 
     fun testTypeScriptModuleConstantIsCountedAsATopLevelDeclaration() = runBlocking {
         Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
@@ -685,7 +692,63 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
         assertProjectFileAbsent("sd-tsdecl-src/settings.ts")
     }
 
-    fun testImportedTypeScriptModuleConstantRefusesFileDelete() = runBlocking {
+    /**
+     * The end-to-end half: a nested declaration that something else uses must block the delete.
+     *
+     * The fixture is deliberately **global-script JS, not ES modules**. An earlier version of
+     * this test had `client.ts` do `import { API_URL } from "./config"`, and it passed against
+     * the pre-fix code — verified by running it with `SafeDeleteTool` reverted. An ES6 module
+     * specifier is a PSI reference to the *file*, so layer 1 (`ReferencesSearch` on the
+     * `PsiFile`) caught it and layer 3 never had to work. The test looked like coverage of this
+     * fix and was coverage of a layer that was never broken.
+     *
+     * Nothing here imports anything, so layer 1 has no file reference to find and layer 2 is
+     * Android-only: if the tool refuses this delete, layer 3 enumerated the declaration. The
+     * context assertion pins that further — the blocking usage is the line that *uses* the
+     * constant, not an import line.
+     */
+    fun testUsedGlobalScriptConstantRefusesFileDeleteThroughTheDeclarationScan() = runBlocking {
+        Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
+        registerSourceRoot("sd-jsglobal-src")
+        writeProjectFile(
+            "sd-jsglobal-src/timeouts.js", """
+            var API_TIMEOUT_MS = 5000;
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "sd-jsglobal-src/consumer.js", """
+            function timeoutSeconds() {
+                return API_TIMEOUT_MS / 1000;
+            }
+        """.trimIndent()
+        )
+
+        assertNoDirectlyNamedChildren("sd-jsglobal-src/timeouts.js")
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-jsglobal-src/timeouts.js")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("A refusal is a structured answer, not a protocol error", result)
+        val payload = decodeFileBlocked(toolText(result))
+        assertFalse("canDelete must be false while API_TIMEOUT_MS is still used", payload.canDelete)
+        assertEquals("timeouts.js", payload.fileName)
+        assertEquals(1, payload.symbolCount)
+        val usage = payload.blockingUsages.first { it.file == "sd-jsglobal-src/consumer.js" }
+        assertEquals("return API_TIMEOUT_MS / 1000;", usage.context)
+        assertProjectFileExists("sd-jsglobal-src/timeouts.js")
+        assertFileContains("sd-jsglobal-src/timeouts.js", "API_TIMEOUT_MS")
+    }
+
+    /**
+     * Layer 1 coverage, kept for what it actually tests rather than what it looked like it
+     * tested: an ES6 module specifier (`from "./config"`) is a PSI reference to the *file*, so
+     * `ReferencesSearch` on the `PsiFile` blocks the delete without layer 3 contributing
+     * anything. Confirmed to pass against the pre-fix code, so it is **not** coverage of #336 —
+     * it is coverage of the file-reference layer, and it fails if that layer breaks.
+     */
+    fun testModuleImportingTheFileByPathRefusesFileDelete() = runBlocking {
         Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
         registerSourceRoot("sd-tsblocked-src")
         writeProjectFile(
@@ -710,10 +773,8 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
 
         assertToolSucceeded("A refusal is a structured answer, not a protocol error", result)
         val payload = decodeFileBlocked(toolText(result))
-        assertFalse("canDelete must be false while API_URL is imported elsewhere", payload.canDelete)
+        assertFalse("canDelete must be false while another module imports the file", payload.canDelete)
         assertEquals("config.ts", payload.fileName)
-        // How many PSI references one ES6 import binding produces is the JS plugin's business;
-        // that at least one of them is reported, and that it points at the importing file, is ours.
         assertTrue("Expected at least one blocking usage, got ${payload.externalUsageCount}", payload.externalUsageCount >= 1)
         assertTrue(
             "Blocking usages must name the importing file. Got: ${payload.blockingUsages.map { it.file }}",
