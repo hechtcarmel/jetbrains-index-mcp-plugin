@@ -7,6 +7,9 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNamedElement
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -659,6 +662,13 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
         """.trimIndent()
         )
 
+        // Precondition, and the whole reason this fixture stands in for the Scala report: the
+        // declaration is NOT a direct child of the file, so the old direct-children scan had
+        // nothing to search. Asserted rather than assumed — if a future JS PSI flattens this
+        // shape, the fixture silently stops reproducing #336, and that must fail loudly here
+        // rather than leave the assertion below passing for the wrong reason.
+        assertNoDirectlyNamedChildren("sd-tsdecl-src/settings.ts")
+
         val result = SafeDeleteTool().execute(project, buildJsonObject {
             put("file", "sd-tsdecl-src/settings.ts")
             put("target_type", "file")
@@ -736,6 +746,31 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
             payload.message
         )
         assertProjectFileAbsent("sd-nodecl-src/notes.txt")
+    }
+
+    /**
+     * Asserts that [relativePath] declares nothing at its own top level — every named element
+     * sits below a wrapper node. This is the PSI shape that broke `collectTopLevelDeclarations`
+     * in issue #336, and pinning it is what keeps the tests above honest reproductions of the
+     * bug rather than assertions that would have passed before the fix too.
+     */
+    private fun assertNoDirectlyNamedChildren(relativePath: String) {
+        val basePath = requireNotNull(project.basePath)
+        val virtualFile = requireNotNull(
+            LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")
+        ) { "Missing test file $relativePath" }
+        val psiFile = requireNotNull(PsiManager.getInstance(project).findFile(virtualFile)) {
+            "No PSI for $relativePath — is the language plugin on the test classpath?"
+        }
+        val namedChildren = psiFile.children
+            .filter { it is PsiNamedElement && it !is PsiFile && it.name != null }
+            .map { "${it.javaClass.simpleName}(${(it as PsiNamedElement).name})" }
+        assertEquals(
+            "$relativePath must nest its declaration below the file node for this fixture to " +
+                "reproduce #336, but the file declares these directly",
+            emptyList<String>(),
+            namedChildren
+        )
     }
 
     /**
