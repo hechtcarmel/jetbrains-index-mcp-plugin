@@ -2,6 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.IndexNotReadyException
@@ -10,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.junit.Assume
 
 /**
  * Behavior coverage for `ide_refactor_safe_delete`.
@@ -633,6 +635,107 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
 
         assertNotNull("Cancellation must propagate, not turn into a successful delete", thrown)
         assertFileContains("sd-pcefail-src/pcefail/PceFail.java", "unusedHelper")
+    }
+
+    // ── Issue #336: the file-mode usage scan must actually enumerate the file's declarations ──
+    //
+    // File mode looks for external usages in three layers, and layer 3 — "search every
+    // top-level declaration" — was the only one that fires for an ordinary source file.
+    // It walked `psiFile.children` and stopped there, so any language that nests its
+    // top-level declarations below the file node produced *zero* declarations to search:
+    // the scan found nothing, `externalUsages` stayed empty, and the tool deleted a file
+    // that the rest of the project still referenced while reporting success.
+    //
+    // TypeScript reproduces it exactly. `export const X = …` names the `JSVariable` inside a
+    // `JSVarStatement`, never the file's own child. Scala (the language in the report) has
+    // the same shape via `ScPackaging`, but its plugin is not on the test classpath.
+
+    fun testTypeScriptModuleConstantIsCountedAsATopLevelDeclaration() = runBlocking {
+        Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
+        registerSourceRoot("sd-tsdecl-src")
+        writeProjectFile(
+            "sd-tsdecl-src/settings.ts", """
+            export const API_URL = "https://example.test";
+        """.trimIndent()
+        )
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-tsdecl-src/settings.ts")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("Deleting an unreferenced module should succeed", result)
+        val payload = decodeRefactoring(toolText(result))
+        // The count is the assertion: at zero declarations the usage scan never ran, and the
+        // deletion below proves nothing about safety.
+        assertEquals(
+            "Successfully deleted file 'settings.ts' (contained 1 symbol(s) with no external usages)",
+            payload.message
+        )
+        assertProjectFileAbsent("sd-tsdecl-src/settings.ts")
+    }
+
+    fun testImportedTypeScriptModuleConstantRefusesFileDelete() = runBlocking {
+        Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
+        registerSourceRoot("sd-tsblocked-src")
+        writeProjectFile(
+            "sd-tsblocked-src/config.ts", """
+            export const API_URL = "https://example.test";
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "sd-tsblocked-src/client.ts", """
+            import { API_URL } from "./config";
+
+            export function endpoint(): string {
+                return API_URL + "/v1";
+            }
+        """.trimIndent()
+        )
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-tsblocked-src/config.ts")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("A refusal is a structured answer, not a protocol error", result)
+        val payload = decodeFileBlocked(toolText(result))
+        assertFalse("canDelete must be false while API_URL is imported elsewhere", payload.canDelete)
+        assertEquals("config.ts", payload.fileName)
+        // How many PSI references one ES6 import binding produces is the JS plugin's business;
+        // that at least one of them is reported, and that it points at the importing file, is ours.
+        assertTrue("Expected at least one blocking usage, got ${payload.externalUsageCount}", payload.externalUsageCount >= 1)
+        assertTrue(
+            "Blocking usages must name the importing file. Got: ${payload.blockingUsages.map { it.file }}",
+            payload.blockingUsages.any { it.file == "sd-tsblocked-src/client.ts" }
+        )
+        assertProjectFileExists("sd-tsblocked-src/config.ts")
+        assertFileContains("sd-tsblocked-src/config.ts", "API_URL")
+    }
+
+    /**
+     * The other half of issue #336: when the scan finds nothing to search, saying so is the
+     * difference between "checked, and it is safe" and "there was nothing here to check".
+     * A plain-text file has no declarations in any language, so this is the honest wording —
+     * and it is the wording an agent needs in order to not read silence as a clean bill of health.
+     */
+    fun testDeletingAFileWithNoDeclarationsSaysTheScanFoundNothingToCheck() = runBlocking {
+        registerSourceRoot("sd-nodecl-src")
+        writeProjectFile("sd-nodecl-src/notes.txt", "just some prose, no declarations here\n")
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-nodecl-src/notes.txt")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("An unreferenced text file must still be deletable", result)
+        val payload = decodeRefactoring(toolText(result))
+        assertEquals(
+            "Successfully deleted file 'notes.txt' (no top-level declarations found in it — " +
+                "only direct references to the file itself were checked)",
+            payload.message
+        )
+        assertProjectFileAbsent("sd-nodecl-src/notes.txt")
     }
 
     /**

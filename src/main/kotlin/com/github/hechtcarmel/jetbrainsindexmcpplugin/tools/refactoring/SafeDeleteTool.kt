@@ -7,12 +7,14 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
+import com.intellij.psi.PsiClassOwner
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
@@ -40,6 +42,16 @@ import org.jetbrains.annotations.TestOnly
  * 2. **EDT Phase**: Apply deletion quickly (in write action)
  */
 class SafeDeleteTool : AbstractRefactoringTool() {
+
+    private companion object {
+        /**
+         * How far below the file [collectDeclarationsInto] may descend through *unnamed* wrapper
+         * nodes before giving up. Three is what the deepest known wrapper chain needs
+         * (`ES6ExportDeclaration` > `JSVarStatement` > `JSVariable`), and keeping it small is
+         * what stops the walk from wandering into statement bodies in script-style files.
+         */
+        const val MAX_WRAPPER_DEPTH = 3
+    }
 
     /**
      * Test hook invoked between the usage check (phase 1) and the deletion write action
@@ -390,10 +402,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                     success = true,
                     affectedFiles = listOf(preparation.filePath),
                     changesCount = 1,
-                    message = if (force && preparation.externalUsages.isNotEmpty()) {
-                        "Force-deleted file '${preparation.fileName}' (had ${preparation.externalUsages.size} external usage(s) that may now be broken)"
-                    } else {
-                        "Successfully deleted file '${preparation.fileName}' (contained ${preparation.symbols.size} symbol(s) with no external usages)"
+                    message = when {
+                        force && preparation.externalUsages.isNotEmpty() ->
+                            "Force-deleted file '${preparation.fileName}' (had ${preparation.externalUsages.size} external usage(s) that may now be broken)"
+                        // No declarations to scan means layer 3 never ran. Saying "0 symbol(s)
+                        // with no external usages" reads like a completed check; it is not one.
+                        preparation.symbols.isEmpty() ->
+                            "Successfully deleted file '${preparation.fileName}' (no top-level declarations found in it — only direct references to the file itself were checked)"
+                        else ->
+                            "Successfully deleted file '${preparation.fileName}' (contained ${preparation.symbols.size} symbol(s) with no external usages)"
                     }
                 )
             )
@@ -555,8 +572,10 @@ class SafeDeleteTool : AbstractRefactoringTool() {
      *    `RenamePsiElementProcessor.prepareRenaming()` to detect this substitution, then
      *    search for usages of the resource element. This catches `@xml/`, `@drawable/`, etc.
      *    references in XML files.
-     * 3. **Top-level symbol references** — Checks top-level declarations (classes, functions)
-     *    for external usages. Internal call chains don't block deletion.
+     * 3. **Top-level symbol references** — Checks the file's top-level declarations (see
+     *    [collectTopLevelDeclarations]) for external usages. Internal call chains don't block
+     *    deletion. This is the only layer that fires for an ordinary source file, so an
+     *    enumeration that comes back empty leaves the file effectively unchecked.
      */
     private fun prepareFileDelete(
         project: Project,
@@ -672,57 +691,99 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     }
 
     /**
-     * Collects only top-level declarations (classes, interfaces, top-level functions/properties).
-     * This is more efficient than collecting all named elements for file deletion checks.
+     * Collects the file's top-level declarations — the symbols whose *external* references are
+     * what make a file unsafe to delete.
+     *
+     * Two properties this deliberately has, both of them bug fixes (issue #336):
+     *
+     * 1. **The document does not gate the collection.** Line and column are display-only, but
+     *    reading the document *first* and bailing out on `null` made the entire layer-3 usage
+     *    scan collapse to a no-op — `prepareFileDelete` then reported a complete-looking empty
+     *    result and deleted the file. That is precisely the failure [UsageSearchException]
+     *    exists to prevent: an incomplete check must never be reported as "no usages". A missing
+     *    document now degrades the *positions* to 0, not the symbol list to empty.
+     *
+     * 2. **The walk does not stop at the file's direct children.** Several languages nest their
+     *    top-level declarations one or two nodes down, and a direct-children scan silently finds
+     *    nothing at all in those files:
+     *    - Scala wraps every definition in an `ScPackaging` node as soon as the file has a
+     *      `package` clause, so its classes are grandchildren of the file.
+     *    - `export const API_URL = "…"` in JS/TS names the `JSVariable` *inside* a
+     *      `JSVarStatement`.
+     *    - Go's `type Foo struct{}` names the `GoTypeSpec` inside a `GoTypeDeclaration`.
+     *    - Python module-level constants name the `PyTargetExpression` inside a
+     *      `PyAssignmentStatement`.
+     *
+     * The walk therefore descends through *unnamed* wrapper nodes, and stops at the first named
+     * element on each path so it never walks into a class or function body — the members inside
+     * a top-level declaration cannot outlive it, and searching each of them would turn one file
+     * delete into hundreds of index queries.
+     *
+     * [PsiClassOwner.getClasses] is unioned on top of the walk. For the class-owning languages
+     * (Java, Kotlin, Scala, Groovy) it is the language's own authoritative answer to "what does
+     * this file declare", and it unwraps package nesting whatever shape that language chose.
      */
     private fun collectTopLevelDeclarations(
         project: Project,
         psiFile: PsiFile
     ): List<Triple<PsiNamedElement, Int, Int>> {
-        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
-            ?: return emptyList()
+        val declarations = mutableListOf<PsiNamedElement>()
+        val seenTargets = HashSet<PsiElement>()
 
-        val results = mutableListOf<Triple<PsiNamedElement, Int, Int>>()
-
-        // Only process direct children of the file (top-level declarations)
-        for (child in psiFile.children) {
-            if (child is PsiNamedElement && child.name != null) {
-                val line = document.getLineNumber(child.textOffset) + 1
-                val lineStart = document.getLineStartOffset(line - 1)
-                val column = child.textOffset - lineStart + 1
-                results.add(Triple(child, line, column))
+        val record: (PsiNamedElement) -> Unit = { element ->
+            if (element !is PsiFile && element.name != null) {
+                // A light class (Kotlin) and the source declaration it wraps share a navigation
+                // element, so this keeps the structural walk and getClasses() from both landing
+                // the same declaration and doubling the reported usage count.
+                if (seenTargets.add(element.navigationElement)) {
+                    declarations.add(element)
+                }
             }
         }
 
-        return results
+        collectDeclarationsInto(psiFile, MAX_WRAPPER_DEPTH, record)
+        (psiFile as? PsiClassOwner)?.classes?.forEach(record)
+
+        // Display-only, and legitimately absent for binary files — never a reason to drop symbols.
+        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
+        return declarations.map { element ->
+            val (line, column) = positionOf(document, element.textOffset)
+            Triple(element, line, column)
+        }
     }
 
     /**
-     * Collects all named elements in a file with their line and column positions.
-     * Shared helper used by both findNearbySymbols and prepareFileDelete.
-     *
-     * @return List of triples: (element, line, column)
+     * Records every named child of [parent], descending through unnamed wrapper nodes until
+     * [depthBudget] is spent. Named elements terminate their branch: their members are deleted
+     * with them and cannot be broken independently.
      */
-    private fun collectNamedElementsWithPositions(
-        project: Project,
-        psiFile: PsiFile
-    ): List<Triple<PsiNamedElement, Int, Int>> {
-        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
-            ?: return emptyList()
-
-        val results = mutableListOf<Triple<PsiNamedElement, Int, Int>>()
-
-        PsiTreeUtil.processElements(psiFile) { element ->
-            if (element is PsiNamedElement && element !is PsiFile && element.name != null) {
-                val line = document.getLineNumber(element.textOffset) + 1
-                val lineStart = document.getLineStartOffset(line - 1)
-                val column = element.textOffset - lineStart + 1
-                results.add(Triple(element, line, column))
+    private fun collectDeclarationsInto(
+        parent: PsiElement,
+        depthBudget: Int,
+        record: (PsiNamedElement) -> Unit
+    ) {
+        for (child in parent.children) {
+            ProgressManager.checkCanceled()
+            if (child is PsiWhiteSpace || child is PsiComment) continue
+            if (child is PsiNamedElement && child !is PsiFile && child.name != null) {
+                record(child)
+                continue
             }
-            true // continue processing
+            if (depthBudget > 0) {
+                collectDeclarationsInto(child, depthBudget - 1, record)
+            }
         }
+    }
 
-        return results
+    /**
+     * 1-based (line, column) for [offset], or `(0, 0)` when it cannot be resolved — no document
+     * for the file, or an offset no longer inside it. `(0, 0)` is the "position unknown"
+     * encoding this tool has always reported for usages in documentless files.
+     */
+    private fun positionOf(document: Document?, offset: Int): Pair<Int, Int> {
+        if (document == null || offset < 0 || offset > document.textLength) return 0 to 0
+        val line = document.getLineNumber(offset) + 1
+        return line to (offset - document.getLineStartOffset(line - 1) + 1)
     }
 
     /**
@@ -819,13 +880,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
 
                 if (refFile != null) {
                     val document = PsiDocumentManager.getInstance(project).getDocument(refElement.containingFile)
-                    val lineNumber = document?.getLineNumber(refElement.textOffset)?.plus(1) ?: 0
-                    val columnNumber = if (document != null && lineNumber > 0) {
-                        val lineStart = document.getLineStartOffset(lineNumber - 1)
-                        refElement.textOffset - lineStart + 1
-                    } else {
-                        0
-                    }
+                    val (lineNumber, columnNumber) = positionOf(document, refElement.textOffset)
 
                     usages.add(
                         UsageInfo(
@@ -853,7 +908,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         return cause?.message ?: cause?.javaClass?.simpleName ?: "unknown error"
     }
 
-    private fun getContextLine(document: com.intellij.openapi.editor.Document?, line: Int): String {
+    private fun getContextLine(document: Document?, line: Int): String {
         if (document == null || line < 1 || line > document.lineCount) return ""
         val lineIndex = line - 1
         val startOffset = document.getLineStartOffset(lineIndex)
