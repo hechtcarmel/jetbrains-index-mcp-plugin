@@ -2,14 +2,19 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNamedElement
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.junit.Assume
 
 /**
  * Behavior coverage for `ide_refactor_safe_delete`.
@@ -633,6 +638,164 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
 
         assertNotNull("Cancellation must propagate, not turn into a successful delete", thrown)
         assertFileContains("sd-pcefail-src/pcefail/PceFail.java", "unusedHelper")
+    }
+
+    // ── Issue #336: the file-mode usage scan must actually enumerate the file's declarations ──
+    //
+    // File mode looks for external usages in three layers, and layer 3 — "search every
+    // top-level declaration" — is the only one that fires for an ordinary source file.
+    // It walked `psiFile.children` and stopped there, so any language that nests its
+    // top-level declarations below the file node produced *zero* declarations to search:
+    // the scan found nothing, `externalUsages` stayed empty, and the tool deleted a file
+    // that the rest of the project still referenced while reporting success.
+    //
+    // JS/TS reproduces it: `const X = …` names the `JSVariable` inside a `JSVarStatement`,
+    // never the file's own child. Scala (the language in the report) has the same shape via
+    // `ScPackaging`, but its plugin is not on the test classpath.
+    //
+    // Both tests below were confirmed to FAIL against the pre-fix `SafeDeleteTool` by reverting
+    // it and running them. That check is what caught a third test which did *not* fail: an
+    // ES-module fixture whose `import … from "./config"` is a reference to the file itself, so
+    // layer 1 blocked the delete and layer 3 was never exercised. It now lives below as
+    // `testModuleImportingTheFileByPathRefusesFileDelete`, labelled for the layer it covers.
+    // Keep fixtures here free of module imports, or they stop testing this fix.
+    //
+    // What is deliberately NOT here is an end-to-end "nested declaration is used from another
+    // file, so the delete is refused" case. It cannot run in this harness: a cross-file search
+    // for a JS/TS *symbol* reaches the platform's polySymbols module, which dies with
+    //   NoSuchMethodError: kotlin.sequences.SequencesKt.sequenceOf(java.lang.Object)
+    //   at com.intellij.polySymbols.patterns.impl.SymbolReferencePattern.getStaticPrefixes
+    // — an older kotlin-stdlib on the test classpath than polySymbols was compiled against.
+    // The plugin ships no kotlin-stdlib of its own (kotlin.stdlib.default.dependency = false),
+    // so a real IDE supplies a matching one and this does not arise there. The existing Java
+    // fixtures cover "non-empty enumeration ⇒ layer 3 blocks the delete"; what the tests below
+    // add is the other half, that the enumeration is non-empty for a nested declaration.
+    // Note the failure mode if it ever did arise in production: findUsages wraps it in
+    // UsageSearchException and the tool refuses the delete. It fails closed.
+
+    fun testTypeScriptModuleConstantIsCountedAsATopLevelDeclaration() = runBlocking {
+        Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
+        registerSourceRoot("sd-tsdecl-src")
+        writeProjectFile(
+            "sd-tsdecl-src/settings.ts", """
+            export const API_URL = "https://example.test";
+        """.trimIndent()
+        )
+
+        // Precondition, and the whole reason this fixture stands in for the Scala report: the
+        // declaration is NOT a direct child of the file, so the old direct-children scan had
+        // nothing to search. Asserted rather than assumed — if a future JS PSI flattens this
+        // shape, the fixture silently stops reproducing #336, and that must fail loudly here
+        // rather than leave the assertion below passing for the wrong reason.
+        assertNoDirectlyNamedChildren("sd-tsdecl-src/settings.ts")
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-tsdecl-src/settings.ts")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("Deleting an unreferenced module should succeed", result)
+        val payload = decodeRefactoring(toolText(result))
+        // The count is the assertion: at zero declarations the usage scan never ran, and the
+        // deletion below proves nothing about safety.
+        assertEquals(
+            "Successfully deleted file 'settings.ts' (contained 1 symbol(s) with no external usages)",
+            payload.message
+        )
+        assertProjectFileAbsent("sd-tsdecl-src/settings.ts")
+    }
+
+    /**
+     * Layer 1 coverage, kept for what it actually tests rather than what it looked like it
+     * tested: an ES6 module specifier (`from "./config"`) is a PSI reference to the *file*, so
+     * `ReferencesSearch` on the `PsiFile` blocks the delete without layer 3 contributing
+     * anything. Confirmed to pass against the pre-fix code, so it is **not** coverage of #336 —
+     * it is coverage of the file-reference layer, and it fails if that layer breaks.
+     */
+    fun testModuleImportingTheFileByPathRefusesFileDelete() = runBlocking {
+        Assume.assumeTrue("JavaScript plugin required for this fixture", PluginDetectors.javaScript.isAvailable)
+        registerSourceRoot("sd-tsblocked-src")
+        writeProjectFile(
+            "sd-tsblocked-src/config.ts", """
+            export const API_URL = "https://example.test";
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "sd-tsblocked-src/client.ts", """
+            import { API_URL } from "./config";
+
+            export function endpoint(): string {
+                return API_URL + "/v1";
+            }
+        """.trimIndent()
+        )
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-tsblocked-src/config.ts")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("A refusal is a structured answer, not a protocol error", result)
+        val payload = decodeFileBlocked(toolText(result))
+        assertFalse("canDelete must be false while another module imports the file", payload.canDelete)
+        assertEquals("config.ts", payload.fileName)
+        assertTrue("Expected at least one blocking usage, got ${payload.externalUsageCount}", payload.externalUsageCount >= 1)
+        assertTrue(
+            "Blocking usages must name the importing file. Got: ${payload.blockingUsages.map { it.file }}",
+            payload.blockingUsages.any { it.file == "sd-tsblocked-src/client.ts" }
+        )
+        assertProjectFileExists("sd-tsblocked-src/config.ts")
+        assertFileContains("sd-tsblocked-src/config.ts", "API_URL")
+    }
+
+    /**
+     * The other half of issue #336: when the scan finds nothing to search, saying so is the
+     * difference between "checked, and it is safe" and "there was nothing here to check".
+     * A plain-text file has no declarations in any language, so this is the honest wording —
+     * and it is the wording an agent needs in order to not read silence as a clean bill of health.
+     */
+    fun testDeletingAFileWithNoDeclarationsSaysTheScanFoundNothingToCheck() = runBlocking {
+        registerSourceRoot("sd-nodecl-src")
+        writeProjectFile("sd-nodecl-src/notes.txt", "just some prose, no declarations here\n")
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", "sd-nodecl-src/notes.txt")
+            put("target_type", "file")
+        })
+
+        assertToolSucceeded("An unreferenced text file must still be deletable", result)
+        val payload = decodeRefactoring(toolText(result))
+        assertEquals(
+            "Successfully deleted file 'notes.txt' (no top-level declarations found in it — " +
+                "only direct references to the file itself were checked)",
+            payload.message
+        )
+        assertProjectFileAbsent("sd-nodecl-src/notes.txt")
+    }
+
+    /**
+     * Asserts that [relativePath] declares nothing at its own top level — every named element
+     * sits below a wrapper node. This is the PSI shape that broke `collectTopLevelDeclarations`
+     * in issue #336, and pinning it is what keeps the tests above honest reproductions of the
+     * bug rather than assertions that would have passed before the fix too.
+     */
+    private fun assertNoDirectlyNamedChildren(relativePath: String) {
+        val basePath = requireNotNull(project.basePath)
+        val virtualFile = requireNotNull(
+            LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")
+        ) { "Missing test file $relativePath" }
+        val psiFile = requireNotNull(PsiManager.getInstance(project).findFile(virtualFile)) {
+            "No PSI for $relativePath — is the language plugin on the test classpath?"
+        }
+        val namedChildren = psiFile.children
+            .filter { it is PsiNamedElement && it !is PsiFile && it.name != null }
+            .map { "${it.javaClass.simpleName}(${(it as PsiNamedElement).name})" }
+        assertEquals(
+            "$relativePath must nest its declaration below the file node for this fixture to " +
+                "reproduce #336, but the file declares these directly",
+            emptyList<String>(),
+            namedChildren
+        )
     }
 
     /**
