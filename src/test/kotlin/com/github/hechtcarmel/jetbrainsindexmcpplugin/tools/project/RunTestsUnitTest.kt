@@ -153,6 +153,30 @@ class RunTestsUnitTest : TestCase() {
         assertEquals(3_000L, RunTestsTool.finalizeWaitMillis(0, callStartMs = 0, nowMs = 0))
     }
 
+    // ── processStartTimeoutMs ──────────────────────────────────────────────────
+
+    /**
+     * The process-start deadline must stay within the remaining waitSeconds budget so the call
+     * never blocks past the MCP client's request timeout (~60s). Previously a hardcoded 15s
+     * was used, which caused false "did not start" errors on slow Maven projects even when the
+     * caller passed a much larger timeoutSeconds.
+     */
+    fun testProcessStartTimeoutIsRemainingWaitBudget() {
+        // 45s budget, 2s elapsed: 43s remain
+        assertEquals(43_000L, RunTestsTool.processStartTimeoutMs(45, callStartMs = 0, nowMs = 2_000))
+    }
+
+    fun testProcessStartTimeoutShrinksAsCallProgresses() {
+        // 45s budget, 40s elapsed: only 5s left
+        assertEquals(5_000L, RunTestsTool.processStartTimeoutMs(45, callStartMs = 0, nowMs = 40_000))
+    }
+
+    fun testProcessStartTimeoutFlooredAtOneMs() {
+        // budget already exhausted — floor at 1ms rather than going negative or zero
+        assertEquals(1L, RunTestsTool.processStartTimeoutMs(45, callStartMs = 0, nowMs = 50_000))
+        assertEquals(1L, RunTestsTool.processStartTimeoutMs(0, callStartMs = 0, nowMs = 0))
+    }
+
     // ── needsPsiSync ───────────────────────────────────────────────────────────
 
     /**

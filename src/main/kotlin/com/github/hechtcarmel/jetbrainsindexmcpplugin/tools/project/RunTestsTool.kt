@@ -32,7 +32,6 @@ import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.util.messages.MessageBusConnection
@@ -100,6 +99,14 @@ class RunTestsTool : AbstractMcpTool() {
             val budgetLeftMs = waitSeconds * 1000L - (nowMs - callStartMs)
             return minOf(TEST_TREE_FINALIZE_TIMEOUT.inWholeMilliseconds, maxOf(MIN_FINALIZE_WAIT_MS, budgetLeftMs))
         }
+
+        /**
+         * How long to wait for the test process to actually start. Bounded by the remaining
+         * [waitSeconds] budget so the call never blocks past the MCP client's request timeout.
+         * Floor at 1ms to prevent a zero or negative timeout on an already-exhausted budget.
+         */
+        internal fun processStartTimeoutMs(waitSeconds: Int, callStartMs: Long, nowMs: Long): Long =
+            (waitSeconds * 1000L - (nowMs - callStartMs)).coerceAtLeast(1L)
 
         internal fun buildInProgressResult(
             runId: String,
@@ -307,9 +314,10 @@ class RunTestsTool : AbstractMcpTool() {
         val connection = project.messageBus.connect()
         connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
 
+        val startTimeout = processStartTimeoutMs(waitSeconds, callStartMs, System.currentTimeMillis())
         val handler = try {
             edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
-            withTimeoutOrNull(timeoutSeconds.seconds) { processHandlerDeferred.await() }
+            withTimeoutOrNull(startTimeout.milliseconds) { processHandlerDeferred.await() }
         } catch (e: ProcessCanceledException) {
             connection.disconnect()
             throw e
@@ -319,7 +327,8 @@ class RunTestsTool : AbstractMcpTool() {
         } ?: run {
             connection.disconnect()
             return createErrorResult(
-                "Test process did not start within $timeoutSeconds seconds for '$configName'."
+                "Test process did not start within ${startTimeout / 1000}s for '$configName' — " +
+                        "the IDE may still be compiling; retry, or raise waitSeconds (max $MAX_WAIT_SECONDS)."
             )
         }
 
