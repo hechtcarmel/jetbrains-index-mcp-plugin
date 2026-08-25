@@ -58,7 +58,6 @@ class RunTestsTool : AbstractMcpTool() {
     companion object {
         private val LOG = logger<RunTestsTool>()
         private const val DEFAULT_TIMEOUT_SECONDS = 120
-        private val PROCESS_START_TIMEOUT = 15.seconds
 
         /** Grace period to let the IDE's test tree finalize after the process exits. Normally instant. */
         private val TEST_TREE_FINALIZE_TIMEOUT = 10.seconds
@@ -310,7 +309,7 @@ class RunTestsTool : AbstractMcpTool() {
 
         val handler = try {
             edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
-            withTimeoutOrNull(PROCESS_START_TIMEOUT) { processHandlerDeferred.await() }
+            withTimeoutOrNull(timeoutSeconds.seconds) { processHandlerDeferred.await() }
         } catch (e: ProcessCanceledException) {
             connection.disconnect()
             throw e
@@ -320,7 +319,7 @@ class RunTestsTool : AbstractMcpTool() {
         } ?: run {
             connection.disconnect()
             return createErrorResult(
-                "Test process did not start within ${PROCESS_START_TIMEOUT.inWholeSeconds} seconds for '$configName'."
+                "Test process did not start within $timeoutSeconds seconds for '$configName'."
             )
         }
 
