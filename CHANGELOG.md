@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- **`ide_run_tests` no longer aborts with a misleading "did not start within 15 seconds" error on slow Maven/Gradle projects** — the hardcoded 15s process-start guard is replaced by the remaining `waitSeconds` budget (~45–55s by default), so large projects that take longer than 15s to compile and launch the test JVM no longer fail spuriously. The error message now also tells the agent to retry or raise `waitSeconds`.
+- **`ide_run_tests` no longer aborts with a misleading "did not start within 15 seconds" error on slow projects** — the hardcoded 15s process-start guard is replaced by the remaining `waitSeconds` budget (~45–55s by default). The error message now also tells the agent to retry or raise `waitSeconds`.
 
 ## [5.8.2] - 2026-08-23
 
