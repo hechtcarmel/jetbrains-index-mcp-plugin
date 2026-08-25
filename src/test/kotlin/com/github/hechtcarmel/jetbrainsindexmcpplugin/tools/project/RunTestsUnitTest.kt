@@ -5,6 +5,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import junit.framework.TestCase
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class RunTestsUnitTest : TestCase() {
 
@@ -163,18 +165,18 @@ class RunTestsUnitTest : TestCase() {
      */
     fun testProcessStartTimeoutIsRemainingWaitBudget() {
         // 45s budget, 2s elapsed: 43s remain
-        assertEquals(43_000L, RunTestsTool.processStartTimeoutMs(45, callStartMs = 0, nowMs = 2_000))
+        assertEquals(43.seconds, RunTestsTool.processStartTimeout(45, callStartMs = 0, nowMs = 2_000))
     }
 
     fun testProcessStartTimeoutShrinksAsCallProgresses() {
         // 45s budget, 40s elapsed: only 5s left
-        assertEquals(5_000L, RunTestsTool.processStartTimeoutMs(45, callStartMs = 0, nowMs = 40_000))
+        assertEquals(5.seconds, RunTestsTool.processStartTimeout(45, callStartMs = 0, nowMs = 40_000))
     }
 
     fun testProcessStartTimeoutFlooredAtOneMs() {
         // budget already exhausted — floor at 1ms rather than going negative or zero
-        assertEquals(1L, RunTestsTool.processStartTimeoutMs(45, callStartMs = 0, nowMs = 50_000))
-        assertEquals(1L, RunTestsTool.processStartTimeoutMs(0, callStartMs = 0, nowMs = 0))
+        assertEquals(1.milliseconds, RunTestsTool.processStartTimeout(45, callStartMs = 0, nowMs = 50_000))
+        assertEquals(1.milliseconds, RunTestsTool.processStartTimeout(0, callStartMs = 0, nowMs = 0))
     }
 
     // ── needsPsiSync ───────────────────────────────────────────────────────────

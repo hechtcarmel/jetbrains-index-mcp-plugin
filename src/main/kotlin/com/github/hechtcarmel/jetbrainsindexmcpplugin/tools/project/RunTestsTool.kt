@@ -42,6 +42,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -105,8 +106,8 @@ class RunTestsTool : AbstractMcpTool() {
          * [waitSeconds] budget so the call never blocks past the MCP client's request timeout.
          * Floor at 1ms to prevent a zero or negative timeout on an already-exhausted budget.
          */
-        internal fun processStartTimeoutMs(waitSeconds: Int, callStartMs: Long, nowMs: Long): Long =
-            (waitSeconds * 1000L - (nowMs - callStartMs)).coerceAtLeast(1L)
+        internal fun processStartTimeout(waitSeconds: Int, callStartMs: Long, nowMs: Long): Duration =
+            (waitSeconds * 1000L - (nowMs - callStartMs)).coerceAtLeast(1L).milliseconds
 
         internal fun buildInProgressResult(
             runId: String,
@@ -314,10 +315,10 @@ class RunTestsTool : AbstractMcpTool() {
         val connection = project.messageBus.connect()
         connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
 
-        val startTimeout = processStartTimeoutMs(waitSeconds, callStartMs, System.currentTimeMillis())
+        val startTimeout = processStartTimeout(waitSeconds, callStartMs, System.currentTimeMillis())
         val handler = try {
             edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
-            withTimeoutOrNull(startTimeout.milliseconds) { processHandlerDeferred.await() }
+            withTimeoutOrNull(startTimeout) { processHandlerDeferred.await() }
         } catch (e: ProcessCanceledException) {
             connection.disconnect()
             throw e
@@ -327,7 +328,7 @@ class RunTestsTool : AbstractMcpTool() {
         } ?: run {
             connection.disconnect()
             return createErrorResult(
-                "Test process did not start within ${startTimeout / 1000} seconds for '$configName' — " +
+                "Test process did not start within ${startTimeout.inWholeSeconds}s for '$configName' — " +
                         "the IDE may still be compiling; retry, or raise waitSeconds (max $MAX_WAIT_SECONDS)."
             )
         }
