@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.8.3] - 2026-08-25
+
 ### Fixed
 
 - **`ide_run_tests` no longer aborts with a misleading "did not start within 15 seconds" error on slow projects** ([#339](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/339)) — the hardcoded 15s process-start guard is replaced by the remaining `waitSeconds` budget (~45–55s by default). The error message now also tells the agent to retry or raise `waitSeconds`.
@@ -1178,7 +1180,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.2...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.3...HEAD
+[5.8.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.2...v5.8.3
 [5.8.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.1...v5.8.2
 [5.8.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.0...v5.8.1
 [5.8.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.7.0...v5.8.0
