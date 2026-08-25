@@ -5,6 +5,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import junit.framework.TestCase
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class RunTestsUnitTest : TestCase() {
 
@@ -151,6 +153,30 @@ class RunTestsUnitTest : TestCase() {
         // floor at 3s rather than returning with results silently dropped
         assertEquals(3_000L, RunTestsTool.finalizeWaitMillis(55, callStartMs = 0, nowMs = 54_500))
         assertEquals(3_000L, RunTestsTool.finalizeWaitMillis(0, callStartMs = 0, nowMs = 0))
+    }
+
+    // ── processStartTimeoutMs ──────────────────────────────────────────────────
+
+    /**
+     * The process-start deadline must stay within the remaining waitSeconds budget so the call
+     * never blocks past the MCP client's request timeout (~60s). Previously a hardcoded 15s
+     * was used, which caused false "did not start" errors on slow Maven projects even when the
+     * caller passed a much larger timeoutSeconds.
+     */
+    fun testProcessStartTimeoutIsRemainingWaitBudget() {
+        // 45s budget, 2s elapsed: 43s remain
+        assertEquals(43.seconds, RunTestsTool.processStartTimeout(45, callStartMs = 0, nowMs = 2_000))
+    }
+
+    fun testProcessStartTimeoutShrinksAsCallProgresses() {
+        // 45s budget, 40s elapsed: only 5s left
+        assertEquals(5.seconds, RunTestsTool.processStartTimeout(45, callStartMs = 0, nowMs = 40_000))
+    }
+
+    fun testProcessStartTimeoutFlooredAtOneMs() {
+        // budget already exhausted — floor at 1ms rather than going negative or zero
+        assertEquals(1.milliseconds, RunTestsTool.processStartTimeout(45, callStartMs = 0, nowMs = 50_000))
+        assertEquals(1.milliseconds, RunTestsTool.processStartTimeout(0, callStartMs = 0, nowMs = 0))
     }
 
     // ── needsPsiSync ───────────────────────────────────────────────────────────

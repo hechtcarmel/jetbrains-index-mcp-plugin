@@ -32,7 +32,6 @@ import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.util.messages.MessageBusConnection
@@ -43,6 +42,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -58,7 +58,6 @@ class RunTestsTool : AbstractMcpTool() {
     companion object {
         private val LOG = logger<RunTestsTool>()
         private const val DEFAULT_TIMEOUT_SECONDS = 120
-        private val PROCESS_START_TIMEOUT = 15.seconds
 
         /** Grace period to let the IDE's test tree finalize after the process exits. Normally instant. */
         private val TEST_TREE_FINALIZE_TIMEOUT = 10.seconds
@@ -101,6 +100,14 @@ class RunTestsTool : AbstractMcpTool() {
             val budgetLeftMs = waitSeconds * 1000L - (nowMs - callStartMs)
             return minOf(TEST_TREE_FINALIZE_TIMEOUT.inWholeMilliseconds, maxOf(MIN_FINALIZE_WAIT_MS, budgetLeftMs))
         }
+
+        /**
+         * How long to wait for the test process to actually start. Bounded by the remaining
+         * [waitSeconds] budget so the call never blocks past the MCP client's request timeout.
+         * Floor at 1ms to prevent a zero or negative timeout on an already-exhausted budget.
+         */
+        internal fun processStartTimeout(waitSeconds: Int, callStartMs: Long, nowMs: Long): Duration =
+            (waitSeconds * 1000L - (nowMs - callStartMs)).coerceAtLeast(1L).milliseconds
 
         internal fun buildInProgressResult(
             runId: String,
@@ -308,9 +315,10 @@ class RunTestsTool : AbstractMcpTool() {
         val connection = project.messageBus.connect()
         connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
 
+        val startTimeout = processStartTimeout(waitSeconds, callStartMs, System.currentTimeMillis())
         val handler = try {
             edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
-            withTimeoutOrNull(PROCESS_START_TIMEOUT) { processHandlerDeferred.await() }
+            withTimeoutOrNull(startTimeout) { processHandlerDeferred.await() }
         } catch (e: ProcessCanceledException) {
             connection.disconnect()
             throw e
@@ -320,7 +328,8 @@ class RunTestsTool : AbstractMcpTool() {
         } ?: run {
             connection.disconnect()
             return createErrorResult(
-                "Test process did not start within ${PROCESS_START_TIMEOUT.inWholeSeconds} seconds for '$configName'."
+                "Test process did not start within ${startTimeout.inWholeSeconds}s for '$configName' — " +
+                        "the IDE may still be compiling; retry, or raise waitSeconds (max $MAX_WAIT_SECONDS)."
             )
         }
 
