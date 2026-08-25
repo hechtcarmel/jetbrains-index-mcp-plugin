@@ -327,7 +327,7 @@ class RunTestsTool : AbstractMcpTool() {
         } ?: run {
             connection.disconnect()
             return createErrorResult(
-                "Test process did not start within ${startTimeout / 1000}s for '$configName' — " +
+                "Test process did not start within ${startTimeout / 1000} seconds for '$configName' — " +
                         "the IDE may still be compiling; retry, or raise waitSeconds (max $MAX_WAIT_SECONDS)."
             )
         }
