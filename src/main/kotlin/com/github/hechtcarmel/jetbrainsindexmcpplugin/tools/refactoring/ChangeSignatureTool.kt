@@ -152,7 +152,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
         }
 
         return when {
-            prep.isFailure -> createErrorResult((prep.exceptionOrNull()?.message ?: "Failed to prepare change") + ". Run ide_diagnostics for possibly more information.")
+            prep.isFailure -> createErrorResult(prep.exceptionOrNull()?.message ?: "Failed to prepare change")
             else -> {
                 val p = prep.getOrThrow()
                 applyChange(

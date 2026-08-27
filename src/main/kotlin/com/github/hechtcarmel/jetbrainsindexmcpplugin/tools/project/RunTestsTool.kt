@@ -488,7 +488,7 @@ class RunTestsTool : AbstractMcpTool() {
             override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
                 if (environment !== env) return
                 processHandlerDeferred.completeExceptionally(
-                    IllegalStateException("Test process failed to start for '$configName'. Run ide_diagnostics for possibly more information.")
+                    IllegalStateException("Test process failed to start for '$configName'.")
                 )
             }
         })
