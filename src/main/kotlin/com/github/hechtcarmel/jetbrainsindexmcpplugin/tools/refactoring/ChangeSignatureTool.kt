@@ -152,7 +152,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
         }
 
         return when {
-            prep.isFailure -> createErrorResult(prep.exceptionOrNull()?.message ?: "Failed to prepare change")
+            prep.isFailure -> createErrorResult((prep.exceptionOrNull()?.message ?: "Failed to prepare change") + " Run ide_diagnostics for possibly more information.")
             else -> {
                 val p = prep.getOrThrow()
                 applyChange(
@@ -368,7 +368,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
             throw e
         } catch (e: Exception) {
             val cause = if (e is java.lang.reflect.InvocationTargetException) e.cause ?: e else e
-            createErrorResult("Change signature failed: ${cause.message}")
+            createErrorResult("Change signature failed: ${cause.message} Run ide_diagnostics for possibly more information.")
         }
     }
 

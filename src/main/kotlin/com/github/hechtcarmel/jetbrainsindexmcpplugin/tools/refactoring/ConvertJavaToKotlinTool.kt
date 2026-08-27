@@ -187,7 +187,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             }.result
         } catch (e: Exception) {
             LOG.error("Conversion failed", e)
-            createErrorResult("Conversion failed: ${e.message}")
+            createErrorResult("Conversion failed: ${e.message} Run ide_diagnostics for possibly more information.")
         }
     }
 

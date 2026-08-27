@@ -324,7 +324,10 @@ class RunTestsTool : AbstractMcpTool() {
             throw e
         } catch (e: Exception) {
             connection.disconnect()
-            return createErrorResult(e.message ?: "Test process failed to start for '$configName'.")
+            return createErrorResult(
+                (e.message ?: "Test process failed to start for '$configName'.") +
+                        " Run ide_diagnostics for possibly more information."
+            )
         } ?: run {
             connection.disconnect()
             return createErrorResult(
@@ -485,7 +488,7 @@ class RunTestsTool : AbstractMcpTool() {
             override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
                 if (environment !== env) return
                 processHandlerDeferred.completeExceptionally(
-                    IllegalStateException("Test process failed to start for '$configName'.")
+                    IllegalStateException("Test process failed to start for '$configName'. Run ide_diagnostics for possibly more information.")
                 )
             }
         })

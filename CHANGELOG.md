@@ -6,6 +6,12 @@
 
 ### Fixed
 
+- **Tool execution failures now suggest running `ide_diagnostics`** — when `ide_run_tests`, `ide_refactor_rename`, `ide_move_file`, `ide_change_signature`, `ide_convert_java_to_kotlin`, `ide_refactor_safe_delete`, `ide_optimize_imports`, or `ide_reformat_code` fail during execution (not due to bad input), the error message now appends "Run ide_diagnostics for possibly more information." so the agent has an immediate next step rather than stopping.
+
+## [5.8.3] - 2026-08-26
+
+### Fixed
+
 - **`ide_run_tests` no longer aborts with a misleading "did not start within 15 seconds" error on slow projects** ([#339](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/339)) — the hardcoded 15s process-start guard is replaced by the remaining `waitSeconds` budget (~45–55s by default). The error message now also tells the agent to retry or raise `waitSeconds`.
 
 ## [5.8.2] - 2026-08-23
