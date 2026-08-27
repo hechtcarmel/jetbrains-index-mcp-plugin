@@ -348,7 +348,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         return if (errorMessage != null) {
-            createErrorResult("Rename failed: $errorMessage Run ide_diagnostics for possibly more information.")
+            createErrorResult("Rename failed: $errorMessage. Run ide_diagnostics for possibly more information.")
         } else {
             val result = renameExecutionResult!!
             val relatedNote = if (result.relatedRenamesCount > 0) {
