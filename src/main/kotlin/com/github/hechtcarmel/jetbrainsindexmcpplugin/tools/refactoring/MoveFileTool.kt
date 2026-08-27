@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -288,7 +289,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 )
             )
         } else {
-            createErrorResult("Move failed: ${errorMessage ?: "Unknown error"} — run `ide_diagnostics` for more details.")
+            createErrorResult("Move failed: ${errorMessage ?: "Unknown error"}", ToolNames.DIAGNOSTICS)
         }
     }
 

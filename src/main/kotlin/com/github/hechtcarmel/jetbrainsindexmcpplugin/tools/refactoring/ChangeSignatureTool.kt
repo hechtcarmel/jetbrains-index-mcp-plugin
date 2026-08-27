@@ -368,7 +368,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
             throw e
         } catch (e: Exception) {
             val cause = if (e is java.lang.reflect.InvocationTargetException) e.cause ?: e else e
-            createErrorResult("Change signature failed: ${cause.message} — run `ide_diagnostics` for more details.")
+            createErrorResult("Change signature failed: ${cause.message}", ToolNames.DIAGNOSTICS)
         }
     }
 

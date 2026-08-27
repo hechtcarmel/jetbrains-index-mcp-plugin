@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
@@ -348,7 +349,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         return if (errorMessage != null) {
-            createErrorResult("Rename failed: $errorMessage — run `ide_diagnostics` for more details.")
+            createErrorResult("Rename failed: $errorMessage", ToolNames.DIAGNOSTICS)
         } else {
             val result = renameExecutionResult!!
             val relatedNote = if (result.relatedRenamesCount > 0) {

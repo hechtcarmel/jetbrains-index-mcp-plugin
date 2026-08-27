@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
@@ -187,7 +188,7 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             }.result
         } catch (e: Exception) {
             LOG.error("Conversion failed", e)
-            createErrorResult("Conversion failed: ${e.message} — run `ide_diagnostics` for more details.")
+            createErrorResult("Conversion failed: ${e.message}", ToolNames.DIAGNOSTICS)
         }
     }
 
