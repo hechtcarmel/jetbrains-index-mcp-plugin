@@ -326,7 +326,7 @@ class RunTestsTool : AbstractMcpTool() {
             connection.disconnect()
             return createErrorResult(
                 (e.message ?: "Test process failed to start for '$configName'.") +
-                        " Run ide_diagnostics for possibly more information."
+                        " Run ide_diagnostics for more details."
             )
         } ?: run {
             connection.disconnect()

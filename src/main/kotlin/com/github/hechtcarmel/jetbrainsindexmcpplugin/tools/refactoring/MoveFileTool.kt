@@ -288,7 +288,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 )
             )
         } else {
-            createErrorResult("Move failed: ${errorMessage ?: "Unknown error"}. Run ide_diagnostics for possibly more information.")
+            createErrorResult("Move failed: ${errorMessage ?: "Unknown error"}. Run ide_diagnostics for more details.")
         }
     }
 
