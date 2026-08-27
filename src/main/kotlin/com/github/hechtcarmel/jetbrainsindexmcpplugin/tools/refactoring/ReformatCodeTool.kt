@@ -137,7 +137,7 @@ class ReformatCodeTool : AbstractMcpTool() {
         }
 
         return if (errorMessage != null) {
-            createErrorResult("Reformat failed: $errorMessage. Run ide_diagnostics for more details.")
+            createErrorResult("Reformat failed: $errorMessage — run `ide_diagnostics` for more details.")
         } else {
             val operations = buildList {
                 add("reformatted")

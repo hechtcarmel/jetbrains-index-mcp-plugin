@@ -361,7 +361,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 )
             )
         } else {
-            createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"}. Run ide_diagnostics for more details.")
+            createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"} — run `ide_diagnostics` for more details.")
         }
     }
 
@@ -415,7 +415,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 )
             )
         } else {
-            createErrorResult("File deletion failed: ${errorMessage ?: "Unknown error"}. Run ide_diagnostics for more details.")
+            createErrorResult("File deletion failed: ${errorMessage ?: "Unknown error"} — run `ide_diagnostics` for more details.")
         }
     }
 
