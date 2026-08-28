@@ -297,6 +297,11 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(result))
         assertTrue("expired start allowance must surface as timedOut", payload.timedOut)
 
+        // Collecting the verdict must NOT remove a never-started run: its execution listener is
+        // the only guard that kills a process starting late, and removal would disconnect it.
+        val again = callTool("runId" to "run-hung-build", "waitSeconds" to 0)
+        assertToolSucceeded("a never-started timed-out run must stay pollable (kill guard armed)", again)
+
         val handler = NopProcessHandler()
         handler.startNotify()
         run.markProcessStarted(handler, hasResultsViewer = false)

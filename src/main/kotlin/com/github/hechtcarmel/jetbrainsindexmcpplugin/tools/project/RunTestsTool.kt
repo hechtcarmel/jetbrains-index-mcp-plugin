@@ -367,7 +367,7 @@ class RunTestsTool : AbstractMcpTool() {
         } catch (t: Throwable) {
             // Nothing was launched; removing the run also disconnects the listener connection.
             ActiveTestRunRegistry.getInstance(project).remove(run.id)
-            if (t is ProcessCanceledException) throw t
+            if (t is CancellationException || t is ProcessCanceledException || t !is Exception) throw t
             return createErrorResult(t.message ?: "Test process failed to start for '$configName'.", ToolNames.DIAGNOSTICS)
         }
 
@@ -376,8 +376,9 @@ class RunTestsTool : AbstractMcpTool() {
 
     /**
      * Waits for the run within what remains of this call's wait budget, then returns either the
-     * final [RunTestsResult] (and removes the run from the registry) or a
-     * [RunTestsInProgressResult] carrying the runId to poll with.
+     * final [RunTestsResult] (removing the run from the registry, unless it must stay armed —
+     * see the removal guard below) or a [RunTestsInProgressResult] carrying the runId to poll
+     * with.
      */
     private suspend fun awaitRunResult(
         project: Project,
@@ -435,7 +436,14 @@ class RunTestsTool : AbstractMcpTool() {
         val failed = tests.count { it.status == TestStatus.FAILED }
         val errors = tests.count { it.status == TestStatus.ERROR }
 
-        ActiveTestRunRegistry.getInstance(project).remove(run.id)
+        // A run whose process never started (the start allowance expired mid-build) must stay
+        // registered: its execution listener is the only guard that kills a process starting
+        // after the timeout verdict, and removal would disconnect it. Retention eviction cleans
+        // it up; if the process does start (and is killed), exitCode completes and the next
+        // poll takes the removal path below.
+        if (exitCode != null || run.processStartedAtMs != null) {
+            ActiveTestRunRegistry.getInstance(project).remove(run.id)
+        }
 
         val timedOut = run.timedOutByWatchdog
         val reportedExitCode = if (timedOut || exitCode == null) -1 else exitCode
