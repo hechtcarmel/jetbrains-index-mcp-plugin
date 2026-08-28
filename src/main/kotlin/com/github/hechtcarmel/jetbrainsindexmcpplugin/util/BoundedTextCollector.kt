@@ -70,7 +70,7 @@ internal class BoundedTextCollector(private val maxLength: Int) {
         val remainderBeyondHead = totalChars - head.length
         if (remainderBeyondHead <= tailSize) {
             // The ring holds the entire remainder — nothing was lost.
-            return head.toString() + tailText
+            return "$head$tailText"
         }
         var headText = head.toString()
         var elided = remainderBeyondHead - tailSize
@@ -83,6 +83,6 @@ internal class BoundedTextCollector(private val maxLength: Int) {
             keptTail = keptTail.drop(1)
             elided++
         }
-        return headText + "\n... [$elided chars truncated] ...\n" + keptTail
+        return "$headText\n... [$elided chars truncated] ...\n$keptTail"
     }
 }
