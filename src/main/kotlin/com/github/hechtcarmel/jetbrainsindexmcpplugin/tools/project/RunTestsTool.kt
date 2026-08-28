@@ -113,14 +113,23 @@ class RunTestsTool : AbstractMcpTool() {
         /** Console-output collection normally completes in milliseconds; this is the wedged-executor ceiling. */
         private val OUTPUT_COLLECTION_TIMEOUT = 5.seconds
 
-        private const val MIN_OUTPUT_WAIT_MS = 1_000L
+        /**
+         * Deliberately tiny: this floor stacks on top of the [MIN_FINALIZE_WAIT_MS] floor when
+         * the wait budget is already spent, and at the max `waitSeconds` (55s) the call is then
+         * only ~2s from the MCP client's 60s default timeout — blowing it loses the results
+         * permanently (the run is removed on collection). 250ms still catches the normal case,
+         * where the alarm queue drains in single-digit milliseconds; a busier queue costs the
+         * output fields, never the results.
+         */
+        private const val MIN_OUTPUT_WAIT_MS = 250L
 
         /**
          * Wait ceiling for console-output collection, bounded like [finalizeWaitMillis] by what
-         * remains of the call's wait budget so finalize + output collection can never stack the
-         * call past the MCP client's request timeout. The floor is smaller than the finalize
-         * floor because dropping output degrades the result, while dropping the test tree loses
-         * it — results are still returned either way.
+         * remains of the call's wait budget. Past-budget overshoot is at most
+         * [MIN_OUTPUT_WAIT_MS] on top of the finalize floor — see [MIN_OUTPUT_WAIT_MS] for why
+         * it must stay small. The floor is smaller than the finalize floor because dropping
+         * output only degrades the result, while dropping the test tree loses it — results are
+         * still returned either way.
          */
         internal fun outputWaitMillis(waitSeconds: Int, callStartMs: Long, nowMs: Long): Long {
             val budgetLeftMs = waitSeconds * 1000L - (nowMs - callStartMs)
@@ -204,7 +213,8 @@ class RunTestsTool : AbstractMcpTool() {
         Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
         carries its console output (stdout/stderr merged in print order, as the IDE's test console
         shows them), and the top-level "output" field carries output not attributed to any test
-        (framework/suite messages, @BeforeAll/@AfterAll prints, build-runner log lines). Failed or
+        (framework/suite messages, @BeforeAll/@AfterAll prints, build-runner log lines, and prints
+        from a test killed mid-run — e.g. at timeoutSeconds — which gets no per-test entry). Failed or
         errored tests include errorMessage and stackTrace (very long traces are trimmed in the
         middle, keeping the throw site and the root cause). On mass failures per-run size budgets
         apply: earlier failures keep their traces, later entries carry errorMessage only, and

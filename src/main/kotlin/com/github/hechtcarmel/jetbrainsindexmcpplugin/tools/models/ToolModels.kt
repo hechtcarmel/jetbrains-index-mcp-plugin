@@ -511,8 +511,9 @@ data class RunTestsResult(
     val total: Int,
     /**
      * Console output not attributed to any individual test — framework/suite-level messages,
-     * `@BeforeAll`/`@AfterAll` prints, build-runner log lines. Per-test output is on each
-     * [TestRunEntry.output] (issue #346).
+     * `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed
+     * mid-run (e.g. at timeoutSeconds), which gets no per-test entry. Per-test output is on
+     * each [TestRunEntry.output] (issue #346).
      */
     val output: String? = null,
     val tests: List<TestRunEntry>

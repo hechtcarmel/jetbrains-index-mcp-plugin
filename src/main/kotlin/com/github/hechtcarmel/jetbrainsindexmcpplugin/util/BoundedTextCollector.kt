@@ -2,11 +2,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 /**
  * Collects streamed text under a hard memory bound, keeping the first ~2/3 and last ~1/3 of
- * [maxLength] chars with the same elision marker as [TestResultsCollector.truncateStackTrace]:
- * for console output the head (startup, first prints) and the tail (the crash right before the
- * process died) are the interesting parts, and the middle of a chatty log is the expendable one.
- * Unlike truncating a fully materialized string, the middle is never held in memory — a test
- * spraying hundreds of MB of output costs O(maxLength), not O(output).
+ * [maxLength] chars around an elision marker. This is the single implementation of the
+ * head+tail truncation policy — [TestResultsCollector.truncateStackTrace] delegates here. The
+ * head and tail are the interesting parts of both traces (message + throw site, deepest causes)
+ * and console output (startup, the crash right before the process died); the middle is the
+ * expendable part. Unlike truncating a fully materialized string, the middle is never held in
+ * memory — a test spraying hundreds of MB of output costs O(maxLength), not O(output).
  *
  * Text at or under the cap is returned verbatim. Not thread-safe; confine one instance to one
  * collection pass.
@@ -59,8 +60,7 @@ internal class BoundedTextCollector(private val maxLength: Int) {
     /**
      * The collected text: verbatim when everything fit, otherwise head + elision marker + tail.
      * Null when nothing was appended. A cut point never leaves an unpaired surrogate — the
-     * bordering char is dropped into the elided count instead, mirroring
-     * [TestResultsCollector.truncateStackTrace].
+     * bordering char is dropped into the elided count instead.
      */
     fun build(): String? {
         if (totalChars == 0L) return null

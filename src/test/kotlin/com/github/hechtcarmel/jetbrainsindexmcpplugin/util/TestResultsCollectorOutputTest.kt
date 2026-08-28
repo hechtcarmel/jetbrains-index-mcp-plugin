@@ -149,6 +149,38 @@ class TestResultsCollectorOutputTest : McpPlatformTestCase() {
         assertEquals("config nodes are not test entries", 1, entries.size)
     }
 
+    /**
+     * A leaf killed mid-run (watchdog at timeoutSeconds) has non-terminal magnitude, so
+     * [TestResultsCollector.collectRunEntries] emits no entry for it. Its output — often exactly
+     * what explains the hang — must therefore ride on the run-level field instead of being
+     * collected into perTest and silently orphaned, and must not burn the per-test budget.
+     */
+    fun testKilledMidRunTestOutputLandsInUnattributedNotPerTest() {
+        buildTree()
+        val hung = SMTestProxy("testHangs", false, null)
+        suite.addChild(hung)
+        hung.setStarted()
+        hung.addStdOutput("deadlock detected in worker pool\n")
+        // never finished: the run was killed while this test executed
+        val finished = addTest("testFast") {
+            it.addStdOutput("fast test output\n")
+            it.setFinished()
+        }
+        finish()
+
+        val outputs = TestResultsCollector.collectRunOutputs(root)
+
+        assertNull("a test with no entry must not get perTest output", outputs.perTest[hung])
+        assertEquals("fast test output\n", outputs.perTest[finished])
+        assertTrue(
+            "the killed test's output must survive on the run-level field",
+            outputs.unattributed!!.contains("deadlock detected in worker pool")
+        )
+        val entries = TestResultsCollector.collectRunEntries(root, outputs = outputs.perTest)
+        assertEquals("non-terminal leaves stay out of the entries", 1, entries.size)
+        assertEquals("FooTest.testFast", entries.single().name)
+    }
+
     fun testNoOutputAnywhereYieldsNullsNotEmptyStrings() {
         buildTree()
         addTest("testX") { it.setFinished() }

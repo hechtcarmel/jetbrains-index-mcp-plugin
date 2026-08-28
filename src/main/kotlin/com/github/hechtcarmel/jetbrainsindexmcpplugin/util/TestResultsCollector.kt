@@ -168,7 +168,12 @@ object TestResultsCollector {
         // output may overshoot by at most one per-test cap.
         var outputBudget = totalOutputBudget
         for (node in root.allTests) {
-            if (isRunEntryLeaf(root, node)) {
+            // Same split as collectRunEntries: structural leaf AND terminal magnitude. A leaf
+            // killed mid-run (watchdog at timeoutSeconds → RUNNING/TERMINATED) gets no entry
+            // there, so its output — often exactly what explains the hang — must ride on the
+            // run-level field instead of being collected into perTest and silently orphaned.
+            val isReportedEntry = isRunEntryLeaf(root, node) && magnitudeIndexToStatus(node.magnitude) != null
+            if (isReportedEntry) {
                 if (outputBudget <= 0) continue
                 val collector = BoundedTextCollector(perTestLimit)
                 replayOwnOutput(node, collector, skipFileContent = false)
@@ -209,23 +214,18 @@ object TestResultsCollector {
     }
 
     /**
-     * Head+tail truncation: for chained exceptions the root cause sits at the BOTTOM of the trace
-     * (the issue #316 repro is 500 nested causes), so keeping only the head would drop exactly the
-     * part that explains the failure. Two thirds head keeps the message and throw site, one third
-     * tail keeps the deepest causes. A cut point shifts by one char when it would split a
-     * surrogate pair, so the output never carries an unpaired surrogate.
+     * Head+tail truncation via [BoundedTextCollector] (the single implementation of the policy):
+     * for chained exceptions the root cause sits at the BOTTOM of the trace (the issue #316
+     * repro is 500 nested causes), so keeping only the head would drop exactly the part that
+     * explains the failure. Two thirds head keeps the message and throw site, one third tail
+     * keeps the deepest causes, and a cut never leaves an unpaired surrogate.
      */
     internal fun truncateStackTrace(trace: String, maxLength: Int = MAX_RUN_ENTRY_STACKTRACE_LENGTH): String {
-        if (trace.length <= maxLength) return trace
-        var head = maxLength * 2 / 3
-        var tailStart = trace.length - (maxLength - head)
-        // Bounds-guarded: a degenerate cap collapses head to 0 / tailStart to the end, and this
-        // helper formats *error* output — crashing here would mask the real test failure.
-        if (head > 0 && trace[head - 1].isHighSurrogate()) head--
-        if (tailStart < trace.length && trace[tailStart].isLowSurrogate()) tailStart++
-        return trace.substring(0, head) +
-                "\n... [${tailStart - head} chars truncated] ...\n" +
-                trace.substring(tailStart)
+        // A degenerate cap returns the trace untouched: this helper formats *error* output, and
+        // crashing here (the collector rejects non-positive caps) would mask the real failure.
+        if (maxLength <= 0 || trace.length <= maxLength) return trace
+        return BoundedTextCollector(maxLength).apply { append(trace) }.build()
+            ?: trace // unreachable for non-empty input, same never-crash rationale
     }
 
     /** Composes a test display name from the test name and its optional parent (suite) name. */
