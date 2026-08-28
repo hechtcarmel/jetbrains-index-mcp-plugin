@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.9.1] - 2026-08-28
+
 ### Fixed
 
 - **`ide_run_tests` no longer fails with "Test process did not start within 44s" when the pre-test build outlasts the wait budget** ([#348](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/348)) — a Maven/Gradle/JPS compile step longer than ~45–55s (e.g. a slow annotation processor) made the call error out while the build *kept running untracked* in the IDE: no `runId` existed to attach to, `timeoutSeconds` was never enforced on the eventual process, results were never collected, and the suggested "retry" restarted the build from scratch — so the tool could never run such tests at all, since `waitSeconds` is capped below the MCP client's own request timeout by design. The run is now registered for long-polling *before* the test process starts: a call whose budget ends mid-build returns `{"status": "running", "runId": "..."}` (with a message saying the IDE is still compiling) and the agent polls with `runId` until the build finishes and the tests run — same flow as an already-executing run. `timeoutSeconds` still starts counting only when the test process actually starts, build time is bounded by a separate 30-minute start allowance (extended to `timeoutSeconds` when that is larger), a process starting only after that allowance expired is killed immediately instead of running unmanaged, and a build that fails or is cancelled (`processNotStarted`) surfaces as a proper tool error on the next poll instead of leaving the run pollable forever.
@@ -1196,7 +1198,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.1...HEAD
+[5.9.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.0...v5.9.1
 [5.9.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.4...v5.9.0
 [5.8.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.3...v5.8.4
 [5.8.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.2...v5.8.3
