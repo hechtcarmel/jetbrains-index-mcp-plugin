@@ -22,6 +22,7 @@ import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
 import com.intellij.execution.runners.ProgramRunner
+import com.intellij.execution.testframework.CompositePrintable
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import com.intellij.execution.testframework.sm.runner.ui.TestResultsViewer
 import com.intellij.execution.ui.RunContentDescriptor
@@ -109,6 +110,23 @@ class RunTestsTool : AbstractMcpTool() {
         internal fun processStartTimeout(waitSeconds: Int, callStartMs: Long, nowMs: Long): Duration =
             (waitSeconds * 1000L - (nowMs - callStartMs)).coerceAtLeast(1L).milliseconds
 
+        /** Console-output collection normally completes in milliseconds; this is the wedged-executor ceiling. */
+        private val OUTPUT_COLLECTION_TIMEOUT = 5.seconds
+
+        private const val MIN_OUTPUT_WAIT_MS = 1_000L
+
+        /**
+         * Wait ceiling for console-output collection, bounded like [finalizeWaitMillis] by what
+         * remains of the call's wait budget so finalize + output collection can never stack the
+         * call past the MCP client's request timeout. The floor is smaller than the finalize
+         * floor because dropping output degrades the result, while dropping the test tree loses
+         * it — results are still returned either way.
+         */
+        internal fun outputWaitMillis(waitSeconds: Int, callStartMs: Long, nowMs: Long): Long {
+            val budgetLeftMs = waitSeconds * 1000L - (nowMs - callStartMs)
+            return minOf(OUTPUT_COLLECTION_TIMEOUT.inWholeMilliseconds, maxOf(MIN_OUTPUT_WAIT_MS, budgetLeftMs))
+        }
+
         internal fun buildInProgressResult(
             runId: String,
             configName: String,
@@ -183,10 +201,14 @@ class RunTestsTool : AbstractMcpTool() {
         bounded by timeoutSeconds: once it expires the process is killed and the next poll reports
         timedOut: true.
 
-        Returns: success status, exit code, pass/fail/error counts, and per-test results. Failed or
+        Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
+        carries its console output (stdout/stderr merged in print order, as the IDE's test console
+        shows them), and the top-level "output" field carries output not attributed to any test
+        (framework/suite messages, @BeforeAll/@AfterAll prints, build-runner log lines). Failed or
         errored tests include errorMessage and stackTrace (very long traces are trimmed in the
-        middle, keeping the throw site and the root cause). On mass failures a per-run size budget
-        applies: earlier failures keep their traces, later entries carry errorMessage only.
+        middle, keeping the throw site and the root cause). On mass failures per-run size budgets
+        apply: earlier failures keep their traces, later entries carry errorMessage only, and
+        per-test output stops attaching once its own budget is spent.
         Results are read directly from the IDE's test runner, so they reflect this run (not stale report
         files) and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 
@@ -401,7 +423,10 @@ class RunTestsTool : AbstractMcpTool() {
             LOG.debug("No SM test tree for '${run.configName}'; returning empty structured results.")
         }
 
-        val tests = smRoot?.let { edtAction { TestResultsCollector.collectRunEntries(it) } } ?: emptyList()
+        val outputs = smRoot?.let { collectRunOutputs(it, waitSeconds, callStartMs) }
+        val tests = smRoot?.let {
+            edtAction { TestResultsCollector.collectRunEntries(it, outputs = outputs?.perTest ?: emptyMap()) }
+        } ?: emptyList()
         val passed = tests.count { it.status == TestStatus.PASSED }
         val failed = tests.count { it.status == TestStatus.FAILED }
         val errors = tests.count { it.status == TestStatus.ERROR }
@@ -420,9 +445,42 @@ class RunTestsTool : AbstractMcpTool() {
                 failed = failed,
                 errors = errors,
                 total = tests.size,
+                output = outputs?.unattributed,
                 tests = tests
             )
         )
+    }
+
+    /**
+     * Collects console output from the finished SM tree (issue #346) on the platform's
+     * "Tests Executor" — queued, never inline (`sync = false`), for two load-bearing reasons:
+     * that sequential executor is where [CompositePrintable] flushes console chunks to disk, so
+     * FIFO ordering guarantees every chunk the run flushed is on disk before the replay reads
+     * it; and the executor thread is never the EDT, so the replay inside
+     * [TestResultsCollector.collectRunOutputs] runs synchronously instead of being deferred.
+     * Bounded by [outputWaitMillis]: on timeout or failure the output is dropped and the
+     * structured results are still returned.
+     */
+    private suspend fun collectRunOutputs(
+        root: SMTestProxy.SMRootTestProxy,
+        waitSeconds: Int,
+        callStartMs: Long
+    ): TestResultsCollector.RunOutputs? {
+        val collected = CompletableDeferred<TestResultsCollector.RunOutputs?>()
+        CompositePrintable.invokeInAlarm({
+            collected.complete(
+                try {
+                    TestResultsCollector.collectRunOutputs(root)
+                } catch (_: ProcessCanceledException) {
+                    null
+                } catch (t: Throwable) {
+                    LOG.warn("Failed to collect console output for test run", t)
+                    null
+                }
+            )
+        }, false)
+        val waitMs = outputWaitMillis(waitSeconds, callStartMs, System.currentTimeMillis())
+        return withTimeoutOrNull(waitMs.milliseconds) { collected.await() }
     }
 
     private suspend fun resolveRunConfiguration(project: Project, target: String): RunnerAndConfigurationSettings? {

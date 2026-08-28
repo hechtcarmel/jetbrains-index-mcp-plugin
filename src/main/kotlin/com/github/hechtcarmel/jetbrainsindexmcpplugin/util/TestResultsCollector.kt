@@ -4,14 +4,20 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestResultInf
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestRunEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestSummary
+import com.intellij.execution.filters.HyperlinkInfo
+import com.intellij.execution.testframework.Printable
+import com.intellij.execution.testframework.Printer
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
 import com.intellij.execution.testframework.sm.runner.ui.SMTestRunnerResultsForm
+import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.execution.ui.ConsoleViewWithDelegate
 import com.intellij.execution.ui.ExecutionConsole
 import com.intellij.execution.ui.RunContentDescriptor
 import com.intellij.execution.ui.RunContentManager
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
@@ -23,6 +29,8 @@ data class TestCollectionResult(
 )
 
 object TestResultsCollector {
+
+    private val LOG = logger<TestResultsCollector>()
 
     private const val MAX_STACKTRACE_LENGTH = 500
 
@@ -39,6 +47,26 @@ object TestResultsCollector {
      * errorMessage only once the budget is spent.
      */
     internal const val MAX_RUN_TOTAL_STACKTRACE_CHARS = 100_000
+
+    /**
+     * Per-test cap for ide_run_tests console output (issue #346), head+tail truncated like
+     * stack traces: a normal logging test passes through untouched, a spraying one keeps its
+     * start and its end.
+     */
+    internal const val MAX_RUN_ENTRY_OUTPUT_LENGTH = 10_000
+
+    /**
+     * Aggregate console-output budget for one ide_run_tests result, in run order — same
+     * anti-multi-MB-response rationale as [MAX_RUN_TOTAL_STACKTRACE_CHARS]: once spent, later
+     * tests carry no output field.
+     */
+    internal const val MAX_RUN_TOTAL_OUTPUT_CHARS = 100_000
+
+    /**
+     * Cap for run-level output not attributed to any test (framework/suite messages, build-runner
+     * log lines). Larger than the per-test cap because a Gradle-run build log lands here.
+     */
+    internal const val MAX_RUN_LEVEL_OUTPUT_LENGTH = 20_000
 
     fun collect(
         project: Project,
@@ -67,11 +95,12 @@ object TestResultsCollector {
 
     fun collectRunEntries(
         root: SMTestProxy.SMRootTestProxy,
-        totalStackTraceBudget: Int = MAX_RUN_TOTAL_STACKTRACE_CHARS
+        totalStackTraceBudget: Int = MAX_RUN_TOTAL_STACKTRACE_CHARS,
+        outputs: Map<SMTestProxy, String> = emptyMap()
     ): List<TestRunEntry> {
         var traceBudget = totalStackTraceBudget
         return root.allTests
-            .filter { it !== root && it.isLeaf && !it.isSuite && !it.isConfig }
+            .filter { isRunEntryLeaf(root, it) }
             .mapNotNull { test ->
                 // TODO: Use `test.magnitudeInfo` once API is stable
                 magnitudeIndexToStatus(test.magnitude)?.let { status ->
@@ -86,10 +115,97 @@ object TestResultsCollector {
                         name = composeName(test.name, test.parent?.name),
                         status = status,
                         errorMessage = if (status.isFailure) test.errorMessage else null,
-                        stackTrace = stackTrace
+                        stackTrace = stackTrace,
+                        output = outputs[test]
                     )
                 }
             }
+    }
+
+    /** The nodes [collectRunEntries] reports as per-test entries; everything else is run-level. */
+    private fun isRunEntryLeaf(root: SMTestProxy.SMRootTestProxy, node: SMTestProxy): Boolean =
+        node !== root && node.isLeaf && !node.isSuite && !node.isConfig
+
+    /**
+     * Console output of one finished test run (issue #346), split the way [collectRunEntries]
+     * splits the tree: [perTest] holds each reportable test's own output, [unattributed]
+     * everything printed by the root, suites, and config nodes (framework messages,
+     * `@BeforeAll`/`@AfterAll` prints, build-runner log lines).
+     */
+    class RunOutputs(
+        val perTest: Map<SMTestProxy, String>,
+        val unattributed: String?
+    )
+
+    /**
+     * Replays each node's own console printables — the same data the IDE's test console renders —
+     * and returns them as plain text: stdout and stderr merged in print order, ANSI escapes
+     * stripped by [Printer]'s default `printWithAnsiColoring`, system messages (the launch
+     * command line, "Process finished with exit code …") excluded. Failure state is NOT part of a
+     * node's own printables (`printOwnPrintablesOn` with an explicit `skipFileContent` skips the
+     * state, exactly like the platform's own `TestResultsXmlFormatter`), so a failed test's
+     * output never duplicates the errorMessage/stackTrace fields.
+     *
+     * MUST run off the EDT in production: [com.intellij.execution.testframework.CompositePrintable]
+     * defers EDT-initiated replay to a background executor, so an EDT caller would return before
+     * any text arrived and silently collect nothing. Callers on a background thread get a fully
+     * synchronous replay. In unit-test mode the EDT replay is synchronous, so tests may call this
+     * directly.
+     */
+    fun collectRunOutputs(
+        root: SMTestProxy.SMRootTestProxy,
+        perTestLimit: Int = MAX_RUN_ENTRY_OUTPUT_LENGTH,
+        totalOutputBudget: Int = MAX_RUN_TOTAL_OUTPUT_CHARS,
+        runLevelLimit: Int = MAX_RUN_LEVEL_OUTPUT_LENGTH
+    ): RunOutputs {
+        val application = ApplicationManager.getApplication()
+        if (application.isDispatchThread && !application.isUnitTestMode) {
+            LOG.error("collectRunOutputs called on the EDT: replay would be deferred and collect nothing")
+        }
+        val perTest = HashMap<SMTestProxy, String>()
+        val runLevel = BoundedTextCollector(runLevelLimit)
+        // Soft budget, decremented in run order like the stack-trace budget: the last attached
+        // output may overshoot by at most one per-test cap.
+        var outputBudget = totalOutputBudget
+        for (node in root.allTests) {
+            if (isRunEntryLeaf(root, node)) {
+                if (outputBudget <= 0) continue
+                val collector = BoundedTextCollector(perTestLimit)
+                replayOwnOutput(node, collector, skipFileContent = false)
+                val text = collector.build()?.takeIf(String::isNotBlank) ?: continue
+                perTest[node] = text
+                outputBudget -= text.length
+            } else {
+                // A node with children flushes its printables file with the children's replayed
+                // output embedded (CompositePrintable.flush past 500 printables), so reading it
+                // would duplicate per-test output — skip the file there and lose only the
+                // pathological >500-direct-chunk history. Childless nodes' files are purely
+                // their own output.
+                replayOwnOutput(node, runLevel, skipFileContent = !node.isLeaf)
+            }
+        }
+        return RunOutputs(perTest, runLevel.build()?.takeIf(String::isNotBlank))
+    }
+
+    private fun replayOwnOutput(node: SMTestProxy, collector: BoundedTextCollector, skipFileContent: Boolean) {
+        val printer = object : Printer {
+            override fun print(text: String, contentType: ConsoleViewContentType) {
+                if (contentType != ConsoleViewContentType.SYSTEM_OUTPUT) {
+                    collector.append(text)
+                }
+            }
+
+            override fun printHyperlink(text: String, info: HyperlinkInfo?) {
+                collector.append(text)
+            }
+
+            override fun onNewAvailable(printable: Printable) {}
+
+            override fun mark() {}
+        }
+        // The two-arg CompositePrintable overload: own printables only (child proxies filtered,
+        // no failure state appended) — the platform's export-to-XML extraction path.
+        node.printOwnPrintablesOn(printer, skipFileContent)
     }
 
     /**

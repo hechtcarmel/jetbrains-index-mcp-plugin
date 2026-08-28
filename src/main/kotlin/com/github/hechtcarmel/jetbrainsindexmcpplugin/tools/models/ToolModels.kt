@@ -490,7 +490,13 @@ data class TestRunEntry(
     val name: String,
     val status: TestStatus,
     val errorMessage: String? = null,
-    val stackTrace: String? = null
+    val stackTrace: String? = null,
+    /**
+     * Console output this test printed (stdout and stderr merged in print order, as the IDE's
+     * test console shows them; ANSI escapes stripped, system messages excluded). Null when the
+     * test printed nothing or the per-run output budget was already spent (issue #346).
+     */
+    val output: String? = null
 )
 
 @Serializable
@@ -503,6 +509,12 @@ data class RunTestsResult(
     val failed: Int,
     val errors: Int,
     val total: Int,
+    /**
+     * Console output not attributed to any individual test — framework/suite-level messages,
+     * `@BeforeAll`/`@AfterAll` prints, build-runner log lines. Per-test output is on each
+     * [TestRunEntry.output] (issue #346).
+     */
+    val output: String? = null,
     val tests: List<TestRunEntry>
 )
 

@@ -155,6 +155,29 @@ class RunTestsUnitTest : TestCase() {
         assertEquals(3_000L, RunTestsTool.finalizeWaitMillis(0, callStartMs = 0, nowMs = 0))
     }
 
+    // ── outputWaitMillis ───────────────────────────────────────────────────────
+
+    /**
+     * Console-output collection (issue #346) runs after tree finalize, so its ceiling must also
+     * fit inside what remains of the call's wait budget — stacking finalize + output past the
+     * MCP client's ~60s request timeout would lose the just-collected results. Its floor is
+     * deliberately small: dropped output degrades the result, it does not lose it.
+     */
+    fun testOutputWaitCappedAtCollectionTimeout() {
+        // 45s budget, 5s elapsed: plenty left, but never wait longer than the 5s collection cap
+        assertEquals(5_000L, RunTestsTool.outputWaitMillis(45, callStartMs = 0, nowMs = 5_000))
+    }
+
+    fun testOutputWaitShrinksToRemainingBudget() {
+        // 45s budget, 43s elapsed: only 2s left — use it instead of the full 5s cap
+        assertEquals(2_000L, RunTestsTool.outputWaitMillis(45, callStartMs = 0, nowMs = 43_000))
+    }
+
+    fun testOutputWaitFlooredWhenBudgetExhausted() {
+        assertEquals(1_000L, RunTestsTool.outputWaitMillis(55, callStartMs = 0, nowMs = 55_000))
+        assertEquals(1_000L, RunTestsTool.outputWaitMillis(0, callStartMs = 0, nowMs = 0))
+    }
+
     // ── processStartTimeoutMs ──────────────────────────────────────────────────
 
     /**
