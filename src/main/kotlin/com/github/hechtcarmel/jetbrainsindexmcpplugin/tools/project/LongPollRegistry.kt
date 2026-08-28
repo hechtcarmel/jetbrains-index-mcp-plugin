@@ -52,6 +52,24 @@ abstract class LongPollOperation(val id: String) {
     var timedOutByWatchdog: Boolean = false
         internal set
 
+    /**
+     * Awaits terminal state on behalf of the watchdog: true when the operation completed,
+     * false when its deadline expired first. The default is the single fixed-deadline policy —
+     * one [deadlineMs] read at wait start. Operations whose deadline anchor moves mid-flight
+     * (a test run's `timeoutSeconds` starts only when its process starts, issue #348) override
+     * this to wait phase by phase; everything downstream of the verdict — the timed-out flag,
+     * [onDeadline], retention, cleanup — stays owned by [LongPollRegistry]. An exceptionally
+     * completed [completion] may rethrow; the watchdog treats that as terminal.
+     */
+    internal open suspend fun awaitCompletionOrDeadline(): Boolean {
+        val deadline = deadlineMs ?: run {
+            completion.await()
+            return true
+        }
+        val budgetLeft = (deadline - System.currentTimeMillis()).coerceAtLeast(0)
+        return withTimeoutOrNull(budgetLeft.milliseconds) { completion.await() } != null
+    }
+
     internal var watchdog: Job? = null
 
     private val cleanedUp = AtomicBoolean(false)
@@ -95,14 +113,7 @@ abstract class LongPollRegistry<E : LongPollOperation>(private val scope: Corout
         // registered operation with a null watchdog job.
         operation.watchdog = scope.launch {
             val finished = try {
-                val deadline = operation.deadlineMs
-                if (deadline == null) {
-                    operation.completion.await()
-                    true
-                } else {
-                    val budgetLeft = (deadline - System.currentTimeMillis()).coerceAtLeast(0)
-                    withTimeoutOrNull(budgetLeft.milliseconds) { operation.completion.await() } != null
-                }
+                operation.awaitCompletionOrDeadline()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

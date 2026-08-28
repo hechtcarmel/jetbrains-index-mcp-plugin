@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_run_tests` no longer fails with "Test process did not start within 44s" when the pre-test build outlasts the wait budget** ([#348](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/348)) — a Maven/Gradle/JPS compile step longer than ~45–55s (e.g. a slow annotation processor) made the call error out while the build *kept running untracked* in the IDE: no `runId` existed to attach to, `timeoutSeconds` was never enforced on the eventual process, results were never collected, and the suggested "retry" restarted the build from scratch — so the tool could never run such tests at all, since `waitSeconds` is capped below the MCP client's own request timeout by design. The run is now registered for long-polling *before* the test process starts: a call whose budget ends mid-build returns `{"status": "running", "runId": "..."}` (with a message saying the IDE is still compiling) and the agent polls with `runId` until the build finishes and the tests run — same flow as an already-executing run. `timeoutSeconds` still starts counting only when the test process actually starts, build time is bounded by a separate 30-minute start allowance (extended to `timeoutSeconds` when that is larger), a process starting only after that allowance expired is killed immediately instead of running unmanaged, and a build that fails or is cancelled (`processNotStarted`) surfaces as a proper tool error on the next poll instead of leaving the run pollable forever.
+
+## [5.9.0] - 2026-08-28
+
 ### Added
 
 - **`ide_run_tests` now returns console output** ([#346](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/346)) — a passing test's `System.out.println("Hello world")` was invisible: the result carried pass/fail counts and failure traces but no output, so agents had to re-run tests in a terminal just to see what they printed. Each test entry now carries an `output` field with the console output that test printed — stdout and stderr merged in print order, exactly as the IDE's test console shows them, with ANSI escapes stripped and system messages (the launch command line, "Process finished with exit code …") excluded — and a new top-level `output` field carries output not attributed to any individual test (framework and suite messages, `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test the run killed mid-flight at `timeoutSeconds` — which gets no per-test entry, so its output, often exactly what explains the hang, rides here instead of being dropped). The text is replayed from the same per-node printables the Tests console renders (the platform's own export-to-XML path), so it works for every Service-Message-based framework and never duplicates the `errorMessage`/`stackTrace` fields a failed test already carries. Collection runs on the platform's test-output executor after any pending console flushes, off the EDT, and is bounded by the call's remaining `waitSeconds` budget so long-poll timing guarantees are unchanged. Size is budgeted like stack traces since [#316](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/316): 10k chars per test and 20k for run-level output, trimmed in the middle (keeping the start and the end, never splitting a surrogate pair), with a 100k per-run aggregate after which later tests carry no output — and the middle of an oversized stream is never materialized, so a test spraying hundreds of MB costs O(cap) memory. A test that printed nothing carries `output: null`.
@@ -1190,7 +1196,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.4...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.0...HEAD
+[5.9.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.4...v5.9.0
 [5.8.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.3...v5.8.4
 [5.8.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.2...v5.8.3
 [5.8.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.1...v5.8.2
