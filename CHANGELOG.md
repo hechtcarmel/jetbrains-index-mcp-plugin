@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.8.4] - 2026-08-28
+
 ### Changed
 
 - **Tool execution failures now suggest running `ide_diagnostics`** ([#343](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/343)) — when `ide_run_tests`, `ide_refactor_rename`, `ide_move_file`, `ide_change_signature`, `ide_convert_java_to_kotlin`, `ide_refactor_safe_delete`, `ide_optimize_imports`, or `ide_reformat_code` fail during execution (not due to bad input), the error message now appends "Run `ide_diagnostics` for more details." so the agent has an immediate next step rather than stopping.
@@ -1184,7 +1186,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.3...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.4...HEAD
+[5.8.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.3...v5.8.4
 [5.8.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.2...v5.8.3
 [5.8.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.1...v5.8.2
 [5.8.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.0...v5.8.1
