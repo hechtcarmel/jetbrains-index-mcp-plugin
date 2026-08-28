@@ -2263,11 +2263,13 @@ description:
   languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
   
   Long-running runs: each call blocks at most waitSeconds (default 45) so your MCP client's
-  request timeout is never hit. If the tests are still executing when the wait budget ends, the
-  call returns {"status": "running", "runId": "..."} while the run continues inside the IDE —
-  call this tool again with that runId (and no target) to keep waiting. The run itself is
-  bounded by timeoutSeconds: once it expires the process is killed and the next poll reports
-  timedOut: true.
+  request timeout is never hit. If the run is still going when the wait budget ends — whether
+  the IDE is still compiling before the test process starts, or the tests themselves are still
+  executing — the call returns {"status": "running", "runId": "..."} while the run continues
+  inside the IDE; call this tool again with that runId (and no target) to keep waiting. The
+  run itself is bounded by timeoutSeconds, counted from when the test process starts (build
+  time before that is not billed to the run): once it expires the process is killed and the
+  next poll reports timedOut: true.
   
   Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
   carries its console output (stdout/stderr merged in print order, as the IDE's test console
@@ -2287,7 +2289,8 @@ description:
     (com.example.MyTest#testFoo). Exactly one of target / runId is required.
   - runId: id from a previous {"status": "running"} response; attaches to that run and keeps waiting.
   - timeoutSeconds (optional, default 120): maximum seconds the test RUN may take before its
-    process is killed. Applies to the whole run, across polls; ignored when runId is given.
+    process is killed, counted from when the test process starts. Applies to the whole run,
+    across polls; ignored when runId is given.
   - waitSeconds (optional, default 45, max 55): maximum seconds THIS CALL may block before
     returning results or a "running" status. Keep it below your MCP client's request timeout.
   - activateToolWindow (optional, default false): open the Run tool window for this run. By default
@@ -2322,7 +2325,7 @@ schema:
       },
       "timeoutSeconds":
       {
-        "description": "Maximum seconds the whole test run may take before its process is killed (enforced across polls). Default: 120. Ignored when runId is given.",
+        "description": "Maximum seconds the whole test run may take before its process is killed (counted from test process start, enforced across polls). Default: 120. Ignored when runId is given.",
         "type": "integer"
       },
       "waitSeconds":

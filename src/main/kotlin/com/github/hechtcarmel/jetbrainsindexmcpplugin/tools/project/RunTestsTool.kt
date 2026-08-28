@@ -36,6 +36,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.util.messages.MessageBusConnection
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -43,7 +44,6 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -102,14 +102,6 @@ class RunTestsTool : AbstractMcpTool() {
             return minOf(TEST_TREE_FINALIZE_TIMEOUT.inWholeMilliseconds, maxOf(MIN_FINALIZE_WAIT_MS, budgetLeftMs))
         }
 
-        /**
-         * How long to wait for the test process to actually start. Bounded by the remaining
-         * [waitSeconds] budget so the call never blocks past the MCP client's request timeout.
-         * Floor at 1ms to prevent a zero or negative timeout on an already-exhausted budget.
-         */
-        internal fun processStartTimeout(waitSeconds: Int, callStartMs: Long, nowMs: Long): Duration =
-            (waitSeconds * 1000L - (nowMs - callStartMs)).coerceAtLeast(1L).milliseconds
-
         /** Console-output collection normally completes in milliseconds; this is the wedged-executor ceiling. */
         private val OUTPUT_COLLECTION_TIMEOUT = 5.seconds
 
@@ -136,21 +128,35 @@ class RunTestsTool : AbstractMcpTool() {
             return minOf(OUTPUT_COLLECTION_TIMEOUT.inWholeMilliseconds, maxOf(MIN_OUTPUT_WAIT_MS, budgetLeftMs))
         }
 
+        /**
+         * [processStarted] distinguishes the run's two phases (issue #348): while the IDE is
+         * still building, `timeoutSeconds` has not started counting and the agent should keep
+         * polling instead of concluding the run is stuck — the message must say so.
+         */
         internal fun buildInProgressResult(
             runId: String,
             configName: String,
             elapsedSeconds: Long,
-            timeoutSeconds: Int
+            timeoutSeconds: Int,
+            processStarted: Boolean
         ): RunTestsInProgressResult = RunTestsInProgressResult(
             status = "running",
             runId = runId,
             configName = configName,
             elapsedSeconds = elapsedSeconds,
             timeoutSeconds = timeoutSeconds,
-            message = "Test run '$configName' is still executing (${elapsedSeconds}s elapsed, " +
-                    "${timeoutSeconds}s limit). The run continues in the IDE. Call ide_run_tests again " +
-                    "with {\"runId\": \"$runId\"} to keep waiting for its results (include the same " +
-                    "project_path if you provided one)."
+            message = if (processStarted) {
+                "Test run '$configName' is still executing (${elapsedSeconds}s elapsed, " +
+                        "${timeoutSeconds}s limit). The run continues in the IDE. Call ide_run_tests again " +
+                        "with {\"runId\": \"$runId\"} to keep waiting for its results (include the same " +
+                        "project_path if you provided one)."
+            } else {
+                "The IDE is still preparing test run '$configName' (compiling / running before-launch " +
+                        "tasks; ${elapsedSeconds}s elapsed). The test process has not started yet — the " +
+                        "${timeoutSeconds}s timeoutSeconds limit only begins once it does. Call ide_run_tests " +
+                        "again with {\"runId\": \"$runId\"} to keep waiting (include the same project_path " +
+                        "if you provided one)."
+            }
         )
 
         /**
@@ -204,11 +210,13 @@ class RunTestsTool : AbstractMcpTool() {
         languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
 
         Long-running runs: each call blocks at most waitSeconds (default $DEFAULT_WAIT_SECONDS) so your MCP client's
-        request timeout is never hit. If the tests are still executing when the wait budget ends, the
-        call returns {"status": "running", "runId": "..."} while the run continues inside the IDE —
-        call this tool again with that runId (and no target) to keep waiting. The run itself is
-        bounded by timeoutSeconds: once it expires the process is killed and the next poll reports
-        timedOut: true.
+        request timeout is never hit. If the run is still going when the wait budget ends — whether
+        the IDE is still compiling before the test process starts, or the tests themselves are still
+        executing — the call returns {"status": "running", "runId": "..."} while the run continues
+        inside the IDE; call this tool again with that runId (and no target) to keep waiting. The
+        run itself is bounded by timeoutSeconds, counted from when the test process starts (build
+        time before that is not billed to the run): once it expires the process is killed and the
+        next poll reports timedOut: true.
 
         Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
         carries its console output (stdout/stderr merged in print order, as the IDE's test console
@@ -228,7 +236,8 @@ class RunTestsTool : AbstractMcpTool() {
           (com.example.MyTest#testFoo). Exactly one of target / runId is required.
         - runId: id from a previous {"status": "running"} response; attaches to that run and keeps waiting.
         - timeoutSeconds (optional, default $DEFAULT_TIMEOUT_SECONDS): maximum seconds the test RUN may take before its
-          process is killed. Applies to the whole run, across polls; ignored when runId is given.
+          process is killed, counted from when the test process starts. Applies to the whole run,
+          across polls; ignored when runId is given.
         - waitSeconds (optional, default $DEFAULT_WAIT_SECONDS, max $MAX_WAIT_SECONDS): maximum seconds THIS CALL may block before
           returning results or a "running" status. Keep it below your MCP client's request timeout.
         - activateToolWindow (optional, default false): open the Run tool window for this run. By default
@@ -253,8 +262,8 @@ class RunTestsTool : AbstractMcpTool() {
         )
         .intProperty(
             ParamNames.TIMEOUT_SECONDS,
-            "Maximum seconds the whole test run may take before its process is killed (enforced across " +
-                    "polls). Default: $DEFAULT_TIMEOUT_SECONDS. Ignored when runId is given."
+            "Maximum seconds the whole test run may take before its process is killed (counted from " +
+                    "test process start, enforced across polls). Default: $DEFAULT_TIMEOUT_SECONDS. Ignored when runId is given."
         )
         .intProperty(
             ParamNames.WAIT_SECONDS,
@@ -315,10 +324,15 @@ class RunTestsTool : AbstractMcpTool() {
     }
 
     /**
-     * Launches the configuration and registers the run in [ActiveTestRunRegistry], which owns its
-     * lifetime from here on: the registry watchdog kills the process at `timeoutSeconds`, and the
-     * message-bus connection is disconnected when the run is collected or evicted. This call only
-     * borrows the run to wait on it within the call's wait budget.
+     * Registers the run in [ActiveTestRunRegistry] and only then launches the configuration:
+     * the IDE's before-run tasks (compilation) can outlast any single call's wait budget
+     * (issue #348), so the run must already be pollable by `runId` while the IDE is still
+     * building — a call that runs out of budget before the process starts returns an
+     * in-progress status, never an error. The registry owns the run's lifetime from
+     * registration on: its watchdog bounds the starting phase by the start allowance and the
+     * running phase by `timeoutSeconds` (anchored at process start, so build time is not
+     * billed to the run), and the message-bus connection is disconnected when the run is
+     * collected or evicted. This call only borrows the run to wait on it within its budget.
      */
     private suspend fun startRun(
         project: Project,
@@ -334,68 +348,27 @@ class RunTestsTool : AbstractMcpTool() {
             ?.build(if (activateToolWindow) null else suppressToolWindowActivation())
             ?: return createErrorResult("Could not build execution environment for '$configName'.")
 
-        val exitCodeDeferred = CompletableDeferred<Int>()
-        val processHandlerDeferred = CompletableDeferred<ProcessHandler>()
-        val testCompletionDeferred = CompletableDeferred<SMTestProxy.SMRootTestProxy?>()
-
-        val processListener = object : ProcessListener {
-            override fun processTerminated(event: ProcessEvent) {
-                exitCodeDeferred.complete(event.exitCode)
-            }
-        }
-
         val connection = project.messageBus.connect()
-        connection.completeDeferredOnProcessStarted(env, processListener, processHandlerDeferred, configName)
+        val run = ActiveTestRunRegistry.ActiveTestRun(
+            id = UUID.randomUUID().toString(),
+            configName = configName,
+            createdAtMs = System.currentTimeMillis(),
+            timeoutSeconds = timeoutSeconds,
+            processStartAllowanceMs = ActiveTestRunRegistry.processStartAllowanceMs(timeoutSeconds),
+            exitCode = CompletableDeferred(),
+            testRoot = CompletableDeferred(),
+            connection = connection
+        )
+        connection.trackRunLifecycle(project, env, run)
+        ActiveTestRunRegistry.getInstance(project).register(run)
 
-        val startTimeout = processStartTimeout(waitSeconds, callStartMs, System.currentTimeMillis())
-        val handler = try {
+        try {
             edtAction { ExecutionManager.getInstance(project).restartRunProfile(env) }
-            withTimeoutOrNull(startTimeout) { processHandlerDeferred.await() }
-        } catch (e: ProcessCanceledException) {
-            connection.disconnect()
-            throw e
-        } catch (e: Exception) {
-            connection.disconnect()
-            return createErrorResult(e.message ?: "Test process failed to start for '$configName'.", ToolNames.DIAGNOSTICS)
-        } ?: run {
-            connection.disconnect()
-            return createErrorResult(
-                "Test process did not start within ${startTimeout.inWholeSeconds}s for '$configName' — " +
-                        "the IDE may still be compiling; retry, or raise waitSeconds (max $MAX_WAIT_SECONDS)."
-            )
-        }
-
-        // From here to registration nothing may leak the connection: an exception (e.g. the
-        // project closing mid-call) would otherwise leave an untracked run with no watchdog.
-        val run = try {
-            // The run's timeoutSeconds budget starts when the process starts, not when the tool
-            // was called — config resolution and process spawn-up must not be billed to the run.
-            val startedAtMs = System.currentTimeMillis()
-
-            val runContentDescriptor = RunContentManager.getInstance(project).allDescriptors.find { it.processHandler === handler }
-            val resultsViewer = extractTestRunnerResultsViewer(runContentDescriptor?.executionConsole)
-            resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
-                override fun onTestingFinished(sender: TestResultsViewer) {
-                    testCompletionDeferred.complete(sender.testsRootNode.root)
-                }
-            })
-
-            ActiveTestRunRegistry.getInstance(project).register(
-                ActiveTestRunRegistry.ActiveTestRun(
-                    id = UUID.randomUUID().toString(),
-                    configName = configName,
-                    startedAtMs = startedAtMs,
-                    timeoutSeconds = timeoutSeconds,
-                    handler = handler,
-                    exitCode = exitCodeDeferred,
-                    testRoot = testCompletionDeferred,
-                    hasResultsViewer = resultsViewer != null,
-                    connection = connection
-                )
-            )
         } catch (t: Throwable) {
-            connection.disconnect()
-            throw t
+            // Nothing was launched; removing the run also disconnects the listener connection.
+            ActiveTestRunRegistry.getInstance(project).remove(run.id)
+            if (t is ProcessCanceledException) throw t
+            return createErrorResult(t.message ?: "Test process failed to start for '$configName'.", ToolNames.DIAGNOSTICS)
         }
 
         return awaitRunResult(project, run, waitSeconds, callStartMs)
@@ -412,12 +385,33 @@ class RunTestsTool : AbstractMcpTool() {
         waitSeconds: Int,
         callStartMs: Long
     ): CallToolResult {
-        val exitCode: Int? = run.awaitWithinBudget(run.exitCode, waitSeconds, callStartMs)
+        val exitCode: Int? = try {
+            run.awaitWithinBudget(run.exitCode, waitSeconds, callStartMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            // exitCode completes exceptionally only via markProcessNotStarted: the IDE reported
+            // the process could never be started (before-run build failed or was cancelled).
+            ActiveTestRunRegistry.getInstance(project).remove(run.id)
+            return createErrorResult(
+                e.message ?: "Test process failed to start for '${run.configName}'.",
+                ToolNames.DIAGNOSTICS
+            )
+        }
 
         if (exitCode == null && !run.timedOutByWatchdog) {
-            val elapsedSeconds = (System.currentTimeMillis() - run.startedAtMs) / 1000
+            val processStartedAtMs = run.processStartedAtMs
+            val elapsedSeconds = (System.currentTimeMillis() - (processStartedAtMs ?: run.createdAtMs)) / 1000
             return createJsonResult(
-                buildInProgressResult(run.id, run.configName, elapsedSeconds, run.timeoutSeconds)
+                buildInProgressResult(
+                    run.id,
+                    run.configName,
+                    elapsedSeconds,
+                    run.timeoutSeconds,
+                    processStarted = processStartedAtMs != null
+                )
             )
         }
 
@@ -533,27 +527,50 @@ class RunTestsTool : AbstractMcpTool() {
             ?.configurationSettings
     }
 
-    private fun MessageBusConnection.completeDeferredOnProcessStarted(
+    /**
+     * Feeds the registry entry from the run's execution events. Subscribed before the profile
+     * is launched, and writing straight into [run] rather than call-local state, because with
+     * a slow before-run build every one of these events can fire after the starting call has
+     * long returned an in-progress status (issue #348).
+     */
+    private fun MessageBusConnection.trackRunLifecycle(
+        project: Project,
         env: ExecutionEnvironment,
-        processListener: ProcessListener,
-        processHandlerDeferred: CompletableDeferred<ProcessHandler>,
-        configName: String
+        run: ActiveTestRunRegistry.ActiveTestRun
     ) {
         subscribe(ExecutionManager.EXECUTION_TOPIC, object : ExecutionListener {
             override fun processStarting(executorId: String, environment: ExecutionEnvironment, handler: ProcessHandler) {
                 if (environment !== env) return
-                handler.addProcessListener(processListener)
+                // Before startNotify, so an instantly-exiting process cannot slip its exit code past us.
+                handler.addProcessListener(object : ProcessListener {
+                    override fun processTerminated(event: ProcessEvent) {
+                        run.exitCode.complete(event.exitCode)
+                    }
+                })
             }
 
             override fun processStarted(executorId: String, environment: ExecutionEnvironment, handler: ProcessHandler) {
                 if (environment !== env) return
-                processHandlerDeferred.complete(handler)
+                // ExecutionManagerImpl registers the content descriptor before startNotify fires
+                // this event, so the console (and its SM results viewer) is findable here. The
+                // viewer listener must be attached before the run finishes — that is guaranteed
+                // here, where the process has only just started.
+                val descriptor = RunContentManager.getInstance(project).allDescriptors
+                    .find { it.processHandler === handler }
+                val resultsViewer = extractTestRunnerResultsViewer(descriptor?.executionConsole)
+                resultsViewer?.addEventsListener(object : TestResultsViewer.EventsListener {
+                    override fun onTestingFinished(sender: TestResultsViewer) {
+                        run.testRoot.complete(sender.testsRootNode.root)
+                    }
+                })
+                run.markProcessStarted(handler, hasResultsViewer = resultsViewer != null)
             }
 
             override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
                 if (environment !== env) return
-                processHandlerDeferred.completeExceptionally(
-                    IllegalStateException("Test process failed to start for '$configName'.")
+                run.markProcessNotStarted(
+                    "Test process failed to start for '${run.configName}' — the before-launch build " +
+                            "failed or was cancelled."
                 )
             }
         })

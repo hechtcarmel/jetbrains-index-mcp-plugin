@@ -38,27 +38,40 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         }
     }
 
-    private fun registerRun(
+    /**
+     * A run whose execution environment is launched but whose test process has not started yet —
+     * the IDE is still compiling (issue #348). This is the state every run now begins in.
+     */
+    private fun registerStartingRun(
         id: String,
         timeoutSeconds: Int = 600,
-        hasResultsViewer: Boolean = false
+        processStartAllowanceMs: Long = ActiveTestRunRegistry.processStartAllowanceMs(timeoutSeconds)
     ): ActiveTestRunRegistry.ActiveTestRun {
-        val handler = NopProcessHandler()
-        handler.startNotify()
         registeredIds.add(id)
         return ActiveTestRunRegistry.getInstance(project).register(
             ActiveTestRunRegistry.ActiveTestRun(
                 id = id,
                 configName = "Fake Config",
-                startedAtMs = System.currentTimeMillis(),
+                createdAtMs = System.currentTimeMillis(),
                 timeoutSeconds = timeoutSeconds,
-                handler = handler,
+                processStartAllowanceMs = processStartAllowanceMs,
                 exitCode = CompletableDeferred(),
                 testRoot = CompletableDeferred(),
-                hasResultsViewer = hasResultsViewer,
                 connection = null
             )
         )
+    }
+
+    private fun registerRun(
+        id: String,
+        timeoutSeconds: Int = 600,
+        hasResultsViewer: Boolean = false
+    ): ActiveTestRunRegistry.ActiveTestRun {
+        val run = registerStartingRun(id, timeoutSeconds)
+        val handler = NopProcessHandler()
+        handler.startNotify()
+        run.markProcessStarted(handler, hasResultsViewer = hasResultsViewer)
+        return run
     }
 
     private fun callTool(vararg args: Pair<String, Any>): CallToolResult = runBlocking {
@@ -166,15 +179,16 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
 
     fun testWatchdogKillsRunAtTimeoutAndPollReportsTimedOut() {
         val run = registerRun("run-overdue", timeoutSeconds = 1)
+        val handler = run.handler!!
 
         val deadline = System.currentTimeMillis() + 30_000
-        while (!run.handler.isProcessTerminated && System.currentTimeMillis() < deadline) {
+        while (!handler.isProcessTerminated && System.currentTimeMillis() < deadline) {
             Thread.sleep(100)
         }
         assertTrue(
             "the registry watchdog must destroy the process once timeoutSeconds expires, " +
                     "even if no MCP call is waiting on the run",
-            run.handler.isProcessTerminated
+            handler.isProcessTerminated
         )
 
         val result = callTool("runId" to "run-overdue", "waitSeconds" to 0)
@@ -209,6 +223,107 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         assertTrue(
             "poll took ${elapsedMs}ms; it must return promptly instead of waiting out the 30s budget",
             elapsedMs < 10_000
+        )
+    }
+
+    // ── issue #348: slow before-run builds — the process has not started yet ──────────────────
+
+    /**
+     * A run whose test process has not started (the IDE is still compiling) must poll as
+     * "running", never error. Before the fix this state was unrepresentable: the run was only
+     * registered after process start, so a slow build failed the call with "Test process did
+     * not start within 44s" while the build kept going untracked in the IDE.
+     */
+    fun testStartingPhasePollReportsRunningNotError() {
+        registerStartingRun("run-still-building")
+
+        val result = callTool("runId" to "run-still-building", "waitSeconds" to 1)
+
+        assertToolSucceeded("a run still building must poll as in-progress, not fail", result)
+        val payload = json.decodeFromString(RunTestsInProgressResult.serializer(), toolText(result))
+        assertEquals("running", payload.status)
+        assertEquals("run-still-building", payload.runId)
+        assertTrue(
+            "starting-phase message must say the process has not started yet, got: ${payload.message}",
+            payload.message.contains("not started")
+        )
+        assertTrue("message must carry the runId for the next poll", payload.message.contains("run-still-building"))
+    }
+
+    /**
+     * The issue #348 scenario end to end at the registry level: the build outlasts the first
+     * call's wait budget, then finishes; the process runs and exits; a later poll must deliver
+     * the final results.
+     */
+    fun testRunStartingAfterFirstPollStillDeliversResults() {
+        val run = registerStartingRun("run-slow-build")
+
+        val first = callTool("runId" to "run-slow-build", "waitSeconds" to 0)
+        assertToolSucceeded("first poll during the build phase reports in-progress", first)
+        assertEquals(
+            "running",
+            json.decodeFromString(RunTestsInProgressResult.serializer(), toolText(first)).status
+        )
+
+        val handler = NopProcessHandler()
+        handler.startNotify()
+        run.markProcessStarted(handler, hasResultsViewer = false)
+        run.exitCode.complete(0)
+        run.testRoot.complete(null)
+
+        val second = callTool("runId" to "run-slow-build", "waitSeconds" to 10)
+        assertToolSucceeded("once the run completes, a poll must return final results", second)
+        val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(second))
+        assertFalse("run completed normally — not a timeout", payload.timedOut)
+        assertEquals(0, payload.exitCode)
+    }
+
+    /**
+     * The start allowance is the watchdog backstop for a build that hangs forever. A process
+     * that starts only after the allowance expired must be killed immediately — a run already
+     * reported as timed out must never keep executing unmanaged.
+     */
+    fun testProcessStartingAfterStartAllowanceExpiredIsKilled() {
+        val run = registerStartingRun("run-hung-build", processStartAllowanceMs = 200)
+
+        val flagDeadline = System.currentTimeMillis() + 30_000
+        while (!run.timedOutByWatchdog && System.currentTimeMillis() < flagDeadline) {
+            Thread.sleep(100)
+        }
+        assertTrue("precondition: start allowance expired and the watchdog fired", run.timedOutByWatchdog)
+
+        val result = callTool("runId" to "run-hung-build", "waitSeconds" to 0)
+        assertToolSucceeded("an expired starting phase still returns a structured result", result)
+        val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(result))
+        assertTrue("expired start allowance must surface as timedOut", payload.timedOut)
+
+        val handler = NopProcessHandler()
+        handler.startNotify()
+        run.markProcessStarted(handler, hasResultsViewer = false)
+        assertTrue(
+            "a process starting after the timeout verdict must be destroyed immediately",
+            handler.isProcessTerminated || handler.isProcessTerminating
+        )
+    }
+
+    /**
+     * ExecutionListener.processNotStarted (before-run build failed or was cancelled) is
+     * terminal: the poll must surface it as a tool error and the run must be removed.
+     */
+    fun testProcessNotStartedSurfacesErrorAndRemovesRun() {
+        val run = registerStartingRun("run-build-failed")
+        run.markProcessNotStarted("Test process failed to start for 'Fake Config' — the before-launch build failed or was cancelled.")
+
+        val result = callTool("runId" to "run-build-failed", "waitSeconds" to 0)
+        assertToolFailed("a run whose process can never start must fail the poll", result)
+        assertTrue(
+            "error must explain the start failure, got: ${toolText(result)}",
+            toolText(result).contains("failed to start")
+        )
+
+        assertToolFailed(
+            "a failed-to-start run must be removed from the registry",
+            callTool("runId" to "run-build-failed")
         )
     }
 }
