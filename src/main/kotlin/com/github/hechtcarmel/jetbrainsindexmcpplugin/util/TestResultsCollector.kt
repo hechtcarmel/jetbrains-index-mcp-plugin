@@ -221,11 +221,14 @@ object TestResultsCollector {
      * keeps the deepest causes, and a cut never leaves an unpaired surrogate.
      */
     internal fun truncateStackTrace(trace: String, maxLength: Int = MAX_RUN_ENTRY_STACKTRACE_LENGTH): String {
-        // A degenerate cap returns the trace untouched: this helper formats *error* output, and
-        // crashing here (the collector rejects non-positive caps) would mask the real failure.
-        if (maxLength <= 0 || trace.length <= maxLength) return trace
+        if (trace.length <= maxLength) return trace
+        // A non-positive cap can't go through the collector (it requires a positive cap) but must
+        // still truncate — not pass the oversized trace through, not crash: this helper formats
+        // *error* output, and either failure mode would mask the real test failure
+        // (testDegenerateCapDoesNotCrash pins this).
+        if (maxLength <= 0) return "\n... [${trace.length} chars truncated] ...\n"
         return BoundedTextCollector(maxLength).apply { append(trace) }.build()
-            ?: trace // unreachable for non-empty input, same never-crash rationale
+            ?: trace // unreachable for non-empty input; never crash while formatting error output
     }
 
     /** Composes a test display name from the test name and its optional parent (suite) name. */
