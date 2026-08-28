@@ -336,6 +336,7 @@
   exitCode: number
   failed: number
   noTestsFound: boolean
+  output: string? (optional)
   passed: number
   success: boolean
   tests: array
@@ -504,6 +505,7 @@
 ## TestRunEntry
   errorMessage: string? (optional)
   name: string
+  output: string? (optional)
   stackTrace: string? (optional)
   status: string
 

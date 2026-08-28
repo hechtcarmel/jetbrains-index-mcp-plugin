@@ -28,7 +28,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Disabled |
 | `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Disabled |
-| `ide_run_tests` | Run tests via run configs; structured pass/fail results from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Disabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
@@ -1187,11 +1187,13 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
-Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages and failure stack traces.
+Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages, failure stack traces, and console output.
 
 Results are read directly from the IDE's test runner rather than from report files on disk, so they always reflect this run and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
 
-Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long traces are trimmed in the middle (keeping the throw site and the root cause of chained exceptions), and on mass failures a per-run size budget applies: earlier failures keep their traces, later entries carry `errorMessage` only.
+Each test entry carries an `output` field with the console output that test printed — stdout and stderr merged in print order, exactly as the IDE's test console shows them, with ANSI escapes stripped and system messages (the launch command line, "Process finished with exit code …") excluded. Output not attributed to any individual test — framework and suite messages, `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed mid-run (e.g. at `timeoutSeconds`), which gets no per-test entry — comes back on the result's top-level `output` field. A test that printed nothing carries `output: null`.
+
+Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long traces and outputs are trimmed in the middle (keeping the start and the end — for traces that is the throw site and the root cause of chained exceptions), and on mass failures per-run size budgets apply: earlier failures keep their traces, later entries carry `errorMessage` only, and per-test output stops attaching once its own budget is spent.
 
 **Language support:** Passing an **existing run configuration name** works for any language/framework. Passing a **class or method FQN** (so the plugin creates the run config for you) is supported **only for Java/Kotlin** — for Python, JS/TS, Go, PHP, or Rust, create/select a run configuration in the IDE and pass its name.
 
@@ -1241,14 +1243,16 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
   "failed": 1,
   "errors": 0,
   "total": 3,
+  "output": "shared fixture initialized\n",
   "tests": [
-    { "name": "com.example.MyTest.testFoo", "status": "passed" },
-    { "name": "com.example.MyTest.testBar", "status": "passed" },
+    { "name": "com.example.MyTest.testFoo", "status": "passed", "output": "Hello world\n" },
+    { "name": "com.example.MyTest.testBar", "status": "passed", "output": null },
     {
       "name": "com.example.MyTest.testBaz",
       "status": "failed",
       "errorMessage": "expected:<1> but was:<2>",
-      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)"
+      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)",
+      "output": "state before assertion: 2\n"
     }
   ]
 }

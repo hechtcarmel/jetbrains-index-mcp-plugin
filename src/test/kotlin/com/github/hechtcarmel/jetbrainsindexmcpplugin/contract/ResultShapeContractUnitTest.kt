@@ -907,7 +907,8 @@ class ResultShapeContractUnitTest : TestCase() {
                     status = TestStatus.FAILED,
                     errorMessage = "expected:<1> but was:<2>",
                     stackTrace = "java.lang.AssertionError: expected:<1> but was:<2>\n" +
-                            "\tat com.example.ServiceTest.testHandle(ServiceTest.java:21)"
+                            "\tat com.example.ServiceTest.testHandle(ServiceTest.java:21)",
+                    output = "before assertion: state=1\n"
                 )
             ),
             struct(
@@ -921,6 +922,7 @@ class ResultShapeContractUnitTest : TestCase() {
                     failed = 1,
                     errors = 1,
                     total = 9,
+                    output = "ServiceTest STANDARD_OUT\n  shared fixture ready\n",
                     tests = listOf(
                         TestRunEntry(
                             name = "com.example.ServiceTest.testHandle",

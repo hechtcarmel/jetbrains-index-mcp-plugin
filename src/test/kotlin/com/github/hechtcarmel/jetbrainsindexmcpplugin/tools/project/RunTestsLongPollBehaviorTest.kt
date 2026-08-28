@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInPro
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.execution.process.NopProcessHandler
+import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -37,7 +38,11 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         }
     }
 
-    private fun registerRun(id: String, timeoutSeconds: Int = 600): ActiveTestRunRegistry.ActiveTestRun {
+    private fun registerRun(
+        id: String,
+        timeoutSeconds: Int = 600,
+        hasResultsViewer: Boolean = false
+    ): ActiveTestRunRegistry.ActiveTestRun {
         val handler = NopProcessHandler()
         handler.startNotify()
         registeredIds.add(id)
@@ -50,7 +55,7 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
                 handler = handler,
                 exitCode = CompletableDeferred(),
                 testRoot = CompletableDeferred(),
-                hasResultsViewer = false,
+                hasResultsViewer = hasResultsViewer,
                 connection = null
             )
         )
@@ -115,6 +120,47 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         assertToolFailed(
             "collected runs must be removed from the registry",
             callTool("runId" to "run-finished")
+        )
+    }
+
+    /**
+     * The issue #346 contract, end to end through the tool: a completed run's per-test console
+     * output rides on each test entry and unattributed (root-level) output on the result's
+     * `output` field — through the real off-EDT alarm-queue collection path, not a direct
+     * collector call.
+     */
+    fun testAttachDeliversConsoleOutputWithResults() {
+        val run = registerRun("run-with-output", hasResultsViewer = true)
+        val root = SMTestProxy.SMRootTestProxy()
+        root.setStarted()
+        root.addStdOutput("framework banner\n")
+        val suite = SMTestProxy("MainTest", true, null)
+        root.addChild(suite)
+        suite.setStarted()
+        val test = SMTestProxy("testLogs", false, null)
+        suite.addChild(test)
+        test.setStarted()
+        test.addStdOutput("Hello world\n")
+        test.setFinished()
+        suite.setFinished()
+        root.setFinished()
+        run.exitCode.complete(0)
+        run.testRoot.complete(root)
+
+        val result = callTool("runId" to "run-with-output", "waitSeconds" to 10)
+
+        assertToolSucceeded("a completed run must return final results", result)
+        val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(result))
+        assertEquals(1, payload.passed)
+        assertEquals(
+            "the test's own prints must ride on its entry",
+            "Hello world\n",
+            payload.tests.single().output
+        )
+        assertEquals(
+            "root-level prints must ride on the result's output field",
+            "framework banner\n",
+            payload.output
         )
     }
 
