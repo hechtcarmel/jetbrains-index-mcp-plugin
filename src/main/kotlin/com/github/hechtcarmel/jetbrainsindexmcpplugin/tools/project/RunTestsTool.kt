@@ -367,7 +367,7 @@ class RunTestsTool : AbstractMcpTool() {
         } catch (t: Throwable) {
             // Nothing was launched; removing the run also disconnects the listener connection.
             ActiveTestRunRegistry.getInstance(project).remove(run.id)
-            if (t is CancellationException || t is ProcessCanceledException || t !is Exception) throw t
+            if (t is ProcessCanceledException || t is CancellationException || t !is Exception) throw t
             return createErrorResult(t.message ?: "Test process failed to start for '$configName'.", ToolNames.DIAGNOSTICS)
         }
 
@@ -388,9 +388,9 @@ class RunTestsTool : AbstractMcpTool() {
     ): CallToolResult {
         val exitCode: Int? = try {
             run.awaitWithinBudget(run.exitCode, waitSeconds, callStartMs)
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // exitCode completes exceptionally only via markProcessNotStarted: the IDE reported
