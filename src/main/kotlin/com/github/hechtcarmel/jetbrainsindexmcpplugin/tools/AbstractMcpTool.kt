@@ -873,9 +873,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * @param message The error message
      * @return A [CallToolResult] with `isError = true`
      */
-    protected fun createErrorResult(message: String): CallToolResult {
+    protected fun createErrorResult(message: String, vararg hintTools: String): CallToolResult {
+        val text = message.takeIf { hintTools.isEmpty() }
+            ?: "${message.removeSuffix(".")}. Run ${hintTools.joinToString()} for more details."
         return CallToolResult(
-            content = listOf(TextContent(text = message)),
+            content = listOf(TextContent(text = text)),
             isError = true
         )
     }

@@ -91,7 +91,7 @@ class OptimizeImportsTool : AbstractMcpTool() {
         }
 
         return if (errorMessage != null) {
-            createErrorResult("Optimize imports failed: $errorMessage")
+            createErrorResult("Optimize imports failed: $errorMessage", ToolNames.DIAGNOSTICS)
         } else {
             createJsonResult(
                 RefactoringResult(

@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool execution failures now suggest running `ide_diagnostics`** — when `ide_run_tests`, `ide_refactor_rename`, `ide_move_file`, `ide_change_signature`, `ide_convert_java_to_kotlin`, `ide_refactor_safe_delete`, `ide_optimize_imports`, or `ide_reformat_code` fail during execution (not due to bad input), the error message now appends "run `ide_diagnostics` for more details" so the agent has an immediate next step rather than stopping.
+
 ## [5.8.3] - 2026-08-25
 
 ### Fixed

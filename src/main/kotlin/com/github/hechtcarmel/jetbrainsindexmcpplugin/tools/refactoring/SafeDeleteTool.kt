@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -361,7 +362,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 )
             )
         } else {
-            createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"}")
+            createErrorResult("Safe delete failed: ${errorMessage ?: "Unknown error"}", ToolNames.DIAGNOSTICS)
         }
     }
 
@@ -415,7 +416,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                 )
             )
         } else {
-            createErrorResult("File deletion failed: ${errorMessage ?: "Unknown error"}")
+            createErrorResult("File deletion failed: ${errorMessage ?: "Unknown error"}", ToolNames.DIAGNOSTICS)
         }
     }
 
