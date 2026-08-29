@@ -13,6 +13,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildProjectR
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClionBuildCapture
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.Disposable
@@ -171,6 +172,7 @@ class BuildProjectTool : AbstractMcpTool() {
             })
             subscribeToCompilerMessages(project, connection, build)
             subscribeToBuildEvents(project, parentDisposable, build)
+            build.clionOutcome = ClionBuildCapture.subscribe(connection)
 
             val promise = taskManager.run(context, task)
             promise.onError { error ->
@@ -226,6 +228,8 @@ class BuildProjectTool : AbstractMcpTool() {
         val timedOut = result == null
         val success = if (timedOut) false else !result!!.hasErrors() && !result.isAborted
 
+        enrichFromClionBuild(project, build, success)
+
         val rawOutputStr = if (build.includeRawOutput) {
             when {
                 build.compilerRawOutput.isNotEmpty() -> build.compilerRawOutput.toString()
@@ -265,6 +269,40 @@ class BuildProjectTool : AbstractMcpTool() {
                 durationMs = durationMs
             )
         )
+    }
+
+    /**
+     * CLion's CMake build publishes nothing to the compiler or build-view channels (issue #213),
+     * so when a cidr build ran and both are empty, pull what CLion does expose: the build log
+     * text from the Messages tool window — [BuildProjectResultSelector] then feeds it through
+     * the MSVC/Clang/CMake parser for positioned diagnostics — and, on failure, a summary
+     * message with CLion's own error/warning counts as the parser-proof fallback.
+     */
+    private fun enrichFromClionBuild(
+        project: Project,
+        build: ActiveBuildRegistry.ActiveBuild,
+        success: Boolean
+    ) {
+        val outcome = build.clionOutcome ?: return
+        if (!outcome.sawAnyBuild()) return
+
+        try {
+            if (snapshot(build.compilerMessages).isEmpty() && snapshot(build.buildEventMessages).isEmpty() &&
+                build.buildEventRawOutput.isEmpty()
+            ) {
+                val consoleText = ClionBuildCapture.collectConsoleOutput(project, outcome, MAX_RAW_OUTPUT_CHARS)
+                if (consoleText.isNotBlank()) {
+                    build.buildEventRawOutput.append(consoleText)
+                }
+            }
+            if (!success) {
+                outcome.failureSummary()?.let { summary ->
+                    build.failureMessages.add(BuildMessage(category = "ERROR", message = summary))
+                }
+            }
+        } catch (e: Exception) {
+            LOG.warn("Failed to enrich build result from CLion build session", e)
+        }
     }
 
     private fun resolveTargetModule(project: Project, projectPathArg: String?): Module? {

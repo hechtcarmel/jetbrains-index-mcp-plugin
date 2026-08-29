@@ -20,20 +20,19 @@ object BuildListenerUtils {
     private val LOG = logger<BuildListenerUtils>()
 
     /**
-     * Build-output view manager services, one per build pipeline. Each is an
-     * `AbstractViewManager` subclass: a project service implementing
+     * Build-output view manager services, one per build pipeline that feeds the platform's
+     * build-events UI. Each is an `AbstractViewManager` subclass: a project service implementing
      * `BuildProgressObservable.addListener(BuildProgressListener, Disposable)` that receives
      * every event shown in its Build tool window tab.
      *
-     * `BuildViewManager` alone only covers pipelines that feed the platform's default Build
-     * view (Gradle, Maven, JPS). IDEs whose build runs through their own view manager — CLion's
-     * CMake/Makefile builds — publish to their own `AbstractViewManager` service instead, so
-     * subscribing only to `BuildViewManager` observes nothing there: no message events, no
-     * output, no failure result (issue #213: `ide_build_project` returned `success: false`
-     * with an empty message list on CLion build failures).
+     * `BuildViewManager` covers Gradle, Maven and JPS output. An IDE pipeline that routes build
+     * events through its own view-manager service belongs in this list; one that bypasses the
+     * `com.intellij.build` framework entirely — CLion's CMake build does, it prints to a plain
+     * console in the Messages tool window — needs its own capture channel instead
+     * ([ClionBuildCapture], issue #213).
      *
-     * Classes are resolved via [findClass] so IDE-specific managers load through their own
-     * plugin's classloader; names missing in the running IDE are skipped silently.
+     * Classes are resolved via [findClassAcrossPlugins] so IDE-specific managers load through
+     * their own plugin's classloader; names missing in the running IDE are skipped silently.
      */
     internal val VIEW_MANAGER_CLASS_NAMES: List<String> = listOf(
         "com.intellij.build.BuildViewManager",
@@ -109,7 +108,7 @@ object BuildListenerUtils {
         val subscribed = mutableListOf<String>()
         for (className in viewManagerClassNames) {
             try {
-                val managerClass = findClass(className) ?: continue
+                val managerClass = findClassAcrossPlugins(className) ?: continue
                 val manager = project.getService(managerClass) ?: continue
                 val addListenerMethod = managerClass.methods.find {
                     it.name == "addListener" && it.parameterCount == 2 &&
@@ -137,10 +136,10 @@ object BuildListenerUtils {
     /**
      * Resolves a class by name, looking first in this plugin's classloader (platform classes
      * and declared dependencies), then in each loaded plugin's classloader. The fallback is
-     * what makes IDE-specific classes (e.g. CLion's build view manager, registered by a plugin
+     * what makes IDE-specific classes (e.g. CLion's cidr build classes, registered by plugins
      * this one does not depend on) resolvable.
      */
-    private fun findClass(className: String): Class<*>? {
+    internal fun findClassAcrossPlugins(className: String): Class<*>? {
         try {
             return Class.forName(className)
         } catch (_: ClassNotFoundException) {

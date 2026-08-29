@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClionBuildOutcome
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -39,10 +40,14 @@ class ActiveBuildRegistry(scope: CoroutineScope) : LongPollRegistry<ActiveBuildR
         val compilerMessages: MutableList<BuildMessage> = Collections.synchronizedList(mutableListOf())
         val compilerRawOutput = StringBuffer()
 
-        /** Build events (Gradle/Maven/CLion via the IDE's build-output view managers — fallback). */
+        /** Build events (Gradle/Maven/universal via the build-output view managers — fallback). */
         val buildEventMessages: MutableList<BuildMessage> = Collections.synchronizedList(mutableListOf())
         val failureMessages: MutableList<BuildMessage> = Collections.synchronizedList(mutableListOf())
         val buildEventRawOutput = StringBuffer()
+
+        /** CLion cidr build session, when the IDE has one (CMake builds bypass the view managers — issue #213). */
+        @Volatile
+        var clionOutcome: ClionBuildOutcome? = null
 
         override val deadlineMs: Long? get() = timeoutSeconds?.let { startedAtMs + it * 1000L }
 
