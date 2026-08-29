@@ -1,11 +1,11 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.task.ProjectTaskRunner
 import com.intellij.util.messages.MessageBusConnection
 
 /**
@@ -135,9 +135,13 @@ object BuildListenerUtils {
 
     /**
      * Resolves a class by name, looking first in this plugin's classloader (platform classes
-     * and declared dependencies), then in each loaded plugin's classloader. The fallback is
-     * what makes IDE-specific classes (e.g. CLion's cidr build classes, registered by plugins
-     * this one does not depend on) resolvable.
+     * and declared dependencies), then through the classloaders of the registered
+     * [ProjectTaskRunner] extensions. Build-pipeline classes an IDE does not expose to other
+     * plugins — CLion's cidr build classes — are always visible to the IDE's own build-system
+     * task runner (its implementation references them), so its classloader is the reliable
+     * stable-API route to them; enumerating plugin descriptors is not
+     * (`PluginManagerCore.getLoadedPlugins` and the descriptor lookups are `@ApiStatus.Internal`
+     * on newer platform lines).
      */
     internal fun findClassAcrossPlugins(className: String): Class<*>? {
         try {
@@ -145,8 +149,14 @@ object BuildListenerUtils {
         } catch (_: ClassNotFoundException) {
         } catch (_: LinkageError) {
         }
-        for (descriptor in PluginManagerCore.loadedPlugins) {
-            val classLoader = descriptor.pluginClassLoader ?: continue
+        val runners = try {
+            ProjectTaskRunner.EP_NAME.extensionList
+        } catch (e: Exception) {
+            LOG.debug("Failed to enumerate ProjectTaskRunner extensions", e)
+            return null
+        }
+        for (runner in runners) {
+            val classLoader = runner.javaClass.classLoader ?: continue
             try {
                 return Class.forName(className, false, classLoader)
             } catch (_: ClassNotFoundException) {
