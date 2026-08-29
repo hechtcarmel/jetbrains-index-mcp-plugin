@@ -60,29 +60,30 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
         }
 
         // CLion's CMake build reaches neither channel above (issue #213); its finish signal is
-        // the cidr build topic, and its output lives in the Messages tool window console.
-        ClionBuildCapture.subscribe(connection) { outcome ->
+        // the cidr build topic, and its output lives in the Messages tool window console. The
+        // snapshot is immutable, so recording off-thread cannot race the next session's reset.
+        ClionBuildCapture.subscribe(connection) { session ->
             ApplicationManager.getApplication().executeOnPooledThread {
-                recordClionBuildSession(outcome)
+                recordClionBuildSession(session)
             }
         }
 
         LOG.debug("BuildDiagnosticsCacheService initialized for project: ${project.name}")
     }
 
-    private fun recordClionBuildSession(outcome: ClionBuildOutcome) {
+    private fun recordClionBuildSession(session: ClionBuildOutcome.Snapshot) {
         try {
-            val rawOutput = ClionBuildCapture.collectConsoleOutput(project, outcome, MAX_RAW_OUTPUT_CHARS)
+            val rawOutput = ClionBuildCapture.collectConsoleOutput(project, session.buildIds, MAX_RAW_OUTPUT_CHARS)
             val parsed = BuildOutputParser.parse(rawOutput) { path ->
                 ProjectUtils.getRelativePath(project, path)
             }
             // A succeeded session cannot have produced errors: any parsed ERROR is a stale tab
             // (console fallback reads every Messages tab when session-id matching is unavailable).
-            val relevantParsed = if (outcome.anyBuildFailed()) parsed else parsed.filter { it.category == "WARNING" }
+            val relevantParsed = if (session.failed) parsed else parsed.filter { it.category == "WARNING" }
             val messages = when {
                 relevantParsed.isNotEmpty() -> relevantParsed
-                outcome.anyBuildFailed() -> listOfNotNull(
-                    outcome.failureSummary()?.let { BuildMessage(category = "ERROR", message = it) }
+                session.failed -> listOfNotNull(
+                    session.failureSummary?.let { BuildMessage(category = "ERROR", message = it) }
                 )
                 else -> emptyList()
             }

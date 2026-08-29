@@ -284,19 +284,21 @@ class BuildProjectTool : AbstractMcpTool() {
         success: Boolean
     ) {
         val outcome = build.clionOutcome ?: return
-        if (!outcome.sawAnyBuild()) return
+        val clionBuild = outcome.snapshot()
+        if (!clionBuild.sawAnyBuild) return
+        if (!build.clionEnriched.compareAndSet(false, true)) return
 
         try {
             if (snapshot(build.compilerMessages).isEmpty() && snapshot(build.buildEventMessages).isEmpty() &&
                 build.buildEventRawOutput.isEmpty()
             ) {
-                val consoleText = ClionBuildCapture.collectConsoleOutput(project, outcome, MAX_RAW_OUTPUT_CHARS)
+                val consoleText = ClionBuildCapture.collectConsoleOutput(project, clionBuild.buildIds, MAX_RAW_OUTPUT_CHARS)
                 if (consoleText.isNotBlank()) {
                     build.buildEventRawOutput.append(consoleText)
                 }
             }
             if (!success) {
-                outcome.failureSummary()?.let { summary ->
+                clionBuild.failureSummary?.let { summary ->
                     build.failureMessages.add(BuildMessage(category = "ERROR", message = summary))
                 }
             }

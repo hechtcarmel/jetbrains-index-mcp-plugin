@@ -59,7 +59,7 @@ class ClionBuildCaptureBehaviorTest : McpPlatformTestCase() {
             "ninja: build stopped\n/repo/src/main.cpp:7:5: error: use of undeclared identifier 'x'\n"
         )
 
-        val collected = ClionBuildCapture.collectConsoleOutput(project, null, 100_000)
+        val collected = ClionBuildCapture.collectConsoleOutput(project, emptyList(), 100_000)
 
         assertTrue(
             "the build console's text must be captured, got: <$collected>",
@@ -71,7 +71,7 @@ class ClionBuildCaptureBehaviorTest : McpPlatformTestCase() {
         val filler = "x".repeat(200) + "\n"
         addBuildConsoleContent("Build", filler.repeat(10) + "THE-FINAL-ERROR-LINE\n")
 
-        val collected = ClionBuildCapture.collectConsoleOutput(project, null, 300)
+        val collected = ClionBuildCapture.collectConsoleOutput(project, emptyList(), 300)
 
         assertTrue("collected output must respect the cap", collected.length <= 300)
         assertTrue(
@@ -84,7 +84,7 @@ class ClionBuildCaptureBehaviorTest : McpPlatformTestCase() {
         addBuildConsoleContent("Debug", "first-profile-output\n")
         addBuildConsoleContent("Release", "second-profile-output\n")
 
-        val collected = ClionBuildCapture.collectConsoleOutput(project, null, 100_000)
+        val collected = ClionBuildCapture.collectConsoleOutput(project, emptyList(), 100_000)
 
         assertTrue(collected.contains("first-profile-output"))
         assertTrue(collected.contains("second-profile-output"))
@@ -93,6 +93,6 @@ class ClionBuildCaptureBehaviorTest : McpPlatformTestCase() {
     fun testCollectConsoleOutputIsEmptyWhenNoBuildTabsExist() {
         messagesToolWindow() // window may exist from a sibling test; what matters is it has no tabs
 
-        assertEquals("", ClionBuildCapture.collectConsoleOutput(project, null, 100_000))
+        assertEquals("", ClionBuildCapture.collectConsoleOutput(project, emptyList(), 100_000))
     }
 }

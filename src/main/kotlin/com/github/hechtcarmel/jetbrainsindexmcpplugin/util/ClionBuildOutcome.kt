@@ -10,9 +10,25 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
  * session of its own, so a lone finish event still reports).
  *
  * Pure state, no reflection: the reflective listener proxy feeds it, tests drive it directly.
- * Thread-safe — cidr events and the MCP call's collection race by design.
+ * Thread-safe — cidr events and the MCP call's collection race by design. All reads go through
+ * an immutable [Snapshot], taken under the same lock the events mutate under, so a reader can
+ * never observe a session mid-reset (a long-lived subscription reuses one accumulator across
+ * sessions and the next session's first event wipes the previous session's state).
  */
 class ClionBuildOutcome {
+
+    /** One consistent view of the accumulator; safe to read on any thread at any later time. */
+    data class Snapshot(
+        /** True once any cidr build event was seen — i.e. this really is a CLion CMake build. */
+        val sawAnyBuild: Boolean,
+        val failed: Boolean,
+        /**
+         * One-line summary of the failed session for a fallback build message, e.g.
+         * `Build failed: 2 errors, 1 warning — <CLion's own message>`. Null while nothing failed.
+         */
+        val failureSummary: String?,
+        val buildIds: List<Any>
+    )
 
     private val lock = Any()
 
@@ -36,8 +52,10 @@ class ClionBuildOutcome {
     }
 
     /**
-     * Records one finished cidr build. Returns true when this finish completed the session —
-     * nothing is in flight any more.
+     * Records one finished cidr build. Returns the session's snapshot when this finish
+     * completed it — nothing is in flight any more — and null while builds are still running.
+     * The snapshot is taken inside the same critical section, so a new session starting right
+     * after cannot reset the state out from under the caller.
      */
     fun buildFinished(
         buildId: Any?,
@@ -46,7 +64,7 @@ class ClionBuildOutcome {
         errors: Int?,
         warnings: Int?,
         message: String?
-    ): Boolean {
+    ): Snapshot? {
         synchronized(lock) {
             resetIfPreviousSessionEnded()
             finished++
@@ -57,7 +75,31 @@ class ClionBuildOutcome {
             errorTotal += errors ?: 0
             warningTotal += warnings ?: 0
             if (!message.isNullOrBlank()) lastMessage = message
-            return inFlight == 0
+            return if (inFlight == 0) snapshotLocked() else null
+        }
+    }
+
+    fun snapshot(): Snapshot = synchronized(lock) { snapshotLocked() }
+
+    private fun snapshotLocked(): Snapshot {
+        val failed = finished > 0 && (!allSucceeded || anyCanceled)
+        return Snapshot(
+            sawAnyBuild = started > 0 || finished > 0,
+            failed = failed,
+            failureSummary = if (failed) failureSummaryLocked() else null,
+            buildIds = ids.toList()
+        )
+    }
+
+    private fun failureSummaryLocked(): String {
+        val headline = if (anyCanceled) "Build canceled" else "Build failed"
+        val counts = "$errorTotal ${if (errorTotal == 1) "error" else "errors"}, " +
+                "$warningTotal ${if (warningTotal == 1) "warning" else "warnings"}"
+        val message = lastMessage
+        return if (message.isNullOrBlank()) {
+            "$headline: $counts"
+        } else {
+            "$headline: $counts — $message"
         }
     }
 
@@ -76,32 +118,6 @@ class ClionBuildOutcome {
             warningTotal = 0
             lastMessage = null
             ids.clear()
-        }
-    }
-
-    /** True once any cidr build event was seen — i.e. this really is a CLion CMake build. */
-    fun sawAnyBuild(): Boolean = synchronized(lock) { started > 0 || finished > 0 }
-
-    fun anyBuildFailed(): Boolean = synchronized(lock) { finished > 0 && (!allSucceeded || anyCanceled) }
-
-    fun buildIds(): List<Any> = synchronized(lock) { ids.toList() }
-
-    /**
-     * One-line summary of the failed session for a fallback build message, e.g.
-     * `Build failed: 2 errors, 1 warning — <CLion's own message>`. Null while nothing failed.
-     */
-    fun failureSummary(): String? {
-        synchronized(lock) {
-            if (finished == 0 || (allSucceeded && !anyCanceled)) return null
-            val headline = if (anyCanceled) "Build canceled" else "Build failed"
-            val counts = "$errorTotal ${if (errorTotal == 1) "error" else "errors"}, " +
-                    "$warningTotal ${if (warningTotal == 1) "warning" else "warnings"}"
-            val message = lastMessage
-            return if (message.isNullOrBlank()) {
-                "$headline: $counts"
-            } else {
-                "$headline: $counts — $message"
-            }
         }
     }
 }

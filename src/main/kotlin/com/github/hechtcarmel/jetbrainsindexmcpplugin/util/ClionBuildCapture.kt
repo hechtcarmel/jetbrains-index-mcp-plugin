@@ -62,12 +62,14 @@ object ClionBuildCapture {
      *
      * Returns the [ClionBuildOutcome] accumulator the subscription feeds, or null when CLion's
      * build classes are not present in the running IDE. [onSessionFinished] (optional) fires
-     * once per build session — when every cidr build that started has finished.
+     * once per build session — when every cidr build that started has finished — with the
+     * session's [ClionBuildOutcome.Snapshot], taken atomically with the finishing event so a
+     * following session's reset can never race the handler's reads.
      */
     @Suppress("UNCHECKED_CAST")
     fun subscribe(
         connection: MessageBusConnection,
-        onSessionFinished: ((ClionBuildOutcome) -> Unit)? = null
+        onSessionFinished: ((ClionBuildOutcome.Snapshot) -> Unit)? = null
     ): ClionBuildOutcome? {
         val listenerClass = cidrBuildListenerClass ?: return null
         try {
@@ -91,7 +93,7 @@ object ClionBuildCapture {
                     "afterFinished" -> {
                         try {
                             val result = args?.getOrNull(1)
-                            val sessionFinished = outcome.buildFinished(
+                            val sessionSnapshot = outcome.buildFinished(
                                 buildId = buildIdOf(args?.getOrNull(0)),
                                 succeeded = invokeBoolean(result, "getSucceeded"),
                                 canceled = invokeBoolean(result, "getCanceled"),
@@ -99,9 +101,9 @@ object ClionBuildCapture {
                                 warnings = invokeInt(result, "getWarnings"),
                                 message = invokeString(result, "getMessage")
                             )
-                            if (sessionFinished && onSessionFinished != null) {
+                            if (sessionSnapshot != null && onSessionFinished != null) {
                                 try {
-                                    onSessionFinished(outcome)
+                                    onSessionFinished(sessionSnapshot)
                                 } catch (e: Exception) {
                                     LOG.warn("CLion build session callback failed", e)
                                 }
@@ -125,13 +127,13 @@ object ClionBuildCapture {
     /**
      * Collects the text of CLion's build log console(s) from the Messages tool window.
      *
-     * Tabs whose build-session id matches one of [outcome]'s build ids are preferred; when none
-     * match (id lookup unavailable, or the ids drifted across CLion versions) every console tab
+     * Tabs whose build-session id matches one of [buildIds] are preferred; when none match
+     * (id lookup unavailable, or the ids drifted across CLion versions) every console tab
      * in the window is read, since CLion replaces a profile's tab on each new build. Returns at
      * most [maxChars] characters, keeping the tail — compiler errors cluster at the end of a
      * failed build's output.
      */
-    fun collectConsoleOutput(project: Project, outcome: ClionBuildOutcome?, maxChars: Int): String {
+    fun collectConsoleOutput(project: Project, buildIds: List<Any>, maxChars: Int): String {
         val collected = StringBuilder()
         try {
             ApplicationManager.getApplication().invokeAndWait {
@@ -139,7 +141,6 @@ object ClionBuildCapture {
                     val toolWindow = ToolWindowManager.getInstance(project)
                         .getToolWindow(MESSAGES_TOOL_WINDOW_ID) ?: return@invokeAndWait
                     val contents = toolWindow.contentManager.contents
-                    val buildIds = outcome?.buildIds() ?: emptyList()
                     val matching = if (buildIds.isEmpty()) {
                         emptyList()
                     } else {
@@ -161,11 +162,26 @@ object ClionBuildCapture {
         } catch (e: Exception) {
             LOG.warn("Failed to reach the EDT for CLion build console output", e)
         }
-        return if (collected.length > maxChars) {
-            collected.substring(collected.length - maxChars)
+        return keepTail(collected, maxChars)
+    }
+
+    /**
+     * Keeps at most [maxChars] characters from the end, aligning the cut to the next line start
+     * so the parser never sees a truncated first line (a partial `path:line:col:` prefix can
+     * misparse), and never splitting a surrogate pair when the log has no newline to align to.
+     */
+    private fun keepTail(collected: StringBuilder, maxChars: Int): String {
+        if (collected.length <= maxChars) return collected.toString()
+        var cut = collected.length - maxChars
+        val nextLineStart = collected.indexOf("\n", cut)
+        cut = if (nextLineStart in cut until collected.length - 1) {
+            nextLineStart + 1
+        } else if (Character.isLowSurrogate(collected[cut])) {
+            cut + 1
         } else {
-            collected.toString()
+            cut
         }
+        return collected.substring(cut)
     }
 
     private fun consoleTextOf(content: Content): String? {

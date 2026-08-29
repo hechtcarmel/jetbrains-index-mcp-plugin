@@ -12,6 +12,7 @@ import com.intellij.util.messages.MessageBusConnection
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Tracks builds started by ide_build_project that outlive a single MCP call — the build-side
@@ -48,6 +49,9 @@ class ActiveBuildRegistry(scope: CoroutineScope) : LongPollRegistry<ActiveBuildR
         /** CLion cidr build session, when the IDE has one (CMake builds bypass the view managers — issue #213). */
         @Volatile
         var clionOutcome: ClionBuildOutcome? = null
+
+        /** Makes CLion result enrichment exactly-once when concurrent polls race the terminal path. */
+        val clionEnriched = AtomicBoolean(false)
 
         override val deadlineMs: Long? get() = timeoutSeconds?.let { startedAtMs + it * 1000L }
 
