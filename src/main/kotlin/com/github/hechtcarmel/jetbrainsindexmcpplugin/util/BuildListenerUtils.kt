@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.task.ProjectTaskRunner
 import com.intellij.util.messages.MessageBusConnection
 
 /**
@@ -17,6 +18,25 @@ import com.intellij.util.messages.MessageBusConnection
 object BuildListenerUtils {
 
     private val LOG = logger<BuildListenerUtils>()
+
+    /**
+     * Build-output view manager services, one per build pipeline that feeds the platform's
+     * build-events UI. Each is an `AbstractViewManager` subclass: a project service implementing
+     * `BuildProgressObservable.addListener(BuildProgressListener, Disposable)` that receives
+     * every event shown in its Build tool window tab.
+     *
+     * `BuildViewManager` covers Gradle, Maven and JPS output. An IDE pipeline that routes build
+     * events through its own view-manager service belongs in this list; one that bypasses the
+     * `com.intellij.build` framework entirely — CLion's CMake build does, it prints to a plain
+     * console in the Messages tool window — needs its own capture channel instead
+     * ([ClionBuildCapture], issue #213).
+     *
+     * Classes are resolved via [findClassAcrossPlugins] so IDE-specific managers load through
+     * their own plugin's classloader; names missing in the running IDE are skipped silently.
+     */
+    internal val VIEW_MANAGER_CLASS_NAMES: List<String> = listOf(
+        "com.intellij.build.BuildViewManager",
+    )
 
     // Cached reflection classes for build events
     private val messageEventClass: Class<*>? by lazy {
@@ -36,64 +56,114 @@ object BuildListenerUtils {
     }
 
     /**
-     * Subscribes to Gradle/Maven build events via [com.intellij.build.BuildProgressListener].
+     * Subscribes to build events via [com.intellij.build.BuildProgressListener] on every
+     * available build-output view manager (see [VIEW_MANAGER_CLASS_NAMES]).
      *
      * Uses reflection to avoid compile-time dependency on the build API.
      * The [onEvent] callback receives both the buildId and the event object.
      *
      * @param project The project to subscribe on
      * @param parentDisposable Parent disposable for lifecycle management
+     * @param viewManagerClassNames The view-manager service classes to subscribe to;
+     *        defaults to [VIEW_MANAGER_CLASS_NAMES]. Overridable for tests.
      * @param onEvent Callback invoked for each build event with (buildId, event)
-     * @return A [Disposable] to unsubscribe, or null if subscription failed
+     * @return A [Disposable] to unsubscribe, or null if no view manager could be subscribed
      */
     fun subscribeToBuildProgressListener(
         project: Project,
         parentDisposable: Disposable,
+        viewManagerClassNames: List<String> = VIEW_MANAGER_CLASS_NAMES,
         onEvent: (buildId: Any, event: Any) -> Unit
     ): Disposable? {
-        try {
-            val buildViewManagerClass = Class.forName("com.intellij.build.BuildViewManager")
-            val listenerClass = Class.forName("com.intellij.build.BuildProgressListener")
-
-            val buildViewManager = project.getService(buildViewManagerClass) ?: return null
-            val disposable = Disposer.newDisposable(parentDisposable, "BuildListenerUtils-buildEvents")
-
-            val proxy = java.lang.reflect.Proxy.newProxyInstance(
-                listenerClass.classLoader,
-                arrayOf(listenerClass)
-            ) { proxyObj, method, args ->
-                when (method.name) {
-                    "equals" -> proxyObj === args?.get(0)
-                    "hashCode" -> System.identityHashCode(proxyObj)
-                    "toString" -> "BuildProgressListener-proxy"
-                    "onEvent" -> {
-                        if (args != null && args.size >= 2) {
-                            val buildId = args[0] ?: return@newProxyInstance null
-                            val event = args[1] ?: return@newProxyInstance null
-                            try {
-                                onEvent(buildId, event)
-                            } catch (_: Exception) { }
-                        }
-                        null
-                    }
-                    else -> null
-                }
-            }
-
-            val addListenerMethod = buildViewManagerClass.methods.find {
-                it.name == "addListener" && it.parameterCount == 2
-            }
-            addListenerMethod?.invoke(buildViewManager, proxy, disposable)
-
-            LOG.debug("Subscribed to BuildProgressListener for build events")
-            return disposable
-        } catch (e: ClassNotFoundException) {
-            LOG.debug("BuildViewManager not available, build events will not be captured")
-            return null
-        } catch (e: Exception) {
-            LOG.warn("Failed to subscribe to BuildProgressListener", e)
+        val listenerClass = try {
+            Class.forName("com.intellij.build.BuildProgressListener")
+        } catch (_: ClassNotFoundException) {
+            LOG.debug("BuildProgressListener not available, build events will not be captured")
             return null
         }
+
+        val proxy = java.lang.reflect.Proxy.newProxyInstance(
+            listenerClass.classLoader,
+            arrayOf(listenerClass)
+        ) { proxyObj, method, args ->
+            when (method.name) {
+                "equals" -> proxyObj === args?.get(0)
+                "hashCode" -> System.identityHashCode(proxyObj)
+                "toString" -> "BuildProgressListener-proxy"
+                "onEvent" -> {
+                    if (args != null && args.size >= 2) {
+                        val buildId = args[0] ?: return@newProxyInstance null
+                        val event = args[1] ?: return@newProxyInstance null
+                        try {
+                            onEvent(buildId, event)
+                        } catch (_: Exception) { }
+                    }
+                    null
+                }
+                else -> null
+            }
+        }
+
+        var disposable: Disposable? = null
+        val subscribed = mutableListOf<String>()
+        for (className in viewManagerClassNames) {
+            try {
+                val managerClass = findClassAcrossPlugins(className) ?: continue
+                val manager = project.getService(managerClass) ?: continue
+                val addListenerMethod = managerClass.methods.find {
+                    it.name == "addListener" && it.parameterCount == 2 &&
+                            it.parameterTypes[0].isAssignableFrom(listenerClass)
+                } ?: continue
+
+                val target = disposable
+                    ?: Disposer.newDisposable(parentDisposable, "BuildListenerUtils-buildEvents").also { disposable = it }
+                addListenerMethod.invoke(manager, proxy, target)
+                subscribed.add(managerClass.simpleName)
+            } catch (e: Exception) {
+                LOG.warn("Failed to subscribe to build events on $className", e)
+            }
+        }
+
+        if (subscribed.isEmpty()) {
+            LOG.debug("No build view manager available, build events will not be captured")
+            disposable?.let { Disposer.dispose(it) }
+            return null
+        }
+        LOG.debug("Subscribed to build events on: $subscribed")
+        return disposable
+    }
+
+    /**
+     * Resolves a class by name, looking first in this plugin's classloader (platform classes
+     * and declared dependencies), then through the classloaders of the registered
+     * [ProjectTaskRunner] extensions. Build-pipeline classes an IDE does not expose to other
+     * plugins — CLion's cidr build classes — are always visible to the IDE's own build-system
+     * task runner (its implementation references them), so its classloader is the reliable
+     * stable-API route to them; enumerating plugin descriptors is not
+     * (`PluginManagerCore.getLoadedPlugins` and the descriptor lookups are `@ApiStatus.Internal`
+     * on newer platform lines).
+     */
+    internal fun findClassAcrossPlugins(className: String): Class<*>? {
+        try {
+            return Class.forName(className)
+        } catch (_: ClassNotFoundException) {
+        } catch (_: LinkageError) {
+        }
+        val runners = try {
+            ProjectTaskRunner.EP_NAME.extensionList
+        } catch (e: Exception) {
+            LOG.debug("Failed to enumerate ProjectTaskRunner extensions", e)
+            return null
+        }
+        for (runner in runners) {
+            val classLoader = runner.javaClass.classLoader ?: continue
+            try {
+                return Class.forName(className, false, classLoader)
+            } catch (_: ClassNotFoundException) {
+            } catch (_: LinkageError) {
+            }
+        }
+        return null
     }
 
     /**

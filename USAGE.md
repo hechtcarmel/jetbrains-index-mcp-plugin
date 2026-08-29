@@ -1128,7 +1128,7 @@ Workspace opened with 3 Maven projects from /Users/dev/monorepo. IntelliJ is ind
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
-Build the project using the IDE's build system (supports JPS, Gradle, Maven).
+Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMake (CLion)).
 
 **Long-running builds:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the build is still executing when the wait budget ends, the call returns `{"status": "running", "buildId": "..."}` while the build continues inside the IDE — call the tool again with that `buildId` to keep waiting.
 

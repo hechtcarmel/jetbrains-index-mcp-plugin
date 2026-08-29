@@ -3,7 +3,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectResultSelector
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildOutputParser
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClionBuildCapture
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClionBuildOutcome
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
@@ -55,7 +59,38 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             publishActiveMessages()
         }
 
+        // CLion's CMake build reaches neither channel above (issue #213); its finish signal is
+        // the cidr build topic, and its output lives in the Messages tool window console. The
+        // snapshot is immutable, so recording off-thread cannot race the next session's reset.
+        ClionBuildCapture.subscribe(connection) { session ->
+            ApplicationManager.getApplication().executeOnPooledThread {
+                recordClionBuildSession(session)
+            }
+        }
+
         LOG.debug("BuildDiagnosticsCacheService initialized for project: ${project.name}")
+    }
+
+    private fun recordClionBuildSession(session: ClionBuildOutcome.Snapshot) {
+        try {
+            val rawOutput = ClionBuildCapture.collectConsoleOutput(project, session.buildIds, MAX_RAW_OUTPUT_CHARS)
+            val parsed = BuildOutputParser.parse(rawOutput) { path ->
+                ProjectUtils.getRelativePath(project, path)
+            }
+            // A succeeded session cannot have produced errors: any parsed ERROR is a stale tab
+            // (console fallback reads every Messages tab when session-id matching is unavailable).
+            val relevantParsed = if (session.failed) parsed else parsed.filter { it.category == "WARNING" }
+            val messages = when {
+                relevantParsed.isNotEmpty() -> relevantParsed
+                session.failed -> listOfNotNull(
+                    session.failureSummary?.let { BuildMessage(category = "ERROR", message = it) }
+                )
+                else -> emptyList()
+            }
+            recordBuildResult(messages)
+        } catch (e: Exception) {
+            LOG.warn("Failed to record CLion build session diagnostics", e)
+        }
     }
 
     private fun handleBuildEvent(buildId: Any, event: Any) {

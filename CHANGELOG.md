@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_build_project` now returns build errors in CLion** ([#213](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/213)) — a failed CMake build came back as `success: false` with an *empty* `buildMessages` list. CLion's CMake build bypasses everything the tool listened to: it publishes no platform build events (so the `BuildViewManager` subscription — and with it the MSVC/Clang/CMake raw-output fallback parser added in 4.23.1 — never received input) and CLion has no Java plugin (so the JPS compiler channel is absent too). The tool now also captures what CLion does expose, both hooks resolved reflectively through CLion's own plugin classloader and inert in other IDEs: the cidr build-finished topic (success/canceled, error/warning counts, CLion's summary message) and the build log CLion prints into the Messages tool window, which is fed through the existing MSVC/Clang/CMake parser to produce positioned per-file diagnostics. A failed CLion build now reports the actual compiler errors with file/line/column, falling back to a `Build failed: N errors, M warnings` summary when the log has no parseable locations. `ide_diagnostics`' build-output channel records CLion builds the same way, including ones triggered from the IDE. The build-event subscription was also generalized to a list of build-output view managers (still only `BuildViewManager` — verified against CLion 2025.3 and 2026.2 that no cidr view manager exists), so IDE-specific managers found later can be added declaratively.
+
 ## [5.9.1] - 2026-08-28
 
 ### Fixed
