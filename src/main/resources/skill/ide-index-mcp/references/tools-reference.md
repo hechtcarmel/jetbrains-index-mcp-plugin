@@ -577,7 +577,7 @@ Force sync IDE's virtual file system with external file changes.
 Call this when files were created/modified outside the IDE and search tools miss them.
 
 ### ide_build_project (disabled by default)
-Build project using IDE's build system (JPS, Gradle, Maven).
+Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)).
 
 Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit. If the build is still executing when the wait budget ends, the call returns `{"status": "running", "buildId": "..."}` while the build continues in the IDE — call the tool again with that `buildId` to keep waiting.
 

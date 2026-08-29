@@ -4,7 +4,7 @@
 
 ## ide_build_project
 description:
-  Build the project using the IDE's build system (supports JPS, Gradle, Maven).
+  Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMake (CLion)).
   Use after making code changes to check for compilation errors.
   
   Long-running builds: each call blocks at most waitSeconds (default 45) so your MCP

@@ -39,7 +39,7 @@ class ActiveBuildRegistry(scope: CoroutineScope) : LongPollRegistry<ActiveBuildR
         val compilerMessages: MutableList<BuildMessage> = Collections.synchronizedList(mutableListOf())
         val compilerRawOutput = StringBuffer()
 
-        /** Build events (Gradle/Maven/universal via BuildViewManager — fallback). */
+        /** Build events (Gradle/Maven/CLion via the IDE's build-output view managers — fallback). */
         val buildEventMessages: MutableList<BuildMessage> = Collections.synchronizedList(mutableListOf())
         val failureMessages: MutableList<BuildMessage> = Collections.synchronizedList(mutableListOf())
         val buildEventRawOutput = StringBuffer()

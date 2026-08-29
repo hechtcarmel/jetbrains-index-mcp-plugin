@@ -62,7 +62,7 @@ class BuildProjectTool : AbstractMcpTool() {
     override val name = ToolNames.BUILD_PROJECT
 
     override val description = """
-        Build the project using the IDE's build system (supports JPS, Gradle, Maven).
+        Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMake (CLion)).
         Use after making code changes to check for compilation errors.
 
         Long-running builds: each call blocks at most waitSeconds (default ${LongPoll.DEFAULT_WAIT_SECONDS}) so your MCP
