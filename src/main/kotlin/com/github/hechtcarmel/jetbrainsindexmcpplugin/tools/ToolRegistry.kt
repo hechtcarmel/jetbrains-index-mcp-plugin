@@ -179,7 +179,7 @@ class ToolRegistry {
 
     /**
      * Gets ALL tool definitions regardless of enabled/disabled state.
-     * Used by settings UI to display all available tools.
+     * Used by settings UI to display all exposed tools.
      *
      * @return List of all tool definitions
      */

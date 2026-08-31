@@ -28,7 +28,7 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 | Build | `ide_build_project` (this plugin, disabled by default — returns structured errors/warnings); `mcp__intellij__*` only when it is not enabled |
 | Terminal, run non-test processes, formatting beyond code style | `mcp__intellij__*` only |
 
-**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ. If your target project is not open but another one is, call `ide_open_project` with the working directory path — note it is disabled by default and must be enabled in Settings > Tools > Index MCP Server, and it requires at least one project to already be open (as the JSON-RPC context). IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration. Only ask the user to open a project manually when zero projects are open or `ide_open_project` is disabled.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
+**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ. If your target project is not open but another one is, call `ide_open_project` with the working directory path — note it is disabled by default and must be enabled in Settings → Tools → Index MCP Server → Exposed Tools, and it requires at least one project to already be open (as the JSON-RPC context). IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration. Only ask the user to open a project manually when zero projects are open or `ide_open_project` is disabled.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
 
 ## Core Rule
 
@@ -163,7 +163,7 @@ When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or 
 
 ## Lifecycle Management
 
-When multiple projects are open simultaneously, the lifecycle manager sleeps and wakes them based on window focus and MCP activity. It is opt-in and disabled by default — enable "Enable lifecycle management" in Settings > Tools > Index MCP Server. Once enabled, projects enroll automatically on first MCP use.
+When multiple projects are open simultaneously, the lifecycle manager sleeps and wakes them based on window focus and MCP activity. It is opt-in and disabled by default — enable "Enable lifecycle management" in Settings → Tools → Index MCP Server. Once enabled, projects enroll automatically on first MCP use.
 
 **States:** `active` (full IDE) → `background` (Power Save on) → `dormant` (editors closed, PSI cache freed) → `closed` (fully unloaded). Projects auto-reopen transparently when an MCP tool targets a closed project.
 
@@ -175,7 +175,7 @@ All lifecycle action tools are disabled by default:
 
 ## Disabled-by-Default Tools
 
-These tools exist but are disabled by default. They are omitted from `tools/list`, and direct `tools/call` requests are rejected until the user enables them in IDE settings (Settings > Tools > Index MCP Server):
+These tools exist but are disabled by default. They are omitted from `tools/list`, and direct `tools/call` requests are rejected until the user enables them in IDE settings (Settings → Tools → Index MCP Server → Exposed Tools):
 
 `ide_build_project`, `ide_change_signature`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_create_file`, `ide_create_module`, `ide_edit_member`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_insert_member`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_link_build_system`, `ide_list_tests`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_project_diagnostics`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_replace_member`, `ide_replace_text_in_file`, `ide_restart`, `ide_run_tests`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`, `ide_structural_search_replace`, `ide_symbol_info`
 

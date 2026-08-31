@@ -98,7 +98,7 @@ enable the write tools.
 - [Quick Start](#quick-start)
 - [Community Integrations](#community-integrations)
 - [Client Configuration](#client-configuration)
-- [Available Tools](#available-tools)
+- [Exposed Tools](#exposed-tools)
 - [Multi-Project Support](#multi-project-support)
 - [Lifecycle Management](#lifecycle-management)
 - [Tool Window](#tool-window)
@@ -256,7 +256,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 > **Tip**: Use the "Install on Coding Agents" button in the tool window - it automatically uses the correct server name and port for your IDE.
 
-## Available Tools
+## Exposed Tools
 
 The plugin provides **52 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd> > <kbd>Exposed Tools</kbd>.
 
