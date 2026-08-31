@@ -158,6 +158,7 @@ for detailed documentation and examples.</p>
         <!-- Settings -->
         <applicationService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings"/>
         <applicationConfigurable id="mcp.settings" parentId="tools" displayName="Index MCP Server" instance="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable"/>
+        <applicationConfigurable id="mcp.settings.tools" parentId="mcp.settings" displayName="Exposed Tools" instance="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpToolsConfigurable"/>
 
         <!-- Startup Activity -->
         <postStartupActivity implementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.startup.McpServerStartupActivity"/>

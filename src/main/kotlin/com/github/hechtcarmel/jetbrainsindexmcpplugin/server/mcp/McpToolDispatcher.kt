@@ -33,7 +33,7 @@ import kotlinx.serialization.json.contentOrNull
  * The MCP protocol itself — JSON-RPC framing, `initialize`, version negotiation, `tools/list`
  * dispatch — belongs to the SDK. What is left is IDE-specific and lives here:
  *
- *  1. the enabled/disabled gate from Settings → Index MCP Server → Available Tools
+ *  1. the enabled/disabled gate from Settings → Tools → Index MCP Server → Exposed Tools
  *  2. resolving `project_path` to an open [Project], reopening it if the lifecycle manager
  *     closed it
  *  3. recording the call in the per-project command history shown in the tool window
@@ -87,7 +87,7 @@ class McpToolDispatcher @JvmOverloads constructor(
 
         if (!McpSettings.getInstance().isToolEnabled(toolName)) {
             return CallToolResult.error(
-                "Tool '$toolName' is disabled. Enable it in Settings → Index MCP Server → Available Tools."
+                "Tool '$toolName' is disabled. Enable it in Settings → Tools → Index MCP Server → Exposed Tools."
             )
         }
 

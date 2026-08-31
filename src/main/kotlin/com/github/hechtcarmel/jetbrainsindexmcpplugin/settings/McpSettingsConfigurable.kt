@@ -51,7 +51,6 @@ class McpSettingsConfigurable : Configurable {
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private var availableProjectsModeComboBox: ComboBox<McpSettings.AvailableProjectsMode>? = null
     private var responseFormatComboBox: ComboBox<McpSettings.ResponseFormat>? = null
-    private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
 
     // Lifecycle UI fields
@@ -139,7 +138,6 @@ class McpSettingsConfigurable : Configurable {
             add(warningRow)
         }
 
-        val availableToolsPanel = createToolsPanel()
         val lifecyclePanel = createLifecyclePanel()
 
         panel = FormBuilder.createFormBuilder()
@@ -153,9 +151,6 @@ class McpSettingsConfigurable : Configurable {
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("lifecycle.section.title")), 5)
             .addComponent(lifecyclePanel, 1)
-            .addSeparator(10)
-            .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
-            .addComponent(availableToolsPanel, 5)
             .addComponentFillVertically(JPanel(), 0)
             .panel
 
@@ -313,34 +308,6 @@ class McpSettingsConfigurable : Configurable {
         content.repaint()
     }
 
-    private fun createToolsPanel(): JComponent {
-        val toolsContainer = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-        }
-
-        val mcpService = McpServerService.getInstance()
-        if (!mcpService.isInitialized) {
-            toolsContainer.add(JBLabel("Server is initializing...").apply {
-                foreground = JBColor(0xD9A343, 0xD9A343)
-            })
-            return toolsContainer
-        }
-
-        val toolRegistry = mcpService.getToolRegistry()
-        val allTools = toolRegistry.getAllToolDefinitions().sortedBy { it.name }
-        val settings = McpSettings.getInstance()
-
-        for (tool in allTools) {
-            val checkbox = JBCheckBox(tool.name, settings.isToolEnabled(tool.name)).apply {
-                toolTipText = tool.description
-            }
-            toolCheckBoxes[tool.name] = checkbox
-            toolsContainer.add(checkbox)
-        }
-
-        return toolsContainer
-    }
-
     override fun isModified(): Boolean {
         val settings = McpSettings.getInstance()
 
@@ -358,12 +325,6 @@ class McpSettingsConfigurable : Configurable {
             lifecycleLogToFileCheckBox?.isSelected != settings.lifecycleLogToFile ||
             minimumOpenProjectsSpinner?.value != settings.minimumOpenProjects) {
             return true
-        }
-
-        for ((toolName, checkbox) in toolCheckBoxes) {
-            if (checkbox.isSelected != settings.isToolEnabled(toolName)) {
-                return true
-            }
         }
 
         return false
@@ -434,8 +395,6 @@ class McpSettingsConfigurable : Configurable {
         settings.lifecycleLogToFile = lifecycleLogToFileCheckBox?.isSelected ?: false
         settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
 
-        settings.updateToolEnabledStates(toolCheckBoxes.mapValues { (_, checkbox) -> checkbox.isSelected })
-
         // Auto-restart server if host/port changed. Must run on a pooled thread:
         // EmbeddedServer.stop() blocks (runBlocking) while in-flight MCP calls drain — calls
         // that may themselves be waiting for the EDT — and the CIO bind is blocking too, so
@@ -494,8 +453,8 @@ class McpSettingsConfigurable : Configurable {
 
         // If the port matches our current server's port and it's running, we consider it available.
         // We skip the bind check here because our own server is already occupying the port,
-        // which would cause a false "address in use" error (especially when switching 
-        // between 0.0.0.0 and 127.0.0.1). We trust that we will stop our server 
+        // which would cause a false "address in use" error (especially when switching
+        // between 0.0.0.0 and 127.0.0.1). We trust that we will stop our server
         // before binding to the new address during restart.
         if (port == currentPort && mcpService.isInitialized && mcpService.isServerRunning()) {
             return true
@@ -520,7 +479,7 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
         availableProjectsModeComboBox?.selectedItem = settings.availableProjectsMode
         responseFormatComboBox?.selectedItem = settings.responseFormat
-        
+
         hostValidationErrorLabel?.isVisible = false
         hostValidationIcon?.isVisible = false
         hostValidIcon?.isVisible = false
@@ -535,10 +494,6 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogBufferSizeSpinner?.value = settings.lifecycleLogBufferSize
         lifecycleLogToFileCheckBox?.isSelected = settings.lifecycleLogToFile
         minimumOpenProjectsSpinner?.value = settings.minimumOpenProjects
-
-        for ((toolName, checkbox) in toolCheckBoxes) {
-            checkbox.isSelected = settings.isToolEnabled(toolName)
-        }
     }
 
     private fun updateHostWarning(host: String) {
@@ -581,11 +536,11 @@ class McpSettingsConfigurable : Configurable {
 
                 ApplicationManager.getApplication().executeOnPooledThread {
                     val isValid = isValidHost(host)
-                    val labelMessage = if (host.isEmpty()) 
-                        McpBundle.message("settings.serverHost.empty") 
-                    else 
+                    val labelMessage = if (host.isEmpty())
+                        McpBundle.message("settings.serverHost.empty")
+                    else
                         McpBundle.message("settings.serverHost.invalidShort")
-                    
+
                     // Use empty message for ComponentValidator to show red border but avoid tooltip popup
                     // as we are showing the error message in the label next to the input
                     val info = if (isValid) null else ValidationInfo("", field)
@@ -625,7 +580,6 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox = null
         availableProjectsModeComboBox = null
         responseFormatComboBox = null
-        toolCheckBoxes.clear()
         lifecycleEnabledCheckBox = null
         focusToBackgroundSpinner = null
         backgroundToDormantSpinner = null
