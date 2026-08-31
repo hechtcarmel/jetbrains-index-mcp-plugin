@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool enable/disable moved to a new "Exposed Tools" settings page** — the "Available Tools (uncheck to disable)" checkbox list left the main settings page and now lives on a child page at Settings → Tools → Index MCP Server → Exposed Tools, mirroring the IDE's own MCP Server settings layout. The main page keeps the server host/port, history, projects mode, response format, sync, and lifecycle sections unchanged; the per-tool checkboxes, tooltips, and "Server is initializing..." guard behave exactly as before, and no stored state changes — existing per-tool enable/disable settings carry over untouched.
+
 ## [5.9.2] - 2026-08-29
 
 ### Fixed

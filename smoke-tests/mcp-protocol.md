@@ -13,7 +13,7 @@ Most tools this protocol exercises are **disabled by default** and hidden from `
 `ide_set_power_save_mode`, `ide_open_project`, `ide_close_project`, `ide_install_plugin`,
 `ide_restart`, `ide_set_lifecycle_log_file`, and every lifecycle tool except
 `ide_project_status` (see `DEFAULT_DISABLED_TOOLS` in `McpSettings.kt`). Enable them first in
-Settings → Tools → Index MCP Server → Available Tools, or every affected step fails with a
+Settings → Tools → Index MCP Server → Exposed Tools, or every affected step fails with a
 disabled-tool error on a fresh install.
 
 ### How to call the server

@@ -176,7 +176,7 @@ class McpToolDispatcher(
             ?: return CallToolResult.error("Tool '$toolName' not found")
         if (!McpSettings.getInstance().isToolEnabled(toolName))
             return CallToolResult.error("Tool '$toolName' is disabled. Enable it in " +
-                "Settings → Index MCP Server → Available Tools.")
+                "Settings → Tools → Index MCP Server → Exposed Tools.")
 
         val projectPath = arguments[ParamNames.PROJECT_PATH]?.stringOrNull()
         val resolved = ProjectResolver.resolveOrOpen(projectPath)

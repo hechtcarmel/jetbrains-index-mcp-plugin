@@ -258,7 +258,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Available Tools
 
-The plugin provides **52 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+The plugin provides **52 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd> > <kbd>Exposed Tools</kbd>.
 
 ### Universal Tools
 
@@ -487,7 +487,7 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 | Project List in Error Responses | Expanded | Controls `available_projects` detail for invalid/missing `project_path` errors. `Expanded` includes workspace sub-projects; `Compact` returns only top-level project roots |
 | Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
 | Response Format | JSON | Tool response serialization: JSON or TOON |
-| Disabled Tools | Tool-specific | Per-tool enable/disable toggles. Disabled tools stay hidden and cannot be called until enabled |
+| Disabled Tools | Tool-specific | Per-tool enable/disable toggles on the Exposed Tools sub-page. Disabled tools stay hidden and cannot be called until enabled |
 | **Lifecycle Management** | | |
 | Enable lifecycle management | false | Master toggle for the automatic sleep/wake state machine — no automatic sleep/wake happens until this is enabled |
 | Active → Background (minutes) | 2 | Focus-loss grace period before switching to Power Save Mode |
