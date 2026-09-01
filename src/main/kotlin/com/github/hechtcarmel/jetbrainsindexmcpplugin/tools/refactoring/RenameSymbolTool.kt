@@ -712,8 +712,11 @@ class RenameSymbolTool : AbstractMcpTool() {
         // run() would route them through ReadonlyStatusHandler's modal dialog,
         // blocking the EDT in headless MCP sessions. findUsages() is idempotent
         // (it clears the internal renamer list on entry), so run() repeating the
-        // search is safe.
-        val readOnlyInScope = RefactoringScopeGuard.readOnlyFilesIn(project, renameProcessor.findUsages())
+        // search is safe. The search must not run on this (EDT) thread: the Kotlin
+        // K2 Analysis API forbids resolution on the EDT (issue #357), so it
+        // executes on a pooled thread under a read action, like run()'s own search.
+        val usagesInScope = RefactoringScopeGuard.computeUsagesOffEdt(project) { renameProcessor.findUsages() }
+        val readOnlyInScope = usagesInScope?.let { RefactoringScopeGuard.readOnlyFilesIn(project, it) }.orEmpty()
         if (readOnlyInScope.isNotEmpty()) {
             throw Exception(RefactoringScopeGuard.blockedMessage(readOnlyInScope))
         }

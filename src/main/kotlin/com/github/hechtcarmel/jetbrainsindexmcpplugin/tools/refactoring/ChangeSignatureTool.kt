@@ -319,8 +319,13 @@ class ChangeSignatureTool : AbstractMcpTool() {
                 // Pre-check the full refactoring scope for read-only files (issue #310):
                 // run() would route them through ReadonlyStatusHandler's modal dialog,
                 // blocking the EDT in headless MCP sessions. Fails open when
-                // findUsages() cannot be invoked reflectively.
-                val usages = RefactoringScopeGuard.findUsagesReflectively(processor)
+                // findUsages() cannot be invoked reflectively. The search runs off
+                // the EDT (issue #357): Kotlin call sites of the changed method are
+                // searched through the Kotlin plugin, whose K2 Analysis API forbids
+                // resolution on the EDT.
+                val usages = RefactoringScopeGuard.computeUsagesOffEdt(project) {
+                    RefactoringScopeGuard.findUsagesReflectively(processor)
+                }
                 val readOnlyInScope = usages
                     ?.let { RefactoringScopeGuard.readOnlyFilesIn(project, it) }
                     .orEmpty()
