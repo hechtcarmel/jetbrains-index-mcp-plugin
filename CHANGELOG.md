@@ -10,6 +10,8 @@
 
 - **`ide_refactor_rename` no longer fails for every Kotlin symbol with "Analysis is not allowed: Called in the EDT thread"** ([#357](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/357)) — the read-only-scope pre-check added for [#310](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/310) called `RenameProcessor.findUsages()` directly on the EDT. For a Kotlin target that search resolves references through the Kotlin Analysis API, which in K2 mode (the Kotlin plugin's default in current IDEs) forbids resolution on the EDT — so every Kotlin symbol rename failed before touching any file, while Java renames, which never enter the Analysis API, kept working. The pre-check search now runs the way `BaseRefactoringProcessor.run()` runs its own usage search: on a pooled thread under a read action behind the platform's modal progress (and under a plain read action when the caller is already off the EDT). `ide_change_signature` had the same pattern and is fixed the same way — its pre-check search enters the Kotlin Analysis API whenever Kotlin call sites reference the changed Java method. A cancelled pre-check search now fails open (the refactoring proceeds and `run()` repeats the search under its own cancellable progress); read-only files in scope are still reported as an actionable error exactly as before.
 
+## [5.9.3] - 2026-08-31
+
 ### Changed
 
 - **Tool enable/disable moved to a new "Exposed Tools" settings page** — the "Available Tools (uncheck to disable)" checkbox list left the main settings page and now lives on a child page at Settings → Tools → Index MCP Server → Exposed Tools, mirroring the IDE's own MCP Server settings layout. The main page keeps the server host/port, history, projects mode, response format, sync, and lifecycle sections unchanged; the per-tool checkboxes, tooltips, and "Server is initializing..." guard behave exactly as before, and no stored state changes — existing per-tool enable/disable settings carry over untouched. Every reference to the old location follows the move: the error an MCP client gets when calling a disabled tool, the bundled agent skill, and the docs now all point to the Exposed Tools page.
@@ -1215,7 +1217,8 @@
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
 [Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.4...HEAD
-[5.9.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.2...v5.9.4
+[5.9.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.3...v5.9.4
+[5.9.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.2...v5.9.3
 [5.9.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.1...v5.9.2
 [5.9.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.0...v5.9.1
 [5.9.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.8.4...v5.9.0
