@@ -100,7 +100,11 @@ open class MoveFileTool : AbstractRefactoringTool() {
         val destinationRelativePath: String,
         val backend: MoveBackend,
         val phpDeclarationPointer: SmartPsiElementPointer<PsiElement>? = null,
-        val phpDeclarationName: String? = null
+        val phpDeclarationName: String? = null,
+        /** Repairs usage files the generic move damages; null when no language guard applies. */
+        val usageGuard: MoveUsageGuard? = null,
+        /** True when the file leaves a source root for a directory no module compiles. */
+        val leavesSourceRoots: Boolean = false
     )
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
@@ -159,12 +163,16 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 is MoveBackendSelection.Unsupported -> null to backendSelection.message
                 MoveBackendSelection.GenericFileMove -> {
                     val destinationRelativePath = getRelativePath(project, targetDir)
+                    val fileIndex = ProjectRootManager.getInstance(project).fileIndex
                     MovePreparation(
                         psiFile = psiFile,
                         targetDirectory = targetPsiDir,
                         sourceRelativePath = sourceRelativePath,
                         destinationRelativePath = destinationRelativePath,
-                        backend = MoveBackend.GENERIC_FILE_MOVE
+                        backend = MoveBackend.GENERIC_FILE_MOVE,
+                        usageGuard = selectUsageGuard(psiFile, targetPsiDir),
+                        leavesSourceRoots = fileIndex.isInSourceContent(sourceVirtualFile) &&
+                            !fileIndex.isInSourceContent(targetDir)
                     ) to null
                 }
                 is MoveBackendSelection.PhpSemanticMove -> {
@@ -237,7 +245,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         var success = false
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()
-        var conflictWarnings: List<String> = emptyList()
+        var backendWarnings: List<String> = emptyList()
         val fileName = preparation.psiFile.name
 
         edtAction {
@@ -251,7 +259,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 val modifiedFilesBeforeMove = collectUnsavedProjectFiles(project)
 
                 when (preparation.backend) {
-                    MoveBackend.GENERIC_FILE_MOVE -> conflictWarnings = executeGenericFileMove(preparation)
+                    MoveBackend.GENERIC_FILE_MOVE -> backendWarnings = executeGenericFileMove(preparation)
                     MoveBackend.PHP_SEMANTIC_MOVE -> executePhpSemanticMove(project, preparation)
                 }
 
@@ -279,13 +287,25 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 MoveBackend.GENERIC_FILE_MOVE -> " using IDE file move semantics"
                 MoveBackend.PHP_SEMANTIC_MOVE -> " using PhpStorm semantic PHP move"
             }
+            val warnings = buildList {
+                addAll(backendWarnings)
+                if (preparation.leavesSourceRoots) {
+                    add(
+                        "Destination '${preparation.destinationRelativePath}' is outside every source root: " +
+                            "'$fileName' is no longer part of any module's sources, so builds and code " +
+                            "intelligence stop seeing it until that directory belongs to a module source root " +
+                            "(reload the build system with ${ToolNames.RELOAD_PROJECT}, link it with " +
+                            "${ToolNames.LINK_BUILD_SYSTEM}, or register it with ${ToolNames.CREATE_MODULE})."
+                    )
+                }
+            }
             createJsonResult(
                 RefactoringResult(
                     success = true,
                     affectedFiles = affectedFiles.toList(),
                     changesCount = affectedFiles.size,
                     message = "Successfully moved '${preparation.sourceRelativePath}' to '$newPath'$backendNote",
-                    warnings = conflictWarnings.takeIf { it.isNotEmpty() }
+                    warnings = warnings.takeIf { it.isNotEmpty() }
                 )
             )
         } else {
@@ -319,21 +339,36 @@ open class MoveFileTool : AbstractRefactoringTool() {
     }
 
     /**
-     * Runs the generic file move and returns the sanitized conflict messages the
-     * processor detected (empty when the move was conflict-free).
+     * Picks the [MoveUsageGuard] for a generic move, or null when no language needs one.
+     *
+     * Only Java has a guard today ([JavaOnDemandImportGuard], issue #360). Its class is loaded
+     * lazily on first use, so the plugin-availability check here is what keeps IDEs without the
+     * Java plugin from ever resolving Java PSI types.
+     */
+    private fun selectUsageGuard(psiFile: PsiFile, targetDirectory: PsiDirectory): MoveUsageGuard? {
+        if (!PluginDetectors.java.isAvailable) return null
+        return JavaOnDemandImportGuard.forMove(psiFile, targetDirectory)
+    }
+
+    /**
+     * Runs the generic file move and returns the plain-text warnings it produced: the
+     * sanitized conflict messages the processor detected, followed by one line per usage file
+     * whose imports the [MoveUsageGuard] had to restore. Empty when the move was clean.
      */
     internal open fun executeGenericFileMove(
         preparation: MovePreparation
     ): List<String> {
+        val project = preparation.psiFile.project
         val processor = HeadlessMoveProcessor(
-            preparation.psiFile.project,
+            project,
             arrayOf<PsiElement>(preparation.psiFile),
             preparation.targetDirectory,
             true,
             false, // searchInComments
             false, // searchInNonJavaFiles
             null,  // moveCallback
-            null   // prepareSuccessfulCallback
+            null,  // prepareSuccessfulCallback
+            preparation.usageGuard
         )
 
         processor.setPreviewUsages(false)
@@ -345,7 +380,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
             { processor.run() },
             EmptyProgressIndicator()
         )
-        return processor.capturedConflicts
+        val restoredImportWarnings = processor.restoredImports.map { restored ->
+            val imports = restored.imports.joinToString(", ") { "'$it'" }
+            "Restored import $imports in '${getRelativePath(project, restored.file)}': the IDE move removed " +
+                "it although '${preparation.psiFile.name}' stays in the same package, so the file would no " +
+                "longer have compiled."
+        }
+        return processor.capturedConflicts + restoredImportWarnings
     }
 
     internal open fun executePhpSemanticMove(project: Project, preparation: MovePreparation) {
@@ -670,6 +711,10 @@ open class MoveFileTool : AbstractRefactoringTool() {
  * a modal dialog that would block the MCP tool execution. The detected conflicts
  * are captured in [capturedConflicts] (sanitized to plain text) so the tool can
  * report them as warnings instead of silently claiming a conflict-free move.
+ *
+ * Wraps [performRefactoring] with the optional [usageGuard]: the guard sees which files the
+ * processor is about to rewrite, then gets a chance, inside the same write action, to repair
+ * what the rewrite broke. What it restored is exposed as [restoredImports].
  */
 private class HeadlessMoveProcessor(
     project: Project,
@@ -679,15 +724,29 @@ private class HeadlessMoveProcessor(
     searchInComments: Boolean,
     searchInNonJavaFiles: Boolean,
     moveCallback: com.intellij.refactoring.move.MoveCallback?,
-    prepareSuccessfulCallback: Runnable?
+    prepareSuccessfulCallback: Runnable?,
+    private val usageGuard: MoveUsageGuard?
 ) : MoveFilesOrDirectoriesProcessor(
     project, elements, newParent, searchForReferences,
     searchInComments, searchInNonJavaFiles, moveCallback, prepareSuccessfulCallback
 ) {
     val capturedConflicts = mutableListOf<String>()
+    var restoredImports: List<RestoredImports> = emptyList()
+        private set
 
     override fun showConflicts(conflicts: MultiMap<PsiElement, String>, usages: Array<out UsageInfo>?): Boolean {
         capturedConflicts.addAll(ConflictMessages.sanitizeAll(conflicts.values()))
         return true
+    }
+
+    override fun performRefactoring(usages: Array<out UsageInfo>) {
+        val guard = usageGuard
+        if (guard == null) {
+            super.performRefactoring(usages)
+            return
+        }
+        guard.beforeRetarget(usages.mapNotNull { it.file }.distinct())
+        super.performRefactoring(usages)
+        restoredImports = guard.afterRetarget()
     }
 }

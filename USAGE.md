@@ -1917,6 +1917,9 @@ Move a file to a new directory using the IDE's refactoring engine. Applies langu
 - Automatically creates destination directory if it doesn't exist
 - Detects name conflicts at the destination
 - Fails fast for ambiguous PHP semantic moves instead of reporting a false success
+- Surfaces the IDE's move conflicts (e.g. a package-private class moved away from its users) as `warnings` instead of dropping them
+- Keeps consumers compiling on a same-package move between modules or source roots: imports naming the unchanged package that the IDE's usage rewrite removed from consuming Java files are restored, and each repair is listed in `warnings`
+- Warns when the destination lies outside every source root, i.e. in a directory no module compiles yet (a new Maven/Gradle module the IDE has not imported); reload or link the build system afterwards
 
 **Use when:**
 - Reorganizing project structure

@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_move_file` keeps consumers compiling on a same-package cross-module move** ([#360](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/360)) — moving a Java file between two modules (or source roots) that map the *same* package, the "extract `com.example.pkg` into its own artifact" workflow, leaves the class's fully qualified name unchanged, so a consumer's `import com.example.pkg.*;` is exactly as valid after the move as before. The IDE's move processor nevertheless re-binds every usage of the moved class, and that rewrite was reported to drop the wildcard import from consuming files, which then failed with `cannot find symbol` at the next build while the tool reported a clean success. The tool now snapshots, per file the move is about to rewrite, the imports that name the moved file's package and re-adds any that are gone afterwards (an on-demand import always; a single-class import only when the file has no wildcard for the package left, since the IDE legitimately folds single imports into one); because the package is unchanged, restoring an import restores the file's pre-move name resolution exactly. Every repair is reported in `warnings`. Moves that really change the package are untouched.
+- **`ide_move_file` warns when the destination is outside every source root** — the other half of the same workflow: moving a source file into a directory that no module compiles (a freshly created Maven/Gradle module the IDE has not imported yet) succeeded silently and the file dropped out of every build. The result now carries a warning naming the destination and pointing at `ide_reload_project`, `ide_link_build_system`, and `ide_create_module`.
+
 ## [5.9.4] - 2026-09-01
 
 ### Fixed
