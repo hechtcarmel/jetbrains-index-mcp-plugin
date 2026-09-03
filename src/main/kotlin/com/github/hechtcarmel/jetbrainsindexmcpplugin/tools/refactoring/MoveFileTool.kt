@@ -250,6 +250,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 val filePointer = SmartPointerManager.createPointer(preparation.psiFile)
                 val modifiedFilesBeforeMove = collectUnsavedProjectFiles(project)
 
+                val sourcePackage = detectJavaPackage(preparation.psiFile)
+                val wildcardImportSnapshot = if (sourcePackage != null) {
+                    snapshotWildcardImports(project, sourcePackage)
+                } else {
+                    emptyMap()
+                }
+
                 when (preparation.backend) {
                     MoveBackend.GENERIC_FILE_MOVE -> conflictWarnings = executeGenericFileMove(preparation)
                     MoveBackend.PHP_SEMANTIC_MOVE -> executePhpSemanticMove(project, preparation)
@@ -260,6 +267,22 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 }
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
+
+                if (sourcePackage != null && wildcardImportSnapshot.isNotEmpty()) {
+                    val destPackage = detectJavaPackage(filePointer.element)
+                    if (destPackage == sourcePackage) {
+                        val restored = restoreRemovedWildcardImports(
+                            project, sourcePackage, wildcardImportSnapshot
+                        )
+                        if (restored.isNotEmpty()) {
+                            conflictWarnings = conflictWarnings + restored.map { file ->
+                                "Restored wildcard import '$sourcePackage.*' in $file " +
+                                    "(removed by the move processor despite the package being unchanged)"
+                            }
+                        }
+                    }
+                }
+
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
                 FileDocumentManager.getInstance().saveAllDocuments()
 
@@ -660,6 +683,66 @@ open class MoveFileTool : AbstractRefactoringTool() {
         runCatching {
             OptimizeImportsProcessor(movedFile.project, movedFile).runWithoutProgress()
         }
+    }
+
+    private fun detectJavaPackage(psiFile: PsiFile?): String? {
+        if (psiFile == null || !psiFile.isValid) return null
+        val javaFile = psiFile as? com.intellij.psi.PsiJavaFile ?: return null
+        return javaFile.packageName.takeIf { it.isNotEmpty() }
+    }
+
+    private fun snapshotWildcardImports(
+        project: Project,
+        packageName: String
+    ): Map<String, Boolean> {
+        val result = mutableMapOf<String, Boolean>()
+        val psiManager = PsiManager.getInstance(project)
+
+        val rootManager = ProjectRootManager.getInstance(project)
+        rootManager.contentSourceRoots.forEach { sourceRoot ->
+            VfsUtil.iterateChildrenRecursively(sourceRoot, { true }) { vf ->
+                if (vf.extension == "java" && !vf.isDirectory) {
+                    val psiFile = psiManager.findFile(vf) as? com.intellij.psi.PsiJavaFile
+                    if (psiFile != null) {
+                        val hasWildcard = psiFile.importList?.importStatements?.any {
+                            it.isOnDemand && it.qualifiedName == packageName
+                        } ?: false
+                        if (hasWildcard) {
+                            result[vf.path] = true
+                        }
+                    }
+                }
+                true
+            }
+        }
+        return result
+    }
+
+    private fun restoreRemovedWildcardImports(
+        project: Project,
+        packageName: String,
+        snapshot: Map<String, Boolean>
+    ): List<String> {
+        val restored = mutableListOf<String>()
+        val psiManager = PsiManager.getInstance(project)
+        val factory = com.intellij.psi.PsiElementFactory.getInstance(project)
+
+        for ((filePath, _) in snapshot) {
+            val vf = LocalFileSystem.getInstance().findFileByPath(filePath) ?: continue
+            val psiFile = psiManager.findFile(vf) as? com.intellij.psi.PsiJavaFile ?: continue
+            val importList = psiFile.importList ?: continue
+            val stillHasWildcard = importList.importStatements.any {
+                it.isOnDemand && it.qualifiedName == packageName
+            }
+            if (!stillHasWildcard) {
+                WriteCommandAction.runWriteCommandAction(project, "Restore wildcard import", null, {
+                    val importStatement = factory.createImportStatementOnDemand(packageName)
+                    importList.add(importStatement)
+                })
+                restored.add(getRelativePath(project, vf))
+            }
+        }
+        return restored
     }
 }
 

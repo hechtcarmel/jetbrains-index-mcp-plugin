@@ -265,4 +265,42 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
         }
         IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
+
+    fun testSamePackageMovePreservesWildcardImports() = runBlocking {
+        registerSourceRoot("module-a/src")
+        registerSourceRoot("module-b/src")
+
+        writeProjectFile("module-a/src/com/example/pkg/Foo.java", """
+            package com.example.pkg;
+            public class Foo { public void doFoo() {} }
+        """.trimIndent())
+
+        writeProjectFile("module-a/src/com/example/pkg/Bar.java", """
+            package com.example.pkg;
+            public class Bar { }
+        """.trimIndent())
+
+        writeProjectFile("module-a/src/com/example/consumer/Consumer.java", """
+            package com.example.consumer;
+            import com.example.pkg.*;
+            public class Consumer { Foo f = new Foo(); }
+        """.trimIndent())
+
+        writeProjectFile("module-b/src/com/example/pkg/.gitkeep", "")
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "module-a/src/com/example/pkg/Foo.java")
+            put("destination", "module-b/src/com/example/pkg")
+        })
+
+        assertToolSucceeded("Same-package move should succeed", result)
+
+        val consumerContent = readProjectFileVfs("module-a/src/com/example/consumer/Consumer.java")
+        assertTrue(
+            "Wildcard import must survive a same-package cross-root move. " +
+                "If this fails, IntelliJ's MoveProcessor removed the import and our " +
+                "restoration logic did not restore it. Consumer content: $consumerContent",
+            consumerContent?.contains("import com.example.pkg.*") ?: false
+        )
+    }
 }

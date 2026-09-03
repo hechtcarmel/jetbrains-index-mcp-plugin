@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_move_file` now restores wildcard imports removed by cross-module same-package moves** ([#360](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/360)) — when moving a file between Maven/Gradle modules that share the same Java package name, IntelliJ's move processor incorrectly removes `import pkg.*` from consuming files. The tool now snapshots wildcard imports before the move, detects when the package is unchanged, and restores any that were removed, reporting each restoration as a warning.
+
 ## [5.9.4] - 2026-09-01
 
 ### Fixed
