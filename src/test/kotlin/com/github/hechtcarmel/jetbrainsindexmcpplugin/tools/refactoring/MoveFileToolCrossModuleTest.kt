@@ -6,7 +6,6 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.text
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
-import com.intellij.openapi.module.ModuleTypeId
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiImportStatementBase
@@ -32,6 +31,11 @@ import java.nio.file.Path
  */
 class MoveFileToolCrossModuleTest : HeavyPlatformTestCase() {
 
+    private companion object {
+        /** `JavaModuleType`'s id; spelled out because `ModuleTypeId` is not on the test classpath. */
+        const val JAVA_MODULE_TYPE_ID = "JAVA_MODULE"
+    }
+
     private val basePath: Path
         get() = Path.of(requireNotNull(myProject.basePath) { "Heavy test project has no base path" })
 
@@ -47,7 +51,7 @@ class MoveFileToolCrossModuleTest : HeavyPlatformTestCase() {
         }
         val module = runWriteAction {
             ModuleManager.getInstance(myProject)
-                .newModule(basePath.resolve(name).resolve("$name.iml").toString(), ModuleTypeId.JAVA_MODULE)
+                .newModule(basePath.resolve(name).resolve("$name.iml").toString(), JAVA_MODULE_TYPE_ID)
         }
         ModuleRootModificationUtil.updateModel(module) { model ->
             model.addContentEntry(srcVf).addSourceFolder(srcVf, false)
