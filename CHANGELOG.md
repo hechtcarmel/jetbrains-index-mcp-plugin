@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.9.5] - 2026-09-03
+
 ### Fixed
 
 - **`ide_move_file` keeps consumers compiling on a same-package cross-module move** ([#360](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/360)) — moving a Java file between two modules (or source roots) that map the *same* package, the "extract `com.example.pkg` into its own artifact" workflow, leaves the class's fully qualified name unchanged, so a consumer's `import com.example.pkg.*;` is exactly as valid after the move as before. The IDE's move processor nevertheless re-binds every usage of the moved class, and that rewrite was reported to drop the wildcard import from consuming files, which then failed with `cannot find symbol` at the next build while the tool reported a clean success. The tool now snapshots, per file the move is about to rewrite, the imports that name the moved file's package and re-adds any that are gone afterwards (an on-demand import always; a single-class import only when the file has no wildcard for the package left, since the IDE legitimately folds single imports into one); because the package is unchanged, restoring an import restores the file's pre-move name resolution exactly. Every repair is reported in `warnings`. Moves that really change the package are untouched. On IntelliJ 2025.3 the platform itself keeps the import intact in this layout (a three-module reproduction of the issue now runs in the test suite and asserts a warning-free move), so the repair is a safety net for the IDE and plugin combinations that do drop it.
@@ -1221,7 +1223,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.4...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.5...HEAD
+[5.9.5]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.4...v5.9.5
 [5.9.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.3...v5.9.4
 [5.9.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.2...v5.9.3
 [5.9.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.1...v5.9.2
