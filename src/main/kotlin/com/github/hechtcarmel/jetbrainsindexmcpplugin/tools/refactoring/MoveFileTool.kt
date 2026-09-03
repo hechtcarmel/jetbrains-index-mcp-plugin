@@ -292,8 +292,8 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 if (preparation.leavesSourceRoots) {
                     add(
                         "Destination '${preparation.destinationRelativePath}' is outside every source root: " +
-                            "no module compiles or resolves '$fileName' there, so references to it will break " +
-                            "at the next build until that directory belongs to a module source root " +
+                            "'$fileName' is no longer part of any module's sources, so builds and code " +
+                            "intelligence stop seeing it until that directory belongs to a module source root " +
                             "(reload the build system with ${ToolNames.RELOAD_PROJECT}, link it with " +
                             "${ToolNames.LINK_BUILD_SYSTEM}, or register it with ${ToolNames.CREATE_MODULE})."
                     )

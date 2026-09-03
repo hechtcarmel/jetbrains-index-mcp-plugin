@@ -16,7 +16,10 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.IndexingTestUtil
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
@@ -141,6 +144,16 @@ class MoveFileToolCrossModuleTest : HeavyPlatformTestCase() {
         assertTrue(
             "The moved file keeps its package",
             readFile("module-b/src/com/example/pkg/Foo.java").contains("package com.example.pkg;")
+        )
+
+        // Warning-free by design: the package is unchanged, module-c sees both modules, and the
+        // guard only reports when it had to put an import back. A "Restored import" warning
+        // here means the IDE build under test started dropping the import and the guard is
+        // what keeps the consumer compiling.
+        val warnings = Json.parseToJsonElement(result.text).jsonObject["warnings"]
+        assertTrue(
+            "A same-package move between modules must complete without warnings, got: ${result.text}",
+            warnings == null || warnings is JsonNull
         )
 
         val client = readFile("module-c/src/com/example/client/Client.java")

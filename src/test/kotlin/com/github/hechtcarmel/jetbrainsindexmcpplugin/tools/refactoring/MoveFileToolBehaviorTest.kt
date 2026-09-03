@@ -38,6 +38,9 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
         Files.createDirectories(path)
         val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)
         assertNotNull("Directory should resolve in VFS: $relativePath", virtualFile)
+        // A new directory under a source root starts a dumb-mode scan; resolving anything
+        // before it finishes throws IndexNotReadyException.
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
         return com.intellij.psi.PsiManager.getInstance(project).findDirectory(virtualFile!!)
             ?: error("Directory should resolve as PSI: $relativePath")
     }
