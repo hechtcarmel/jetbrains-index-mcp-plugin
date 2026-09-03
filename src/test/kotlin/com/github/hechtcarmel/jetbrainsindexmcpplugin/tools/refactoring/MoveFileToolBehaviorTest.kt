@@ -4,10 +4,16 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCa
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiImportStatementBase
+import com.intellij.psi.PsiJavaCodeReferenceElement
+import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.PsiManager
 import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.util.PsiTreeUtil
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
@@ -264,5 +270,239 @@ class MoveFileToolBehaviorTest : McpPlatformTestCase() {
             )
         }
         IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    // ── Same-package moves (issue #360) ─────────────────────────────────────────────────
+
+    private fun javaFile(relativePath: String): PsiJavaFile {
+        val basePath = requireNotNull(project.basePath)
+        val virtualFile = requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath("$basePath/$relativePath")) {
+            "File should resolve in VFS: $relativePath"
+        }
+        return PsiManager.getInstance(project).findFile(virtualFile) as PsiJavaFile
+    }
+
+    /** Asserts the first code reference named [referenceName] in [relativePath] resolves into [targetRelativePath]. */
+    private fun assertReferenceResolvesInto(relativePath: String, referenceName: String, targetRelativePath: String) {
+        val reference = PsiTreeUtil.findChildrenOfType(javaFile(relativePath), PsiJavaCodeReferenceElement::class.java)
+            .firstOrNull {
+                it.referenceName == referenceName &&
+                    PsiTreeUtil.getParentOfType(it, PsiImportStatementBase::class.java) == null
+            }
+            ?: error("No reference named '$referenceName' in $relativePath")
+        val resolved = reference.resolve()
+        assertNotNull("'$referenceName' in $relativePath must still resolve after the move", resolved)
+        val resolvedPath = resolved!!.containingFile.virtualFile.path
+        assertTrue(
+            "'$referenceName' in $relativePath resolves into $resolvedPath, expected $targetRelativePath",
+            resolvedPath.endsWith("/$targetRelativePath")
+        )
+    }
+
+    private fun relativePathOf(restored: RestoredImports): String =
+        restored.file.path.removePrefix("${project.basePath}/")
+
+    // A file moved between two source roots that map the same package keeps its fully
+    // qualified name, so a consumer's wildcard import is exactly as valid after the move as
+    // before. The consumer must come out of the move still importing the package, still calling
+    // the class by its simple name, and still resolving it — now at the new location.
+    fun testSamePackageMoveAcrossSourceRootsKeepsWildcardImporterIntact() = runBlocking {
+        registerSourceRoot("samepkg-a")
+        registerSourceRoot("samepkg-b")
+        writeProjectFile(
+            "samepkg-a/shared/api/Moved.java", """
+            package shared.api;
+
+            public class Moved {
+                public String describe() {
+                    return "moved";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "samepkg-a/consumer/WildcardConsumer.java", """
+            package consumer;
+
+            import shared.api.*;
+
+            public class WildcardConsumer {
+                public String describe() {
+                    return new Moved().describe();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "samepkg-a/shared/api/Moved.java")
+            put("destination", "samepkg-b/shared/api")
+        })
+
+        assertToolSucceeded("Same-package move across source roots should succeed", result)
+        assertProjectFileAbsent("samepkg-a/shared/api/Moved.java")
+        assertProjectFileExists("samepkg-b/shared/api/Moved.java")
+        assertFileContains("samepkg-b/shared/api/Moved.java", "package shared.api;")
+        assertFileContains("samepkg-a/consumer/WildcardConsumer.java", "import shared.api.*;")
+        assertFileContains("samepkg-a/consumer/WildcardConsumer.java", "new Moved().describe()")
+        assertFileDoesNotContain("samepkg-a/consumer/WildcardConsumer.java", "shared.api.Moved")
+        assertReferenceResolvesInto("samepkg-a/consumer/WildcardConsumer.java", "Moved", "samepkg-b/shared/api/Moved.java")
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    // A destination no module compiles is the other half of the "extract a new module" trap:
+    // the move itself succeeds, and the file silently drops out of every build until the new
+    // module is registered. The result must say so.
+    fun testMoveOutOfEverySourceRootWarnsThatNoModuleCompilesTheFile() = runBlocking {
+        registerSourceRoot("escape-src")
+        writeProjectFile("escape-src/escaping/Escaping.java", "package escaping;\n\npublic class Escaping {}\n")
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "escape-src/escaping/Escaping.java")
+            put("destination", "unregistered-module/src/escaping")
+        })
+
+        assertToolSucceeded("Move out of the source roots should still succeed", result)
+        assertProjectFileAbsent("escape-src/escaping/Escaping.java")
+        assertProjectFileExists("unregistered-module/src/escaping/Escaping.java")
+        val warnings = resultWarnings(result)
+        assertNotNull("Leaving every source root must be reported as a warning", warnings)
+        val warning = warnings!!.firstOrNull { it.contains("outside every source root") }
+        assertNotNull("Expected a source-root warning, got: $warnings", warning)
+        assertTrue("Warning must name the destination: $warning", warning!!.contains("unregistered-module/src/escaping"))
+        assertTrue("Warning must name the moved file: $warning", warning.contains("Escaping.java"))
+        assertTrue("Warning must point at the build-system tools: $warning", warning.contains("ide_reload_project"))
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+    }
+
+    // ── JavaOnDemandImportGuard ─────────────────────────────────────────────────────────
+    //
+    // The guard is the repair behind issue #360. The end-to-end tests above cover whatever the
+    // IDE build under test does to a same-package move; these drive the guard directly with the
+    // damage applied by hand, so the repair path is verified independently of that behavior.
+
+    fun testImportGuardRestoresPackageImportsRemovedFromUsageFiles() {
+        registerSourceRoot("guard-a")
+        registerSourceRoot("guard-b")
+        writeProjectFile("guard-a/guarded/Target.java", "package guarded;\n\npublic class Target {}\n")
+        writeProjectFile(
+            "guard-a/users/Wildcard.java", """
+            package users;
+
+            import guarded.*;
+
+            public class Wildcard {
+                Target target;
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "guard-a/users/Single.java", """
+            package users;
+
+            import guarded.Target;
+
+            public class Single {
+                Target target;
+            }
+        """.trimIndent()
+        )
+        val target = javaFile("guard-a/guarded/Target.java")
+        val wildcard = javaFile("guard-a/users/Wildcard.java")
+        val single = javaFile("guard-a/users/Single.java")
+
+        val guard = JavaOnDemandImportGuard.forMove(target, createProjectDirectory("guard-b/guarded"))
+        assertNotNull("Same package on both sides: the guard must apply", guard)
+        guard!!.beforeRetarget(listOf(wildcard, single, target))
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            wildcard.importList!!.importStatements.forEach { it.delete() }
+            single.importList!!.importStatements.forEach { it.delete() }
+        }
+        assertFileDoesNotContain("guard-a/users/Wildcard.java", "import guarded.*;")
+        assertFileDoesNotContain("guard-a/users/Single.java", "import guarded.Target;")
+
+        var restored: List<RestoredImports> = emptyList()
+        WriteCommandAction.runWriteCommandAction(project) { restored = guard.afterRetarget() }
+
+        assertEquals(
+            mapOf(
+                "guard-a/users/Wildcard.java" to listOf("guarded.*"),
+                "guard-a/users/Single.java" to listOf("guarded.Target")
+            ),
+            restored.associate { relativePathOf(it) to it.imports }
+        )
+        assertFileContains("guard-a/users/Wildcard.java", "import guarded.*;")
+        assertFileContains("guard-a/users/Single.java", "import guarded.Target;")
+        assertReferenceResolvesInto("guard-a/users/Wildcard.java", "Target", "guard-a/guarded/Target.java")
+        assertReferenceResolvesInto("guard-a/users/Single.java", "Target", "guard-a/guarded/Target.java")
+    }
+
+    fun testImportGuardLeavesSurvivingAndFoldedImportsAlone() {
+        registerSourceRoot("guard-c")
+        registerSourceRoot("guard-d")
+        writeProjectFile("guard-c/kept/Kept.java", "package kept;\n\npublic class Kept {}\n")
+        writeProjectFile(
+            "guard-c/users/Untouched.java", """
+            package users;
+
+            import kept.*;
+
+            public class Untouched {
+                Kept kept;
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "guard-c/users/Folded.java", """
+            package users;
+
+            import kept.Kept;
+
+            public class Folded {
+                Kept kept;
+            }
+        """.trimIndent()
+        )
+        val untouched = javaFile("guard-c/users/Untouched.java")
+        val folded = javaFile("guard-c/users/Folded.java")
+
+        val guard = requireNotNull(JavaOnDemandImportGuard.forMove(javaFile("guard-c/kept/Kept.java"), createProjectDirectory("guard-d/kept")))
+        guard.beforeRetarget(listOf(untouched, folded))
+
+        // The IDE legitimately folds single imports into a wildcard; that is not damage.
+        WriteCommandAction.runWriteCommandAction(project) {
+            val importList = folded.importList!!
+            importList.importStatements.forEach { it.delete() }
+            importList.add(JavaPsiFacade.getElementFactory(project).createImportStatementOnDemand("kept"))
+        }
+
+        var restored: List<RestoredImports> = emptyList()
+        WriteCommandAction.runWriteCommandAction(project) { restored = guard.afterRetarget() }
+
+        assertTrue("Nothing to repair, so nothing may be reported: $restored", restored.isEmpty())
+        assertFileContains("guard-c/users/Untouched.java", "import kept.*;")
+        assertFileContains("guard-c/users/Folded.java", "import kept.*;")
+        assertFileDoesNotContain("guard-c/users/Folded.java", "import kept.Kept;")
+    }
+
+    fun testImportGuardAppliesOnlyWhenThePackageStaysTheSame() {
+        registerSourceRoot("guard-e")
+        registerSourceRoot("guard-f")
+        writeProjectFile("guard-e/before/Mover.java", "package before;\n\npublic class Mover {}\n")
+        val mover = javaFile("guard-e/before/Mover.java")
+
+        assertNull(
+            "A real package change legitimately rewrites imports; the guard must stay out of it",
+            JavaOnDemandImportGuard.forMove(mover, createProjectDirectory("guard-e/after"))
+        )
+        assertNotNull(
+            "Same package under another source root is the issue #360 case",
+            JavaOnDemandImportGuard.forMove(mover, createProjectDirectory("guard-f/before"))
+        )
+        assertNotNull(
+            "A destination without a package leaves the file's package as is, so the guard applies",
+            JavaOnDemandImportGuard.forMove(mover, createProjectDirectory("guard-plain/before"))
+        )
     }
 }
