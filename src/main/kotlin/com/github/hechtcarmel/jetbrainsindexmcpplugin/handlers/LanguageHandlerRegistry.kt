@@ -282,7 +282,9 @@ object LanguageHandlerRegistry {
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php.PhpHandlers", "PHP"),
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.rust.RustHandlers", "Rust"),
         HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.markdown.MarkdownHandlers", "Markdown"),
-    )
+        HandlerRegistration("com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.ruby.RubyHandlers", "ruby"),
+
+        )
 
     private fun registerLanguageHandlers(className: String, displayName: String) {
         try {
