@@ -74,6 +74,10 @@ When requested, follow [SemVer](https://semver.org):
 
 ### Releasing (maintainer)
 
+The end-to-end maintainer process (issue → fix PR → merge → bump → draft → publish → changelog
+PR), including what the maintenance Routine does unprompted and what it asks about by email, is
+in [`.claude/skills/steward/SKILL.md`](.claude/skills/steward/SKILL.md).
+
 Releases are published from GitHub — no manual Marketplace upload:
 
 1. Merge a version-bump PR (`pluginVersion` in `gradle.properties`). Changelog entries may stay

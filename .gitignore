@@ -6,7 +6,9 @@
 .qodana
 build
 tmp
-.claude
+# Local Claude Code state stays out; the checked-in steward playbook goes in.
+.claude/*
+!.claude/skills/
 local.properties
 *.hprof
 docs/superpowers
