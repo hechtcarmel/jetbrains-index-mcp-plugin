@@ -57,7 +57,8 @@ class LifecycleEventLog {
          *
          * A mode change is rendered as `from→to`; any other event is named explicitly, so an
          * `enroll` entry no longer reads exactly like a per-call marker (issue #369: the bare
-         * `[mcp_call] project` line was mistaken for "the timer was reset here").
+         * line carrying only the `mcp_call` trigger and the project name was mistaken for
+         * "the timer was reset here").
          */
         fun toLogLine(): String {
             val ts = ISO.format(Instant.ofEpochMilli(timestampMs).atOffset(ZoneOffset.UTC))
