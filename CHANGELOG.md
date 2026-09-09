@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.9.6] - 2026-09-09
+
 ### Fixed
 
 - **Lifecycle management no longer takes your editor tabs away for good** ([#369](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/369)) — with lifecycle management enabled, a managed project whose window is unfocused goes `dormant` after `Background → Dormant` minutes (default 2) without an MCP tool call, and the dormant transition closed every open editor tab permanently: the user came back to an empty editor and rebuilt their tab set from Recent Files. The countdown itself was never stale — every tool call on a managed project already restarted it, as a new regression test now proves — but a human-plus-agent workflow has plenty of two-minute gaps (the agent thinking or running builds, the user reading a reply), so the result was that tabs vanished "right after" the last call. The dormant transition now remembers the tabs it closes (in tab order, with the selected one) and reopens them the moment the project window regains focus, or when the project is released; an MCP wake still leaves them closed, since the agent needs no editors and reopening them would spend the memory dormant freed. The remembered set is persisted, so it survives an IDE restart and a lifecycle close-and-reopen — cases where the IDE itself saved the workspace with no editors and would otherwise have lost them. Two adjacent gaps are closed as well: on an IDE restart the focus listener could be registered after the restored window had already taken focus, so a managed project sat in `background` — countdown running — while the user worked in it and went dormant two minutes later; the listener now catches up on the current focus state, and recording a reopen no longer demotes a project the focus listener has already promoted to `active`. Switching lifecycle management off in Settings now also stops countdowns that were already armed, instead of letting the last one close the editors anyway.
@@ -1228,7 +1230,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.5...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.6...HEAD
+[5.9.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.5...v5.9.6
 [5.9.5]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.4...v5.9.5
 [5.9.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.3...v5.9.4
 [5.9.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.2...v5.9.3
