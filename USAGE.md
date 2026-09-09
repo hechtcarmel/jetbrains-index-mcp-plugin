@@ -3254,7 +3254,7 @@ If `isDumbMode` is `true`, wait and retry later.
 
 ## Project Lifecycle Management
 
-When working across multiple projects simultaneously, idle ones consume memory unnecessarily. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity. Projects enroll on first MCP use and auto-reopen when targeted by an MCP call — existing tools require no changes.
+When working across multiple projects simultaneously, idle ones consume memory unnecessarily. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity. Projects enroll on first MCP use and auto-reopen when targeted by an MCP call — existing tools require no changes. Every MCP tool call restarts a project's idle countdown (which only runs while its window is unfocused), and the editor tabs a `dormant` transition closes are remembered — across IDE restarts — and reopened when the window regains focus or the project is released.
 
 **Lifecycle modes:**
 
@@ -3262,7 +3262,7 @@ When working across multiple projects simultaneously, idle ones consume memory u
 |------|-----------|---------|-----------|--------|
 | `active` | off | open | loaded | full |
 | `background` | on | open | loaded | reduced |
-| `dormant` | on | closed | released via GC | low |
+| `dormant` | on | closed (reopen on next focus) | released via GC | low |
 | `closed` | — | — | freed | none (auto-reopens on next MCP call) |
 
 ---
@@ -3384,7 +3384,9 @@ Query recent lifecycle events from the in-memory ring buffer (default 500 entrie
 { "name": "ide_lifecycle_log", "arguments": { "limit": 20, "project": "engine" } }
 ```
 
-**Event fields:** `timestamp`, `project`, `path`, `event`, `from` (mode), `to` (mode), `trigger`.
+**Event fields:** `timestamp`, `project`, `path`, `event`, `from` (mode), `to` (mode), `trigger`, `detail` (optional — e.g. how long the project had no MCP call when the inactivity timer fired, or how many editor tabs a dormant transition closed).
+
+**Event types:** `open`, `closed`, `transition`, `enroll`, `release`, `wake`, `editors_closed`, `editors_restored`.
 
 **Trigger values:**
 

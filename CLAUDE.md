@@ -531,7 +531,7 @@ Tools are organized by IDE availability.
 
 **Lifecycle Management Tools (All Supported JetBrains IDEs):**
 
-Manage which open projects the MCP server keeps active, in the background, dormant, or closed (behavior gated on the `lifecycleEnabled` setting):
+Manage which open projects the MCP server keeps active, in the background, dormant, or closed (behavior gated on the `lifecycleEnabled` setting). Every tool call with `participatesInLifecycle` restarts the project's background→dormant countdown (`ProjectModeService.wakeForMcp`); the countdown only runs while the window is unfocused. A dormant transition closes the editor tabs but records them in the service's persisted state and reopens them on the next transition to `active` (window focus) or on release — never on an MCP wake (issue #369):
 - `ide_project_status` - Report the status of all known projects (open + lifecycle-managed) in one table
 - `ide_enroll_all_projects` - Enroll all currently open projects in MCP lifecycle management (disabled by default)
 - `ide_get_project_modes` - List all MCP-managed projects and their current lifecycle mode (disabled by default)

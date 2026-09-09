@@ -279,4 +279,53 @@ class LifecycleToolsTest : BasePlatformTestCase() {
 
         assertFalse(modeService.isManaged(closedPath))
     }
+
+    // ── Issue #369: every tool call restarts the background→dormant countdown ───────────────
+
+    fun testToolCallPushesTheDormantDeadlineForward() = runBlocking {
+        modeService.enroll(project)  // no window focus in tests → BACKGROUND, countdown armed
+        val path = project.basePath!!
+        val armedByEnrollment = modeService.idleClock(path)
+        assertNotNull("enrolling an unfocused project must arm the dormant countdown", armedByEnrollment)
+        assertEquals("enrollment", armedByEnrollment!!.startedBy)
+        Thread.sleep(25)
+
+        GetIndexStatusTool().execute(project, buildJsonObject { })
+
+        val armedByCall = modeService.idleClock(path)
+        assertNotNull("the countdown must still be running after the call", armedByCall)
+        assertTrue(
+            "a tool call must restart the countdown: deadline ${armedByCall!!.deadlineMs} " +
+                "should be later than ${armedByEnrollment.deadlineMs}",
+            armedByCall.deadlineMs > armedByEnrollment.deadlineMs
+        )
+        assertEquals("MCP call", armedByCall.startedBy)
+    }
+
+    fun testNoCountdownRunsWhileTheUserHasTheWindow() = runBlocking {
+        modeService.enroll(project)
+        modeService.transition(project, ProjectMode.ACTIVE, "focus_gained")
+        val path = project.basePath!!
+        assertNull("ACTIVE cancels the countdown", modeService.idleClock(path))
+
+        GetIndexStatusTool().execute(project, buildJsonObject { })
+
+        assertNull(
+            "a tool call in ACTIVE must not start a countdown — the user has the window",
+            modeService.idleClock(path)
+        )
+        assertEquals(ProjectMode.ACTIVE, modeService.getMode(project))
+    }
+
+    fun testWakingADormantProjectArmsAFreshCountdown() = runBlocking {
+        modeService.enroll(project)
+        modeService.transition(project, ProjectMode.DORMANT, "timer:inactivity")
+        val path = project.basePath!!
+        assertNull("dormant runs the close countdown, not the inactivity one", modeService.idleClock(path))
+
+        GetIndexStatusTool().execute(project, buildJsonObject { })
+
+        assertEquals(ProjectMode.BACKGROUND, modeService.getMode(project))
+        assertEquals("MCP call", modeService.idleClock(path)?.startedBy)
+    }
 }

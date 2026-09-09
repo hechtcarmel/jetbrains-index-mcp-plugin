@@ -67,7 +67,7 @@ These tools activate based on installed language plugins:
 
 When working across many projects simultaneously, idle ones consume memory unnecessarily and leave editors open for no reason. Lifecycle management sleeps and wakes projects based on window focus and MCP activity. It is opt-in — disabled by default; turn on "Enable lifecycle management" in Settings → Tools → Index MCP Server, after which no further configuration is required.
 
-- **Automatic sleep/wake** - Projects move from active → background (Power Save on) → dormant (editors closed, PSI cache freed) → closed (fully unloaded), and auto-reopen transparently on the next MCP call
+- **Automatic sleep/wake** - Projects move from active → background (Power Save on) → dormant (editor tabs closed, PSI cache freed) → closed (fully unloaded), and auto-reopen transparently on the next MCP call. Every MCP tool call restarts a project's idle countdown, and the tabs a dormant transition closed reopen when you return to the project window
 - **`ide_project_status`** - Combined snapshot of every open and managed project
 - **`ide_set_project_mode`** / **`ide_get_project_modes`** - Explicit mode control
 - **`ide_release_project`** - Unenroll a project from lifecycle management
@@ -350,8 +350,10 @@ PHP file structure support requires the PHP plugin and is available in PhpStorm 
 |------|-----------|---------|-----------|-----------------|
 | `active` | off | open | loaded | focus lost for N min → background |
 | `background` | on | open | loaded | N min idle → dormant |
-| `dormant` | on | closed | freed | N min idle → closed |
+| `dormant` | on | closed (reopen on next focus) | freed | N min idle → closed |
 | `closed` | — | — | freed | next MCP call → background (auto-reopens) |
+
+"Idle" means no MCP tool call: every call on a managed project restarts its background → dormant countdown, and the countdown only runs while the project window is unfocused (an `active` project has no countdown). A `dormant` transition closes the editor tabs but remembers them — across IDE restarts too — and reopens them the moment the window regains focus (or the project is released); an MCP wake leaves them closed, since the agent does not need them.
 
 Timing thresholds are configurable in Settings. Lifecycle management is opt-in (disabled by default); once "Enable lifecycle management" is turned on in Settings → Tools → Index MCP Server, projects enroll automatically on first MCP use and auto-reopen when an MCP tool targets a closed project — existing tools require no changes.
 
@@ -424,7 +426,7 @@ When you use the plugin across multiple projects simultaneously — common when 
 Once enabled, projects enroll on their first MCP tool call and are notified via balloon. From that point, transitions happen based on focus and MCP activity:
 
 1. **Focus lost** → after 2 minutes, Power Save Mode on (`background`)
-2. **No MCP calls** → after 2 more minutes, editors close and PSI cache is freed (`dormant`)
+2. **No MCP calls** → after 2 more minutes, editor tabs close and PSI cache is freed (`dormant`). Every MCP call restarts this countdown. The closed tabs come back when the window regains focus
 3. **Still idle** → after 10 minutes, project window closes entirely (`closed`)
 4. **Next MCP call** → project reopens automatically, indexes, and responds normally
 
@@ -432,7 +434,7 @@ No changes are needed in existing MCP tools — `ProjectResolver` handles the re
 
 The lifecycle manager never closes below the configurable minimum of open managed projects (default 4): projects at the floor stay dormant (memory mostly freed, MCP still reachable) instead of closing. If all projects are closed by other means, any tool call automatically reopens one managed project to restore MCP access.
 
-Use `ide_project_status` to see the current state of all projects at a glance, and `ide_lifecycle_log` to see what happened and why — useful when a project closed unexpectedly. Each log event has a `trigger` field: `timer:inactivity`, `timer:close`, `focus_gained`, `mcp_call`, `auto_open`, `user`, etc.
+Use `ide_project_status` to see the current state of all projects at a glance, and `ide_lifecycle_log` to see what happened and why — useful when a project closed unexpectedly. Each log event has a `trigger` field: `timer:inactivity`, `timer:close`, `focus_gained`, `mcp_call`, `auto_open`, `user`, etc., and a `detail` where it helps — e.g. how long a project had no MCP call when the inactivity timer fired, or how many editor tabs a dormant transition closed.
 
 Timing thresholds are configurable in Settings → Tools → Index MCP Server → Project Lifecycle Management.
 

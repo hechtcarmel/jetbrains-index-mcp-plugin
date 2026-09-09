@@ -1,6 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
 import com.intellij.ide.PowerSaveMode
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.ui.UIUtil
 
@@ -30,6 +32,9 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
             if (service.isManaged(project)) {
                 service.release(project)
             }
+            // release() and the dormant/active transitions queue editor work on the EDT — run it
+            // inside this test rather than letting it close or reopen files in the next one.
+            UIUtil.dispatchAllInvocationEvents()
             // Reset persisted state
             service.loadState(ProjectModeService.State())
             // Drop stale pendingClose entries left by deferred-close tests
@@ -504,5 +509,186 @@ class ProjectModeServiceTest : BasePlatformTestCase() {
             "vetoed close must enter pendingClose for event-driven retry",
             service.isInPendingClose(path)
         )
+    }
+
+    // ── Issue #369: dormant closes editor tabs; the user's return gives them back ──────────
+    // Before the fix a dormant transition closed every tab for good — the user had to rebuild
+    // their editor set from Recent Files after any two-minute gap in MCP activity.
+
+    private fun openInEditor(name: String, text: String): VirtualFile {
+        val file = myFixture.addFileToProject(name, text).virtualFile
+        FileEditorManager.getInstance(project).openFile(file, true)
+        return file
+    }
+
+    private fun openFilesNow(): Set<VirtualFile> = FileEditorManager.getInstance(project).openFiles.toSet()
+
+    /** The dormant transition closes editors on the EDT; run that work before asserting. */
+    private fun goDormant() {
+        service.transition(project, ProjectMode.DORMANT, "timer:inactivity")
+        UIUtil.dispatchAllInvocationEvents()
+    }
+
+    /** What the window focus listener does when the user comes back, EDT work included. */
+    private fun comeBack() {
+        service.transition(project, ProjectMode.ACTIVE, "focus_gained")
+        UIUtil.dispatchAllInvocationEvents()
+    }
+
+    fun testDormantClosesEveryEditorTabAndRemembersThem() {
+        val first = openInEditor("First.java", "class First {}")
+        val second = openInEditor("Second.java", "class Second {}")
+        assertEquals(setOf(first, second), openFilesNow())  // sanity
+        service.enroll(project)
+
+        goDormant()
+
+        assertEquals("dormant must close every editor tab", emptySet<VirtualFile>(), openFilesNow())
+        assertEquals(
+            "the closed tabs must be remembered so they can be given back",
+            setOf(first.url, second.url),
+            service.rememberedEditorUrls(project.basePath!!).toSet()
+        )
+    }
+
+    fun testReturningFocusReopensTheTabsDormantClosed() {
+        val first = openInEditor("First.java", "class First {}")
+        val second = openInEditor("Second.java", "class Second {}")
+        service.enroll(project)
+        goDormant()
+        assertEquals(emptySet<VirtualFile>(), openFilesNow())  // sanity
+
+        comeBack()
+
+        assertEquals(
+            "focus_gained → ACTIVE must reopen exactly the tabs dormant closed",
+            setOf(first, second),
+            openFilesNow()
+        )
+        assertTrue(
+            "restored tabs are no longer owed",
+            service.rememberedEditorUrls(project.basePath!!).isEmpty()
+        )
+    }
+
+    fun testReturningFocusReselectsTheTabThatWasSelectedBeforeDormant() {
+        val first = openInEditor("First.java", "class First {}")
+        openInEditor("Second.java", "class Second {}")
+        val fem = FileEditorManager.getInstance(project)
+        fem.openFile(first, true)  // make First the selected tab again
+        assertEquals(first, fem.selectedFiles.single())  // sanity
+        service.enroll(project)
+        goDormant()
+
+        comeBack()
+
+        assertEquals("the tab selected before dormant must be selected again", first, fem.selectedFiles.single())
+    }
+
+    fun testMcpWakeLeavesTheTabsClosedButStillOwed() {
+        val file = openInEditor("Only.java", "class Only {}")
+        service.enroll(project)
+        goDormant()
+
+        service.wakeForMcp(project)
+        UIUtil.dispatchAllInvocationEvents()
+
+        assertEquals(ProjectMode.BACKGROUND, service.getMode(project))
+        assertEquals(
+            "an MCP wake must not reopen editors — the agent does not need them and dormant freed that memory",
+            emptySet<VirtualFile>(),
+            openFilesNow()
+        )
+        assertEquals(listOf(file.url), service.rememberedEditorUrls(project.basePath!!))
+
+        comeBack()
+        assertEquals("the tabs are still owed to the user after an MCP wake", setOf(file), openFilesNow())
+    }
+
+    fun testTabsClosedAcrossSeveralDormantCyclesAreAllGivenBack() {
+        val first = openInEditor("First.java", "class First {}")
+        service.enroll(project)
+        goDormant()                    // closes First
+        service.wakeForMcp(project)    // BACKGROUND; First stays closed
+        val second = openInEditor("Second.java", "class Second {}")  // e.g. ide_open_file while in background
+        goDormant()                    // closes Second
+
+        comeBack()
+
+        assertEquals("both cycles' tabs are owed", setOf(first, second), openFilesNow())
+    }
+
+    fun testRestoredTabsAreForgottenSoALaterRestoreReflectsWhatTheUserLeftOpen() {
+        val first = openInEditor("First.java", "class First {}")
+        val second = openInEditor("Second.java", "class Second {}")
+        service.enroll(project)
+        goDormant()
+        comeBack()
+        assertEquals(setOf(first, second), openFilesNow())  // sanity
+
+        FileEditorManager.getInstance(project).closeFile(first)  // the user closes one tab
+        service.transition(project, ProjectMode.BACKGROUND, "timer:focus")
+        goDormant()
+        comeBack()
+
+        assertEquals(
+            "a tab the user closed must not come back from a stale memory",
+            setOf(second),
+            openFilesNow()
+        )
+    }
+
+    fun testReleaseGivesBackTheTabsDormantClosed() {
+        val file = openInEditor("Only.java", "class Only {}")
+        service.enroll(project)
+        goDormant()
+        assertEquals(emptySet<VirtualFile>(), openFilesNow())  // sanity
+
+        service.release(project)
+        UIUtil.dispatchAllInvocationEvents()
+
+        assertEquals("release returns full control to the user, tabs included", setOf(file), openFilesNow())
+    }
+
+    fun testTabsClosedByDormantSurviveAnIdeRestart() {
+        // The IDE saves a dormant project's workspace with no open editors, so the remembered
+        // set has to live in this service's persisted state to outlive a restart.
+        val file = openInEditor("Only.java", "class Only {}")
+        service.enroll(project)
+        goDormant()
+        val persisted = service.getState()
+        assertEquals(listOf(file.url), persisted.dormantEditors[project.basePath]?.fileUrls)
+
+        // Restart: a fresh service loads the persisted state, then the user focuses the window.
+        val fresh = ProjectModeService()
+        fresh.loadState(persisted)
+        assertTrue("precondition: the project must survive the ghost prune", fresh.isManaged(project))
+
+        fresh.transition(project, ProjectMode.ACTIVE, "focus_gained")
+        UIUtil.dispatchAllInvocationEvents()
+
+        assertEquals("tabs remembered before the restart come back on the first focus", setOf(file), openFilesNow())
+    }
+
+    fun testMarkReopenedDoesNotDemoteAnActiveProject() {
+        // The frame usually takes focus as it appears, so the focus listener can promote a
+        // reopened project to ACTIVE before the opener records the reopen. Demoting it would
+        // leave the user working in a focused window whose dormant countdown is running.
+        service.enroll(project)
+        service.transition(project, ProjectMode.ACTIVE, "focus_gained")
+
+        service.markReopened(project.basePath!!)
+
+        assertEquals(ProjectMode.ACTIVE, service.getMode(project))
+    }
+
+    fun testMarkReopenedStillPutsAnUnfocusedProjectInBackground() {
+        service.enroll(project)
+        service.transition(project, ProjectMode.DORMANT, "timer:inactivity")
+        UIUtil.dispatchAllInvocationEvents()
+
+        service.markReopened(project.basePath!!)
+
+        assertEquals(ProjectMode.BACKGROUND, service.getMode(project))
     }
 }

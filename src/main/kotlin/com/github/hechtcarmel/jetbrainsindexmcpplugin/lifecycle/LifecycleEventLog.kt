@@ -28,12 +28,18 @@ class LifecycleEventLog {
         val timestampMs: Long = System.currentTimeMillis(),
         val project: String,
         val path: String,
-        /** open, closed, transition, enroll, release, wake */
+        /** open, closed, transition, enroll, release, wake, editors_closed, editors_restored */
         val event: String,
         val from: String? = null,
         val to: String? = null,
         /** focus_gained, focus_lost, timer:focus, timer:inactivity, timer:close, mcp_call, auto_open, user */
-        val trigger: String
+        val trigger: String,
+        /**
+         * Why it happened and what it did, in words — e.g. how long a project was idle when the
+         * inactivity timer fired, or how many editor tabs a dormant transition closed. Optional:
+         * absent from the JSON when there is nothing to add.
+         */
+        val detail: String? = null
     ) {
         fun toJson(): JsonObject = buildJsonObject {
             put("timestamp", ISO.format(Instant.ofEpochMilli(timestampMs).atOffset(ZoneOffset.UTC)))
@@ -43,12 +49,25 @@ class LifecycleEventLog {
             from?.let { put("from", it) }
             to?.let { put("to", it) }
             put("trigger", trigger)
+            detail?.let { put("detail", it) }
         }
 
+        /**
+         * One human-readable line for `mcp-lifecycle.log`.
+         *
+         * A mode change is rendered as `from→to`; any other event is named explicitly, so an
+         * `enroll` entry no longer reads exactly like a per-call marker (issue #369: the bare
+         * `[mcp_call] project` line was mistaken for "the timer was reset here").
+         */
         fun toLogLine(): String {
             val ts = ISO.format(Instant.ofEpochMilli(timestampMs).atOffset(ZoneOffset.UTC))
-            val modeChange = if (from != null && to != null) ": $from→$to" else ""
-            return "$ts [$trigger] $project$modeChange  ($path)"
+            val what = when {
+                from != null && to != null -> ": $from→$to"
+                event != trigger -> ": $event"
+                else -> ""
+            }
+            val extra = detail?.let { " — $it" } ?: ""
+            return "$ts [$trigger] $project$what$extra  ($path)"
         }
     }
 
@@ -89,6 +108,24 @@ class LifecycleEventLog {
         const val DEFAULT_CAPACITY = 500
         private val LOG = logger<LifecycleEventLog>()
         private val ISO: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+        private val TIME_OF_DAY: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss'Z'")
         fun getInstance(): LifecycleEventLog = service()
+
+        /** `09:51:08Z` — the time of day in UTC, matching the timestamps of the log lines. */
+        fun formatTimeOfDay(epochMs: Long): String =
+            TIME_OF_DAY.format(Instant.ofEpochMilli(epochMs).atOffset(ZoneOffset.UTC))
+
+        /** `45s`, `2m 1s`, `1h 3m` — coarse enough for a log line, never negative. */
+        fun formatDuration(ms: Long): String {
+            val totalSeconds = (ms.coerceAtLeast(0) / 1000)
+            val hours = totalSeconds / 3600
+            val minutes = (totalSeconds % 3600) / 60
+            val seconds = totalSeconds % 60
+            return when {
+                hours > 0 -> "${hours}h ${minutes}m"
+                minutes > 0 -> "${minutes}m ${seconds}s"
+                else -> "${seconds}s"
+            }
+        }
     }
 }

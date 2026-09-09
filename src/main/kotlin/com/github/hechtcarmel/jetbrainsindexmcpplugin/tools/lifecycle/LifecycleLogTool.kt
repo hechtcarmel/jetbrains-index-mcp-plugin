@@ -33,9 +33,11 @@ class LifecycleLogTool : AbstractMcpTool() {
         Use this to diagnose lifecycle health: understand why a project closed, whether auto-open
         worked, or which projects are cycling unexpectedly.
 
-        Event types: open, closed, transition, enroll, release, wake
+        Event types: open, closed, transition, enroll, release, wake, editors_closed, editors_restored
         Trigger values: focus_gained, focus_lost, timer:focus, timer:inactivity, timer:close,
                         mcp_call, auto_open, user
+        Events carry an optional `detail` — e.g. how long a project had no MCP call when the
+        inactivity timer fired, or how many editor tabs a dormant transition closed.
 
         Parameters:
         - limit: Number of recent events to return, newest first (default 50, max 500)

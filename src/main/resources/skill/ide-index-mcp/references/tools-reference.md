@@ -710,7 +710,7 @@ Open a project by absolute path and wait until indexing completes. Idempotent: r
 
 ## Lifecycle Tools
 
-Lifecycle management sleeps and wakes open projects based on window focus and MCP activity. Modes: `active` (full IDE), `background` (Power Save on), `dormant` (editors closed, PSI caches dropped), `closed` (fully unloaded, auto-reopens on next MCP call).
+Lifecycle management sleeps and wakes open projects based on window focus and MCP activity. Modes: `active` (full IDE), `background` (Power Save on), `dormant` (editor tabs closed until the window regains focus, PSI caches dropped), `closed` (fully unloaded, auto-reopens on next MCP call). Every MCP tool call on a managed project restarts its idle countdown.
 
 It is opt-in and disabled by default — enable "Enable lifecycle management" in Settings > Tools > Index MCP Server. Until then the tools below only report or alter persisted enrollment state; no automatic transitions occur.
 
@@ -789,7 +789,7 @@ Return recent lifecycle events for all projects (ring buffer, last 500 events). 
 | `project` | string | no | Optional path filter (substring match against project path) |
 | `project_path` | string | no | Routing hint when multiple projects are open |
 
-**Returns**: `{ events: [{timestamp, project, path, event, from?, to?, trigger}], log_file, buffered }`. Event types: `open`, `closed`, `transition`, `enroll`, `release`, `wake`. Trigger values: `focus_gained`, `focus_lost`, `timer:focus`, `timer:inactivity`, `timer:close`, `mcp_call`, `auto_open`, `user`.
+**Returns**: `{ events: [{timestamp, project, path, event, from?, to?, trigger, detail?}], log_file, buffered }`. Event types: `open`, `closed`, `transition`, `enroll`, `release`, `wake`, `editors_closed`, `editors_restored`. Trigger values: `focus_gained`, `focus_lost`, `timer:focus`, `timer:inactivity`, `timer:close`, `mcp_call`, `auto_open`, `user`. `detail` explains an event where it helps — how long the project had no MCP call when `timer:inactivity` fired, or how many editor tabs a dormant transition closed.
 
 ### ide_set_lifecycle_log_file (disabled by default)
 Enable or disable writing lifecycle events to the log file on disk. The in-memory ring buffer (queryable via `ide_lifecycle_log`) is always active regardless of this setting; the file allows `tail -f` monitoring and post-mortem analysis even when no MCP connection is available.

@@ -165,7 +165,7 @@ When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or 
 
 When multiple projects are open simultaneously, the lifecycle manager sleeps and wakes them based on window focus and MCP activity. It is opt-in and disabled by default — enable "Enable lifecycle management" in Settings → Tools → Index MCP Server. Once enabled, projects enroll automatically on first MCP use.
 
-**States:** `active` (full IDE) → `background` (Power Save on) → `dormant` (editors closed, PSI cache freed) → `closed` (fully unloaded). Projects auto-reopen transparently when an MCP tool targets a closed project.
+**States:** `active` (full IDE) → `background` (Power Save on) → `dormant` (editor tabs closed until the window regains focus, PSI cache freed) → `closed` (fully unloaded). Every MCP tool call restarts a project's idle countdown. Projects auto-reopen transparently when an MCP tool targets a closed project.
 
 `ide_project_status` is the read-only entry point — **enabled by default**. Use it to see all open and managed projects and their current modes.
 

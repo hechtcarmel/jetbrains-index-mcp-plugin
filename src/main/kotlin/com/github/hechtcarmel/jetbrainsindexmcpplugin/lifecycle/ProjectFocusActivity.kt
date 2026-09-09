@@ -26,7 +26,7 @@ class ProjectFocusActivity : ProjectActivity {
         val modeService = ProjectModeService.getInstance()
         if (McpSettings.getInstance().lifecycleEnabled && modeService.isManaged(project)) {
             modeService.markReopened(project.basePath ?: return)
-            modeService.resetInactivityTimer(project)
+            modeService.resetInactivityTimer(project, "project open")
         } else {
             LifecycleEventLog.getInstance().log(
                 LifecycleEventLog.Entry(
@@ -53,28 +53,21 @@ class ProjectFocusActivity : ProjectActivity {
         }
         frame.addWindowFocusListener(object : WindowAdapter() {
             override fun windowGainedFocus(e: WindowEvent) {
-                val modeService = ProjectModeService.getInstance()
-                if (!McpSettings.getInstance().lifecycleEnabled) return
-                if (!modeService.isManaged(project)) return
-                modeService.cancelFocusAlarm(project)
-                modeService.transition(project, ProjectMode.ACTIVE, "focus_gained")
+                ProjectModeService.getInstance().onWindowFocusGained(project)
             }
 
             override fun windowLostFocus(e: WindowEvent) {
-                val modeService = ProjectModeService.getInstance()
-                if (!McpSettings.getInstance().lifecycleEnabled) return
-                if (!modeService.isManaged(project)) return
-                LifecycleEventLog.getInstance().log(
-                    LifecycleEventLog.Entry(
-                        project = project.name,
-                        path = project.basePath ?: "",
-                        event = "focus_lost",
-                        trigger = "focus_lost"
-                    )
-                )
-                modeService.scheduleFocusTransition(project)
+                ProjectModeService.getInstance().onWindowFocusLost(project)
             }
         })
+        // A window that took focus before the listener existed never reports it. On an IDE
+        // restart the restored frame is usually focused by the time this runs, so a managed
+        // project would sit in BACKGROUND with its dormant countdown running while the user
+        // works in it — and lose its editor tabs a couple of minutes later (issue #369).
+        // Catch up on the focus state the listener missed.
+        if (frame.isFocused) {
+            ProjectModeService.getInstance().onWindowFocusGained(project)
+        }
     }
 
     companion object {

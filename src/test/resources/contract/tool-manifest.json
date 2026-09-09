@@ -1322,9 +1322,11 @@ description:
   Use this to diagnose lifecycle health: understand why a project closed, whether auto-open
   worked, or which projects are cycling unexpectedly.
   
-  Event types: open, closed, transition, enroll, release, wake
+  Event types: open, closed, transition, enroll, release, wake, editors_closed, editors_restored
   Trigger values: focus_gained, focus_lost, timer:focus, timer:inactivity, timer:close,
                   mcp_call, auto_open, user
+  Events carry an optional `detail` — e.g. how long a project had no MCP call when the
+  inactivity timer fired, or how many editor tabs a dormant transition closed.
   
   Parameters:
   - limit: Number of recent events to return, newest first (default 50, max 500)
@@ -2561,8 +2563,9 @@ description:
   - active: Full IntelliJ capabilities. Power Save OFF. Use before code review or active editing.
   - background: Power Save ON, index and MCP fully functional. Inspections and highlighting off.
     Default mode when MCP is working. Transitions here automatically after focus is lost.
-  - dormant: Power Save ON, editors closed, PSI caches dropped. Index stays loaded.
-    MCP calls auto-wake to background. Transitions here after 2 min of MCP inactivity.
+  - dormant: Power Save ON, editor tabs closed, PSI caches dropped. Index stays loaded.
+    MCP calls auto-wake to background without reopening tabs; the closed tabs reopen when
+    the project window regains focus. Transitions here after 2 min without MCP calls.
   - closed: Project fully closed. All memory freed. Auto-reopens on next MCP call (5-15s delay).
     Transitions here after 10 min of MCP inactivity.
   

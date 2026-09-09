@@ -13,6 +13,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseAll
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProjectModesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetProjectModeTool
+import com.intellij.util.xmlb.XmlSerializer
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -222,5 +223,90 @@ class LifecycleUnitTest : TestCase() {
         assertTrue(modeEnum.contains("background"))
         assertTrue(modeEnum.contains("dormant"))
         assertFalse("closed must not be in the enum — CLOSED projects have no Project object", modeEnum.contains("closed"))
+    }
+
+    // ── Issue #369: the log must say what happened, not just when ───────────────────────────
+
+    fun testLogLineNamesTheEventWhenThereIsNoModeChange() {
+        // The bare "[mcp_call] kmo3" line was read as "an MCP call reset the timer here" when it
+        // was the one-off enrollment; naming the event removes the ambiguity.
+        val entry = LifecycleEventLog.Entry(
+            timestampMs = 0L, project = "kmo3", path = "D:/develop/kmo3", event = "enroll", trigger = "mcp_call"
+        )
+        assertEquals("1970-01-01T00:00:00Z [mcp_call] kmo3: enroll  (D:/develop/kmo3)", entry.toLogLine())
+    }
+
+    fun testLogLineShowsTheModeChangeAndTheDetail() {
+        val entry = LifecycleEventLog.Entry(
+            timestampMs = 0L, project = "kmo3", path = "D:/develop/kmo3", event = "transition",
+            from = "background", to = "dormant", trigger = "timer:inactivity", detail = "no MCP call for 2m 1s"
+        )
+        assertEquals(
+            "1970-01-01T00:00:00Z [timer:inactivity] kmo3: background→dormant — no MCP call for 2m 1s  (D:/develop/kmo3)",
+            entry.toLogLine()
+        )
+    }
+
+    fun testLogLineDoesNotRepeatATriggerThatAlreadyNamesTheEvent() {
+        val entry = LifecycleEventLog.Entry(
+            timestampMs = 0L, project = "kmo3", path = "D:/develop/kmo3", event = "focus_lost", trigger = "focus_lost"
+        )
+        assertEquals("1970-01-01T00:00:00Z [focus_lost] kmo3  (D:/develop/kmo3)", entry.toLogLine())
+    }
+
+    fun testJsonCarriesDetailOnlyWhenPresent() {
+        val without = LifecycleEventLog.Entry(project = "p", path = "/p", event = "enroll", trigger = "mcp_call").toJson()
+        assertNull("no detail → no key, so clients can rely on its presence meaning something", without["detail"])
+
+        val with = LifecycleEventLog.Entry(
+            project = "p", path = "/p", event = "enroll", trigger = "mcp_call", detail = "window focused → active"
+        ).toJson()
+        assertEquals("window focused → active", with["detail"]?.jsonPrimitive?.content)
+        assertEquals("enroll", with["event"]?.jsonPrimitive?.content)
+    }
+
+    fun testFormatDurationIsCoarseAndNeverNegative() {
+        assertEquals("0s", LifecycleEventLog.formatDuration(0))
+        assertEquals("45s", LifecycleEventLog.formatDuration(45_999))
+        assertEquals("2m 1s", LifecycleEventLog.formatDuration(121_000))
+        assertEquals("1h 3m", LifecycleEventLog.formatDuration(3_780_000))
+        assertEquals("0s", LifecycleEventLog.formatDuration(-5_000))
+    }
+
+    fun testFormatTimeOfDayIsUtcLikeTheLogTimestamps() {
+        assertEquals("00:00:00Z", LifecycleEventLog.formatTimeOfDay(0L))
+        assertEquals("09:51:08Z", LifecycleEventLog.formatTimeOfDay(9 * 3_600_000L + 51 * 60_000L + 8_000L))
+    }
+
+    fun testDormantEditorsSurviveXmlStatePersistence() {
+        // The component store serializes State through the platform's XML serializer; a shape it
+        // cannot round-trip would silently drop the remembered tabs on every IDE restart.
+        val state = ProjectModeService.State()
+        state.managedProjectPaths.add("/proj")
+        state.dormantEditors["/proj"] = ProjectModeService.DormantEditors(
+            fileUrls = mutableListOf("file:///proj/A.kt", "jar:///lib/x.jar!/B.class"),
+            selectedFileUrl = "file:///proj/A.kt"
+        )
+
+        val restored = XmlSerializer.deserialize(XmlSerializer.serialize(state), ProjectModeService.State::class.java)
+
+        assertEquals(setOf("/proj"), restored.managedProjectPaths)
+        val editors = restored.dormantEditors["/proj"]
+        assertNotNull("dormant editors must survive XML persistence", editors)
+        assertEquals(listOf("file:///proj/A.kt", "jar:///lib/x.jar!/B.class"), editors!!.fileUrls)
+        assertEquals("file:///proj/A.kt", editors.selectedFileUrl)
+    }
+
+    fun testStateWithoutDormantEditorsStillLoads() {
+        // Persisted state written by an older plugin version has no dormantEditors element.
+        val legacy = ProjectModeService.State()
+        legacy.managedProjectPaths.add("/proj")
+        val element = XmlSerializer.serialize(legacy)
+        element.children.removeIf { it.getAttributeValue("name") == "dormantEditors" }
+
+        val restored = XmlSerializer.deserialize(element, ProjectModeService.State::class.java)
+
+        assertEquals(setOf("/proj"), restored.managedProjectPaths)
+        assertTrue(restored.dormantEditors.isEmpty())
     }
 }
