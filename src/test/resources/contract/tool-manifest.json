@@ -1527,37 +1527,43 @@ description:
   
   Blocks until the IDE is ready for code intelligence on the opened project,
   so subsequent MCP tool calls against the new project will succeed immediately.
-  If the project is already open, returns successfully right away.
+  If the project is already open, applies any requested setup (autoLink,
+  excludeDirectories) and returns with a summary of what was configured.
   
-  This tool does not enroll the project in lifecycle management. Lifecycle enrollment
-  happens automatically on the first real semantic tool call (find references,
-  diagnostics, refactoring, etc.) after the project is open — not on open/close itself.
+  The project directory is automatically trusted before opening — no manual
+  trust dialog will appear. Build scripts (Maven, Gradle) may execute on import.
   
-  Requires at least one project to already be open (needed as the JSON-RPC context).
-  
-  Opening a project the IDE has not seen before may show the modal "Trust project?"
-  dialog, which only a human can answer; the call fails after timeoutSeconds if the
-  project has not opened by then.
-  
-  When invoked, this tool marks the target directory as trusted before opening,
-  so the trust dialog does not appear. Build scripts (Maven, Gradle) may execute
-  on import.
+  For directories with no build system at root, the tool registers the directory
+  as a content root so all files are indexed. For mixed repos (e.g., TypeScript
+  at root with nested Maven modules), autoLink detects and imports nested
+  Maven/Gradle subprojects automatically.
   
   Parameters:
   - path: absolute filesystem path of the project directory to open (required)
-  - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
+  - autoLink (optional): automatically detect and link build systems — root-level Maven/Gradle, or nested Maven/Gradle subprojects in immediate subdirectories. Default: true.
+  - excludeDirectories (optional): array of directory names to exclude from indexing and refactoring scope. Useful for non-code directories (workspace docs, symlinks to markdown) that interfere with rename/move refactoring.
   - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: 600.
   - project_path (optional): selects the JSON-RPC context project when multiple are open
   
-  Example: { "path": "/Users/dev/myproject", "autoLink": true }
+  Example: { "path": "/Users/dev/myproject" }
+  Example: { "path": "/Users/dev/mixed-repo", "excludeDirectories": ["wksp", ".claude", "node_modules"] }
 schema:
   {
     "properties":
     {
       "autoLink":
       {
-        "description": "Automatically link an unlinked Maven/Gradle build system after opening. Default: false.",
+        "description": "Automatically detect and link build systems (root-level or nested Maven/Gradle). Default: true.",
         "type": "boolean"
+      },
+      "excludeDirectories":
+      {
+        "description": "Directory names to exclude from indexing and refactoring scope.",
+        "items":
+        {
+          "type": "string"
+        },
+        "type": "array"
       },
       "path":
       {

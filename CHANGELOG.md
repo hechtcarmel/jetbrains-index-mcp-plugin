@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_open_project` gains `excludeDirectories` parameter** ([#378](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/378)) — marks directories as excluded from indexing and refactoring scope when opening a project. Useful for non-code directories (workspace doc symlinks, `.claude` directories) that contain text matching class names and interfere with rename/move refactoring.
+- **`ide_open_project` `autoLink` now defaults to `true`** — agents no longer need to explicitly pass `autoLink: true` to get build system detection. For mixed repos (TypeScript at root + nested Maven/Gradle modules), `autoLink` auto-detects and imports nested build modules in immediate subdirectories.
+
+### Changed
+
+- **`ide_open_project` returns richer setup messages** — the response now reports each setup action taken: content root registration, directory exclusions, and build system linking, so agents know what code intelligence is available without a follow-up call.
+
+### Fixed
+
+- **`ide_open_project` now registers a content root for plain directories** — when opening a directory with no recognized build system (no root `pom.xml`/`build.gradle`), IntelliJ created a project with no content roots, leaving Project Files empty. The tool now registers the project directory as a content root so all files are indexed. Creates a `WEB_MODULE` when the project has no modules at all (common for fresh git worktrees and slots).
+- **`ide_open_project` setup features now work on already-open projects** — `autoLink`, `excludeDirectories`, and `ensureContentRoot` previously only ran on the fresh-open path. If the project was already open, calling `ide_open_project` with these parameters did nothing. All three now apply on both paths.
+
 ## [5.9.5] - 2026-09-03
 
 ### Fixed
