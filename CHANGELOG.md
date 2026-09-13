@@ -7,14 +7,13 @@
 ### Added
 
 - `ide_find_definition` and `ide_symbol_info` return and accept opaque `symbolId` handles backed by exact PSI pointers. Handles survive line shifts and rename, expire on deletion/session reset/project close or cache eviction, and route to their owning open project. Cancellation does not expire a handle; pointer restoration does not hold shared cache locks. Preserve exact targets during definition/metadata lookup, expire handles after file replacement, and use source context for synthetic declarations without their own text.
+- `ide_diagnostics` accepts a small `files` batch of relative or in-project absolute paths with one shared deadline and fail-closed per-file coverage (`analyzed`, `timed_out`, `failed`, `skipped`, `not_analyzed`, or `not_found`) plus truncation metadata. Existing single-file and build/test-only requests remain supported. Isolate per-file analyzer failures, propagate request cancellation, report missing files explicitly, and deduplicate aliases without collapsing distinct symlink/parent paths. `maxProblems` bounds the aggregate response.
 
 ### Changed
 
 - Bind-host settings now validate syntax before resolver/bind checks and normalize IDN hostnames before persistence, binding, and restart. Malformed labels and host:port input stay invalid even with wildcard DNS, while unchanged legacy hostnames and scoped IPv6 values remain usable.
-- `ide_diagnostics` accepts a small `files` batch of relative or in-project absolute paths with one shared deadline and fail-closed per-file coverage (`analyzed`, `timed_out`, `failed`, `skipped`, `not_analyzed`, or `not_found`) plus truncation metadata. Existing single-file and build/test-only requests remain supported. Isolate per-file analyzer failures, propagate request cancellation, report missing files explicitly, and deduplicate aliases without collapsing distinct symlink/parent paths. `maxProblems` bounds the aggregate response.
 - `ide_sync_files` now validates every explicit target before refreshing anything and returns one whole-batch error listing all invalid paths instead of partial success. It accepts absolute paths inside any allowed project/content root; relative paths fall back across content roots when `project_path` is omitted or selects the project base, while a specifically selected content root remains confined.
 - Targeted synchronization now reports normalized `syncedPaths`, actual absolute `refreshedRoots`, and `deletedPaths`. Known deleted targets refresh through their nearest existing parent, new targets are discovered with shallow ancestor refreshes, and registered symlink-root spellings are preserved without recursively refreshing unrelated directories.
-
 
 ### Fixed
 
