@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-09-14
+
 ### Added
 
 - `ide_refactor_safe_delete` supports the shared non-mutating preview response and exact/nested symbol targets. Applied deletion by handle reports that handle as `invalidatedSymbolId`.
@@ -1272,7 +1274,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...HEAD
+[5.13.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...v5.13.0
 [5.12.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.11.0...v5.12.0
 [5.11.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.10.0...v5.11.0
 [5.10.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.6...v5.10.0
