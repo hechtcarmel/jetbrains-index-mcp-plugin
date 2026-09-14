@@ -6,7 +6,7 @@
 
 ### Added
 
-- Definition and symbol-info tools accept an additive nested `target`: exactly one of `symbolId`, `position`, or `qualifiedName` with `language`. Mixed selectors fail validation; existing top-level selectors remain supported.
+- `ide_find_definition` and `ide_symbol_info` accept an additive nested `target` holding exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Existing top-level selectors remain supported; mixing `target` with them fails validation.
 
 ## [5.10.0] - 2026-09-13
 
