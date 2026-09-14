@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-09-14
+
 ### Added
 
 - `ide_refactor_rename` supports non-mutating `dryRun` previews and exact/nested symbol targets. Preview and apply share automatic rename selections and report affected declarations and usages consistently. Preview never enters the source-write phase or saves unrelated documents. Detect destination collisions when a Java class rename also renames its file, and refuse JS/TS preparation that requires an interactive choice. Include implicit class-file and directory collisions, and preview a constructor rename as the containing class rename.
@@ -1262,7 +1264,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.11.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...HEAD
+[5.12.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.11.0...v5.12.0
 [5.11.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.10.0...v5.11.0
 [5.10.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.6...v5.10.0
 [5.9.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.5...v5.9.6
