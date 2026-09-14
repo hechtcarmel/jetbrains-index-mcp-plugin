@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.11.0] - 2026-09-14
+
 ### Added
 
 - `ide_find_definition` and `ide_symbol_info` accept an additive nested `target` holding exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Existing top-level selectors remain supported; mixing `target` with them fails validation.
@@ -1252,7 +1254,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.10.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.11.0...HEAD
+[5.11.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.10.0...v5.11.0
 [5.10.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.6...v5.10.0
 [5.9.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.5...v5.9.6
 [5.9.5]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.9.4...v5.9.5
