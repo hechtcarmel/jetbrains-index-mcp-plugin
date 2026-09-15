@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# ruby-plugin-tests — toggle the Ruby plugin on/off for the Gradle build
+#
+# Usage:  scripts/ruby-plugin-tests enable
+#         scripts/ruby-plugin-tests disable
+#
+# Both commands are idempotent.
+#
+# What it manages (all in the project directory):
+#   build.gradle.kts    — injects / removes the localPlugin() block
+#   ./gradle.properties — localRubyPluginPath + platformVersion
+#
+# IMPORTANT: localRubyPluginPath must point at the Ruby plugin ROOT DIRECTORY
+# (the one containing lib/ and lib/modules/), NOT a single jar. The plugin's PSI
+# implementation classes (RClass, RubyOverrideImplementUtil, …) live in
+# lib/modules/intellij.ruby.*.jar — pointing at lib/ruby.jar loads only
+# META-INF/plugin.xml, so Class.forName() fails and the Ruby handlers report
+# isAvailable=false, causing the platform tests to silently SKIP (green, 0ms).
+set -euo pipefail
+
+# ─── Configuration ─────────────────────────────────────────────
+# Ruby plugin root directory (contains lib/, lib/modules/, rubystubs/, …).
+RUBY_PLUGIN_DIR="$HOME/Library/Application Support/JetBrains/IntelliJIdea2025.3/plugins/ruby"
+IDEA_VERSION="2025.3"
+# ───────────────────────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+LOCAL_PROPS="$PROJECT_DIR/gradle.properties"
+GRADLE_KTS="$PROJECT_DIR/build.gradle.kts"
+BAK_PROPS="$LOCAL_PROPS.ruby-plugin-tests-bak"
+
+MARKER_BEGIN="// BEGIN: ruby-plugin-tests"
+MARKER_END="// END: ruby-plugin-tests"
+
+# ─── build.gradle.kts: inject / remove the localPlugin block ──
+
+has_block() {
+    grep -qF "$MARKER_BEGIN" "$GRADLE_KTS" 2>/dev/null
+}
+
+inject_block() {
+    if has_block; then
+        echo "  ~  ruby block already present in build.gradle.kts"
+        return
+    fi
+    local tmp="$GRADLE_KTS.ruby-tmp"
+    awk -v pad="        " '
+        { print }
+        /^        plugins\(providers\.gradleProperty\("platformPlugins"\)/ {
+            print ""
+            print pad "// BEGIN: ruby-plugin-tests"
+            print pad "// Local Ruby plugin for Ruby handler tests"
+            print pad "providers.gradleProperty(\"localRubyPluginPath\").orNull?.let { path ->"
+            print pad "    localPlugin(file(path))"
+            print pad "    bundledModules("
+            print pad "        \"com.intellij.modules.ultimate\","
+            print pad "        \"com.intellij.modules.json\","
+            print pad "        \"org.jetbrains.plugins.yaml\""
+            print pad "    )"
+            print pad "}"
+            print pad "// END: ruby-plugin-tests"
+        }
+    ' "$GRADLE_KTS" > "$tmp"
+    mv "$tmp" "$GRADLE_KTS"
+    echo "  ✓  injected ruby block into build.gradle.kts"
+}
+
+remove_block() {
+    if ! has_block; then
+        echo "  ~  ruby block not present in build.gradle.kts"
+        return
+    fi
+    local tmp="$GRADLE_KTS.ruby-tmp"
+    awk -v begin="$MARKER_BEGIN" -v end="$MARKER_END" '
+        skip && /^$/ { next }
+        $0 ~ begin { skip=1; next }
+        $0 ~ end   { skip=0; next }
+        !skip { print }
+    ' "$GRADLE_KTS" > "$tmp"
+    mv "$tmp" "$GRADLE_KTS"
+    echo "  ✓  removed ruby block from build.gradle.kts"
+}
+
+# ─── gradle.properties: localRubyPluginPath ────────────────────
+
+has_prop() {
+    grep -q '^localRubyPluginPath=' "$LOCAL_PROPS" 2>/dev/null
+}
+
+set_prop() {
+    if has_prop; then
+        if grep -qF "localRubyPluginPath=$RUBY_PLUGIN_DIR" "$LOCAL_PROPS"; then
+            echo "  ~  localRubyPluginPath already set in $LOCAL_PROPS"
+            return
+        fi
+        local tmp="$LOCAL_PROPS.tmp"
+        grep -v '^localRubyPluginPath=' "$LOCAL_PROPS" > "$tmp" || true
+        printf 'localRubyPluginPath=%s\n' "$RUBY_PLUGIN_DIR" >> "$tmp"
+        mv "$tmp" "$LOCAL_PROPS"
+        echo "  ✓  updated localRubyPluginPath in $LOCAL_PROPS"
+    else
+        printf 'localRubyPluginPath=%s\n' "$RUBY_PLUGIN_DIR" >> "$LOCAL_PROPS"
+        echo "  ✓  added localRubyPluginPath to $LOCAL_PROPS"
+    fi
+}
+
+unset_prop() {
+    if ! has_prop; then
+        echo "  ~  localRubyPluginPath not present in $LOCAL_PROPS"
+        return
+    fi
+    local tmp="$LOCAL_PROPS.tmp"
+    grep -v '^localRubyPluginPath=' "$LOCAL_PROPS" > "$tmp" || true
+    sed -i '' '/^$/d' "$tmp"
+    mv "$tmp" "$LOCAL_PROPS"
+    echo "  ✓  removed localRubyPluginPath from $LOCAL_PROPS"
+}
+
+# ─── gradle.properties: platformVersion ────────────────────────
+
+# Back up gradle.properties once, before the first mutation.
+maybe_backup() {
+    if [ ! -f "$BAK_PROPS" ] && [ -f "$LOCAL_PROPS" ]; then
+        cp "$LOCAL_PROPS" "$BAK_PROPS"
+        echo "  ✓  backed up gradle.properties"
+    fi
+}
+
+set_version() {
+    local want="platformVersion = $IDEA_VERSION"
+    if grep -qE "^platformVersion\s*=\s*$IDEA_VERSION\$" "$LOCAL_PROPS" 2>/dev/null; then
+        echo "  ~  platformVersion already $IDEA_VERSION in $LOCAL_PROPS"
+        return
+    fi
+    maybe_backup
+    sed -i '' "s/^platformVersion\s*=.*/$want/" "$LOCAL_PROPS"
+    echo "  ✓  set platformVersion to $IDEA_VERSION in $LOCAL_PROPS"
+}
+
+restore_version() {
+    if [ ! -f "$BAK_PROPS" ]; then
+        echo "  ~  no backup found; platformVersion left as-is"
+        return
+    fi
+    local orig
+    orig="$(grep '^platformVersion' "$BAK_PROPS")"
+    if grep -q "$orig" "$LOCAL_PROPS" 2>/dev/null; then
+        echo "  ~  platformVersion already original"
+    else
+        sed -i '' "s/^platformVersion\s*=.*/$orig/" "$LOCAL_PROPS"
+        echo "  ✓  restored platformVersion in $LOCAL_PROPS"
+    fi
+    rm -f "$BAK_PROPS"
+}
+
+# ─── Commands ──────────────────────────────────────────────────
+
+enable() {
+    inject_block
+    maybe_backup
+    set_prop
+    set_version
+}
+
+disable() {
+    remove_block
+    unset_prop
+    restore_version
+}
+
+# ─── Main ──────────────────────────────────────────────────────
+case "${1:-}" in
+    enable)  enable  ;;
+    disable) disable ;;
+    *)
+        echo "usage: $0 enable|disable"
+        exit 1
+        ;;
+esac
