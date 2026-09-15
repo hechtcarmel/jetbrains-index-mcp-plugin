@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.14.0] - 2026-09-15
+
 ### Added
 
 - `ide_change_signature` supports non-mutating dry-run previews, exact/nested symbol targets, and Kotlin JVM functions. Preview reports usage/conflict discovery and applicability; apply refuses conflicts, incomplete discovery, read-only scope, missing required caller/delegate arguments, and interactive overrider decisions. Kotlin override changes start at the base declaration and preserve the original handle. Successful apply returns updated declaration metadata.
@@ -1282,7 +1284,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...HEAD
+[5.14.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...v5.14.0
 [5.13.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...v5.13.0
 [5.12.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.11.0...v5.12.0
 [5.11.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.10.0...v5.11.0
