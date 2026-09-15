@@ -15,7 +15,7 @@ opentest4j = "1.3.0"
 # kotlin-sdk 0.10.0 is the newest release built against stdlib 2.2.21; 0.11.0+ moved to
 # 2.3.x. `ktor` must track the Ktor version that SDK release was compiled against.
 mcpKotlinSdk = "0.10.0"
-ktor = "3.2.3"
+ktor = "3.5.1"
 kotlinxCoroutines = "1.9.0"
 jtoon = "1.0.9"
 
