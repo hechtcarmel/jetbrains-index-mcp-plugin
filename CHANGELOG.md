@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-09-15
+
 ### Added
 
 - **Symbol handles across discovery, references, and member edits** — `ide_find_class`, `ide_find_symbol`, `ide_find_implementations`, and `ide_find_super_methods` return an opaque `symbolId` for every declaration they list, and `ide_find_references` reports one on `resolvedSymbol`. `ide_find_references`, `ide_find_implementations`, `ide_find_super_methods`, `ide_edit_member`, and `ide_replace_member` accept a top-level `symbolId` or the nested `target` selector, so a declaration discovered once can be queried and edited without repeating coordinates. Handles stay bound to their exact declaration: a reference or super-method query from a parameter handle does not retarget it to the enclosing method, and Kotlin light methods keep their published identity.
@@ -1306,7 +1308,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...HEAD
+[5.15.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...v5.14.0
 [5.13.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...v5.13.0
 [5.12.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.11.0...v5.12.0
