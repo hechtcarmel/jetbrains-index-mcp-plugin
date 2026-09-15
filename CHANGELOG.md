@@ -6,15 +6,25 @@
 
 ### Added
 
-- Extend stable symbol handles to search results and member edits; preserve stale search pages across PSI edits, exact declaration identity, and Kotlin class kinds. Trim shared schema descriptions and enforce a tools/list size budget. Preserve parameter handles during super-method lookup, serve the final cached stale page, and normalize Kotlin light targets before member edits. Preserve namespace-qualified TypeScript names in class and symbol search results.
+- **Symbol handles across discovery, references, and member edits** — `ide_find_class`, `ide_find_symbol`, `ide_find_implementations`, and `ide_find_super_methods` return an opaque `symbolId` for every declaration they list, and `ide_find_references` reports one on `resolvedSymbol`. `ide_find_references`, `ide_find_implementations`, `ide_find_super_methods`, `ide_edit_member`, and `ide_replace_member` accept a top-level `symbolId` or the nested `target` selector, so a declaration discovered once can be queried and edited without repeating coordinates. Handles stay bound to their exact declaration: a reference or super-method query from a parameter handle does not retarget it to the enclosing method, and Kotlin light methods keep their published identity.
+- **Member edits return the edited declaration** — `ide_edit_member` and `ide_replace_member` return `updatedSymbol` with the current handle and location, and rebind the caller's handle to the replacement. A synthetic JVM getter/setter handle is rejected instead of editing the enclosing Kotlin property. Position and nested-position targets discover files created externally before reading PSI, even when "Sync external file changes" is disabled.
+- Anonymous implementations are reported as `<anonymous implementation of Base at File.java:line>` with `qualifiedName: null` instead of `unknown`.
+
+### Changed
+
+- **Cached search pages survive PSI edits** — pages of `ide_find_class`, `ide_find_symbol`, `ide_find_implementations`, and `ide_find_references` are still served after edits with `stale: true` instead of failing, and are never extended with results from a changed index. A page whose cached declaration no longer resolves, or whose file was deleted and recreated at the same path, fails with `SEARCH_INVALIDATED` rather than returning a substitute. `hasMore: true` without `nextCursor` now means uncached results may remain but the snapshot cannot continue safely (a stale snapshot, or the 5,000-result cache cap, which previously reported `hasMore: false`); start a narrower fresh search.
+- Search cursors are bound to the exact open project instance and the tool that created them, and expire when the MCP server restarts, matching symbol handles.
+- `ide_edit_member` validates replacement content before changing the document: it must be exactly one syntactically valid declaration of the original category, optionally surrounded by comments. Content with several declarations, a different category, syntax errors, or no declaration at all is rejected without editing; use `ide_refactor_safe_delete` to delete a member.
+- `ide_find_class` and `ide_find_symbol` report Kotlin `object` declarations as `OBJECT`.
+- Shared `project_path` and `paths` parameter descriptions were shortened to keep the `tools/list` payload within a 110 KB budget.
 
 ### Fixed
 
 - **Kotlin symbol-info fallback reports the declaration** — when Quick Documentation provides no signature, `ide_symbol_info` selects the source line containing the PSI name identifier, so leading annotations and KDoc no longer replace the method declaration. Braces inside inline annotations or quoted names no longer truncate it.
-- Discover newly created external files before member-edit PSI reads, including position targets, when automatic external-change synchronization is disabled.
-- Keep cached search handles and reference metadata bound to their original file identity after deletion and recreation.
-- Preserve exact Kotlin accessor handles through reference and super-method searches, including cached response materialization.
-- Reject synthetic JVM getter/setter targets that would edit an enclosing Kotlin property instead of the selected method.
+- `ide_find_symbol` reports Kotlin interfaces, enum classes, and annotation classes as `INTERFACE`, `ENUM`, and `ANNOTATION` instead of `CLASS`.
+- `ide_type_hierarchy` and `ide_find_implementations` report Java annotation types as `ANNOTATION` instead of `INTERFACE`.
+- `ide_replace_member` re-resolves the body range inside the write action, so a declaration that changed between lookup and apply is no longer edited at stale offsets.
+- Reflective Python, JavaScript/TypeScript, Go, PHP, Rust, and Kotlin lookups, and lazy search-page extension, propagate cancellation and dumb-mode transitions instead of reporting an incomplete search as empty or exhausted.
 
 ## [5.14.0] - 2026-09-15
 
