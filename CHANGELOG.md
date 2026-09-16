@@ -7,7 +7,7 @@
 ### Fixed
 
 - **Kotlin body replacement formats the closing brace** — `ide_replace_member` with `reformat: true` formats the complete member, so content such as `return 21` needs no trailing newline to put `}` on its own line. Returned body lines follow the final PSI after formatting and import optimization.
-- **Cancelled IDE operations finish promptly** — ordinary tool calls have a 55-second execution budget and return actionable timeout errors; build/test/project-analysis long polling keeps its own budget. Closed-file diagnostics now cancel their platform progress indicator and interrupt blocking waits, and editor diagnostics wait for EDT cancellably. An edit cancelled while queued for EDT cannot execute later.
+- **Cancelled IDE operations finish promptly** — ordinary tool calls have a 55-second execution budget and return actionable timeout errors; build/test/project-analysis long polling keeps its own budget, and `ide_open_project` / `ide_open_workspace` keep their own `timeoutSeconds`. Closed-file diagnostics now cancel their platform progress indicator and interrupt blocking waits, and editor diagnostics wait for EDT cancellably. An edit cancelled while queued for EDT cannot execute later.
 
 ## [5.15.0] - 2026-09-15
 
