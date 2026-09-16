@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.15.1] - 2026-09-16
+
 ### Fixed
 
 - **Kotlin body replacement formats the closing brace** — `ide_replace_member` with `reformat: true` formats the complete member, so content such as `return 21` needs no trailing newline to put `}` on its own line. Returned body lines follow the final PSI after formatting and import optimization.
@@ -1313,7 +1315,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.1...HEAD
+[5.15.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...v5.15.1
 [5.15.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...v5.14.0
 [5.13.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...v5.13.0
