@@ -6,12 +6,17 @@
 
 ### Added
 
-- Add opt-in bounded hierarchy pagination with parent/depth identity and session-scoped cursors while preserving legacy trees and limits.
 - Add structured file-outline nodes alongside formatted text, with exact declaration handles, opt-in nodes/handles, and explicit handle-budget metadata.
 
 ### Changed
 
 - `ide_file_structure` now returns the JSON envelope for empty or unparseable files, with the legacy message in `structure` and an empty `nodes` array when structured output is requested.
+
+## [5.16.0] - 2026-09-17
+
+### Added
+
+- Add opt-in bounded hierarchy pagination with parent/depth identity and session-scoped cursors while preserving legacy trees and limits.
 
 ## [5.15.1] - 2026-09-16
 
@@ -1324,7 +1329,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.16.0...HEAD
+[5.16.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.1...v5.16.0
 [5.15.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...v5.15.1
 [5.15.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...v5.14.0
