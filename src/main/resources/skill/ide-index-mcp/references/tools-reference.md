@@ -798,10 +798,12 @@ Open a project by absolute path and wait until indexing completes. Idempotent: r
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | yes | Absolute path of the project directory |
+| `autoLink` | boolean | no | Automatically link an unlinked Maven/Gradle build system after opening. Default: false. |
+| `excludeDirectories` | string[] | no | Directory names to exclude from indexing and refactoring scope (e.g. `["wksp", ".claude"]`). Applied after autoLink. Must not be blank or contain `..`. |
 | `timeoutSeconds` | integer | no | Max seconds to wait for open + indexing (default 600) |
 | `project_path` | string | no | JSON-RPC context project when multiple are open |
 
-**Returns**: text confirmation; on indexing timeout returns success with a note to check `ide_index_status`.
+**Returns**: text confirmation with setup details (excluded directories, linked build systems); on indexing timeout returns success with a note to check `ide_index_status`.
 
 ---
 

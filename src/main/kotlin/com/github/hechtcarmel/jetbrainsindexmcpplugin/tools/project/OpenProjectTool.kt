@@ -9,14 +9,20 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildSystemLinker
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.LinkResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.ide.trustedProjects.TrustedProjects
+import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
+import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.vfs.VfsUtilCore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.nio.file.Path
@@ -52,15 +58,23 @@ class OpenProjectTool : AbstractMcpTool() {
         Parameters:
         - path: absolute filesystem path of the project directory to open (required)
         - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
+        - excludeDirectories (optional): array of directory names to exclude from indexing and refactoring scope. Useful for non-code directories (workspace docs, symlinks to markdown) that interfere with rename/move refactoring. Applied after autoLink completes. Each name must not be blank or contain '..'.
         - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: $DEFAULT_TIMEOUT_SECONDS.
         - project_path (optional): selects the JSON-RPC context project when multiple are open
 
         Example: { "path": "/Users/dev/myproject", "autoLink": true }
+        Example: { "path": "/Users/dev/myproject", "excludeDirectories": ["wksp", ".claude", "node_modules"] }
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .stringProperty("path", "Absolute filesystem path of the project directory to open.", required = true)
         .booleanProperty("autoLink", "Automatically link an unlinked Maven/Gradle build system after opening. Default: false.")
+        .stringArrayProperty("excludeDirectories",
+            "Directory names to exclude from indexing and refactoring scope " +
+                "(e.g. [\"wksp\", \".claude\", \"node_modules\"]). " +
+                "Excluded directories are ignored by code intelligence and refactoring tools. " +
+                "Applied after autoLink completes."
+        )
         .intProperty(
             ParamNames.TIMEOUT_SECONDS,
             "Maximum seconds to wait for the project to open and finish indexing. " +
@@ -80,14 +94,27 @@ class OpenProjectTool : AbstractMcpTool() {
         }
 
         val autoLink = arguments["autoLink"]?.jsonPrimitive?.booleanOrNull ?: false
+        val excludeDirs = parseExcludeDirectories(arguments)
+            ?: return createErrorResult("excludeDirectories entries must not be blank or contain '..'.")
         val timeoutSeconds = arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull
             ?: DEFAULT_TIMEOUT_SECONDS
         if (timeoutSeconds <= 0) {
             return createErrorResult("timeoutSeconds must be a positive integer.")
         }
 
-        ProjectUtils.findOpenProjectByPath(path)?.let {
-            return createSuccessResult("Project '${it.name}' is already open.")
+        ProjectUtils.findOpenProjectByPath(path)?.let { existing ->
+            val actions = mutableListOf<String>()
+            if (autoLink) {
+                val linkMsg = tryAutoLink(existing, path)
+                if (linkMsg != null) actions.add(linkMsg)
+            }
+            if (excludeDirs.isNotEmpty()) {
+                val excludeMsg = applyExclusions(existing, path, excludeDirs)
+                if (excludeMsg != null) actions.add(excludeMsg)
+                ProjectUtils.awaitSmartMode(existing)
+            }
+            val msg = "Project '${existing.name}' is already open."
+            return createSuccessResult(if (actions.isNotEmpty()) "$msg ${actions.joinToString(" ")}" else msg)
         }
 
         val dir = File(path)
@@ -97,14 +124,20 @@ class OpenProjectTool : AbstractMcpTool() {
         TrustedProjects.setProjectTrusted(Path.of(path), true)
 
         var openedProject: Project? = null
-        var linkMsg: String? = null
+        val setupActions = mutableListOf<String>()
         val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
             val opened = ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
                 ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
             openedProject = opened
             if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
             if (autoLink) {
-                linkMsg = tryAutoLink(opened, path)
+                val linkMsg = tryAutoLink(opened, path)
+                if (linkMsg != null) setupActions.add(linkMsg)
+                ProjectUtils.awaitSmartMode(opened)
+            }
+            if (excludeDirs.isNotEmpty()) {
+                val excludeMsg = applyExclusions(opened, path, excludeDirs)
+                if (excludeMsg != null) setupActions.add(excludeMsg)
                 ProjectUtils.awaitSmartMode(opened)
             }
             OpenOutcome.READY
@@ -113,7 +146,7 @@ class OpenProjectTool : AbstractMcpTool() {
         return when (outcome) {
             OpenOutcome.READY -> {
                 val msg = "Project '${openedProject!!.name}' is open and ready."
-                if (linkMsg != null) createSuccessResult("$msg $linkMsg") else createSuccessResult(msg)
+                if (setupActions.isNotEmpty()) createSuccessResult("$msg ${setupActions.joinToString(" ")}") else createSuccessResult(msg)
             }
 
             OpenOutcome.OPEN_FAILED ->
@@ -138,6 +171,79 @@ class OpenProjectTool : AbstractMcpTool() {
                 }
             }
         }
+    }
+
+    private fun parseExcludeDirectories(arguments: JsonObject): List<String>? {
+        val element = arguments["excludeDirectories"] ?: return emptyList()
+        val names = element.jsonArray.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        for (name in names) {
+            if (name.isBlank() || name.contains("..")) return null
+        }
+        return names
+    }
+
+    private suspend fun applyExclusions(
+        project: Project,
+        projectPath: String,
+        dirNames: List<String>
+    ): String? {
+        val excluded = mutableListOf<String>()
+        val alreadyExcluded = mutableListOf<String>()
+        val notFound = mutableListOf<String>()
+        val errors = mutableListOf<String>()
+
+        edtAction {
+            val moduleManager = ModuleManager.getInstance(project)
+            for (module in moduleManager.modules) {
+                val rootModel = ModuleRootManager.getInstance(module).modifiableModel
+                try {
+                    var modified = false
+                    for (contentEntry in rootModel.contentEntries) {
+                        val contentRoot = contentEntry.file ?: continue
+                        if (!contentRoot.path.startsWith(projectPath)) continue
+
+                        for (dirName in dirNames) {
+                            val excludeDir = contentRoot.findChild(dirName)
+                            if (excludeDir == null) {
+                                if (dirName !in notFound && dirName !in excluded && dirName !in alreadyExcluded) {
+                                    notFound.add(dirName)
+                                }
+                                continue
+                            }
+                            val excludeUrl = VfsUtilCore.pathToUrl(excludeDir.path)
+                            val isAlready = contentEntry.excludeFolderUrls.any { it == excludeUrl }
+                            if (isAlready) {
+                                notFound.remove(dirName)
+                                if (dirName !in alreadyExcluded && dirName !in excluded) {
+                                    alreadyExcluded.add(dirName)
+                                }
+                            } else {
+                                contentEntry.addExcludeFolder(excludeUrl)
+                                notFound.remove(dirName)
+                                alreadyExcluded.remove(dirName)
+                                excluded.add(dirName)
+                                modified = true
+                            }
+                        }
+                    }
+                    if (modified) rootModel.commit() else rootModel.dispose()
+                } catch (e: Exception) {
+                    rootModel.dispose()
+                    errors.add(e.message ?: "Unknown error modifying module '${module.name}'")
+                }
+            }
+        }
+
+        if (excluded.isEmpty() && alreadyExcluded.isEmpty() && notFound.isEmpty() && errors.isEmpty()) {
+            return null
+        }
+
+        val parts = mutableListOf<String>()
+        if (excluded.isNotEmpty()) parts.add("Excluded: ${excluded.joinToString(", ")}.")
+        if (alreadyExcluded.isNotEmpty()) parts.add("Already excluded: ${alreadyExcluded.joinToString(", ")}.")
+        if (notFound.isNotEmpty()) parts.add("Not found: ${notFound.joinToString(", ")}.")
+        if (errors.isNotEmpty()) parts.add("Errors: ${errors.joinToString("; ")}.")
+        return parts.joinToString(" ")
     }
 
     private suspend fun tryAutoLink(project: Project, path: String): String? {

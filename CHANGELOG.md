@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_open_project` gains `excludeDirectories` parameter** ([#378](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/378)) — marks directories as excluded from indexing and refactoring scope when opening a project. Useful for non-code directories (workspace doc symlinks, `.claude` directories) that contain text matching class names and interfere with rename/move refactoring. Applied after `autoLink` completes. The result reports which directories were excluded, which were already excluded, and which were not found. Works on both fresh-open and already-open projects.
+
 ## [5.17.0] - 2026-09-17
 
 ### Added

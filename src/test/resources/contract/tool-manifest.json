@@ -2028,10 +2028,12 @@ description:
   Parameters:
   - path: absolute filesystem path of the project directory to open (required)
   - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
+  - excludeDirectories (optional): array of directory names to exclude from indexing and refactoring scope. Useful for non-code directories (workspace docs, symlinks to markdown) that interfere with rename/move refactoring. Applied after autoLink completes. Each name must not be blank or contain '..'.
   - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: 600.
   - project_path (optional): selects the JSON-RPC context project when multiple are open
   
   Example: { "path": "/Users/dev/myproject", "autoLink": true }
+  Example: { "path": "/Users/dev/myproject", "excludeDirectories": ["wksp", ".claude", "node_modules"] }
 schema:
   {
     "properties":
@@ -2040,6 +2042,16 @@ schema:
       {
         "description": "Automatically link an unlinked Maven/Gradle build system after opening. Default: false.",
         "type": "boolean"
+      },
+      "excludeDirectories":
+      {
+        "description": "Directory names to exclude from indexing and refactoring scope (e.g. [\"wksp\", \".claude\", \"node_modules\"]). Excluded directories are ignored by code intelligence and refactoring tools. Applied after autoLink completes.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
       },
       "path":
       {
