@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.17.0] - 2026-09-17
+
 ### Added
 
 - Add structured file-outline nodes alongside formatted text, with exact declaration handles, opt-in nodes/handles, and explicit handle-budget metadata.
@@ -1329,7 +1331,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.16.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.0...HEAD
+[5.17.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.16.0...v5.17.0
 [5.16.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.1...v5.16.0
 [5.15.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...v5.15.1
 [5.15.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...v5.15.0
