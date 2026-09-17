@@ -8,6 +8,13 @@
 
 - Add opt-in bounded hierarchy pagination with parent/depth identity and session-scoped cursors while preserving legacy trees and limits.
 
+## [5.15.1] - 2026-09-16
+
+### Fixed
+
+- **Kotlin body replacement formats the closing brace** — `ide_replace_member` with `reformat: true` formats the complete member, so content such as `return 21` needs no trailing newline to put `}` on its own line. Returned body lines follow the final PSI after formatting and import optimization.
+- **Cancelled IDE operations finish promptly** — ordinary tool calls have a 55-second execution budget and return actionable timeout errors; build/test/project-analysis long polling keeps its own budget, and `ide_open_project` / `ide_open_workspace` keep their own `timeoutSeconds`. Closed-file diagnostics now cancel their platform progress indicator and interrupt blocking waits, and editor diagnostics wait for EDT cancellably. An edit cancelled while queued for EDT cannot execute later.
+
 ## [5.15.0] - 2026-09-15
 
 ### Added
@@ -1312,7 +1319,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.1...HEAD
+[5.15.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...v5.15.1
 [5.15.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.13.0...v5.14.0
 [5.13.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.12.0...v5.13.0

@@ -71,9 +71,9 @@ dependencies {
     implementation(libs.mcp.kotlin.sdk.server) { excludePlatformProvided() }
 
     implementation(libs.jtoon)
-    // Persistent hierarchy histories share unchanged storage across retriable cursor pages.
-    // Continuation snapshots use persistent collections. IntelliJ does not expose this artifact
-    // as a platform-provided dependency, so keep the plugin-bundled copy to avoid linkage drift.
+    // Persistent collections let hierarchy continuation snapshots share unchanged storage across
+    // retriable cursor pages. The artifact itself is not platform-provided, so it is bundled; the
+    // exclusion only drops its transitive kotlin-stdlib, which the IDE already ships.
     implementation(libs.kotlinx.collections.immutable) { excludePlatformProvided() }
 
     // Ktor engine. ktor-server-core arrives transitively from the SDK at the version the SDK was
