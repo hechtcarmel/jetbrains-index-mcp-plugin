@@ -541,7 +541,7 @@ Tools are organized by IDE availability.
 - `ide_create_module` - Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead. (disabled by default)
 - `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects. Pass `autoLink: true` to automatically link an unlinked Maven/Gradle build system after opening. (disabled by default)
 - `ide_install_plugin` - Install a plugin zip into the IDE, replacing any existing version; auto-detects `build/distributions/*.zip` when no path is given (disabled by default)
-- `ide_restart` - Restart the IDE; terminates the MCP connection. Call after `ide_install_plugin` (disabled by default)
+- `ide_restart` - Restart the IDE. The MCP server shuts down during restart; poll `ide_index_status` after ~30s to confirm it is back, then continue. Typical use: `ide_install_plugin` → `ide_restart` → poll → verify. (disabled by default)
 
 **Lifecycle Management Tools (All Supported JetBrains IDEs):**
 
