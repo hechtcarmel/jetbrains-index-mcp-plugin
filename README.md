@@ -291,7 +291,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_create_module` | Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.) *(disabled by default)* |
 | `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open *(disabled by default)* |
 | `ide_install_plugin` | Install a plugin zip into the IDE, replacing any existing version — auto-detects `build/distributions/*.zip` when no path is given *(disabled by default)* |
-| `ide_restart` | Restart the IDE — terminates the MCP connection; call after `ide_install_plugin` *(disabled by default)* |
+| `ide_restart` | Restart the IDE — the MCP server is down only while the IDE relaunches; poll `ide_index_status` until it answers, then continue. Call after `ide_install_plugin` *(disabled by default)* |
 | `ide_refactor_rename` | Preview with `dryRun`, or rename a symbol by `symbolId`/position (or a file) and update all references across the project (all languages; use `targetType` for explicit file mode) |
 | `ide_move_file` | Move a file to a new directory, applying language-aware reference/package updates when the IDE provides a semantic move backend |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |

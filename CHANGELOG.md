@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`ide_restart` is no longer described as a terminal step** ([#407](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/407)) — the tool description, the bundled companion skill, `USAGE.md`, and `README.md` now say the MCP server is down only while the IDE relaunches: poll `ide_index_status` until it answers, then continue. Streamable HTTP clients need no reconnect (every call is an independent POST); legacy SSE clients must reopen the stream; symbol handles and search cursors issued before the restart are invalid afterwards.
+
 ## [5.17.0] - 2026-09-17
 
 ### Added

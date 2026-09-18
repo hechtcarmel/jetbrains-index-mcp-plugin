@@ -189,7 +189,8 @@ These tools exist but are disabled by default. They are omitted from `tools/list
 
 `ide_build_project`, `ide_change_signature`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_create_file`, `ide_create_module`, `ide_edit_member`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_insert_member`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_link_build_system`, `ide_list_tests`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_project_diagnostics`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_replace_member`, `ide_replace_text_in_file`, `ide_restart`, `ide_run_tests`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`, `ide_structural_search_replace`, `ide_symbol_info`
 
-Note: `ide_restart` terminates the MCP connection — reconnect your client after calling it.
+Note: `ide_restart` is not a terminal step. The MCP server is down only while the IDE relaunches (usually well under a minute): poll `ide_index_status` until it answers, then continue. If nothing answers after a few minutes the restart was probably intercepted (for example by a save dialog) — report it instead of polling forever.
+Note: after a restart, Streamable HTTP clients need no reconnect (every call is an independent POST) but legacy SSE clients must reopen the `/index-mcp/sse` stream; symbol handles and search cursors issued before the restart are invalid; and after `ide_install_plugin`, refresh the tool list so changed schemas are picked up.
 Note: `ide_close_project` refuses to close the last open project; `ide_open_project` requires an absolute path and may take up to `timeoutSeconds` (default 600) while the project indexes.
 
 ## Enforcing IDE Tool Usage with Hooks

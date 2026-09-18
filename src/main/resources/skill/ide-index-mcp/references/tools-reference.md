@@ -938,10 +938,10 @@ Install a plugin zip into the IDE, replacing any existing version. Auto-detects 
 **Returns**: text confirmation with the installed plugin id and zip name.
 
 ### ide_restart (disabled by default)
-Restart the IDE. Terminates the MCP connection immediately — reconnect after the IDE comes back up.
+Restart the IDE. Not a terminal step: the MCP server is down only while the IDE relaunches (usually well under a minute) and comes back on its own once the previous projects reopen. Poll `ide_index_status` until it answers, then continue. Streamable HTTP clients need no reconnect — every call is an independent POST — but legacy SSE clients must reopen the `/index-mcp/sse` stream. Symbol handles and search cursors issued before the restart are invalid afterwards; after `ide_install_plugin`, refresh the tool list so changed schemas are picked up. If nothing answers after a few minutes, the restart was probably intercepted (for example by a save dialog) — report it instead of polling forever.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | no | Project root path |
 
-**Returns**: text confirmation; the connection drops right after.
+**Returns**: text confirmation (`Restarting IDE.`) sent before the restart begins; tool calls fail until the IDE is back.

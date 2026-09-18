@@ -1750,7 +1750,7 @@ Plugin 'com.example.my-plugin' installed from my-plugin-1.0.0.zip. Restart the I
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
-Restart the IDE. This terminates the MCP connection — the AI assistant will lose connectivity and must reconnect after the IDE comes back up.
+Restart the IDE. The MCP server shuts down while the IDE relaunches and starts again on its own once the previous projects reopen. This is not a terminal step: the assistant should poll `ide_index_status` until it responds (usually well under a minute), then continue with follow-up calls.
 
 **Use when:**
 - Loading a freshly installed plugin after `ide_install_plugin`
@@ -1773,7 +1773,7 @@ Restart the IDE. This terminates the MCP connection — the AI assistant will lo
 }
 ```
 
-> **Note**: The MCP connection drops immediately after this call. Reconnect your AI assistant client before making further tool calls.
+> **Note**: Tool calls fail while the IDE is relaunching. Streamable HTTP clients need no reconnect — every call is an independent POST, so the next call succeeds as soon as the server is listening again. Legacy SSE clients must reopen the `/index-mcp/sse` stream. Symbol handles and search cursors issued before the restart are invalid afterwards, and after `ide_install_plugin` the client's cached tool list may be stale — reconnect the client so it re-fetches `tools/list` and picks up changed schemas. If the server has not answered after a few minutes, the restart was probably intercepted (for example by a save dialog); report it instead of polling forever.
 
 ---
 
