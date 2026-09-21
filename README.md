@@ -8,6 +8,7 @@ A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, 
 
 **Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
 **May work** (untested): RubyMine, CLion, DataGrip
+**Not supported**: Rider (its ReSharper backend does not expose the IntelliJ PSI APIs this plugin relies on; see [#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167))
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
 
@@ -252,7 +253,6 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 | DataGrip | `datagrip-index` | 29179 |
 | Aqua | `aqua-index` | 29180 |
 | DataSpell | `dataspell-index` | 29181 |
-| Rider | `rider-index` | 29182 |
 
 > **Tip**: Use the "Install on Coding Agents" button in the tool window - it automatically uses the correct server name and port for your IDE.
 
@@ -545,7 +545,10 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 - CLion
 - DataGrip
 
-> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE, but has only been tested on the IDEs listed above.
+**Not Supported:**
+- Rider — the plugin is declared incompatible with Rider (`com.intellij.modules.rider`) because its ReSharper backend does not provide the IntelliJ PSI APIs the tools depend on. Rider support is tracked in [#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167).
+
+> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE other than Rider, but has only been tested on the IDEs listed above.
 
 ## Architecture
 

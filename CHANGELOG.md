@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **README no longer lists Rider as a supported IDE** ([#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167)) — the "IDE-Specific Defaults" table still carried a `rider-index` / 29182 row although the plugin has been declared incompatible with Rider since 1.9.1. The README now states explicitly that Rider is not supported and why.
+
 ## [5.17.1] - 2026-09-18
 
 ### Changed
