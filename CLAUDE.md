@@ -225,7 +225,6 @@ Note: Server name and port are IDE-specific. Use the "Install on Coding Agents" 
 | DataGrip | `datagrip-index` | 29179 |
 | Aqua | `aqua-index` | 29180 |
 | DataSpell | `dataspell-index` | 29181 |
-| Rider | `rider-index` | 29182 |
 
 ## Development Guidelines
 
