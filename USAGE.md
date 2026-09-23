@@ -1934,6 +1934,8 @@ Requires at least one project to already be open (needed as the JSON-RPC context
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | Yes | Absolute filesystem path of the project directory to open |
+| `autoLink` | boolean | No | Automatically link an unlinked Maven/Gradle build system after opening. Default: false. |
+| `excludeDirectories` | string[] | No | Directory names to exclude from indexing and refactoring scope (e.g. `["wksp", ".claude", "node_modules"]`). Applied after autoLink. Each entry must not be blank or contain `..`. |
 | `timeoutSeconds` | integer | No | Maximum seconds to wait for opening + indexing. Default: 600 |
 | `project_path` | string | No | Selects the JSON-RPC context project when multiple are open |
 
