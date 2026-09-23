@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_open_project` now auto-registers a content root for non-Maven/Gradle projects** ([#421](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/421)) — directories without a recognized build system (TypeScript, plain directories) previously opened with zero content roots, making all MCP search and navigation tools return empty results. The tool now automatically creates a WEB_MODULE with the project directory as content root when no modules exist after opening. Common non-source directories (`node_modules`, `dist`, `.next`, `build`, `.gradle`) are excluded when present.
+
 ## [5.17.2] - 2026-09-22
 
 ### Fixed

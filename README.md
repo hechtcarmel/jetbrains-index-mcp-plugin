@@ -289,7 +289,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_set_power_save_mode` | Enable or disable IDE Power Save Mode — suspends background inspections while keeping the index and all code intelligence operational *(disabled by default)* |
 | `ide_close_project` | Close an open project window and free its memory — refuses to close the last open project *(disabled by default)* |
 | `ide_create_module` | Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.) *(disabled by default)* |
-| `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open *(disabled by default)* |
+| `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open. Auto-registers a content root for non-Maven/Gradle projects *(disabled by default)* |
 | `ide_install_plugin` | Install a plugin zip into the IDE, replacing any existing version — auto-detects `build/distributions/*.zip` when no path is given *(disabled by default)* |
 | `ide_restart` | Restart the IDE — the MCP server is down only while the IDE relaunches; poll `ide_index_status` until it answers, then continue. Call after `ide_install_plugin` *(disabled by default)* |
 | `ide_refactor_rename` | Preview with `dryRun`, or rename a symbol by `symbolId`/position (or a file) and update all references across the project (all languages; use `targetType` for explicit file mode) |

@@ -1923,6 +1923,8 @@ Note: indexing is async — call ide_index_status if subsequent tools hit dumb m
 
 Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, returns successfully right away.
 
+For directories without a recognized build system (TypeScript, plain directories, monorepos), the tool automatically registers the project directory as a content root so that files are indexed and visible to all MCP tools. Common non-source directories (`node_modules`, `dist`, `.next`, `build`, `.gradle`) are excluded automatically when present.
+
 Requires at least one project to already be open (needed as the JSON-RPC context). Opening a project the IDE has not seen before may show the modal "Trust project?" dialog, which only a human can answer; the call fails after `timeoutSeconds` if the project has not opened by then. If the project opens but indexing outlasts the timeout, the tool returns success with a note to check `ide_index_status`.
 
 **Use when:**
