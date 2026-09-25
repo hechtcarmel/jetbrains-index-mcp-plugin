@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.18.1] - 2026-09-25
+
 ### Fixed
 
 - **Ambiguous file paths across content roots now fail with an actionable error** ([#417](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/417)) — when a relative file path resolves to multiple files across different content roots (e.g. `com/example/Helper.java` exists in both `module-a/src` and `module-b/src`), tools now report all matching paths and ask the caller to disambiguate. A path that exists under the project root always wins, preserving round-trip compatibility with tool output. Matches under content roots outside the project root are listed by absolute path, and a multi-file `ide_diagnostics` call reports an ambiguous entry as that file's `failed` state (with the matches in `reason`) instead of failing the whole batch.
@@ -1353,7 +1355,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...HEAD
+[5.18.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...v5.18.1
 [5.18.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.2...v5.18.0
 [5.17.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.1...v5.17.2
 [5.17.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.0...v5.17.1
