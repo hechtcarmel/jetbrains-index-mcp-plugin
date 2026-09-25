@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.AmbiguousFileException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
@@ -253,6 +254,8 @@ abstract class AbstractMcpTool : McpTool {
         }
         return try {
             doExecute(project, normalizedArguments)
+        } catch (e: AmbiguousFileException) {
+            createErrorResult(e.message ?: "Ambiguous file path")
         } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
             // The IDE entered dumb mode (reindexing) during this call.
             createErrorResult(
@@ -441,7 +444,7 @@ abstract class AbstractMcpTool : McpTool {
             return findOrRefresh(canonical)
         }
 
-        // Try project basePath first
+        // basePath match wins — this is the path form every tool returns
         val basePath = project.basePath
         if (basePath != null) {
             val canonical = canonicalPathOrNull(File(basePath, relativePath))
@@ -452,16 +455,31 @@ abstract class AbstractMcpTool : McpTool {
             }
         }
 
-        // Try module content roots (workspace sub-project support)
+        // Content-root fallbacks: collect all matches to detect ambiguity
+        val matches = mutableListOf<VirtualFile>()
         for (rootPath in ProjectUtils.getModuleContentRoots(project)) {
             if (rootPath != basePath) {
                 val canonical = canonicalPathOrNull(File(rootPath, relativePath))
                 val canonicalRoot = canonicalPathOrNull(File(rootPath))
                 if (canonical != null && canonicalRoot != null && isWithinRoot(canonical, canonicalRoot)) {
                     val file = findOrRefresh(canonical)
-                    if (file != null) return file
+                    if (file != null && matches.none { it.path == file.path }) {
+                        matches.add(file)
+                    }
                 }
             }
+        }
+
+        if (matches.size == 1) return matches[0]
+        if (matches.size > 1) {
+            val paths = matches.joinToString(", ") { file ->
+                val rel = ProjectUtils.getRelativePath(project, file)
+                if (rel == file.path) file.path else rel
+            }
+            throw AmbiguousFileException(
+                "Ambiguous file path '$relativePath' matches ${matches.size} files: $paths. " +
+                    "Use an absolute path or a longer relative path to disambiguate."
+            )
         }
 
         return null

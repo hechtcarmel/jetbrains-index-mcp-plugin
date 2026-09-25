@@ -60,3 +60,5 @@ class SymbolNotFoundException(message: String) :
 
 class RefactoringConflictException(message: String) :
     McpException(message, McpErrorCodes.REFACTORING_CONFLICT)
+
+class AmbiguousFileException(message: String) : Exception(message)
