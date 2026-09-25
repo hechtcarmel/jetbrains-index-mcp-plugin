@@ -472,9 +472,15 @@ abstract class AbstractMcpTool : McpTool {
 
         if (matches.size == 1) return matches[0]
         if (matches.size > 1) {
+            // Under basePath the project-relative form is unique and resolves back to this file.
+            // Outside it, getRelativePath strips the matching content root, so every match would
+            // print as the same ambiguous path; list those by absolute path instead.
             val paths = matches.joinToString(", ") { file ->
-                val rel = ProjectUtils.getRelativePath(project, file)
-                if (rel == file.path) file.path else rel
+                if (basePath != null && file.path.startsWith("$basePath/")) {
+                    ProjectUtils.getRelativePath(project, file)
+                } else {
+                    file.path
+                }
             }
             throw AmbiguousFileException(
                 "Ambiguous file path '$relativePath' matches ${matches.size} files: $paths. " +

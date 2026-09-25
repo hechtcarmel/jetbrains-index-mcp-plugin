@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.AmbiguousFileException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
@@ -255,7 +256,16 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                 val target = if (remainingBudgetMs(deadlineNanos) == null) {
                     BatchFileTarget(path, virtualFile = null, budgetExhausted = true)
                 } else {
-                    BatchFileTarget(path, resolveFile(project, path))
+                    try {
+                        BatchFileTarget(path, resolveFile(project, path))
+                    } catch (e: AmbiguousFileException) {
+                        // One ambiguous entry must not abort coverage for the rest of the batch.
+                        BatchFileTarget(
+                            path,
+                            virtualFile = null,
+                            unresolvedReason = e.message ?: "Ambiguous file path: $path"
+                        )
+                    }
                 }
                 val resolvedKey = target.virtualFile?.url ?: "unresolved:$lexicalKey"
                 firstTargetByResolvedKey.putIfAbsent(resolvedKey, target)
@@ -270,6 +280,14 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                 val path = target.requestedPath
                 if (target.budgetExhausted) {
                     perFileAnalyses += sharedBudgetExhausted(path)
+                    continue
+                }
+                if (target.unresolvedReason != null) {
+                    perFileAnalyses += FileDiagnosticsAnalysis(
+                        file = path,
+                        state = ProjectDiagnosticsTool.STATE_FAILED,
+                        reason = target.unresolvedReason
+                    )
                     continue
                 }
                 val virtualFile = target.virtualFile
@@ -458,7 +476,9 @@ class GetDiagnosticsTool : AbstractMcpTool() {
     private data class BatchFileTarget(
         val requestedPath: String,
         val virtualFile: VirtualFile?,
-        val budgetExhausted: Boolean = false
+        val budgetExhausted: Boolean = false,
+        /** Set when the path exists but cannot be resolved to one file (e.g. ambiguous). */
+        val unresolvedReason: String? = null
     )
 
     private suspend fun analyzeIntentions(
