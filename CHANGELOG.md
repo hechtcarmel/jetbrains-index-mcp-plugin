@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- **Ambiguous file paths across content roots now fail with an actionable error** ([#417](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/417)) — when a relative file path resolves to multiple files across different content roots (e.g. `com/example/Helper.java` exists in both `module-a/src` and `module-b/src`), tools now report all matching paths and ask the caller to disambiguate. A path that exists under the project root always wins, preserving round-trip compatibility with tool output.
+- **Ambiguous file paths across content roots now fail with an actionable error** ([#417](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/417)) — when a relative file path resolves to multiple files across different content roots (e.g. `com/example/Helper.java` exists in both `module-a/src` and `module-b/src`), tools now report all matching paths and ask the caller to disambiguate. A path that exists under the project root always wins, preserving round-trip compatibility with tool output. Matches under content roots outside the project root are listed by absolute path, and a multi-file `ide_diagnostics` call reports an ambiguous entry as that file's `failed` state (with the matches in `reason`) instead of failing the whole batch.
 
 ## [5.18.0] - 2026-09-23
 
@@ -18,7 +18,6 @@
 
 ### Fixed
 
-- **Ambiguous file paths now fail with an actionable error instead of silently picking the first match** — when a relative file path resolves to multiple files across different content roots (e.g. `com/example/Helper.java` exists in both `module-a/src` and `module-b/src`), tools now report all matching paths and ask the caller to use the full path from the project root to disambiguate.
 - **README no longer lists Rider as a supported IDE** ([#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167)) — the "IDE-Specific Defaults" table still carried a `rider-index` / 29182 row although the plugin has been declared incompatible with Rider since 1.9.1. The README now states explicitly that Rider is not supported and why.
 
 ## [5.17.1] - 2026-09-18
