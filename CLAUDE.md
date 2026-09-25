@@ -140,7 +140,7 @@ The plugin supports workspace projects where a single IDE window contains multip
 represented as modules with separate content roots:
 
 - **Project resolution** (`ProjectResolver.resolve`): Checks exact basePath → exact module content root → basePath subdirectory → module content-root subdirectory (longest root wins)
-- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath, then module content roots
+- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath first (wins unconditionally), then module content roots (fails with `AmbiguousFileException` if multiple roots match)
 - **Relative path computation** (`ProjectUtils.getRelativePath`): Strips the matching content root prefix
 - **VFS/PSI sync** (`AbstractMcpTool.ensurePsiUpToDate`): Refreshes all content roots, not just basePath
 - **Error responses**: `available_projects` detail is configurable. Expanded mode includes workspace sub-projects with their `workspace` parent name; compact mode returns only top-level project roots.
