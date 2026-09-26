@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestRunEntry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import junit.framework.TestCase
@@ -267,6 +268,74 @@ class RunTestsUnitTest : TestCase() {
         )
         assertTrue("message must repeat the runId for the poll call", result.message.contains("abc-123"))
         assertTrue("message must name the runId parameter", result.message.contains("runId"))
+    }
+
+    /**
+     * Issue #426: the tests finished so far ride on the in-progress payload, and the message
+     * summarizes them, so an agent that reads only the message still learns about failures.
+     */
+    fun testInProgressResultCarriesTestsFinishedSoFar() {
+        val failure = TestRunEntry(name = "MainTest.testFails", status = TestStatus.FAILED, errorMessage = "boom")
+        val result = RunTestsTool.buildInProgressResult(
+            runId = "abc-123",
+            configName = "MainTest",
+            elapsedSeconds = 61,
+            timeoutSeconds = 1800,
+            processStarted = true,
+            progress = TestResultsCollector.RunProgress(passed = 26, failed = 1, errors = 2, failures = listOf(failure))
+        )
+        assertEquals(26, result.passed)
+        assertEquals(1, result.failed)
+        assertEquals(2, result.errors)
+        assertEquals(listOf(failure), result.failures)
+        assertTrue(
+            "message must summarize the progress, got: ${result.message}",
+            result.message.contains("So far 26 passed, 1 failed, 2 errors.")
+        )
+        assertTrue("message must point at 'failures'", result.message.contains("'failures'"))
+        assertTrue("message must still carry the poll instruction", result.message.contains("abc-123"))
+    }
+
+    fun testInProgressMessageSaysWhenFailuresAreCapped() {
+        val failures = List(50) { TestRunEntry(name = "MainTest.test$it", status = TestStatus.FAILED) }
+        val result = RunTestsTool.buildInProgressResult(
+            runId = "abc-123",
+            configName = "MainTest",
+            elapsedSeconds = 61,
+            timeoutSeconds = 1800,
+            processStarted = true,
+            progress = TestResultsCollector.RunProgress(passed = 0, failed = 80, errors = 0, failures = failures)
+        )
+        assertTrue(
+            "a capped list must say it holds only the first failures, got: ${result.message}",
+            result.message.contains("The first 50 failed or errored tests are listed in 'failures'.")
+        )
+    }
+
+    fun testInProgressMessageOnlyPointsAtFailuresWhenThereAreAny() {
+        val result = RunTestsTool.buildInProgressResult(
+            runId = "abc-123",
+            configName = "MainTest",
+            elapsedSeconds = 61,
+            timeoutSeconds = 1800,
+            processStarted = true,
+            progress = TestResultsCollector.RunProgress(passed = 5, failed = 0, errors = 0, failures = emptyList())
+        )
+        assertTrue(result.message.contains("So far 5 passed, 0 failed, 0 errors."))
+        assertFalse("nothing to point at", result.message.contains("'failures'"))
+    }
+
+    fun testInProgressResultBeforeAnyTestFinishesHasNoProgress() {
+        val result = RunTestsTool.buildInProgressResult(
+            runId = "abc-123",
+            configName = "MainTest",
+            elapsedSeconds = 3,
+            timeoutSeconds = 1800,
+            processStarted = true
+        )
+        assertEquals(0, result.passed + result.failed + result.errors)
+        assertTrue(result.failures.isEmpty())
+        assertFalse("no summary before any test finishes, got: ${result.message}", result.message.contains("So far"))
     }
 
     // ── TestStatus.isFailure ───────────────────────────────────────────────────

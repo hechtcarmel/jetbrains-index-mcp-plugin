@@ -28,7 +28,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
 | `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Disabled |
 | `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Disabled |
-| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Disabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out; each poll reports the failures so far | Disabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
@@ -1362,7 +1362,7 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
 
 **Language support:** Passing an **existing run configuration name** works for any language/framework. Passing a **class or method FQN** (so the plugin creates the run config for you) is supported **only for Java/Kotlin** — for Python, JS/TS, Go, PHP, or Rust, create/select a run configuration in the IDE and pass its name.
 
-**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no `target`) to keep waiting. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
+**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no `target`) to keep waiting. A running response also reports the tests finished so far: `passed`, `failed` and `errors` counts, plus `failures`, the first 50 failed or errored tests with `errorMessage` and `stackTrace`, so you can act on failures before the run ends. Console output arrives only with the final result, and the counts are a snapshot, not a verdict: there is no `success` field until the run ends. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
 
 **Use when:**
 - Running a specific test class or method after a code change
@@ -1429,10 +1429,22 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
 {
   "status": "running",
   "runId": "6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f",
-  "configName": "MyTest.testFoo",
+  "configName": "MyTest",
   "elapsedSeconds": 45,
   "timeoutSeconds": 7200,
-  "message": "Test run 'MyTest.testFoo' is still executing (45s elapsed, 7200s limit). The run continues in the IDE. Call ide_run_tests again with {\"runId\": \"6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f\"} to keep waiting for its results."
+  "passed": 12,
+  "failed": 1,
+  "errors": 0,
+  "message": "Test run 'MyTest' is still executing (45s elapsed, 7200s limit). So far 12 passed, 1 failed, 0 errors. The failed and errored tests are listed in 'failures'. The run continues in the IDE. Call ide_run_tests again with {\"runId\": \"6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f\"} to keep waiting for its results (include the same project_path if you provided one).",
+  "failures": [
+    {
+      "name": "com.example.MyTest.testBaz",
+      "status": "failed",
+      "errorMessage": "expected:<1> but was:<2>",
+      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)",
+      "output": null
+    }
+  ]
 }
 ```
 

@@ -57,13 +57,18 @@ class ActiveTestRunRegistry(scope: CoroutineScope) : LongPollRegistry<ActiveTest
             private set
 
         /**
-         * Whether an SM results viewer was attached at process start — a boolean rather than the
-         * viewer itself so a retained entry never pins a (possibly disposed) Swing component for
-         * the whole retention window; [testRoot] carries the actual results.
+         * The run's SM test tree, captured at process start; null until then, and for consoles
+         * without an SM results viewer. In-progress polls read the tests finished so far from it
+         * (issue #426). The root is kept rather than the viewer: it is the same object
+         * [testRoot] completes with once the tree is final, so it keeps nothing alive that a
+         * finished entry did not already keep.
          */
         @Volatile
-        var hasResultsViewer: Boolean = false
+        var liveRoot: SMTestProxy.SMRootTestProxy? = null
             private set
+
+        /** Whether an SM results viewer was attached at process start, i.e. there is a tree to collect. */
+        val hasResultsViewer: Boolean get() = liveRoot != null
 
         /**
          * Completes normally when the process starts, exceptionally when the IDE reports it
@@ -77,10 +82,10 @@ class ActiveTestRunRegistry(scope: CoroutineScope) : LongPollRegistry<ActiveTest
          * dead (the start allowance expired just as the build finished), the fresh process is
          * killed immediately so a run reported as timed out never keeps executing unmanaged.
          */
-        fun markProcessStarted(handler: ProcessHandler, hasResultsViewer: Boolean) {
+        fun markProcessStarted(handler: ProcessHandler, liveRoot: SMTestProxy.SMRootTestProxy?) {
             this.processStartedAtMs = System.currentTimeMillis()
             this.handler = handler
-            this.hasResultsViewer = hasResultsViewer
+            this.liveRoot = liveRoot
             processStarted.complete(Unit)
             if (timedOutByWatchdog) {
                 handler.destroyProcess()

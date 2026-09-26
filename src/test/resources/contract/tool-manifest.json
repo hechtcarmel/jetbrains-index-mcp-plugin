@@ -2974,10 +2974,12 @@ description:
   request timeout is never hit. If the run is still going when the wait budget ends — whether
   the IDE is still compiling before the test process starts, or the tests themselves are still
   executing — the call returns {"status": "running", "runId": "..."} while the run continues
-  inside the IDE; call this tool again with that runId (and no target) to keep waiting. The
-  run itself is bounded by timeoutSeconds, counted from when the test process starts (build
-  time before that is not billed to the run): once it expires the process is killed and the
-  next poll reports timedOut: true.
+  inside the IDE; call this tool again with that runId (and no target) to keep waiting. A
+  running response also reports the tests finished so far: passed/failed/errors counts and
+  "failures", the first 50 failed or errored tests with errorMessage and stackTrace, so you
+  can act on failures before the run ends. The run itself is bounded by timeoutSeconds,
+  counted from when the test process starts (build time before that is not billed to the
+  run): once it expires the process is killed and the next poll reports timedOut: true.
   
   Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
   carries its console output (stdout/stderr merged in print order, as the IDE's test console
