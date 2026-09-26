@@ -586,6 +586,11 @@ data class RunTestsResult(
 /**
  * Returned by ide_run_tests instead of blocking past the MCP client's own request timeout
  * (issue #277): the run keeps executing in the IDE and the agent re-calls with [runId].
+ *
+ * [passed], [failed], [errors] and [failures] cover the tests finished so far (issue #426), so
+ * failures surface before the run ends. They are a snapshot, not a verdict: there is
+ * deliberately no `success` field, because `failed = 0` mid-run proves nothing. All zero while
+ * the IDE is still building and the test process has not started.
  */
 @Serializable
 data class RunTestsInProgressResult(
@@ -594,7 +599,17 @@ data class RunTestsInProgressResult(
     val configName: String,
     val elapsedSeconds: Long,
     val timeoutSeconds: Int,
-    val message: String
+    val passed: Int,
+    val failed: Int,
+    val errors: Int,
+    val message: String,
+    /**
+     * Failed and errored tests finished so far, in run order, under the same stack-trace budget
+     * as the final result. They carry no console output; that arrives with the final result.
+     * Capped at `TestResultsCollector.MAX_PROGRESS_FAILURES` entries; [failed] and [errors]
+     * stay exact past the cap.
+     */
+    val failures: List<TestRunEntry>
 )
 
 /**

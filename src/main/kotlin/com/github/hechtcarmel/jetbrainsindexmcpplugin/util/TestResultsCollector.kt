@@ -68,6 +68,13 @@ object TestResultsCollector {
      */
     internal const val MAX_RUN_LEVEL_OUTPUT_LENGTH = 20_000
 
+    /**
+     * Cap on the failure entries a still-running ide_run_tests poll carries (issue #426). Every
+     * poll resends the list, so it stays short: the first failures are what an agent acts on,
+     * and the counters stay exact past the cap.
+     */
+    internal const val MAX_PROGRESS_FAILURES = 50
+
     fun collect(
         project: Project,
         testResultFilter: String,
@@ -104,22 +111,91 @@ object TestResultsCollector {
             .mapNotNull { test ->
                 // TODO: Use `test.magnitudeInfo` once API is stable
                 magnitudeIndexToStatus(test.magnitude)?.let { status ->
-                    // Budget check before the stacktrace read: once spent, the (possibly huge)
-                    // trace string is never materialized. Soft budget — the last attached trace
-                    // may overshoot by at most one per-test cap.
-                    val stackTrace = if (status.isFailure && traceBudget > 0) {
-                        test.stacktrace?.takeIf(String::isNotBlank)?.let(::truncateStackTrace)
-                            ?.also { traceBudget -= it.length }
-                    } else null
-                    TestRunEntry(
-                        name = composeName(test.name, test.parent?.name),
-                        status = status,
-                        errorMessage = if (status.isFailure) test.errorMessage else null,
-                        stackTrace = stackTrace,
-                        output = outputs[test]
-                    )
+                    toRunEntry(test, status, outputs[test], traceBudget)
+                        .also { traceBudget -= it.stackTrace?.length ?: 0 }
                 }
             }
+    }
+
+    /**
+     * The tests a still-running test run has finished so far (issue #426): exact counts plus the
+     * first failed/errored entries, in run order.
+     */
+    data class RunProgress(
+        val passed: Int,
+        val failed: Int,
+        val errors: Int,
+        val failures: List<TestRunEntry>
+    ) {
+        companion object {
+            /** Nothing finished yet, or no test tree to read (the test process has not started). */
+            val NONE = RunProgress(passed = 0, failed = 0, errors = 0, failures = emptyList())
+        }
+    }
+
+    /**
+     * Snapshot of a LIVE test tree for an in-progress ide_run_tests poll (issue #426). Entries are
+     * built exactly as [collectRunEntries] builds them, with the same names, statuses and
+     * stack-trace budget, but only failed/errored tests are listed, capped at [maxFailures]. No
+     * console output is attached: [collectRunOutputs] files a still-running test's prints under
+     * the run-level output, so output waits for the final result.
+     *
+     * Safe to call from any thread while the run is still writing the tree. The SM runner applies
+     * test events on the process-output thread, not the EDT
+     * (`OutputToGeneralTestEventsConverter.process` → `GeneralToSMTRunnerEventsConvertor`), so no
+     * thread would serialize this read with the writer anyway. It does not need to be serialized:
+     * children live in a `CopyOnWriteArrayList`, and a test's state is a volatile field written
+     * after its failure message and trace, so a test read as failed always carries them. Tests
+     * that are still running or not run yet have no terminal status and are skipped; one that
+     * finishes mid-read shows up by the next poll.
+     */
+    fun collectRunProgress(
+        root: SMTestProxy.SMRootTestProxy,
+        maxFailures: Int = MAX_PROGRESS_FAILURES,
+        totalStackTraceBudget: Int = MAX_RUN_TOTAL_STACKTRACE_CHARS
+    ): RunProgress {
+        var traceBudget = totalStackTraceBudget
+        var passed = 0
+        var failed = 0
+        var errors = 0
+        val failures = ArrayList<TestRunEntry>()
+        for (test in root.allTests) {
+            if (!isRunEntryLeaf(root, test)) continue
+            // Read once: the state can change under us, and the counts and the entry must agree.
+            val status = magnitudeIndexToStatus(test.magnitude) ?: continue
+            when (status) {
+                TestStatus.PASSED -> passed++
+                TestStatus.FAILED -> failed++
+                TestStatus.ERROR -> errors++
+                TestStatus.SKIPPED -> {}
+            }
+            if (status.isFailure && failures.size < maxFailures) {
+                val entry = toRunEntry(test, status, output = null, traceBudgetLeft = traceBudget)
+                traceBudget -= entry.stackTrace?.length ?: 0
+                failures.add(entry)
+            }
+        }
+        return RunProgress(passed, failed, errors, failures)
+    }
+
+    /**
+     * One reportable test as a [TestRunEntry]. The caller owns the run's stack-trace budget and
+     * subtracts the attached trace's length from it.
+     */
+    private fun toRunEntry(test: SMTestProxy, status: TestStatus, output: String?, traceBudgetLeft: Int): TestRunEntry {
+        // Budget check before the stacktrace read: once spent, the (possibly huge) trace string
+        // is never materialized. Soft budget — the last attached trace may overshoot by at most
+        // one per-test cap.
+        val stackTrace = if (status.isFailure && traceBudgetLeft > 0) {
+            test.stacktrace?.takeIf(String::isNotBlank)?.let(::truncateStackTrace)
+        } else null
+        return TestRunEntry(
+            name = composeName(test.name, test.parent?.name),
+            status = status,
+            errorMessage = if (status.isFailure) test.errorMessage else null,
+            stackTrace = stackTrace,
+            output = output
+        )
     }
 
     /** The nodes [collectRunEntries] reports as per-test entries; everything else is run-level. */

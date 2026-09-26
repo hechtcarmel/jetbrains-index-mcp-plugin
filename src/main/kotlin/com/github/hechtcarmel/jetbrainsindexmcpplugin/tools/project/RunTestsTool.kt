@@ -132,24 +132,30 @@ class RunTestsTool : AbstractMcpTool() {
          * [processStarted] distinguishes the run's two phases (issue #348): while the IDE is
          * still building, `timeoutSeconds` has not started counting and the agent should keep
          * polling instead of concluding the run is stuck — the message must say so.
+         * [progress] is what the run has finished so far (issue #426).
          */
         internal fun buildInProgressResult(
             runId: String,
             configName: String,
             elapsedSeconds: Long,
             timeoutSeconds: Int,
-            processStarted: Boolean
+            processStarted: Boolean,
+            progress: TestResultsCollector.RunProgress = TestResultsCollector.RunProgress.NONE
         ): RunTestsInProgressResult = RunTestsInProgressResult(
             status = "running",
             runId = runId,
             configName = configName,
             elapsedSeconds = elapsedSeconds,
             timeoutSeconds = timeoutSeconds,
+            passed = progress.passed,
+            failed = progress.failed,
+            errors = progress.errors,
+            failures = progress.failures,
             message = if (processStarted) {
                 "Test run '$configName' is still executing (${elapsedSeconds}s elapsed, " +
-                        "${timeoutSeconds}s limit). The run continues in the IDE. Call ide_run_tests again " +
-                        "with {\"runId\": \"$runId\"} to keep waiting for its results (include the same " +
-                        "project_path if you provided one)."
+                        "${timeoutSeconds}s limit).${progressSummary(progress)} The run continues in the IDE. " +
+                        "Call ide_run_tests again with {\"runId\": \"$runId\"} to keep waiting for its results " +
+                        "(include the same project_path if you provided one)."
             } else {
                 "The IDE is still preparing test run '$configName' (compiling / running before-launch " +
                         "tasks; ${elapsedSeconds}s elapsed). The test process has not started yet — the " +
@@ -158,6 +164,23 @@ class RunTestsTool : AbstractMcpTool() {
                         "if you provided one)."
             }
         )
+
+        /**
+         * A sentence on the tests finished so far, or nothing before the first one finishes. It
+         * says when `failures` is capped, so an agent never takes the first failures for all of
+         * them.
+         */
+        private fun progressSummary(progress: TestResultsCollector.RunProgress): String {
+            if (progress.passed + progress.failed + progress.errors == 0) return ""
+            val counts = " So far ${progress.passed} passed, ${progress.failed} failed, ${progress.errors} errors."
+            val failureCount = progress.failed + progress.errors
+            return when {
+                failureCount == 0 -> counts
+                progress.failures.size < failureCount ->
+                    "$counts The first ${progress.failures.size} failed or errored tests are listed in 'failures'."
+                else -> "$counts The failed and errored tests are listed in 'failures'."
+            }
+        }
 
         /**
          * Parses a target string into a class name and optional method name.
@@ -213,10 +236,12 @@ class RunTestsTool : AbstractMcpTool() {
         request timeout is never hit. If the run is still going when the wait budget ends — whether
         the IDE is still compiling before the test process starts, or the tests themselves are still
         executing — the call returns {"status": "running", "runId": "..."} while the run continues
-        inside the IDE; call this tool again with that runId (and no target) to keep waiting. The
-        run itself is bounded by timeoutSeconds, counted from when the test process starts (build
-        time before that is not billed to the run): once it expires the process is killed and the
-        next poll reports timedOut: true.
+        inside the IDE; call this tool again with that runId (and no target) to keep waiting. A
+        running response also reports the tests finished so far: passed/failed/errors counts and
+        "failures", the first ${TestResultsCollector.MAX_PROGRESS_FAILURES} failed or errored tests with errorMessage and stackTrace, so you
+        can act on failures before the run ends. The run itself is bounded by timeoutSeconds,
+        counted from when the test process starts (build time before that is not billed to the
+        run): once it expires the process is killed and the next poll reports timedOut: true.
 
         Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
         carries its console output (stdout/stderr merged in print order, as the IDE's test console
@@ -411,7 +436,8 @@ class RunTestsTool : AbstractMcpTool() {
                     run.configName,
                     elapsedSeconds,
                     run.timeoutSeconds,
-                    processStarted = processStartedAtMs != null
+                    processStarted = processStartedAtMs != null,
+                    progress = snapshotProgress(run)
                 )
             )
         }
@@ -461,6 +487,26 @@ class RunTestsTool : AbstractMcpTool() {
                 tests = tests
             )
         )
+    }
+
+    /**
+     * The tests finished so far (issue #426), read straight off the live SM tree on this thread;
+     * [TestResultsCollector.collectRunProgress] explains why that is safe mid-run without an EDT
+     * hop. Best-effort: a failed snapshot degrades to no progress, never to a failed poll, which
+     * would cost the agent the runId instruction it needs to keep waiting.
+     */
+    private fun snapshotProgress(run: ActiveTestRunRegistry.ActiveTestRun): TestResultsCollector.RunProgress {
+        val root = run.liveRoot ?: return TestResultsCollector.RunProgress.NONE
+        return try {
+            TestResultsCollector.collectRunProgress(root)
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LOG.warn("Could not read the tests finished so far in test run '${run.configName}'", e)
+            TestResultsCollector.RunProgress.NONE
+        }
     }
 
     /**
@@ -562,7 +608,9 @@ class RunTestsTool : AbstractMcpTool() {
                 // ExecutionManagerImpl registers the content descriptor before startNotify fires
                 // this event, so the console (and its SM results viewer) is findable here. The
                 // viewer listener must be attached before the run finishes — that is guaranteed
-                // here, where the process has only just started.
+                // here, where the process has only just started. The viewer's root exists from
+                // console creation and fills in as tests run, which is what in-progress polls
+                // read (issue #426).
                 val descriptor = RunContentManager.getInstance(project).allDescriptors
                     .find { it.processHandler === handler }
                 val resultsViewer = extractTestRunnerResultsViewer(descriptor?.executionConsole)
@@ -571,7 +619,7 @@ class RunTestsTool : AbstractMcpTool() {
                         run.testRoot.complete(sender.testsRootNode.root)
                     }
                 })
-                run.markProcessStarted(handler, hasResultsViewer = resultsViewer != null)
+                run.markProcessStarted(handler, liveRoot = resultsViewer?.testsRootNode)
             }
 
             override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {

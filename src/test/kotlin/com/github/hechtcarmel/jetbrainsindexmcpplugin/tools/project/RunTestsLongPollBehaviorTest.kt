@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TestStatus
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.execution.process.NopProcessHandler
 import com.intellij.execution.testframework.sm.runner.SMTestProxy
@@ -62,17 +63,24 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         )
     }
 
+    /** [liveRoot] is the results viewer's tree, as the start path hands it over; null for a console without one. */
     private fun registerRun(
         id: String,
         timeoutSeconds: Int = 600,
-        hasResultsViewer: Boolean = false
+        liveRoot: SMTestProxy.SMRootTestProxy? = null
     ): ActiveTestRunRegistry.ActiveTestRun {
         val run = registerStartingRun(id, timeoutSeconds)
         val handler = NopProcessHandler()
         handler.startNotify()
-        run.markProcessStarted(handler, hasResultsViewer = hasResultsViewer)
+        run.markProcessStarted(handler, liveRoot = liveRoot)
         return run
     }
+
+    private fun addTest(suite: SMTestProxy, name: String): SMTestProxy =
+        SMTestProxy(name, false, null).also {
+            suite.addChild(it)
+            it.setStarted()
+        }
 
     private fun callTool(vararg args: Pair<String, Any>): CallToolResult = runBlocking {
         tool.execute(project, buildJsonObject {
@@ -143,8 +151,8 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
      * collector call.
      */
     fun testAttachDeliversConsoleOutputWithResults() {
-        val run = registerRun("run-with-output", hasResultsViewer = true)
         val root = SMTestProxy.SMRootTestProxy()
+        val run = registerRun("run-with-output", liveRoot = root)
         root.setStarted()
         root.addStdOutput("framework banner\n")
         val suite = SMTestProxy("MainTest", true, null)
@@ -175,6 +183,71 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
             "framework banner\n",
             payload.output
         )
+    }
+
+    // ── issue #426: tests finished so far, while the run is still executing ────────────────────
+
+    /**
+     * A poll while the run is still executing reports what has finished so far, read off the
+     * live tree: counts, plus the failures with their messages and traces, and nothing for a
+     * test still running. A later poll sees the tree grow, and completion still returns the
+     * full list. Before #426 a running poll carried no test data at all.
+     */
+    fun testInProgressPollReportsTestsFinishedSoFar() {
+        val root = SMTestProxy.SMRootTestProxy()
+        root.setStarted()
+        val suite = SMTestProxy("MainTest", true, null)
+        root.addChild(suite)
+        suite.setStarted()
+        addTest(suite, "testPasses").setFinished()
+        addTest(suite, "testFails").apply {
+            addStdOutput("state before assertion: 2\n")
+            setTestFailed("expected:<1> but was:<2>", "java.lang.AssertionError: expected:<1> but was:<2>", false)
+        }
+        val stillRunning = addTest(suite, "testStillRunning")
+        val run = registerRun("run-partial", liveRoot = root)
+
+        val first = callTool("runId" to "run-partial", "waitSeconds" to 0)
+
+        assertToolSucceeded("a mid-run poll is a success, not an error", first)
+        val payload = json.decodeFromString(RunTestsInProgressResult.serializer(), toolText(first))
+        assertEquals("running", payload.status)
+        assertEquals(1, payload.passed)
+        assertEquals(1, payload.failed)
+        assertEquals(0, payload.errors)
+        val failure = payload.failures.single()
+        assertEquals("MainTest.testFails", failure.name)
+        assertEquals(TestStatus.FAILED, failure.status)
+        assertEquals("expected:<1> but was:<2>", failure.errorMessage)
+        assertEquals("java.lang.AssertionError: expected:<1> but was:<2>", failure.stackTrace)
+        assertNull("console output arrives only with the final result", failure.output)
+        assertTrue(
+            "message must summarize the tests finished so far, got: ${payload.message}",
+            payload.message.contains("So far 1 passed, 1 failed, 0 errors.")
+        )
+
+        stillRunning.setTestFailed("boom", "java.lang.IllegalStateException: boom", true)
+        val second = callTool("runId" to "run-partial", "waitSeconds" to 0)
+
+        val secondPayload = json.decodeFromString(RunTestsInProgressResult.serializer(), toolText(second))
+        assertEquals("running", secondPayload.status)
+        assertEquals("a test that errors between polls must show up on the next one", 1, secondPayload.errors)
+        assertEquals(
+            listOf("MainTest.testFails", "MainTest.testStillRunning"),
+            secondPayload.failures.map { it.name }
+        )
+
+        suite.setFinished()
+        root.setFinished()
+        run.exitCode.complete(1)
+        run.testRoot.complete(root)
+        val completed = callTool("runId" to "run-partial", "waitSeconds" to 10)
+
+        val finalPayload = json.decodeFromString(RunTestsResult.serializer(), toolText(completed))
+        assertEquals("the final result still lists every test", 3, finalPayload.total)
+        assertEquals(1, finalPayload.passed)
+        assertEquals(1, finalPayload.failed)
+        assertEquals(1, finalPayload.errors)
     }
 
     fun testWatchdogKillsRunAtTimeoutAndPollReportsTimedOut() {
@@ -267,7 +340,7 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
 
         val handler = NopProcessHandler()
         handler.startNotify()
-        run.markProcessStarted(handler, hasResultsViewer = false)
+        run.markProcessStarted(handler, liveRoot = null)
         run.exitCode.complete(0)
         run.testRoot.complete(null)
 
@@ -304,7 +377,7 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
 
         val handler = NopProcessHandler()
         handler.startNotify()
-        run.markProcessStarted(handler, hasResultsViewer = false)
+        run.markProcessStarted(handler, liveRoot = null)
         assertTrue(
             "a process starting after the timeout verdict must be destroyed immediately",
             handler.isProcessTerminated || handler.isProcessTerminating

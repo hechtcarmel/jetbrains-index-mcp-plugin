@@ -379,7 +379,11 @@
 ## RunTestsInProgressResult
   configName: string
   elapsedSeconds: number
+  errors: number
+  failed: number
+  failures: array
   message: string
+  passed: number
   runId: string
   status: string
   timeoutSeconds: number

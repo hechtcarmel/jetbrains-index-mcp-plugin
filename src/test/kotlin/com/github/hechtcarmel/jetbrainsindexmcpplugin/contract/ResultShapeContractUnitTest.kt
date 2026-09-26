@@ -1030,7 +1030,17 @@ class ResultShapeContractUnitTest : TestCase() {
                     configName = "com.example.ServiceTest",
                     elapsedSeconds = 61,
                     timeoutSeconds = 7200,
-                    message = "Test run 'com.example.ServiceTest' is still executing"
+                    passed = 26,
+                    failed = 1,
+                    errors = 1,
+                    message = "Test run 'com.example.ServiceTest' is still executing",
+                    failures = listOf(
+                        TestRunEntry(
+                            name = "com.example.ServiceTest.testHandle",
+                            status = TestStatus.FAILED,
+                            errorMessage = "expected:<1> but was:<2>"
+                        )
+                    )
                 )
             ),
             struct(
