@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.19.0] - 2026-09-26
+
 ### Added
 
 - **`ide_run_tests` reports the tests finished so far while a run is still executing** ([#426](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/426)) — a `{"status": "running"}` poll now carries `passed`, `failed` and `errors` counts over the tests finished so far, plus `failures`: the first 50 failed or errored tests with `errorMessage` and `stackTrace`. Failures surface while a long run is still going instead of only in the final result. Console output still arrives only with the final result, and a running response has no `success` field, since `failed: 0` mid-run proves nothing.
@@ -1359,7 +1361,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...HEAD
+[5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0
 [5.18.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...v5.18.1
 [5.18.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.2...v5.18.0
 [5.17.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.1...v5.17.2
