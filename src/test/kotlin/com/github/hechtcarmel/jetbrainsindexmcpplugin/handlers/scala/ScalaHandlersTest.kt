@@ -1,7 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.scala
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.HierarchyPageRequest
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.TypeHierarchyDirection
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.psi.PsiElement
@@ -38,20 +40,53 @@ class ScalaHandlersTest : BasePlatformTestCase() {
         val typeHandler = ScalaTypeHierarchyHandler()
 
         val baseService = elementAt(modelsFixture.psiFile, modelsFixture.source, "abstract class BaseService")
-        val baseHierarchy = typeHandler.getTypeHierarchy(baseService, project, BuiltInSearchScope.PROJECT_FILES)
+        val baseHierarchy = typeHandler.getTypeHierarchy(
+            baseService, project, BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false, directOnly = false, direction = null, page = null
+        )
         assertNotNull("BaseService hierarchy should resolve", baseHierarchy)
         val subtypes = baseHierarchy!!.subtypes.map { it.name }
         assertTrue("Employee should be a subtype of BaseService", subtypes.any { it.contains("Employee") })
         assertTrue("Contractor should be a subtype of BaseService", subtypes.any { it.contains("Contractor") })
 
         val employeeType = elementAt(modelsFixture.psiFile, modelsFixture.source, "case class Employee")
-        val employeeHierarchy = typeHandler.getTypeHierarchy(employeeType, project, BuiltInSearchScope.PROJECT_FILES)
+        val employeeHierarchy = typeHandler.getTypeHierarchy(
+            employeeType, project, BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false, directOnly = false, direction = null, page = null
+        )
         assertNotNull("Employee hierarchy should resolve", employeeHierarchy)
         assertEquals("CASE_CLASS", employeeHierarchy!!.element.kind)
+        assertNotNull("Employee hierarchy root must keep a pointerTarget", employeeHierarchy.element.pointerTarget)
         assertTrue(
             "Employee should include BaseService in supertypes",
             employeeHierarchy.supertypes.any { it.name.contains("BaseService") && it.kind == "CLASS" }
         )
+    }
+
+    fun testTypeHierarchyPagingUsesDirectSupertypesAndNextOffset() {
+        requireScalaCapability("testTypeHierarchyPagingUsesDirectSupertypesAndNextOffset")
+
+        val modelsFixture = addScalaFixture("scala2-models.scala")
+        val typeHandler = ScalaTypeHierarchyHandler()
+        val baseService = elementAt(modelsFixture.psiFile, modelsFixture.source, "abstract class BaseService")
+        val first = typeHandler.getTypeHierarchy(
+            baseService, project, BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false, directOnly = true, direction = TypeHierarchyDirection.SUBTYPE,
+            page = HierarchyPageRequest(offset = 0, limit = 1)
+        )
+        assertNotNull("Paged BaseService hierarchy should resolve", first)
+        assertEquals(1, first!!.subtypes.size)
+        assertNotNull("paged subtype must keep a pointerTarget", first.subtypes.single().pointerTarget)
+        assertEquals("look-ahead must report another direct subtype", 1, first.nextOffset)
+
+        val second = typeHandler.getTypeHierarchy(
+            baseService, project, BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false, directOnly = true, direction = TypeHierarchyDirection.SUBTYPE,
+            page = HierarchyPageRequest(offset = 1, limit = 1)
+        )
+        assertNotNull("Second page should resolve", second)
+        assertEquals(1, second!!.subtypes.size)
+        assertNull(second.nextOffset)
     }
 
     fun testFindImplementationsForTraitAndMethod() {
@@ -61,7 +96,9 @@ class ScalaHandlersTest : BasePlatformTestCase() {
         val implHandler = ScalaImplementationsHandler()
 
         val workerTrait = elementAt(modelsFixture.psiFile, modelsFixture.source, "trait Worker")
-        val typeImplementations = implHandler.findImplementations(workerTrait, project, BuiltInSearchScope.PROJECT_FILES)
+        val typeImplementations = implHandler.findImplementations(
+            workerTrait, project, BuiltInSearchScope.PROJECT_FILES, excludeGenerated = false
+        )
         assertNotNull("Worker trait implementations should resolve", typeImplementations)
         val implementationNames = typeImplementations!!.map { it.name }
         assertTrue("Employee should implement Worker", implementationNames.any { it.contains("Employee") })
@@ -72,7 +109,9 @@ class ScalaHandlersTest : BasePlatformTestCase() {
             modelsFixture.source,
             "def work(task: String): String = s\"${'$'}name:${'$'}task\""
         )
-        val methodImplementations = implHandler.findImplementations(workMethod, project, BuiltInSearchScope.PROJECT_FILES)
+        val methodImplementations = implHandler.findImplementations(
+            workMethod, project, BuiltInSearchScope.PROJECT_FILES, excludeGenerated = false
+        )
         assertNotNull("Worker.work implementations should resolve", methodImplementations)
         val methodNames = methodImplementations!!.map { it.name }
         assertTrue("Employee.work override should be present", methodNames.any { it.contains("Employee.work") })
@@ -92,7 +131,9 @@ class ScalaHandlersTest : BasePlatformTestCase() {
             project,
             direction = "callers",
             depth = 2,
-            scope = BuiltInSearchScope.PROJECT_FILES
+            scope = BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false,
+            page = null
         )
         assertNotNull("Callers hierarchy should resolve", callers)
         assertTrue(
@@ -106,7 +147,9 @@ class ScalaHandlersTest : BasePlatformTestCase() {
             project,
             direction = "callees",
             depth = 2,
-            scope = BuiltInSearchScope.PROJECT_FILES
+            scope = BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false,
+            page = null
         )
         assertNotNull("Callees hierarchy should resolve", callees)
         assertTrue(

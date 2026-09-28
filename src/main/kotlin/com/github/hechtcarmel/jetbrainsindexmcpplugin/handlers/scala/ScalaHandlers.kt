@@ -262,10 +262,33 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         element: PsiElement,
         project: Project,
         scope: BuiltInSearchScope,
-        excludeGenerated: Boolean
+        excludeGenerated: Boolean,
+        directOnly: Boolean,
+        direction: TypeHierarchyDirection?,
+        page: HierarchyPageRequest?
     ): TypeHierarchyData? {
+        require(page == null || direction != null) { "Hierarchy pagination requires an explicit direction" }
         val scTypeDef = findContainingScTypeDefinition(element) ?: return null
         val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
+        val collectionLimit = page?.collectionLimit ?: 100
+        val rawSupertypes = if (direction != TypeHierarchyDirection.SUBTYPE) {
+            getSupertypes(
+                project,
+                scTypeDef,
+                searchScope = searchScope,
+                directOnly = directOnly,
+                maxResults = page?.collectionLimit ?: Int.MAX_VALUE
+            )
+        } else emptyList()
+        val rawSubtypes = if (direction != TypeHierarchyDirection.SUPERTYPE) {
+            getSubtypes(project, scTypeDef, searchScope, directOnly, collectionLimit)
+        } else emptyList()
+        val (supertypes, superNext) = if (direction == TypeHierarchyDirection.SUPERTYPE) {
+            rawSupertypes.applyHierarchyPage(page)
+        } else rawSupertypes to null
+        val (subtypes, subtypeNext) = if (direction == TypeHierarchyDirection.SUBTYPE) {
+            rawSubtypes.applyHierarchyPage(page)
+        } else rawSubtypes to null
 
         return TypeHierarchyData(
             element = TypeElementData(
@@ -274,10 +297,12 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
                 file = scTypeDef.containingFile?.virtualFile?.let { getRelativePath(project, it) },
                 line = getLineNumber(project, scTypeDef),
                 kind = getTypeKind(scTypeDef),
-                language = "Scala"
+                language = "Scala",
+                pointerTarget = scTypeDef
             ),
-            supertypes = getSupertypes(project, scTypeDef, searchScope = searchScope),
-            subtypes = getSubtypes(project, scTypeDef, searchScope)
+            supertypes = supertypes,
+            subtypes = subtypes,
+            nextOffset = superNext ?: subtypeNext
         )
     }
 
@@ -286,9 +311,11 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         scTypeDef: ScTypeDefinition,
         visited: MutableSet<String> = mutableSetOf(),
         depth: Int = 0,
-        searchScope: GlobalSearchScope
+        searchScope: GlobalSearchScope,
+        directOnly: Boolean = false,
+        maxResults: Int = Int.MAX_VALUE
     ): List<TypeElementData> {
-        if (depth > MAX_HIERARCHY_DEPTH) return emptyList()
+        if (depth > MAX_HIERARCHY_DEPTH || maxResults <= 0) return emptyList()
 
         val typeName = getQualifiedName(scTypeDef) ?: getName(scTypeDef) ?: return emptyList()
         if (typeName in visited || typeName == "scala.AnyRef" || typeName == "scala.Any") return emptyList()
@@ -297,11 +324,12 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         val result = mutableListOf<TypeElementData>()
         safeScalaCall(Unit, "getSupertypes") {
             for (superType in getSupers(scTypeDef)) {
+                if (result.size >= maxResults) break
                 val superName = getQualifiedName(superType) ?: getName(superType)
                 if (superName != null && superName != "scala.AnyRef" && superName != "scala.Any") {
                     if (!shouldIncludeNavigationElement(searchScope, superType)) continue
-                    val superSupers = (superType as? ScTypeDefinition)?.let {
-                        getSupertypes(project, it, visited, depth + 1, searchScope)
+                    val superSupers = if (directOnly) emptyList() else (superType as? ScTypeDefinition)?.let {
+                        getSupertypes(project, it, visited, depth + 1, searchScope, directOnly = false)
                     } ?: emptyList()
                     result.add(TypeElementData(
                         name = superName,
@@ -310,22 +338,25 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
                         line = getLineNumber(project, superType),
                         kind = getTypeKind(superType),
                         language = "Scala",
-                        supertypes = superSupers.takeIf { it.isNotEmpty() }
+                        supertypes = superSupers.takeIf { it.isNotEmpty() },
+                        pointerTarget = superType
                     ))
                 }
             }
         }
-        return result
+        return result.take(maxResults)
     }
 
     private fun getSubtypes(
         project: Project,
         scTypeDef: ScTypeDefinition,
-        searchScope: GlobalSearchScope
+        searchScope: GlobalSearchScope,
+        directOnly: Boolean = false,
+        maxResults: Int = 100
     ): List<TypeElementData> {
         val results = mutableListOf<TypeElementData>()
         safeScalaCall(Unit, "getSubtypes") {
-            ClassInheritorsSearch.search(scTypeDef, searchScope, true).forEach(Processor { inheritor ->
+            ClassInheritorsSearch.search(scTypeDef, searchScope, !directOnly).forEach(Processor { inheritor ->
                 if (inheritor is ScTypeDefinition && shouldIncludeNavigationElement(searchScope, inheritor)) {
                     results.add(TypeElementData(
                         name = getQualifiedName(inheritor) ?: getName(inheritor) ?: "unknown",
@@ -333,10 +364,11 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
                         file = inheritor.containingFile?.virtualFile?.let { getRelativePath(project, it) },
                         line = getLineNumber(project, inheritor),
                         kind = getTypeKind(inheritor),
-                        language = "Scala"
+                        language = "Scala",
+                        pointerTarget = inheritor
                     ))
                 }
-                results.size < 100
+                results.size < maxResults
             })
         }
         return results
@@ -384,11 +416,12 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
                             line = getLineNumber(project, overriding) ?: 0,
                             column = getColumnNumber(project, overriding) ?: 0,
                             kind = "METHOD",
-                            language = "Scala"
+                            language = "Scala",
+                            pointerTarget = overriding
                         ))
                     }
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
         }
         return results
@@ -410,11 +443,12 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
                             line = getLineNumber(project, inheritor) ?: 0,
                             column = getColumnNumber(project, inheritor) ?: 0,
                             kind = getTypeKind(inheritor),
-                            language = "Scala"
+                            language = "Scala",
+                            pointerTarget = inheritor
                         ))
                     }
                 }
-                results.size < 100
+                results.size < MAX_COLLECTED_NAVIGATION_RESULTS
             })
         }
         return results
@@ -444,19 +478,30 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         direction: String,
         depth: Int,
         scope: BuiltInSearchScope,
-        excludeGenerated: Boolean
+        excludeGenerated: Boolean,
+        page: HierarchyPageRequest?
     ): CallHierarchyData? {
         val scFunction = findContainingScFunction(element) ?: return null
         val visited = mutableSetOf<String>()
         val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
+        val collectionLimit = page?.collectionLimit ?: MAX_RESULTS_PER_LEVEL
 
-        val calls = if (direction == "callers") {
-            findCallersRecursive(project, scFunction, depth, visited, searchScope = searchScope)
+        val rawCalls = if (direction == "callers") {
+            findCallersRecursive(
+                project, scFunction, depth, visited, searchScope = searchScope, maxResults = collectionLimit
+            )
         } else {
-            findCalleesRecursive(project, scFunction, depth, visited, searchScope = searchScope)
+            findCalleesRecursive(
+                project, scFunction, depth, visited, searchScope = searchScope, maxResults = collectionLimit
+            )
         }
+        val (calls, nextOffset) = rawCalls.applyHierarchyPage(page)
 
-        return CallHierarchyData(element = createCallElement(project, scFunction), calls = calls)
+        return CallHierarchyData(
+            element = createCallElement(project, scFunction),
+            calls = calls,
+            nextOffset = nextOffset
+        )
     }
 
     private fun getSuperMethods(function: ScFunction): List<PsiElement> {
@@ -471,9 +516,10 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         depth: Int,
         visited: MutableSet<String>,
         stackDepth: Int = 0,
-        searchScope: GlobalSearchScope
+        searchScope: GlobalSearchScope,
+        maxResults: Int
     ): List<CallElementData> {
-        if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
+        if (stackDepth > MAX_STACK_DEPTH || depth <= 0 || maxResults <= 0) return emptyList()
 
         val functionKey = getFunctionKey(scFunction)
         if (functionKey in visited) return emptyList()
@@ -485,14 +531,14 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
 
             val allReferences = mutableListOf<com.intellij.psi.PsiReference>()
             for (methodToSearch in methodsToSearch) {
-                if (allReferences.size >= MAX_RESULTS_PER_LEVEL) break
+                if (allReferences.size >= maxResults) break
                 ReferencesSearch.search(methodToSearch, searchScope).forEach(Processor { reference ->
                     allReferences.add(reference)
-                    allReferences.size < MAX_RESULTS_PER_LEVEL
+                    allReferences.size < maxResults
                 })
             }
 
-            allReferences.take(MAX_RESULTS_PER_LEVEL)
+            allReferences.take(maxResults)
                 .mapNotNull { reference ->
                     val refElement = reference.element
                     val containingFunction = findContainingScFunction(refElement)
@@ -502,7 +548,9 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
                         val file = containingFunction.containingFile?.virtualFile
                         if (file == null || !searchScope.contains(file)) return@mapNotNull null
                         val children = if (depth > 1) {
-                            findCallersRecursive(project, containingFunction, depth - 1, visited, stackDepth + 1, searchScope)
+                            findCallersRecursive(
+                                project, containingFunction, depth - 1, visited, stackDepth + 1, searchScope, maxResults
+                            )
                         } else null
                         createCallElement(project, containingFunction, children)
                     } else null
@@ -517,9 +565,10 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         depth: Int,
         visited: MutableSet<String>,
         stackDepth: Int = 0,
-        searchScope: GlobalSearchScope
+        searchScope: GlobalSearchScope,
+        maxResults: Int
     ): List<CallElementData> {
-        if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
+        if (stackDepth > MAX_STACK_DEPTH || depth <= 0 || maxResults <= 0) return emptyList()
 
         val functionKey = getFunctionKey(scFunction)
         if (functionKey in visited) return emptyList()
@@ -528,12 +577,15 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         val callees = mutableListOf<CallElementData>()
         safeScalaCall(Unit, "findCalleesRecursive", LOG) {
             val callExpressions = PsiTreeUtil.findChildrenOfType(scFunction, ScMethodCall::class.java)
-            callExpressions.take(MAX_RESULTS_PER_LEVEL).forEach { callExpr ->
+            callExpressions.take(maxResults).forEach { callExpr ->
+                if (callees.size >= maxResults) return@forEach
                 val calledFunction = resolveCallExpression(callExpr)
                 if (calledFunction is ScFunction) {
                     if (!shouldIncludeNavigationElement(searchScope, calledFunction)) return@forEach
                     val children = if (depth > 1) {
-                        findCalleesRecursive(project, calledFunction, depth - 1, visited, stackDepth + 1, searchScope)
+                        findCalleesRecursive(
+                            project, calledFunction, depth - 1, visited, stackDepth + 1, searchScope, maxResults
+                        )
                     } else null
                     val element = createCallElement(project, calledFunction, children)
                     if (callees.none { it.name == element.name && it.file == element.file }) {
@@ -576,7 +628,8 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
             line = getLineNumber(project, scFunction) ?: 0,
             column = getColumnNumber(project, scFunction) ?: 0,
             language = "Scala",
-            children = children
+            children = children,
+            pointerTarget = scFunction
         )
     }
 }
@@ -606,7 +659,8 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
             file = scFunction.containingFile?.virtualFile?.let { getRelativePath(project, it) } ?: "unknown",
             line = getLineNumber(project, scFunction) ?: 0,
             column = getColumnNumber(project, scFunction) ?: 0,
-            language = "Scala"
+            language = "Scala",
+            pointerTarget = scFunction
         )
 
         return SuperMethodsData(
@@ -643,7 +697,8 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
                     column = getColumnNumber(project, superMethod),
                     isInterface = containingClass is ScTrait,
                     depth = depth,
-                    language = "Scala"
+                    language = "Scala",
+                    pointerTarget = superMethod
                 ))
 
                 if (superMethod is ScFunction) {
@@ -727,7 +782,8 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
             modifiers = extractModifiers(typeDef),
             signature = null,
             line = getLineNumber(project, typeDef) ?: 0,
-            children = children
+            children = children,
+            pointerTarget = typeDef
         )
     }
 
@@ -738,7 +794,8 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
             modifiers = extractModifiers(function),
             signature = buildSignature(function),
             line = getLineNumber(project, function) ?: 0,
-            children = emptyList()
+            children = emptyList(),
+            pointerTarget = function
         )
     }
 
@@ -748,21 +805,33 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
      * declared element instead of collapsing them into a single node.
      */
     private fun extractFieldStructures(field: ScValueOrVariable, project: Project, isVar: Boolean): List<StructureNode> {
-        val declaredNames = safeScalaCall(emptyList(), "extractFieldStructures", LOG) {
+        val declared = safeScalaCall(emptyList(), "extractFieldStructures", LOG) {
             field.declaredElements().toKotlinList()
-                .mapNotNull { (it as? com.intellij.psi.PsiNamedElement)?.name }
         }
-        val names = declaredNames.ifEmpty { listOf("unknown") }
         val modifiers = extractModifiers(field)
         val line = getLineNumber(project, field) ?: 0
-        return names.map { name ->
+        if (declared.isEmpty()) {
+            return listOf(
+                StructureNode(
+                    name = "unknown",
+                    kind = if (isVar) StructureKind.VAR else StructureKind.VAL,
+                    modifiers = modifiers,
+                    signature = null,
+                    line = line,
+                    children = emptyList(),
+                    pointerTarget = field
+                )
+            )
+        }
+        return declared.map { declaredElement ->
             StructureNode(
-                name = name,
+                name = (declaredElement as? com.intellij.psi.PsiNamedElement)?.name ?: "unknown",
                 kind = if (isVar) StructureKind.VAR else StructureKind.VAL,
                 modifiers = modifiers,
                 signature = null,
                 line = line,
-                children = emptyList()
+                children = emptyList(),
+                pointerTarget = declaredElement
             )
         }
     }
