@@ -379,31 +379,6 @@ abstract class AbstractMcpTool : McpTool {
     }
 
     /**
-     * Executes a write action using suspend function (non-blocking for caller).
-     *
-     * This is the preferred method for write operations as it:
-     * - Doesn't block the calling thread while waiting for EDT
-     * - Still executes the action on EDT with proper locking
-     * - Supports undo/redo grouping
-     *
-     * To edit a file's Document, use [suspendingWriteActionAndSave] instead: it also saves the
-     * Document and reports a save the platform declined.
-     *
-     * @param project The project context
-     * @param commandName Name for the undo command (shown in Edit menu)
-     * @param action The action to execute
-     */
-    protected suspend fun suspendingWriteAction(
-        project: Project,
-        commandName: String,
-        action: () -> Unit
-    ) {
-        edtAction {
-            WriteCommandAction.runWriteCommandAction(project, commandName, null, { action() })
-        }
-    }
-
-    /**
      * Loads changes another program made to [file] into its Document and PSI before a tool edits it.
      *
      * The IDE re-reads externally modified files only on a VFS refresh — when the IDE window is

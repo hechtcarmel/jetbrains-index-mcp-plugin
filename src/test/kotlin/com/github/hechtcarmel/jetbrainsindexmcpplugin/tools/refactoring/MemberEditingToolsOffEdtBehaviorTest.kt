@@ -14,8 +14,8 @@ import java.nio.file.Path
  *
  * The rest of the suite executes tools via `runBlocking` on the EDT, where
  * `AbstractMcpTool.edtAction` short-circuits to the current thread. That masked a real
- * production crash: `FileDocumentManager.saveAllDocuments()` called bare after
- * `suspendingWriteAction` returned, i.e. on the worker thread, where the platform throws
+ * production crash: `FileDocumentManager.saveAllDocuments()` called bare after the write
+ * action returned, i.e. on the worker thread, where the platform throws
  * its write-intent threading assertion — after the edit had already been applied in
  * memory. These tests fail with that assertion if the EDT dispatch around the save is
  * removed.
