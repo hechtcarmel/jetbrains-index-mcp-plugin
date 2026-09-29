@@ -675,7 +675,7 @@ class ToolsTest : McpPlatformTestCase() {
         assertFalse("Scala file structure lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
         assertEquals("Scala", payload.language)
-        for (expected in listOf("object ServiceRunner", "val defaultTask (line 4)", "var runCount (line 5)", "def runAll (worker)")) {
+        for (expected in listOf("object ServiceRunner (lines", "val defaultTask (line 4)", "var runCount (line 5)", "def runAll (worker)")) {
             assertTrue("Structure should contain '$expected':\n${payload.structure}", payload.structure.contains(expected))
         }
     }

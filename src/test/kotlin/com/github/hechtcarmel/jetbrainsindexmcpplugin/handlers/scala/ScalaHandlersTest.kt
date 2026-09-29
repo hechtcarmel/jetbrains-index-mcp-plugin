@@ -181,6 +181,25 @@ class ScalaHandlersTest : McpPlatformTestCase() {
         )
     }
 
+    fun testScalaObjectsReportSourceNames() {
+        requireScalaCapability("testScalaObjectsReportSourceNames")
+
+        val callsFixture = addScalaFixture("scala2-calls.scala")
+        val target = elementAt(callsFixture.psiFile, callsFixture.source, "object Target")
+
+        val hierarchy = ScalaTypeHierarchyHandler().getTypeHierarchy(
+            target, project, BuiltInSearchScope.PROJECT_FILES,
+            excludeGenerated = false, directOnly = true, direction = null, page = null
+        )
+        assertNotNull("Target hierarchy should resolve", hierarchy)
+        assertEquals(
+            "Not the JVM qualified name fixture.scala2.calls.Target$",
+            "fixture.scala2.calls.Target", hierarchy!!.element.name
+        )
+        assertEquals("fixture.scala2.calls.Target", hierarchy.element.qualifiedName)
+        assertEquals("OBJECT", hierarchy.element.kind)
+    }
+
     fun testCallerPageCountsDistinctCallersNotCallSites() {
         requireScalaCapability("testCallerPageCountsDistinctCallersNotCallSites")
 
@@ -341,11 +360,12 @@ class ScalaHandlersTest : McpPlatformTestCase() {
             "Usage structure should include an object containing runAll. Top-level nodes: ${usageNodes.map { "${it.kind}:${it.name}" }}",
             runnerLikeObject
         )
+        assertEquals("An object keeps its source name, not the JVM name ServiceRunner$", "ServiceRunner", runnerLikeObject!!.name)
 
         // Regression coverage: val/var names must resolve to their real declared name,
         // not fall back to "unknown" (ScValueOrVariable does not itself implement
         // PsiNamedElement; the name lives on declaredElements).
-        val properties = runnerLikeObject!!.children.filter { it.kind == StructureKind.PROPERTY }
+        val properties = runnerLikeObject.children.filter { it.kind == StructureKind.PROPERTY }
         assertTrue(
             "No val/var member should fall back to 'unknown'. Properties: ${properties.map { "${it.modifiers}:${it.name}" }}",
             properties.isNotEmpty() && properties.none { it.name == "unknown" }

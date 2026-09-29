@@ -32,6 +32,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValue
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValueOrVariable
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScVariable
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScNamedElement
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
 
 /**
@@ -189,10 +190,23 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     /** Collapses light wrappers (such as the Java view of a Scala object) onto their declaration. */
     protected fun sourceClass(psiClass: PsiClass): PsiClass = psiClass.navigationElement as? PsiClass ?: psiClass
 
+    // Names. `getName()` is the JVM view of a Scala declaration — `Runner$` for an object,
+    // `$plus` for `+` — so Scala declarations report their source-level names instead.
+
+    protected fun nameOf(element: PsiElement): String? = when (element) {
+        is ScNamedElement -> element.name()
+        is PsiNamedElement -> element.name
+        else -> null
+    }
+
+    /** `pkg.Runner` for a Scala object, whose JVM qualified name is `pkg.Runner$`. */
+    protected fun qualifiedNameOf(psiClass: PsiClass): String? =
+        (psiClass as? ScTemplateDefinition)?.qualifiedName() ?: psiClass.qualifiedName
+
     /** Simple name of the type declaring [member], used as the `Owner.member` display prefix. */
     protected fun ownerName(member: PsiElement): String? {
-        findContainingScTypeDefinition(member)?.let { return it.name }
-        return (member as? PsiMember)?.containingClass?.name
+        val owner: PsiClass? = findContainingScTypeDefinition(member) ?: (member as? PsiMember)?.containingClass
+        return owner?.let { nameOf(it) }
     }
 
     // Kind and language, in the vocabulary the Java and Kotlin handlers use
@@ -256,12 +270,13 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     // Signatures
 
     protected fun buildMethodSignature(function: ScFunction): String {
-        return safeScalaCall(function.name ?: "unknown", "buildMethodSignature") {
+        val name = function.name() ?: "unknown"
+        return safeScalaCall(name, "buildMethodSignature") {
             val params = function.paramClauses().clauses().toKotlinList()
                 .flatMap { clause -> clause.parameters().toKotlinList() }
-                .mapNotNull { param -> param.name }
+                .mapNotNull { param -> param.name() }
                 .joinToString(", ")
-            "${function.name}($params)"
+            "$name($params)"
         }
     }
 
@@ -369,8 +384,8 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
         psiClass: PsiClass,
         supertypes: List<TypeElementData>? = null
     ): TypeElementData = TypeElementData(
-        name = psiClass.qualifiedName ?: psiClass.name ?: "unknown",
-        qualifiedName = psiClass.qualifiedName,
+        name = qualifiedNameOf(psiClass) ?: nameOf(psiClass) ?: "unknown",
+        qualifiedName = qualifiedNameOf(psiClass),
         file = psiClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
         line = getLineNumber(project, psiClass),
         kind = classKind(psiClass),
@@ -390,14 +405,14 @@ class ScalaTypeHierarchyHandler : BaseScalaHandler<TypeHierarchyData>(), TypeHie
     ): List<TypeElementData> {
         if (depth > MAX_HIERARCHY_DEPTH || maxResults <= 0) return emptyList()
 
-        val typeName = psiClass.qualifiedName ?: psiClass.name ?: return emptyList()
+        val typeName = qualifiedNameOf(psiClass) ?: nameOf(psiClass) ?: return emptyList()
         if (typeName in ROOT_TYPES || !visited.add(typeName)) return emptyList()
 
         val result = mutableListOf<TypeElementData>()
         safeScalaCall(Unit, "getSupertypes") {
             for (superClass in directSupers(psiClass)) {
                 if (result.size >= maxResults) break
-                val superName = superClass.qualifiedName ?: superClass.name ?: continue
+                val superName = qualifiedNameOf(superClass) ?: nameOf(superClass) ?: continue
                 if (superName in ROOT_TYPES || !shouldIncludeNavigationElement(searchScope, superClass)) continue
                 val superSupers = if (directOnly) emptyList() else {
                     getSupertypes(project, superClass, visited, depth + 1, searchScope, false, Int.MAX_VALUE)
@@ -475,8 +490,9 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
                 val file = target.containingFile?.virtualFile
                 if (file != null && seen.add(target) && shouldIncludeNavigationElement(searchScope, target)) {
                     val owner = ownerName(target)
+                    val name = nameOf(target) ?: "unknown"
                     results.add(ImplementationData(
-                        name = if (owner.isNullOrEmpty()) target.name else "$owner.${target.name}",
+                        name = if (owner.isNullOrEmpty()) name else "$owner.$name",
                         file = getRelativePath(project, file),
                         line = getLineNumber(project, target) ?: 0,
                         column = getColumnNumber(project, target) ?: 0,
@@ -504,13 +520,13 @@ class ScalaImplementationsHandler : BaseScalaHandler<List<ImplementationData>>()
                 val file = target.containingFile?.virtualFile
                 if (file != null && seen.add(target) && shouldIncludeNavigationElement(searchScope, target)) {
                     results.add(ImplementationData(
-                        name = target.qualifiedName ?: target.name ?: "unknown",
+                        name = qualifiedNameOf(target) ?: nameOf(target) ?: "unknown",
                         file = getRelativePath(project, file),
                         line = getLineNumber(project, target) ?: 0,
                         column = getColumnNumber(project, target) ?: 0,
                         kind = classKind(target),
                         language = languageOf(target),
-                        qualifiedName = target.qualifiedName,
+                        qualifiedName = qualifiedNameOf(target),
                         pointerTarget = target
                     ))
                 }
@@ -693,9 +709,10 @@ class ScalaCallHierarchyHandler : BaseScalaHandler<CallHierarchyData>(), CallHie
         children: List<CallElementData>? = null
     ): CallElementData {
         val owner = ownerName(method)
+        val name = nameOf(method) ?: "unknown"
         val file = method.containingFile?.virtualFile
         return CallElementData(
-            name = if (owner.isNullOrEmpty()) method.name else "$owner.${method.name}",
+            name = if (owner.isNullOrEmpty()) name else "$owner.$name",
             file = file?.let { getRelativePath(project, it) } ?: "unknown",
             line = getLineNumber(project, method) ?: 0,
             column = getColumnNumber(project, method) ?: 0,
@@ -728,9 +745,9 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
         val containingClass = findContainingScTypeDefinition(scFunction) ?: return null
 
         val methodData = MethodData(
-            name = scFunction.name ?: "unknown",
+            name = scFunction.name() ?: "unknown",
             signature = methodSignature(scFunction),
-            containingClass = containingClass.qualifiedName ?: containingClass.name ?: "unknown",
+            containingClass = qualifiedNameOf(containingClass) ?: nameOf(containingClass) ?: "unknown",
             file = scFunction.containingFile?.virtualFile?.let { getRelativePath(project, it) } ?: "unknown",
             line = getLineNumber(project, scFunction) ?: 0,
             column = getColumnNumber(project, scFunction) ?: 0,
@@ -763,9 +780,9 @@ class ScalaSuperMethodsHandler : BaseScalaHandler<SuperMethodsData>(), SuperMeth
                 val containingClass: PsiClass? = findContainingScTypeDefinition(superMethod) ?: superMethod.containingClass
 
                 hierarchy.add(SuperMethodData(
-                    name = superMethod.name,
+                    name = nameOf(superMethod) ?: "unknown",
                     signature = methodSignature(superMethod),
-                    containingClass = containingClass?.qualifiedName ?: containingClass?.name ?: "unknown",
+                    containingClass = containingClass?.let { qualifiedNameOf(it) ?: nameOf(it) } ?: "unknown",
                     containingClassKind = containingClass?.let { classKind(it) } ?: "UNKNOWN",
                     file = superMethod.containingFile?.virtualFile?.let { getRelativePath(project, it) },
                     line = getLineNumber(project, superMethod),
@@ -856,7 +873,7 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         }
 
         return StructureNode(
-            name = typeDef.name ?: "unknown",
+            name = typeDef.name() ?: "unknown",
             kind = kind,
             modifiers = extractModifiers(typeDef) + listOfNotNull(keyword),
             signature = null,
@@ -869,7 +886,7 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
 
     private fun extractFunctionStructure(function: ScFunction, project: Project): StructureNode {
         return StructureNode(
-            name = function.name ?: "unknown",
+            name = function.name() ?: "unknown",
             kind = StructureKind.METHOD,
             modifiers = extractModifiers(function),
             signature = buildSignature(function),
@@ -912,7 +929,7 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         }
         return declared.map { declaredElement ->
             StructureNode(
-                name = (declaredElement as? PsiNamedElement)?.name ?: "unknown",
+                name = nameOf(declaredElement) ?: "unknown",
                 kind = StructureKind.PROPERTY,
                 modifiers = modifiers,
                 signature = null,
@@ -928,7 +945,7 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
         return safeScalaCall("()", "buildSignature", LOG) {
             val params = function.paramClauses().clauses().toKotlinList()
                 .flatMap { clause -> clause.parameters().toKotlinList() }
-                .mapNotNull { param -> param.name }
+                .mapNotNull { param -> param.name() }
                 .joinToString(", ")
             "($params)"
         }
