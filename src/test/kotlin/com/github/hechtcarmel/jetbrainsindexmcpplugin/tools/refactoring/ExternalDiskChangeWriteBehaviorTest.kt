@@ -168,47 +168,44 @@ class ExternalDiskChangeWriteBehaviorTest : McpPlatformTestCase() {
 
     // ── A write that cannot land is reported, never reported as success ─────────────────
 
-    /**
-     * Unsaved IDE changes plus a newer version on disk is a genuine conflict only the user can
-     * settle; the tool must neither overwrite the user's typing nor report success.
-     *
-     * The tool runs inside one EDT event so the test can settle the conflict the refused save
-     * registered before the platform's prompt for it runs: in tests that prompt throws.
-     *
-     * The body sits in `runBlocking` like the other tests: a lambda directly in a JUnit 3 test
-     * method compiles to a `test…$lambda$N` method, which the runner then reports as a test.
-     */
-    fun testUnsavedIdeChangesConflictingWithDiskAreNotEdited() = runBlocking {
-        val file = "src/Conflict.java"
-        writeProjectFile(file, "class Conflict { int a = 1; }")
-        val document = cachedDocument(file)
-        ApplicationManager.getApplication().invokeAndWait {
-            WriteCommandAction.runWriteCommandAction(project) {
-                document.setText("class Conflict { int a = 1; int typed = 0; }")
-            }
-        }
-        writeBehindTheIdesBack(file, "class Conflict { int a = 2; }")
+    // Unsaved IDE changes plus a newer version on disk is a genuine conflict only the user can
+    // settle: the tool must neither edit the user's typing nor report success.
 
-        lateinit var result: CallToolResult
-        lateinit var documentAfterTool: String
-        ApplicationManager.getApplication().invokeAndWait {
-            result = runBlocking {
-                ReplaceTextInFileTool().execute(project, buildJsonObject {
-                    put("file", file)
-                    put("searchText", "int a = 1;")
-                    put("replaceText", "int a = 3;")
-                })
-            }
-            documentAfterTool = document.text
-            FileDocumentManager.getInstance().reloadFromDisk(document)
+    fun testReplaceTextRefusesUnsavedChangesThatConflictWithDisk() = runBlocking {
+        assertUnsavedChangesConflictingWithDiskAreNotEdited(
+            file = "src/Conflict.java",
+            original = "class Conflict { int a = 1; }",
+            typed = "class Conflict { int a = 1; int typed = 0; }",
+            external = "class Conflict { int a = 2; }"
+        ) {
+            ReplaceTextInFileTool().execute(project, buildJsonObject {
+                put("file", "src/Conflict.java")
+                put("searchText", "int a = 1;")
+                put("replaceText", "int a = 3;")
+            })
         }
-        // Let the platform process the conflict it recorded before the next test touches the VFS.
-        ApplicationManager.getApplication().invokeAndWait {}
+    }
 
-        assertToolFailed("A file with conflicting unsaved IDE changes must not be edited", result)
-        assertTrue("Error must name the unsaved IDE changes: ${toolText(result)}", toolText(result).contains("unsaved changes"))
-        assertEquals("The user's unsaved typing must be left alone", "class Conflict { int a = 1; int typed = 0; }", documentAfterTool)
-        assertEquals("The other program's version stays on disk", "class Conflict { int a = 2; }", readFromDisk(file))
+    fun testReformatRefusesUnsavedChangesThatConflictWithDisk() = runBlocking {
+        assertUnsavedChangesConflictingWithDiskAreNotEdited(
+            file = "src/ReformatConflict.java",
+            original = "class ReformatConflict{int a=1;}",
+            typed = "class ReformatConflict{int a=1;int typed=0;}",
+            external = "class ReformatConflict{int a=2;}"
+        ) {
+            ReformatCodeTool().execute(project, buildJsonObject { put("file", "src/ReformatConflict.java") })
+        }
+    }
+
+    fun testOptimizeImportsRefusesUnsavedChangesThatConflictWithDisk() = runBlocking {
+        assertUnsavedChangesConflictingWithDiskAreNotEdited(
+            file = "src/ImportsConflict.java",
+            original = "import java.util.List;\nclass ImportsConflict {}",
+            typed = "import java.util.List;\nimport java.util.Map;\nclass ImportsConflict {}",
+            external = "import java.util.List;\nclass ImportsConflict { int external; }"
+        ) {
+            OptimizeImportsTool().execute(project, buildJsonObject { put("file", "src/ImportsConflict.java") })
+        }
     }
 
     /**
@@ -442,6 +439,42 @@ class ExternalDiskChangeWriteBehaviorTest : McpPlatformTestCase() {
             "Precondition: the VFS must still record the old modification time",
             virtualFile.timeStamp != Files.getLastModifiedTime(path).toMillis()
         )
+    }
+
+    /**
+     * Types [typed] into [file]'s Document without saving, has another program write [external] to
+     * disk, then runs [callTool]. The tool runs inside one EDT event so the test can settle the
+     * conflict the refused save registered before the platform's prompt for it runs: in tests that
+     * prompt throws.
+     */
+    private fun assertUnsavedChangesConflictingWithDiskAreNotEdited(
+        file: String,
+        original: String,
+        typed: String,
+        external: String,
+        callTool: suspend () -> CallToolResult
+    ) {
+        writeProjectFile(file, original)
+        val document = cachedDocument(file)
+        ApplicationManager.getApplication().invokeAndWait {
+            WriteCommandAction.runWriteCommandAction(project) { document.setText(typed) }
+        }
+        writeBehindTheIdesBack(file, external)
+
+        lateinit var result: CallToolResult
+        lateinit var documentAfterTool: String
+        ApplicationManager.getApplication().invokeAndWait {
+            result = runBlocking { callTool() }
+            documentAfterTool = document.text
+            FileDocumentManager.getInstance().reloadFromDisk(document)
+        }
+        // Let the platform process the conflict it recorded before the next test touches the VFS.
+        ApplicationManager.getApplication().invokeAndWait {}
+
+        assertToolFailed("A file with conflicting unsaved IDE changes must not be edited", result)
+        assertTrue("Error must name the unsaved IDE changes: ${toolText(result)}", toolText(result).contains("unsaved changes"))
+        assertEquals("The user's unsaved typing must be left alone", typed, documentAfterTool)
+        assertEquals("The other program's version stays on disk", external, readFromDisk(file))
     }
 
     private fun assertOnDisk(relativePath: String, contains: List<String>, absent: String? = null) {

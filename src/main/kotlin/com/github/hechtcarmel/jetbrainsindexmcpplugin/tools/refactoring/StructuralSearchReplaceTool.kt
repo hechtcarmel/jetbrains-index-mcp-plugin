@@ -356,9 +356,9 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
                 failure?.let { throw it }
                 count = replacements.size
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                notSaved = saveRefactoredDocuments(project, unsavedBefore)
+                notSaved = saveChangedDocuments(project, unsavedBefore)
             }
-            if (notSaved.isNotEmpty()) return Result.failure(Exception(refactoringNotSavedMessage(notSaved)))
+            if (notSaved.isNotEmpty()) return Result.failure(Exception(changesNotSavedMessage(notSaved)))
 
             Result.success(count)
         } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {

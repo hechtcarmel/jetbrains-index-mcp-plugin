@@ -496,20 +496,22 @@ abstract class AbstractMcpTool : McpTool {
     }
 
     /**
-     * Saves every Document and returns the files a refactoring changed whose changes did not
+     * Saves every Document and returns the files an operation changed whose changes did not
      * reach disk.
      *
+     * For operations that edit through platform processors (refactorings, reformat, J2K) rather
+     * than one Document of their own; those use [suspendingWriteActionAndSave].
      * [FileDocumentManager.saveAllDocuments] skips a Document it declines to save without telling
-     * the caller (issue #430). The refactoring's Documents are those unsaved now but not in
-     * [unsavedBefore], captured just before it ran. A declined one only held the refactoring's
+     * the caller (issue #430). The operation's Documents are those unsaved now but not in
+     * [unsavedBefore], captured just before it ran. A declined one only held the operation's
      * change, so it is reloaded from disk: nothing lingers in memory for a later autosave to
      * write, or for the IDE's file-cache-conflict prompt to block every later tool call on.
-     * Report a non-empty result with [refactoringNotSavedMessage], never as success.
+     * Report a non-empty result with [changesNotSavedMessage], never as success.
      *
-     * @return tool paths of the files that do not contain the refactoring's changes
+     * @return tool paths of the files that do not contain the operation's changes
      */
     @RequiresEdt
-    protected fun saveRefactoredDocuments(project: Project, unsavedBefore: Set<Document>): List<String> {
+    protected fun saveChangedDocuments(project: Project, unsavedBefore: Set<Document>): List<String> {
         val fileDocumentManager = FileDocumentManager.getInstance()
         val changed = fileDocumentManager.unsavedDocuments.filterNot { it in unsavedBefore }
         // One at a time, each declined one reloaded at once: saveAllDocuments pumps EDT events
@@ -526,9 +528,9 @@ abstract class AbstractMcpTool : McpTool {
             .sorted()
     }
 
-    /** The error for a refactoring whose changes did not reach [notSaved]; see [saveRefactoredDocuments]. */
-    protected fun refactoringNotSavedMessage(notSaved: List<String>): String =
-        "The refactoring's changes did not reach ${notSaved.size} file(s) that changed on disk while it ran: " +
+    /** The error for an operation whose changes did not reach [notSaved]; see [saveChangedDocuments]. */
+    protected fun changesNotSavedMessage(notSaved: List<String>): String =
+        "The changes did not reach ${notSaved.size} file(s) that changed on disk while the operation ran: " +
             "${notSaved.joinToString(", ")}. The IDE declined to overwrite them, so they were reloaded with their " +
             "disk content and lack those changes; any other affected files were updated. Re-read these files " +
             "and apply what is missing before building."

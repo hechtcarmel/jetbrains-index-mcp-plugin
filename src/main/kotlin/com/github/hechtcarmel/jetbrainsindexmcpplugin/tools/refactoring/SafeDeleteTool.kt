@@ -631,9 +631,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                     }
                 }
             // Saved outside the command: a declined save reloads the Document from disk.
-            if (success) notSaved = saveRefactoredDocuments(project, unsavedBefore)
+            if (success) notSaved = saveChangedDocuments(project, unsavedBefore)
         }
-        if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
+        if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
 
         return if (success) {
             createJsonResult(
@@ -688,9 +688,9 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                     }
                 }
             // Saved outside the command: a declined save reloads the Document from disk.
-            if (success) notSaved = saveRefactoredDocuments(project, unsavedBefore)
+            if (success) notSaved = saveChangedDocuments(project, unsavedBefore)
         }
-        if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
+        if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
 
         return if (success) {
             createJsonResult(

@@ -155,6 +155,10 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
             return createErrorResult("No files specified for conversion")
         }
 
+        // Conversion replaces each .java file with a .kt file built from its PSI: converting a stale
+        // version would delete a change made on disk since the IDE's last refresh (issue #430).
+        syncProjectForRefactoring(project)
+
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve and validate Java files
         // Note: File resolution happens outside read action to avoid VFS refresh under read lock
@@ -180,12 +184,14 @@ class ConvertJavaToKotlinTool : AbstractRefactoringTool() {
         // The handler converts files, creates .kt files, and optionally deletes .java files
         // ═══════════════════════════════════════════════════════════════════════
         return try {
-            performConversion(project, preparation).also {
-                if (it.summary.converted > 0) {
-                    commitDocuments(project)
-                    edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
-                }
-            }.result
+            val unsavedBefore = edtAction { FileDocumentManager.getInstance().unsavedDocuments.toSet() }
+            val conversion = performConversion(project, preparation)
+            if (conversion.summary.converted > 0) {
+                commitDocuments(project)
+                val notSaved = edtAction { saveChangedDocuments(project, unsavedBefore) }
+                if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
+            }
+            conversion.result
         } catch (e: Exception) {
             LOG.error("Conversion failed", e)
             createErrorResult("Conversion failed: ${e.message}", ToolNames.DIAGNOSTICS)

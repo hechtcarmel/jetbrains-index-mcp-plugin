@@ -272,7 +272,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
-                notSaved = saveRefactoredDocuments(project, unsavedBefore)
+                notSaved = saveChangedDocuments(project, unsavedBefore)
 
                 success = true
             } catch (e: Exception) {
@@ -280,7 +280,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
             }
         }
 
-        if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
+        if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
 
         return if (success) {
             val newPath = if (preparation.destinationRelativePath.isBlank()) {

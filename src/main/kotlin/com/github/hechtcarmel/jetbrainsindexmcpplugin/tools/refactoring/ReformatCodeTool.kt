@@ -12,6 +12,7 @@ import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.codeInsight.actions.RearrangeCodeProcessor
 import com.intellij.codeInsight.actions.ReformatCodeProcessor
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
@@ -97,8 +98,10 @@ class ReformatCodeTool : AbstractMcpTool() {
         // Without this, the stub index can be stale when files are modified by external tools,
         // causing "Outdated stub in index" errors during import optimization or reformatting.
         val virtualFile = resolveFile(project, file)
-        virtualFile?.refresh(false, false)
-        if (virtualFile != null) { ensureWritable(virtualFile)?.let { return it } }
+        if (virtualFile != null) {
+            ensureWritable(virtualFile)?.let { return it }
+            syncFileForEdit(project, virtualFile)?.let { return it }
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve file and validate (suspending read action)
@@ -119,8 +122,10 @@ class ReformatCodeTool : AbstractMcpTool() {
         // PHASE 2: EDT - Execute reformat using processor chaining
         // ═══════════════════════════════════════════════════════════════════════
         var errorMessage: String? = null
+        var unsavedBefore: Set<Document> = emptySet()
 
         edtAction {
+            unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             try {
                 executeReformat(project, psiFile, textRange, optimizeImports, rearrangeCode)
             } catch (e: Exception) {
@@ -133,7 +138,8 @@ class ReformatCodeTool : AbstractMcpTool() {
         // write-safe EDT modality.
         if (errorMessage == null) {
             commitDocuments(project)
-            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+            val notSaved = edtAction { saveChangedDocuments(project, unsavedBefore) }
+            if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
         }
 
         return if (errorMessage != null) {

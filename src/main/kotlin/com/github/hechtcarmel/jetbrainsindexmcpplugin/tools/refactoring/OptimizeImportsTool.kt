@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiFile
@@ -55,8 +56,10 @@ class OptimizeImportsTool : AbstractMcpTool() {
         // Without this, the stub index can be stale when files are modified by external tools,
         // causing "Outdated stub in index" errors during import optimization.
         val virtualFile = resolveFile(project, file)
-        virtualFile?.refresh(false, false)
-        if (virtualFile != null) { ensureWritable(virtualFile)?.let { return it } }
+        if (virtualFile != null) {
+            ensureWritable(virtualFile)?.let { return it }
+            syncFileForEdit(project, virtualFile)?.let { return it }
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Resolve file (suspending read action)
@@ -75,8 +78,10 @@ class OptimizeImportsTool : AbstractMcpTool() {
         // PHASE 2: EDT - Execute optimize imports
         // ═══════════════════════════════════════════════════════════════════════
         var errorMessage: String? = null
+        var unsavedBefore: Set<Document> = emptySet()
 
         edtAction {
+            unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             try {
                 executeOptimizeImports(project, psiFile)
             } catch (e: Exception) {
@@ -87,7 +92,8 @@ class OptimizeImportsTool : AbstractMcpTool() {
 
         if (errorMessage == null) {
             commitDocuments(project)
-            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+            val notSaved = edtAction { saveChangedDocuments(project, unsavedBefore) }
+            if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
         }
 
         return if (errorMessage != null) {

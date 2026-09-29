@@ -500,8 +500,8 @@ class RenameSymbolTool : AbstractMcpTool() {
         // write-safe EDT modality.
         if (errorMessage == null) {
             commitDocuments(project)
-            val notSaved = edtAction { saveRefactoredDocuments(project, unsavedBefore) }
-            if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
+            val notSaved = edtAction { saveChangedDocuments(project, unsavedBefore) }
+            if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
         }
 
         return if (errorMessage != null) {

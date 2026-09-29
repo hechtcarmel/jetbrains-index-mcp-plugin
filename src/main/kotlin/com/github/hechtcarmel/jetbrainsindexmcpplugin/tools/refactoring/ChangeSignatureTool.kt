@@ -695,9 +695,9 @@ class ChangeSignatureTool : AbstractMcpTool() {
                 }
                 affectedFiles.add(prep.relativePath)
 
-                notSaved = saveRefactoredDocuments(project, unsavedBefore)
+                notSaved = saveChangedDocuments(project, unsavedBefore)
             }
-            if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
+            if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
 
             val requestedChangeApplied = suspendingReadAction {
                 anyRequestedAspectApplied(verification)
