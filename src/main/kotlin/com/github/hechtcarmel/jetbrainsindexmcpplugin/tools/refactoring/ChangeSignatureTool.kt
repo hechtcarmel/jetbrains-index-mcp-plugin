@@ -169,6 +169,8 @@ class ChangeSignatureTool : AbstractMcpTool() {
             return createErrorResult("ParameterInfoImpl not available — requires Java plugin.")
         }
 
+        if (!dryRun) syncProjectForRefactoring(project)
+
         // VFS discovery can refresh a newly created external file and must precede the read
         // action. PSI resolution and writable checks stay inside the subsequent read action.
         val coordinateFile = if (lookupMode == LookupModeState.POSITION) {
@@ -634,6 +636,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
             }
 
             val affectedFiles = mutableSetOf<String>()
+            var notSaved: List<String> = emptyList()
 
             edtAction {
                 val docManager = FileDocumentManager.getInstance()
@@ -692,8 +695,9 @@ class ChangeSignatureTool : AbstractMcpTool() {
                 }
                 affectedFiles.add(prep.relativePath)
 
-                docManager.saveAllDocuments()
+                notSaved = saveRefactoredDocuments(project, unsavedBefore)
             }
+            if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
 
             val requestedChangeApplied = suspendingReadAction {
                 anyRequestedAspectApplied(verification)

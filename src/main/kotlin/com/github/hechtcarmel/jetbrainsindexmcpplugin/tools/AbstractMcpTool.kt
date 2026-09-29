@@ -46,6 +46,7 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.usageView.UsageViewUtil
+import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.util.concurrency.annotations.RequiresReadLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -465,6 +466,72 @@ abstract class AbstractMcpTool : McpTool {
         }
         return problem?.let { createErrorResult(it) }
     }
+
+    /**
+     * Loads every change another program made under the project's content roots before a
+     * multi-file refactoring resolves its target and searches for usages: the refresh the IDE
+     * itself runs when its window is activated.
+     *
+     * A refactoring that edits a stale Document hits the same silently declined save that
+     * [syncFileForEdit] prevents for single-file edits (issue #430), and its usage search misses
+     * references that exist only in the newer disk version. Pending IDE changes are saved first,
+     * as the tool's own save would do anyway, so the refresh reloads their Documents instead of
+     * registering memory/disk conflicts for them.
+     *
+     * The refresh follows the file watcher's change events, so it only visits what changed on
+     * disk; without a working watcher it rescans the content roots, as window activation does.
+     * Call it outside any read action, before PSI is resolved; never on a dry run, which must
+     * not save documents.
+     */
+    protected suspend fun syncProjectForRefactoring(project: Project) {
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+        val localFileSystem = LocalFileSystem.getInstance()
+        val roots = (listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project))
+            .distinct()
+            .mapNotNull { localFileSystem.findFileByPath(it) }
+        if (roots.isNotEmpty()) {
+            localFileSystem.refreshFiles(roots, false, true, null)
+        }
+        commitDocuments(project)
+    }
+
+    /**
+     * Saves every Document and returns the files a refactoring changed whose changes did not
+     * reach disk.
+     *
+     * [FileDocumentManager.saveAllDocuments] skips a Document it declines to save without telling
+     * the caller (issue #430). The refactoring's Documents are those unsaved now but not in
+     * [unsavedBefore], captured just before it ran. A declined one only held the refactoring's
+     * change, so it is reloaded from disk: nothing lingers in memory for a later autosave to
+     * write, or for the IDE's file-cache-conflict prompt to block every later tool call on.
+     * Report a non-empty result with [refactoringNotSavedMessage], never as success.
+     *
+     * @return tool paths of the files that do not contain the refactoring's changes
+     */
+    @RequiresEdt
+    protected fun saveRefactoredDocuments(project: Project, unsavedBefore: Set<Document>): List<String> {
+        val fileDocumentManager = FileDocumentManager.getInstance()
+        val changed = fileDocumentManager.unsavedDocuments.filterNot { it in unsavedBefore }
+        // One at a time, each declined one reloaded at once: saveAllDocuments pumps EDT events
+        // under its progress, which would let the conflict prompt run before the reload settles it.
+        val declined = changed.filter { document ->
+            fileDocumentManager.saveDocument(document)
+            fileDocumentManager.isDocumentUnsaved(document).also { unsaved ->
+                if (unsaved) fileDocumentManager.reloadFromDisk(document, project)
+            }
+        }
+        fileDocumentManager.saveAllDocuments()
+        return declined
+            .mapNotNull { document -> fileDocumentManager.getFile(document)?.let { ProjectUtils.getToolFilePath(project, it) } }
+            .sorted()
+    }
+
+    /** The error for a refactoring whose changes did not reach [notSaved]; see [saveRefactoredDocuments]. */
+    protected fun refactoringNotSavedMessage(notSaved: List<String>): String =
+        "The refactoring's changes did not reach ${notSaved.size} file(s) that changed on disk while it ran: " +
+            "${notSaved.joinToString(", ")}. The IDE declined to overwrite them, so they were reloaded with their " +
+            "disk content and lack those changes; any other affected files were updated. Re-read these files " +
+            "and apply what is missing before building."
 
     /**
      * Resolves a file path to a [VirtualFile].

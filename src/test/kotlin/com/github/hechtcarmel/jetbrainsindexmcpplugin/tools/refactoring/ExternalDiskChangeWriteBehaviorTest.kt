@@ -14,6 +14,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.nio.file.Files
@@ -29,7 +30,10 @@ import java.nio.file.attribute.FileTime
  * edited it, and `FileDocumentManager` then declined the save as a memory/disk conflict without
  * telling anyone.
  *
- * Each test puts the file in that state by writing it straight to disk, bypassing the VFS, and
+ * Multi-file refactorings hit the same veto in every stale file they update, and their usage
+ * search also misses references that exist only in the newer disk version.
+ *
+ * Each test puts a file in that state by writing it straight to disk, bypassing the VFS, and
  * reads the result back off disk. Runs off the EDT like production MCP calls, so the tools' EDT
  * hops are real dispatches.
  */
@@ -235,6 +239,169 @@ class ExternalDiskChangeWriteBehaviorTest : McpPlatformTestCase() {
             "Nothing may be left for autosave to write later",
             FileDocumentManager.getInstance().isDocumentUnsaved(prep.document)
         )
+        // Let the platform process the conflict it recorded; it must find nothing left to prompt about.
+        ApplicationManager.getApplication().invokeAndWait {}
+    }
+
+    // ── Multi-file refactorings update stale files on disk, including usages only there ─
+
+    fun testRenameUpdatesACallerChangedBehindTheIdesBack() = runBlocking {
+        registerSourceRoot("stale-rename")
+        val target = "stale-rename/sr/StaleTarget.java"
+        val declaration = "    public static void work() {}"
+        writeProjectFile(target, "package sr;\n\npublic class StaleTarget {\n$declaration\n}\n")
+        val caller = "stale-rename/sr/StaleCaller.java"
+        writeProjectFile(caller, "package sr;\n\nclass StaleCaller {\n    void a() { StaleTarget.work(); }\n}\n")
+        writeBehindTheIdesBack(
+            caller,
+            "package sr;\n\nclass StaleCaller {\n    void a() { StaleTarget.work(); }\n    void b() { StaleTarget.work(); }\n}\n"
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", target)
+            put("line", 4)
+            put("column", declaration.indexOf("work") + 1)
+            put("newName", "run")
+            put("relatedRenamingStrategy", "none")
+        })
+
+        assertToolSucceeded("Rename must succeed when a caller changed behind the IDE's back", result)
+        assertEquals(
+            "package sr;\n\nclass StaleCaller {\n    void a() { StaleTarget.run(); }\n    void b() { StaleTarget.run(); }\n}\n",
+            readFromDisk(caller)
+        )
+        assertOnDisk(target, contains = listOf("public static void run()"), absent = "work")
+    }
+
+    fun testChangeSignatureUpdatesACallerChangedBehindTheIdesBack() = runBlocking {
+        registerSourceRoot("stale-sig")
+        val target = "stale-sig/StaleFormatter.java"
+        val declaration = "    public static String format(String raw) {"
+        writeProjectFile(target, "public class StaleFormatter {\n$declaration\n        return raw;\n    }\n}\n")
+        val caller = "stale-sig/StaleSigCaller.java"
+        writeProjectFile(caller, "public class StaleSigCaller {\n    String a() { return StaleFormatter.format(\"a\"); }\n}\n")
+        writeBehindTheIdesBack(
+            caller,
+            "public class StaleSigCaller {\n    String a() { return StaleFormatter.format(\"a\"); }\n" +
+                "    String b() { return StaleFormatter.format(\"b\"); }\n}\n"
+        )
+
+        val result = ChangeSignatureTool().execute(project, buildJsonObject {
+            put("file", target)
+            put("line", 2)
+            put("column", declaration.indexOf("format") + 1)
+            put("newParameters", buildJsonArray {
+                add(buildJsonObject { put("oldIndex", 0); put("name", "raw"); put("type", "String") })
+                add(buildJsonObject {
+                    put("oldIndex", -1); put("name", "strict"); put("type", "boolean"); put("defaultValue", "false")
+                })
+            })
+        })
+
+        assertToolSucceeded("Change signature must succeed when a caller changed behind the IDE's back", result)
+        assertOnDisk(
+            caller,
+            contains = listOf("StaleFormatter.format(\"a\", false)", "StaleFormatter.format(\"b\", false)"),
+            absent = "(\"b\")"
+        )
+    }
+
+    fun testMoveUpdatesAnImporterChangedBehindTheIdesBack() = runBlocking {
+        registerSourceRoot("stale-move")
+        writeProjectFile("stale-move/staleorigin/StaleMoved.java", "package staleorigin;\n\npublic class StaleMoved {}\n")
+        val client = "stale-move/staleconsumer/StaleClient.java"
+        writeProjectFile(
+            client,
+            "package staleconsumer;\n\nimport staleorigin.StaleMoved;\n\npublic class StaleClient {\n    StaleMoved a;\n}\n"
+        )
+        writeBehindTheIdesBack(
+            client,
+            "package staleconsumer;\n\nimport staleorigin.StaleMoved;\n\npublic class StaleClient {\n" +
+                "    StaleMoved a;\n    StaleMoved b;\n}\n"
+        )
+
+        val result = MoveFileTool().execute(project, buildJsonObject {
+            put("file", "stale-move/staleorigin/StaleMoved.java")
+            put("destination", "stale-move/staletarget")
+        })
+
+        assertToolSucceeded("Move must succeed when an importer changed behind the IDE's back", result)
+        assertOnDisk(client, contains = listOf("import staletarget.StaleMoved;", "StaleMoved b;"), absent = "staleorigin")
+    }
+
+    fun testSafeDeleteRemovesAMemberFromAFileChangedBehindTheIdesBack() = runBlocking {
+        registerSourceRoot("stale-sd")
+        val file = "stale-sd/stalesd/StaleHelper.java"
+        val declaration = "    public String unused() {"
+        writeProjectFile(file, "package stalesd;\n\npublic class StaleHelper {\n$declaration\n        return \"unused\";\n    }\n}\n")
+        writeBehindTheIdesBack(
+            file,
+            "package stalesd;\n\npublic class StaleHelper {\n$declaration\n        return \"unused\";\n    }\n" +
+                "    public String external() {\n        return \"external\";\n    }\n}\n"
+        )
+
+        val result = SafeDeleteTool().execute(project, buildJsonObject {
+            put("file", file)
+            put("line", 4)
+            put("column", declaration.indexOf("unused") + 1)
+        })
+
+        assertToolSucceeded("Safe delete must succeed on a file changed behind the IDE's back", result)
+        assertOnDisk(file, contains = listOf("public String external()"), absent = "unused")
+    }
+
+    fun testStructuralReplaceRewritesAMatchThatExistsOnlyOnDisk() = runBlocking {
+        registerSourceRoot("stale-ssr")
+        val file = "stale-ssr/StaleSsr.java"
+        writeProjectFile(file, "public class StaleSsr {\n    void a() { StaleSsrSink.write(\"a\"); }\n}\n")
+        writeBehindTheIdesBack(
+            file,
+            "public class StaleSsr {\n    void a() { StaleSsrSink.write(\"a\"); }\n" +
+                "    void b() { StaleSsrSink.write(\"b\"); }\n}\n"
+        )
+
+        val result = StructuralSearchReplaceTool().execute(project, buildJsonObject {
+            put("searchPattern", "StaleSsrSink.write(\$x\$)")
+            put("replacePattern", "StaleSsrSink.send(\$x\$)")
+            put("filePattern", "*.java")
+        })
+
+        assertToolSucceeded("Structural replace must succeed on a file changed behind the IDE's back", result)
+        assertOnDisk(
+            file,
+            contains = listOf("StaleSsrSink.send(\"a\");", "StaleSsrSink.send(\"b\");"),
+            absent = "write("
+        )
+    }
+
+    /**
+     * The file changes on disk after the refactoring synced the project but before it saves. The
+     * platform declines the save; the tool must report the file rather than success, and reload
+     * it so its unsaved change cannot be written later or block tool calls behind a prompt.
+     */
+    fun testRefactoringReportsAFileWhoseSaveWasDeclined() = runBlocking {
+        registerSourceRoot("race-sd")
+        val file = "race-sd/racesd/RaceHelper.java"
+        val declaration = "    public String unused() {"
+        writeProjectFile(file, "package racesd;\n\npublic class RaceHelper {\n$declaration\n        return \"unused\";\n    }\n}\n")
+        val external = "package racesd;\n\npublic class RaceHelper {\n$declaration\n        return \"unused\";\n    }\n" +
+            "    public String external() {\n        return \"external\";\n    }\n}\n"
+        val tool = SafeDeleteTool()
+        tool.beforeDeletionHook = { writeBehindTheIdesBack(file, external) }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", file)
+            put("line", 4)
+            put("column", declaration.indexOf("unused") + 1)
+        })
+
+        assertToolFailed("A refactoring whose save was declined must not report success", result)
+        assertTrue("Error must name the file: ${toolText(result)}", toolText(result).contains(file))
+        assertTrue("Error must say the changes did not land: ${toolText(result)}", toolText(result).contains("did not reach"))
+        assertEquals("The other program's version stays on disk", external, readFromDisk(file))
+        val document = cachedDocument(file)
+        assertEquals("The declined change must not linger in memory", external, textOf(document))
+        assertFalse("Nothing may be left for autosave to write later", FileDocumentManager.getInstance().isDocumentUnsaved(document))
         // Let the platform process the conflict it recorded; it must find nothing left to prompt about.
         ApplicationManager.getApplication().invokeAndWait {}
     }

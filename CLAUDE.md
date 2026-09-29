@@ -271,6 +271,11 @@ synchronized with external file changes. The setting is disabled by default.
   refresh. Without the second, `FileDocumentManager` then declines the save as a memory/disk
   conflict without reporting it, and the tool claims success for a file that never changed
   (issue #430).
+- A multi-file refactoring must call `syncProjectForRefactoring(project)` before it resolves its
+  target (apply paths only; a dry run must not save documents). Capture
+  `FileDocumentManager.unsavedDocuments` just before the processor runs, then save with
+  `saveRefactoredDocuments(project, unsavedBefore)` in place of `saveAllDocuments()`, and turn a
+  non-empty result into an error with `refactoringNotSavedMessage`.
 
 ### Long-Running Tools (Long-Poll Pattern)
 

@@ -16,6 +16,7 @@ import com.intellij.lang.LanguageNamesValidation
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
@@ -368,6 +369,7 @@ class RenameSymbolTool : AbstractMcpTool() {
         }
 
         requireSmartMode(project)
+        if (!dryRun) syncProjectForRefactoring(project)
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: BACKGROUND - Find element and validate (suspending read action)
@@ -474,8 +476,10 @@ class RenameSymbolTool : AbstractMcpTool() {
         val affectedFiles = mutableSetOf<String>()
         var renameExecutionResult: RenameExecutionResult? = null
         var errorMessage: String? = null
+        var unsavedBefore: Set<Document> = emptySet()
 
         edtAction {
+            unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             try {
                 renameExecutionResult = executeRename(
                     project,
@@ -496,7 +500,8 @@ class RenameSymbolTool : AbstractMcpTool() {
         // write-safe EDT modality.
         if (errorMessage == null) {
             commitDocuments(project)
-            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+            val notSaved = edtAction { saveRefactoredDocuments(project, unsavedBefore) }
+            if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
         }
 
         return if (errorMessage != null) {

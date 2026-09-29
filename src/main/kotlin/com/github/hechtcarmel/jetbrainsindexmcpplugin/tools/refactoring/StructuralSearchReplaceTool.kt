@@ -105,6 +105,9 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
             project, BuiltInSearchScopeResolver.resolveGlobalScope(project, builtInScope), pathMatcher
         )
 
+        // A replace rewrites every matching file; search-only calls stay free of side effects.
+        if (replacePattern != null) syncProjectForRefactoring(project)
+
         val matches = suspendingReadAction {
             executeSearch(project, matchOptionsClass, matcherClass, searchPattern, filePattern, searchScope)
         }
@@ -325,7 +328,9 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
             }
 
             var count = 0
+            var notSaved: List<String> = emptyList()
             edtAction {
+                val unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
                 val replaceAll = replacerClass.getMethod("replaceAll", List::class.java)
                 // Replacer.replaceAll opens its own write action but never a command, and
                 // PomModelImpl rejects any PSI change to physical files outside one. The IDE's
@@ -351,8 +356,9 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
                 failure?.let { throw it }
                 count = replacements.size
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                FileDocumentManager.getInstance().saveAllDocuments()
+                notSaved = saveRefactoredDocuments(project, unsavedBefore)
             }
+            if (notSaved.isNotEmpty()) return Result.failure(Exception(refactoringNotSavedMessage(notSaved)))
 
             Result.success(count)
         } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {

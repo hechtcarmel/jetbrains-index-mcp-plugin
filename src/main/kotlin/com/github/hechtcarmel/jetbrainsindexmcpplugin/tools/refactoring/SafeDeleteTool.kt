@@ -202,6 +202,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         val force = arguments["force"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
         requireSmartMode(project)
+        if (!dryRun) syncProjectForRefactoring(project)
 
         return when (targetType) {
             "file" -> {
@@ -606,8 +607,10 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     ): CallToolResult {
         var success = false
         var errorMessage: String? = null
+        var notSaved: List<String> = emptyList()
 
         edtAction {
+            val unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             WriteCommandAction.writeCommandAction(project)
                 .withName("Safe Delete: ${preparation.elementName}")
                 .withGroupId("MCP Refactoring")
@@ -622,14 +625,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                         preparation.element.delete()
 
                         PsiDocumentManager.getInstance(project).commitAllDocuments()
-                        FileDocumentManager.getInstance().saveAllDocuments()
-
                         success = true
                     } catch (e: Exception) {
                         errorMessage = e.message
                     }
                 }
+            // Saved outside the command: a declined save reloads the Document from disk.
+            if (success) notSaved = saveRefactoredDocuments(project, unsavedBefore)
         }
+        if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
 
         return if (success) {
             createJsonResult(
@@ -661,8 +665,10 @@ class SafeDeleteTool : AbstractRefactoringTool() {
     ): CallToolResult {
         var success = false
         var errorMessage: String? = null
+        var notSaved: List<String> = emptyList()
 
         edtAction {
+            val unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             WriteCommandAction.writeCommandAction(project)
                 .withName("Safe Delete File: ${preparation.fileName}")
                 .withGroupId("MCP Refactoring")
@@ -676,14 +682,15 @@ class SafeDeleteTool : AbstractRefactoringTool() {
                         preparation.psiFile.delete()
 
                         PsiDocumentManager.getInstance(project).commitAllDocuments()
-                        FileDocumentManager.getInstance().saveAllDocuments()
-
                         success = true
                     } catch (e: Exception) {
                         errorMessage = e.message
                     }
                 }
+            // Saved outside the command: a declined save reloads the Document from disk.
+            if (success) notSaved = saveRefactoredDocuments(project, unsavedBefore)
         }
+        if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
 
         return if (success) {
             createJsonResult(

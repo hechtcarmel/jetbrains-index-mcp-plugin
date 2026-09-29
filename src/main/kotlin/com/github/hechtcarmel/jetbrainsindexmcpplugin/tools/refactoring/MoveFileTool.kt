@@ -116,6 +116,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         }
 
         requireSmartMode(project)
+        syncProjectForRefactoring(project)
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: VFS + READ ACTION - Validate source file
@@ -246,6 +247,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()
         var backendWarnings: List<String> = emptyList()
+        var notSaved: List<String> = emptyList()
         val fileName = preparation.psiFile.name
 
         edtAction {
@@ -257,6 +259,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
 
                 val filePointer = SmartPointerManager.createPointer(preparation.psiFile)
                 val modifiedFilesBeforeMove = collectUnsavedProjectFiles(project)
+                val unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
 
                 when (preparation.backend) {
                     MoveBackend.GENERIC_FILE_MOVE -> backendWarnings = executeGenericFileMove(preparation)
@@ -269,13 +272,15 @@ open class MoveFileTool : AbstractRefactoringTool() {
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
-                FileDocumentManager.getInstance().saveAllDocuments()
+                notSaved = saveRefactoredDocuments(project, unsavedBefore)
 
                 success = true
             } catch (e: Exception) {
                 errorMessage = e.message
             }
         }
+
+        if (notSaved.isNotEmpty()) return createErrorResult(refactoringNotSavedMessage(notSaved))
 
         return if (success) {
             val newPath = if (preparation.destinationRelativePath.isBlank()) {
