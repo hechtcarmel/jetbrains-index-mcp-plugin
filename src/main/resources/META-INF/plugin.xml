@@ -13,7 +13,7 @@
 <p>Advanced code intelligence tools work across multiple languages when their plugins are available:</p>
 <ul>
     <li><b>Java & Kotlin</b> - IntelliJ IDEA, Android Studio</li>
-    <li><b>Scala</b> - IntelliJ IDEA with Scala plugin</li>
+    <li><b>Scala</b> - IntelliJ IDEA with the Scala plugin (Scala 2 sources)</li>
     <li><b>Python</b> - PyCharm (all editions), IntelliJ IDEA with Python plugin</li>
     <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
     <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>

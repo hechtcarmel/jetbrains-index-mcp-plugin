@@ -25,7 +25,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
-- **Scala** - IntelliJ IDEA with Scala plugin
+- **Scala** - IntelliJ IDEA with the Scala plugin (Scala 2 sources)
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 **Universal Tools (All Supported JetBrains IDEs)**
@@ -407,7 +407,7 @@ Timing thresholds are configurable in Settings. Lifecycle management is opt-in (
 | CLion | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 | DataGrip | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
-> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Scala adds full navigation support (type hierarchy, call hierarchy, implementations, super methods, file structure) when the Scala plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. With the Scala plugin enabled, Scala 2 sources get type hierarchy, call hierarchy, implementations, super methods, and file structure; Java and Kotlin declarations those results reach are reported with their own language. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
