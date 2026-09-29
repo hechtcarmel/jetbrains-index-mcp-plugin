@@ -283,7 +283,7 @@ abstract class BaseScalaHandler<T> : LanguageHandler<T> {
     /** `name(param, ...)` for any method, in the shape [buildMethodSignature] uses for Scala. */
     protected fun methodSignature(method: PsiMethod): String =
         if (method is ScFunction) buildMethodSignature(method)
-        else "${method.name}(${method.parameterList.parameters.joinToString(", ") { param -> param.name.toString() }})"
+        else "${method.name}(${method.parameterList.parameters.joinToString(", ") { param -> param.name }})"
 
     // Modifier extraction
 
@@ -866,9 +866,9 @@ class ScalaStructureHandler : BaseScalaHandler<List<StructureNode>>(), Structure
             }
         }
 
-        val (kind, keyword) = when {
-            typeDef is ScTrait -> StructureKind.TRAIT to null
-            typeDef is ScObject -> StructureKind.OBJECT to (if (typeDef.isPackageObject) "package" else null)
+        val (kind, keyword) = when (typeDef) {
+            is ScTrait -> StructureKind.TRAIT to null
+            is ScObject -> StructureKind.OBJECT to (if (typeDef.isPackageObject) "package" else null)
             else -> StructureKind.CLASS to (if (typeDef.isCase) "case" else null)
         }
 
