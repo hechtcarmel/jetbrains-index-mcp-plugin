@@ -280,12 +280,16 @@ class StructuralSearchReplaceTool : AbstractMcpTool() {
             setReplacement.invoke(replaceOptions, replacePattern)
 
             val replacerClass = Class.forName("com.intellij.structuralsearch.plugin.replace.impl.Replacer")
-            val replacer = replacerClass.getConstructor(Project::class.java, replaceOptionsClass)
-                .newInstance(project, replaceOptions)
-
             val matcherClass = Class.forName("com.intellij.structuralsearch.Matcher")
-            val matcher = matcherClass.getConstructor(Project::class.java, matchOptionsClass)
-                .newInstance(project, options)
+            // Compiling the search pattern builds PSI, which needs read access. MCP calls run off
+            // the EDT, where nothing grants it implicitly — the search path builds its Matcher
+            // inside a read action for the same reason.
+            val (replacer, matcher) = suspendingReadAction {
+                replacerClass.getConstructor(Project::class.java, replaceOptionsClass)
+                    .newInstance(project, replaceOptions) to
+                    matcherClass.getConstructor(Project::class.java, matchOptionsClass)
+                        .newInstance(project, options)
+            }
 
             val matchResultSinkClass = Class.forName("com.intellij.structuralsearch.MatchResultSink")
             val matchResults = mutableListOf<Any>()
