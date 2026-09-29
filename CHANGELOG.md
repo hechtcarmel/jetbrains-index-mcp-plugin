@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-09-29
+
 ### Added
 
 - **Scala 2 support for navigation tools** ([#245](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/245), contributed by [@ilx](https://github.com/ilx)) — with the Scala plugin installed, `ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, `ide_find_super_methods` and `ide_file_structure` now work on Scala classes, traits, objects and case classes. Java and Kotlin code reached from Scala is included, and an incompatible Scala plugin fails with an explicit error instead of empty results.
@@ -1370,7 +1372,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...HEAD
+[5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0
 [5.18.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...v5.18.1
 [5.18.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.2...v5.18.0
