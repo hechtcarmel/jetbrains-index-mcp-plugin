@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -127,6 +128,15 @@ class ExternalDiskChangeWriteBehaviorTest : McpPlatformTestCase() {
      * again after loading the new version, or it replaces the wrong declaration.
      */
     fun testEditMemberByQualifiedNameResolvesAgainstTheReloadedFile() = runBlocking {
+        LanguageHandlerRegistry.registerHandlers()
+        try {
+            editMemberByQualifiedNameAfterExternalSwap()
+        } finally {
+            LanguageHandlerRegistry.clear()
+        }
+    }
+
+    private suspend fun editMemberByQualifiedNameAfterExternalSwap() {
         registerSourceRoot("stale-qualified")
         val file = "stale-qualified/stale/QualifiedStale.java"
         writeProjectFile(
@@ -160,8 +170,11 @@ class ExternalDiskChangeWriteBehaviorTest : McpPlatformTestCase() {
      *
      * The tool runs inside one EDT event so the test can settle the conflict the refused save
      * registered before the platform's prompt for it runs: in tests that prompt throws.
+     *
+     * The body sits in `runBlocking` like the other tests: a lambda directly in a JUnit 3 test
+     * method compiles to a `test…$lambda$N` method, which the runner then reports as a test.
      */
-    fun testUnsavedIdeChangesConflictingWithDiskAreNotEdited() {
+    fun testUnsavedIdeChangesConflictingWithDiskAreNotEdited() = runBlocking {
         val file = "src/Conflict.java"
         writeProjectFile(file, "class Conflict { int a = 1; }")
         val document = cachedDocument(file)
