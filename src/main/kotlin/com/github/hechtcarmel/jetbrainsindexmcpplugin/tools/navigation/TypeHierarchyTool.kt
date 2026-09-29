@@ -41,7 +41,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Tool for retrieving type hierarchies across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -60,7 +60,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
     override val description = """
         Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
 
         Rust note: className parameter not supported for Rust; use file + line + column instead.
 

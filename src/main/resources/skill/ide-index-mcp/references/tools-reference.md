@@ -228,7 +228,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ implementations: [{symbolId?, name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala (not Go).
 
 ### ide_find_symbol (disabled by default)
 Search for any code symbol (classes, methods, fields, functions) by name.
@@ -265,7 +265,7 @@ Find parent methods that a given method overrides or implements.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ method: {symbolId?, name, class, file, line}, hierarchy: [{symbolId?, name, class, file, line, isInterface}], totalCount }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP (NOT Go, Rust).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Scala (NOT Go, Rust).
 
 ### ide_type_hierarchy
 
@@ -294,7 +294,7 @@ their nearest included ancestor.
 **Provide exactly one target:** one nested `target` variant, or legacy `symbolId`, `className`, `language`+`symbol`, or `file`+`line`+`column`.
 **Returns**: `{ element: {symbolId?, name, file, kind, language}, supertypes: [{symbolId?, name, file, kind, language}], subtypes: [{symbolId?, name, file, kind, language}], traversal: [{direction: "supertype"|"subtype", element: {...}}], returnedNodes, truncated, elapsedMs, hasMore, cursor? }`
 **Pagination**: Without `maxNodes`/`cursor`, legacy nested trees and limits remain. Explicit pages expose traversal-local `nodeId`, `parentId`, and `depth` for the first-discovery tree; `returnedNodes` excludes the root. Type `traversal` preserves combined BFS order. Follow `cursor` while present. Retention limits return the computed page with `hasMore=true`, no cursor, and `truncationReason`; narrow the query to continue. Cursors are session/project-bound, expire after ten idle minutes, and retain at most 128 snapshots overall and ten per traversal. Handles refresh on every page.
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala.
 
 ### ide_call_hierarchy
 
@@ -346,7 +346,7 @@ Without structured output, `nodes` is empty and the handle fields are `false` an
 enabled, they report the per-response budget outcome.
 Handles are limited to 100 per response by default; `maxSymbolIds` can lower that limit to 1–100.
 `symbolIdsTruncated` flags this per-response budget and `symbolIdsOmitted` counts budget omissions.
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
