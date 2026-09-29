@@ -589,8 +589,12 @@ class ToolsTest : McpPlatformTestCase() {
 
         assertFalse("Scala type hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<TypeHierarchyResult>(errorTextless(result))
-        assertEquals("CLASS", payload.element.kind)
+        assertEquals("ABSTRACT_CLASS", payload.element.kind)
+        assertEquals("Scala", payload.element.language)
         assertTrue("Hierarchy element should resolve BaseService", payload.element.name.contains("BaseService"))
+        val subtypes = payload.subtypes.map { it.name }
+        assertTrue("Employee and Contractor extend BaseService: $subtypes",
+            subtypes.any { it.contains("Employee") } && subtypes.any { it.contains("Contractor") })
     }
 
     fun testFindImplementationsToolScalaTraitFixtureCoverageHook() = runBlocking {
@@ -607,7 +611,9 @@ class ToolsTest : McpPlatformTestCase() {
 
         assertFalse("Scala implementations lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
-        assertNotNull("Implementations payload should decode", payload.implementations)
+        val implementations = payload.implementations.map { it.name }
+        assertTrue("Employee and Contractor implement Worker: $implementations",
+            implementations.any { it.contains("Employee") } && implementations.any { it.contains("Contractor") })
     }
 
     fun testCallHierarchyToolScalaFixtureCoverageHook() = runBlocking {
@@ -629,6 +635,10 @@ class ToolsTest : McpPlatformTestCase() {
         assertTrue(
             "Call hierarchy root should resolve runAll",
             payload.element.name.contains("runAll")
+        )
+        assertTrue(
+            "runAll calls worker.work(...): ${payload.calls.map { it.name }}",
+            payload.calls.any { it.name == "Worker.work" }
         )
     }
 
@@ -665,7 +675,9 @@ class ToolsTest : McpPlatformTestCase() {
         assertFalse("Scala file structure lookup should succeed: ${errorText(result)}", result.isFailure)
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
         assertEquals("Scala", payload.language)
-        assertTrue("Structure payload should not be blank", payload.structure.isNotBlank())
+        for (expected in listOf("object ServiceRunner", "val defaultTask (line 4)", "var runCount (line 5)", "def runAll (worker)")) {
+            assertTrue("Structure should contain '$expected':\n${payload.structure}", payload.structure.contains(expected))
+        }
     }
 
     fun testFindClassToolInvalidScopeReturnsStructuredError() = runBlocking {
@@ -1714,12 +1726,19 @@ class ToolsTest : McpPlatformTestCase() {
         writeProjectFile(fixtureProjectPath(relativePath), content)
     }
 
+    private var scalaFixtureRootRegistered = false
+
     /**
      * Materializes Scala fixture content on the real filesystem and waits for indexing to
      * finish, like [writeProjectFile] — without this, a tool call issued right after writing
      * the file can race the background reindex and fail with [IndexNotReadyException].
      */
     private fun materializeScalaFixture(relativePath: String): String {
+        // Index-backed searches (inheritors, callees in scope) only see files under a source root.
+        if (!scalaFixtureRootRegistered) {
+            registerSourceRoot(SCALA_FIXTURE_PROJECT_ROOT)
+            scalaFixtureRootRegistered = true
+        }
         val sourcePath = Path.of(SCALA_FIXTURE_SOURCE_ROOT).resolve(relativePath)
         val source = Files.readString(sourcePath)
         writeProjectFile(scalaFixtureProjectPath(relativePath), source)

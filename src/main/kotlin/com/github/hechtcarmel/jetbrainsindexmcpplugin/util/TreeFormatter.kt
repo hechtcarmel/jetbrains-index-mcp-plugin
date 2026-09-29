@@ -67,11 +67,12 @@ object TreeFormatter {
      * @return Formatted line string
      */
     private fun buildNodeLine(node: StructureNode, language: String): String {
-        val modifiers = if (node.modifiers.isNotEmpty()) {
-            "${node.modifiers.joinToString(" ")} "
+        val (kind, shownModifiers) = scalaKeyword(node, language)
+            ?: (kindToString(node.kind, language) to node.modifiers)
+        val modifiers = if (shownModifiers.isNotEmpty()) {
+            "${shownModifiers.joinToString(" ")} "
         } else ""
 
-        val kind = kindToString(node.kind, language)
         val signature = if (!node.signature.isNullOrBlank()) {
             " ${node.signature}"
         } else ""
@@ -83,6 +84,23 @@ object TreeFormatter {
         }
 
         return "$kind $modifiers${node.name}$signature $lineInfo"
+    }
+
+    /**
+     * Scala reports case classes, package objects and `val`/`var` members with the shared
+     * CLASS / OBJECT / PROPERTY kinds and the Scala keyword in `modifiers`. The text view folds
+     * that keyword back into the declaration (`case class Foo`, `var count`).
+     */
+    private fun scalaKeyword(node: StructureNode, language: String): Pair<String, List<String>>? {
+        if (!language.equals("scala", ignoreCase = true)) return null
+        val (keyword, modifier) = when {
+            node.kind == StructureKind.CLASS && "case" in node.modifiers -> "case class" to "case"
+            node.kind == StructureKind.OBJECT && "package" in node.modifiers -> "package object" to "package"
+            node.kind == StructureKind.PROPERTY && "var" in node.modifiers -> "var" to "var"
+            node.kind == StructureKind.PROPERTY && "val" in node.modifiers -> "val" to "val"
+            else -> return null
+        }
+        return keyword to (node.modifiers - modifier)
     }
 
     /**
@@ -104,10 +122,6 @@ object TreeFormatter {
             StructureKind.RECORD -> "record"
             StructureKind.OBJECT -> "object"
             StructureKind.TRAIT -> "trait"
-            StructureKind.CASE_CLASS -> "case class"
-            StructureKind.PACKAGE_OBJECT -> "package object"
-            StructureKind.VAL -> "val"
-            StructureKind.VAR -> "var"
             StructureKind.CONSTRUCTOR -> "constructor"
             StructureKind.CONSTANT -> "constant"
             StructureKind.ENUM_CASE -> "enum case"
@@ -139,7 +153,6 @@ object TreeFormatter {
                 normalizedLanguage == "java" -> "field"
                 normalizedLanguage == "python" -> "variable"
                 normalizedLanguage == "kotlin" -> "val"
-                normalizedLanguage == "scala" -> "val"
                 else -> "field"
             }
             StructureKind.PROPERTY -> when {

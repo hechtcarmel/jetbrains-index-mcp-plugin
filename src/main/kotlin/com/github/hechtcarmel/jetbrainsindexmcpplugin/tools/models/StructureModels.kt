@@ -43,9 +43,6 @@ enum class StructureKind {
     // Language-specific (e.g. TypeScript type aliases, PHP includes, Markdown headings)
     FUNCTION, VARIABLE, TYPE_ALIAS, HEADING, INCLUDE,
 
-    // Scala-specific
-    CASE_CLASS, PACKAGE_OBJECT, VAL, VAR,
-
     // Containers
     NAMESPACE, PACKAGE, MODULE,
 
