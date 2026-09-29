@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Text and member edits no longer report success when the file on disk never changed** ([#430](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/430)) — `ide_replace_text_in_file`, `ide_edit_member`, `ide_insert_member` and `ide_replace_member` could edit a stale copy of a file that another program (typically the agent's own file-write tool) had just changed on disk. The IDE only re-reads such a file on a VFS refresh, which happens when its window is activated or every ~15 s in the background. The IDE then declined to save the edit as a memory/disk conflict without reporting it, so the tool returned success while the file kept the other version. The project's lifecycle mode and Power Save Mode play no part in this; the IDE merely goes unfocused for longer while a project is dormant. These tools now reload the target file from disk before editing it and confirm the save afterwards. A file with unsaved IDE changes that conflict with a newer disk version is refused untouched. A save the IDE still declines, for example because the file changed again mid-edit, is reported as an error and the edit is discarded, so nothing is left in memory for a later autosave or for the IDE's file-conflict prompt to block on.
+
 ## [5.19.0] - 2026-09-26
 
 ### Added

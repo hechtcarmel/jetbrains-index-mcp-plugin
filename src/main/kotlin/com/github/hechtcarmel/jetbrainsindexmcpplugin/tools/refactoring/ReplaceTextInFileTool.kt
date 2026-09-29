@@ -87,14 +87,15 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
             }
         } else null
 
+        syncFileForEdit(project, virtualFile)?.let { return it }
+        val document = suspendingReadAction { FileDocumentManager.getInstance().getDocument(virtualFile) }
+            ?: return createErrorResult("Cannot get document for $filePath")
+
         var replacements = 0
         var relativePath = filePath
         var affectedLines: List<Int>? = null
 
-        suspendingWriteAction(project, "Replace text in $filePath") {
-            val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-                ?: throw Exception("Cannot get document for $filePath")
-
+        val saveError = suspendingWriteActionAndSave(project, "Replace text in $filePath", document) {
             val text = document.text
             // Start offsets of each replacement, expressed in the NEW text's coordinates,
             // so they can be mapped to line numbers after setText.
@@ -137,11 +138,11 @@ class ReplaceTextInFileTool : AbstractMcpTool() {
                     .take(MAX_AFFECTED_LINES)
                     .toList()
                 PsiDocumentManager.getInstance(project).commitDocument(document)
-                FileDocumentManager.getInstance().saveDocument(document)
             }
 
             relativePath = ProjectUtils.getToolFilePath(project, virtualFile)
         }
+        saveError?.let { return it }
 
         if (replacements == 0) {
             return createJsonResult(ReplaceTextResult(

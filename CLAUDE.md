@@ -264,6 +264,13 @@ synchronized with external file changes. The setting is disabled by default.
   ```
 - For per-call opt-out (e.g. long-poll attach calls that touch no PSI), override
   `needsPsiSync(arguments)` instead.
+- A tool that edits one file's Document must call `syncFileForEdit(project, file)` before it
+  resolves PSI or computes offsets in that file, and apply the edit with
+  `suspendingWriteActionAndSave(project, name, document) { ... }`. Without the first, the edit
+  lands on a stale Document whenever another program changed the file since the IDE's last VFS
+  refresh. Without the second, `FileDocumentManager` then declines the save as a memory/disk
+  conflict without reporting it, and the tool claims success for a file that never changed
+  (issue #430).
 
 ### Long-Running Tools (Long-Poll Pattern)
 

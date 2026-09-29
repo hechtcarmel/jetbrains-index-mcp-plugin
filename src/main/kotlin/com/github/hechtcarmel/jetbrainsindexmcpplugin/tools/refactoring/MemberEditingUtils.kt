@@ -3,7 +3,6 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ResolvedSymbolInfo
 import com.intellij.openapi.editor.Document
-import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
@@ -111,15 +110,6 @@ object MemberEditingUtils {
 
     fun commitDocuments(project: Project) {
         PsiDocumentManager.getInstance(project).commitAllDocuments()
-    }
-
-    /**
-     * Must be called on the EDT — [FileDocumentManager.saveAllDocuments] asserts write-intent
-     * access and throws on a background thread. Callers wrap this in
-     * [com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool.edtAction].
-     */
-    fun saveToDisk() {
-        FileDocumentManager.getInstance().saveAllDocuments()
     }
 
     fun safeLineNumber(document: Document, offset: Int): Int {

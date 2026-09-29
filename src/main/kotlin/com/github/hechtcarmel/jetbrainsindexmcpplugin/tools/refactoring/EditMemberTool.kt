@@ -94,8 +94,9 @@ class EditMemberTool : AbstractMcpTool() {
         val coordinateFile = if (requestedSymbolId == null && !hasQualifiedTarget) {
             optionalStringArg(arguments, ParamNames.FILE)?.let { resolveFile(project, it) }
         } else null
+        coordinateFile?.let { file -> syncFileForEdit(project, file)?.let { return it } }
 
-        val prep = suspendingReadAction {
+        suspend fun prepare(): Result<MemberEditPreparation> = suspendingReadAction {
             if (requestedSymbolId != null || hasQualifiedTarget || hasStructuredTarget) {
                 if (!hasStructuredTarget && hasLegacyMemberSelector) {
                     Result.failure(IllegalArgumentException(ErrorMessages.SYMBOL_ID_AND_OTHER_TARGET_EXCLUSIVE))
@@ -122,6 +123,17 @@ class EditMemberTool : AbstractMcpTool() {
                     )
                 }
                 prepareMemberEdit(project, virtualFile, filePath, className, memberName, parameterCount, line)
+            }
+        }
+
+        var prep = prepare()
+        // A symbolId or qualified name identifies the file only once resolved. Sync it now, and
+        // resolve again if the refresh loaded a newer version of the file from disk.
+        if (coordinateFile == null) {
+            prep.getOrNull()?.let { resolved ->
+                val stamp = resolved.document.modificationStamp
+                resolved.psiFile.virtualFile?.let { file -> syncFileForEdit(project, file)?.let { return it } }
+                if (resolved.document.modificationStamp != stamp) prep = prepare()
             }
         }
 
@@ -226,11 +238,11 @@ class EditMemberTool : AbstractMcpTool() {
         var error: String? = null
         var updatedSymbol: ResolvedSymbolInfo? = null
 
-        suspendingWriteAction(project, "Edit member: ${member.name}") {
+        val saveError = suspendingWriteActionAndSave(project, "Edit member: ${member.name}", prep.document) {
             if (!member.element.isValid) {
                 error =
                     "PSI element for '${member.name}' is no longer valid. The document may have been modified externally — retry the operation."
-                return@suspendingWriteAction
+                return@suspendingWriteActionAndSave
             }
             val range = member.element.textRange
             val startOffset = range.startOffset
@@ -239,7 +251,7 @@ class EditMemberTool : AbstractMcpTool() {
             val declarationType = member.element.node?.elementType
             if (declarationType == null) {
                 error = "Cannot identify the declaration syntax for '${member.name}'. Rediscover the member and retry."
-                return@suspendingWriteAction
+                return@suspendingWriteActionAndSave
             }
             val isConstructor = (member.element as? PsiMethod)?.isConstructor
 
@@ -253,7 +265,7 @@ class EditMemberTool : AbstractMcpTool() {
             if (preview == null) {
                 error = "content must contain exactly one complete ${member.kind} declaration, optionally " +
                     "surrounded by comments. To delete a member, use ide_refactor_safe_delete."
-                return@suspendingWriteAction
+                return@suspendingWriteActionAndSave
             }
 
             prep.document.replaceString(startOffset, endOffset, content)
@@ -303,8 +315,11 @@ class EditMemberTool : AbstractMcpTool() {
         if (error != null) {
             return createErrorResult(error!!)
         }
-
-        edtAction { MemberEditingUtils.saveToDisk() }
+        saveError?.let {
+            // The handle was rebound to a declaration that never reached disk.
+            requestedSymbolId?.let { id -> SymbolIdRegistry.getInstance().invalidate(id) }
+            return it
+        }
 
         return createJsonResult(
             MemberEditResult(

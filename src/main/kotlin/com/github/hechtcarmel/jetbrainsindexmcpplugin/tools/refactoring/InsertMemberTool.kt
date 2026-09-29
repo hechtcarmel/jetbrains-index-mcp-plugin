@@ -66,6 +66,7 @@ class InsertMemberTool : AbstractMcpTool() {
         val virtualFile = resolveFile(project, filePath)
             ?: return createErrorResult("File not found: $filePath")
         ensureWritable(virtualFile)?.let { return it }
+        syncFileForEdit(project, virtualFile)?.let { return it }
 
         val prep = suspendingReadAction {
             prepareInsertion(project, virtualFile, filePath, className, position, anchorName, anchorParamCount, anchorLine)
@@ -140,17 +141,17 @@ class InsertMemberTool : AbstractMcpTool() {
         var endLine = 0
         var error: String? = null
 
-        suspendingWriteAction(project, "Insert member") {
+        val saveError = suspendingWriteActionAndSave(project, "Insert member", prep.document) {
             if (!prep.psiFile.isValid) {
                 error =
                     "PSI file for '${prep.relativePath}' is no longer valid. The document may have been modified externally — retry the operation."
-                return@suspendingWriteAction
+                return@suspendingWriteActionAndSave
             }
             val docLength = prep.document.textLength
             if (prep.insertionOffset < 0 || prep.insertionOffset > docLength) {
                 error =
                     "Insertion offset ${prep.insertionOffset} is out of bounds (document length: ${docLength}). The document may have been modified externally — retry the operation."
-                return@suspendingWriteAction
+                return@suspendingWriteActionAndSave
             }
             prep.document.insertString(prep.insertionOffset, insertText)
             MemberEditingUtils.commitDocuments(project)
@@ -167,8 +168,7 @@ class InsertMemberTool : AbstractMcpTool() {
         if (error != null) {
             return createErrorResult(error!!)
         }
-
-        edtAction { MemberEditingUtils.saveToDisk() }
+        saveError?.let { return it }
 
         return createJsonResult(MemberEditResult(
             success = true,

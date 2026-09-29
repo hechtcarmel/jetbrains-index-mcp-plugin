@@ -74,8 +74,9 @@ class ReplaceMemberTool : AbstractMcpTool() {
         val coordinateFile = if (requestedSymbolId == null && !hasQualifiedTarget) {
             optionalStringArg(arguments, ParamNames.FILE)?.let { resolveFile(project, it) }
         } else null
+        coordinateFile?.let { file -> syncFileForEdit(project, file)?.let { return it } }
 
-        val prep = suspendingReadAction {
+        suspend fun prepare(): Result<MemberEditPreparation> = suspendingReadAction {
             if (requestedSymbolId != null || hasQualifiedTarget || hasStructuredTarget) {
                 if (!hasStructuredTarget && hasLegacyMemberSelector) {
                     Result.failure(IllegalArgumentException(ErrorMessages.SYMBOL_ID_AND_OTHER_TARGET_EXCLUSIVE))
@@ -102,6 +103,17 @@ class ReplaceMemberTool : AbstractMcpTool() {
                     )
                 }
                 prepareMemberEdit(project, virtualFile, filePath, className, memberName, parameterCount, line)
+            }
+        }
+
+        var prep = prepare()
+        // A symbolId or qualified name identifies the file only once resolved. Sync it now, and
+        // resolve again if the refresh loaded a newer version of the file from disk.
+        if (coordinateFile == null) {
+            prep.getOrNull()?.let { resolved ->
+                val stamp = resolved.document.modificationStamp
+                resolved.psiFile.virtualFile?.let { file -> syncFileForEdit(project, file)?.let { return it } }
+                if (resolved.document.modificationStamp != stamp) prep = prepare()
             }
         }
 
@@ -233,7 +245,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
         var updatedSymbol: ResolvedSymbolInfo? = null
 
         try {
-            suspendingWriteAction(project, "Replace member body: ${member.name}") {
+            val saveError = suspendingWriteActionAndSave(project, "Replace member body: ${member.name}", prep.document) {
                 // Rebind after entering the write action. Offsets captured during preparation can
                 // become stale if the declaration itself changes before this action starts; merely
                 // shifting them by the declaration's start delta does not cover body/header edits.
@@ -245,7 +257,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
                 if (currentMember == null) {
                     error =
                         "PSI element for '${member.name}' is no longer valid. The document may have been modified externally — retry the operation."
-                    return@suspendingWriteAction
+                    return@suspendingWriteActionAndSave
                 }
                 val bodyStart = currentMember.bodyStartOffset
                 val bodyEnd = currentMember.bodyEndOffset
@@ -253,14 +265,14 @@ class ReplaceMemberTool : AbstractMcpTool() {
                 if (bodyStart == null || bodyEnd == null) {
                     error =
                         "Member '${member.name}' no longer has a body/initializer to replace. Retry after rediscovering the declaration."
-                    return@suspendingWriteAction
+                    return@suspendingWriteActionAndSave
                 }
 
                 val docLength = prep.document.textLength
                 if (bodyStart < 0 || bodyEnd > docLength || bodyStart > bodyEnd) {
                     error =
                         "Body offsets [${bodyStart}, ${bodyEnd}) are out of bounds (document length: ${docLength}). The document may have been modified externally — retry the operation."
-                    return@suspendingWriteAction
+                    return@suspendingWriteActionAndSave
                 }
 
                 prep.document.replaceString(bodyStart, bodyEnd, content)
@@ -294,8 +306,7 @@ class ReplaceMemberTool : AbstractMcpTool() {
             if (error != null) {
                 return createErrorResult(error!!)
             }
-
-            edtAction { MemberEditingUtils.saveToDisk() }
+            saveError?.let { return it }
 
             updatedSymbol = suspendingReadAction {
                 pointer.element?.let { resolvedSymbolInfo(project, it, requestedSymbolId) }
