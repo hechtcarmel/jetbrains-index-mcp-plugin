@@ -2025,6 +2025,11 @@ description:
   so the trust dialog does not appear. Build scripts (Maven, Gradle) may execute
   on import.
   
+  For directories without a recognized build system (TypeScript, plain directories),
+  the tool automatically registers the project directory as a content root so that
+  files are indexed and visible to all MCP tools. Common non-source directories
+  (node_modules, dist, .next, build, .gradle) are excluded automatically when present.
+  
   Parameters:
   - path: absolute filesystem path of the project directory to open (required)
   - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.

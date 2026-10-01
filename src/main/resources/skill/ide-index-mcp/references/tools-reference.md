@@ -793,7 +793,7 @@ Add a directory as an IntelliJ module with a content root, enabling code intelli
 **Returns**: text confirmation with module name, content root path, module file path, count of excluded directories, and an async-indexing note.
 
 ### ide_open_project (disabled by default)
-Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects.
+Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. For directories without a recognized build system (TypeScript, plain directories), automatically registers a content root so files are indexed. May require a human to answer the IDE's "Trust project?" dialog for first-time projects.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
