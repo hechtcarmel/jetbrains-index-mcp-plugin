@@ -76,7 +76,7 @@ Find all usages of a symbol (semantic, not text search).
 | `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default true** — keeps valid runtime references (Dagger/MapStruct/gRPC/serializers). Set false to drop generated call sites when they dominate results on injected symbols. |
-| `paths` | array | no | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `scope`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero results. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/`. Files outside the project directory (workspace repositories) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
+| `paths` | array | no | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `scope`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero results. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
 | `maxResults` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -168,7 +168,7 @@ Search for classes/interfaces by name using IDE's class index. Equivalent to Ctr
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ classes: [{symbolId, name, qualifiedName, file, line, kind, language}], totalCount, query }`
-**Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 **Matching**: CamelCase (`USvc` -> `UserService`), substring, wildcard (`User*Impl`).
 
 ### ide_find_file
@@ -185,7 +185,7 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ files: [{name, path, directory}], totalCount, query }`
-**Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_search_text
 Search for text using IntelliJ Find in Files. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching.
@@ -198,7 +198,7 @@ Search for text using IntelliJ Find in Files. Plain-text queries do substring ma
 | `caseSensitive` | boolean | no | Default true |
 | `wholeWord` | boolean | no | Match whole words only. Default false (substring match) |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
-| `paths` | array | no | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `filePattern`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/`. Files outside the project directory (workspace repositories) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
+| `paths` | array | no | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `filePattern`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -246,7 +246,7 @@ Search for any code symbol (classes, methods, fields, functions) by name.
 
 **Returns**: `{ symbols: [{symbolId, name, qualifiedName, file, line, kind, language}], totalCount, query }`
 **Languages**: Java, Kotlin, Python, JS/TS, Go, PHP, Rust, plus other IDE-supplied symbol contributors where available.
-**Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_find_super_methods
 Find parent methods that a given method overrides or implements.
@@ -523,7 +523,7 @@ Pattern-based code search and transformation using IntelliJ's Structural Search 
 | `replacePattern` | string | no | Replacement pattern. Omit for search-only |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.java`, `*.kt` |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
-| `paths` | array | no | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. In replace mode only files inside the globs are rewritten. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/`. Files outside the project directory (workspace repositories) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
+| `paths` | array | no | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. In replace mode only files inside the globs are rewritten. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ matchCount, replacedCount, matches: [{ file, line, matchedText }] }`
@@ -650,17 +650,6 @@ Replace a method body or field initializer only, preserving the signature.
 
 ## Project Tools
 
-**Opening projects: which tool.** Each opened project or workspace is another IDE window that indexes its code and stays in memory.
-
-| Situation | Call |
-|-----------|------|
-| One repository, Maven or Gradle | `ide_open_project` with `{"path": "/abs/repo", "autoLink": true}` |
-| One repository, anything else | `ide_open_project` with `{"path": "/abs/repo"}` |
-| Several Maven repositories needing cross-repository navigation or refactoring | **One** `ide_open_workspace` call with **all** of them in `modules` (or their parent directory in `path`) |
-| A repository that is already a module of an open workspace | Nothing to open: pass its directory as `project_path` |
-
-Never call `ide_open_workspace` once per repository, or again with a different subset of the same repositories: each distinct set opens its own window and leaves its own directory under the IDE's `ide-workspaces/` folder.
-
 ### ide_index_status
 Check if IDE is ready for code intelligence operations.
 
@@ -759,20 +748,18 @@ Import one or more external Maven project directories as modules into the curren
 **Returns**: text summary of imported, skipped, and failed module paths.
 
 ### ide_open_workspace (disabled by default, Maven plugin only)
-Open several Maven repositories together in one IntelliJ window with cross-repository code intelligence: scan a root directory for Maven projects, or provide an explicit list. Creates a temporary aggregator POM with relative module paths. Call it once with every repository you need; for a single repository use `ide_open_project` instead.
-
-A single Maven project (one `modules` entry, or a `path` scan that finds one) is refused with a ready-to-use `ide_open_project` call. If an open project already contains every requested Maven project as a module, that project is reused and no new window or workspace directory is created; this check comes first, so a single repository that is already open is reused rather than refused.
+Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence. Creates a temporary aggregator POM with relative module paths.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | no* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
-| `modules` | string[] | no* | Absolute paths of the Maven project directories to combine, at least two. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `path` | string | no* | Root directory to scan for Maven projects (each must contain `pom.xml`). Mutually exclusive with `modules`. |
+| `modules` | string[] | no* | Explicit list of absolute paths to Maven project directories. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
 | `timeoutSeconds` | integer | no | Timeout in seconds for opening and indexing (default 600) |
 | `project_path` | string | no | Project root path |
 
 *Either `path` or `modules` must be provided, but not both.
 
-**Returns**: text confirmation listing each module's absolute path (pass one as `project_path` to target that repository) and the indexing status, or which open project was reused.
+**Returns**: text confirmation with count of Maven projects found and indexing status.
 
 ### ide_set_power_save_mode (disabled by default)
 Enable or disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis; the index and code intelligence tools stay functional.
@@ -806,7 +793,7 @@ Add a directory as an IntelliJ module with a content root, enabling code intelli
 **Returns**: text confirmation with module name, content root path, module file path, count of excluded directories, and an async-indexing note.
 
 ### ide_open_project (disabled by default)
-Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects. Use it for a single repository (`autoLink: true` for Maven/Gradle); combine several Maven repositories with one `ide_open_workspace` call instead. A repository that is already a module of an open workspace needs no opening: pass its directory as `project_path`.
+Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. For directories without a recognized build system (TypeScript, plain directories), automatically registers a content root so files are indexed. May require a human to answer the IDE's "Trust project?" dialog for first-time projects.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

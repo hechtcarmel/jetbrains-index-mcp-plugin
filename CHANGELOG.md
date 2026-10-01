@@ -6,25 +6,7 @@
 
 ### Fixed
 
-- **Line endings are configured for files in this git repository ([#453](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/453))** — Dependent on a client's local `git` configuration, files may have their line endings converted between CRLF and LF. `ResultShapeContractUnitTest.testResultShapesMatchGoldenSnapshot` relies on direct string equality between the parsed shape (`result-shapes.txt`) and the generated shape. There is now a `.gitattributes` file specified for this repository, enforcing line endings for the files of this project.
-
-## [5.20.3] - 2026-10-24
-
-### Fixed
-
-- **Equivalent project paths are recognized across filename aliases** ([#450](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/450)) — fallback project membership and module-root matching resolve aliases such as Windows short filenames instead of rejecting a file because its path uses a different spelling. Files under an aliased project base retain project-relative paths; files in external workspace roots keep their distinct absolute paths.
-
-## [5.20.2] - 2026-10-09
-
-### Fixed
-
-- **Files in workspace repositories and other modules outside the project directory are reported by absolute path** ([#441](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/441)) — in `ide_open_workspace` windows, after `ide_import_modules`, and in flat Maven layouts, every module's files came back as the same ambiguous `src/main/...` path that agents could not open, and searches dropped hits at the same position in same-named files. To restrict `paths` globs to one such repository, write them as absolute paths (e.g. `/home/me/ws/svc-a/src/**`); a relative glob naming a directory outside the project now fails with the absolute spelling to use.
-
-## [5.20.1] - 2026-10-07
-
-### Fixed
-
-- **`ide_open_workspace` no longer opens a new window for every repository** ([#436](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/436)) — an open project that already contains every requested Maven project is now reused, and a single Maven project is refused with a ready-to-use `ide_open_project` call; the tool descriptions and bundled skill now say when to use which. Workspace folders left by earlier calls are not removed: delete unused ones from `ide-workspaces/` in the IDE's system directory.
+- **`ide_open_project` now auto-registers a content root for non-Maven/Gradle projects** ([#421](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/421)) — directories without a recognized build system (TypeScript, plain directories) previously opened with zero content roots, making all MCP search and navigation tools return empty results. The tool now automatically creates a WEB_MODULE with the project directory as content root when no modules exist after opening. Common non-source directories (`node_modules`, `dist`, `.next`, `build`, `.gradle`) are excluded when present.
 
 ## [5.20.0] - 2026-09-29
 
@@ -1394,10 +1376,7 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...HEAD
-[5.20.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...v5.20.3
-[5.20.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.20.2
-[5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...HEAD
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0
 [5.18.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...v5.18.1
