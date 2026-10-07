@@ -4,9 +4,9 @@
 
 ## [Unreleased]
 
-### Changed
+### Fixed
 
-- **`ide_open_workspace` stops agents from opening one workspace per repository** ([#436](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/436)) — agents called it once per repository, or again with a different subset of the same repositories. Every call opened another window, none of them with cross-repository intelligence beyond its own set, and left another directory under the IDE's `ide-workspaces/` folder; one user had 175. If an open project already contains every requested Maven project as a module, the tool now reuses that window instead of opening another. Otherwise a single Maven project (one `modules` entry, or a `path` scan that finds one) is refused with a ready-to-use `ide_open_project` call instead of being wrapped in a workspace of its own. `modules` now asks for at least two entries. The `ide_open_workspace` and `ide_open_project` descriptions and the bundled skill now say which tool to use when, and a successful open lists each module's absolute path with a reminder to pass it as `project_path` rather than opening the repository again. Workspace directories left by earlier calls are not removed; delete the ones you no longer use from the `ide-workspaces/` folder in the IDE's system directory.
+- **`ide_open_workspace` no longer opens a new window for every repository** ([#436](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/436)) — an open project that already contains every requested Maven project is now reused, and a single Maven project is refused with a ready-to-use `ide_open_project` call; the tool descriptions and bundled skill now say when to use which. Workspace folders left by earlier calls are not removed: delete unused ones from `ide-workspaces/` in the IDE's system directory.
 
 ## [5.20.0] - 2026-09-29
 
