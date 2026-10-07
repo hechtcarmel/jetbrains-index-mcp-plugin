@@ -763,6 +763,8 @@ Open several Maven repositories together in one IntelliJ window with cross-repos
 
 A single Maven project (one `modules` entry, or a `path` scan that finds one) is refused with a ready-to-use `ide_open_project` call. If an open project already contains every requested Maven project as a module, that project is reused and no new window or workspace directory is created; this check comes first, so a single repository that is already open is reused rather than refused.
 
+**Use only when cross-project refactoring is needed across multiple Maven repos.** For a single repo, use `ide_open_project` with `autoLink: true` instead — it's simpler, uses less memory, and doesn't create workspace artifacts. **Never call `ide_open_workspace` separately for each repo** — that defeats the purpose (no cross-project intelligence) and creates a stale workspace directory per call.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | no* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
