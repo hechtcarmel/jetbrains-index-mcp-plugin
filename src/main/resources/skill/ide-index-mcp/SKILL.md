@@ -96,6 +96,19 @@ When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or 
 { "path": "/absolute/path/to/worktree" }
 ```
 
+## Choosing the Right Project Opening Tool
+
+Use `ide_open_project` by default. Only use `ide_open_workspace` when you need cross-project refactoring across multiple Maven repos in a single IntelliJ window.
+
+| Scenario | Tool | Example |
+|----------|------|---------|
+| Single Maven/Gradle repo | `ide_open_project` with `autoLink: true` | `{ "path": "/dev/my-app", "autoLink": true }` |
+| Single TypeScript/plain directory | `ide_open_project` | `{ "path": "/dev/my-frontend" }` — content root registered automatically |
+| Git worktree or slot clone | `ide_open_project` | `{ "path": "/dev/slots/42/engine", "autoLink": true }` |
+| Multiple Maven repos, cross-project refactoring needed | ONE `ide_open_workspace` with ALL repos | `{ "modules": ["/dev/engine", "/dev/blocks", "/dev/neocortex"] }` |
+
+**Never call `ide_open_workspace` separately for each repo.** That creates a separate IntelliJ window per repo with its own aggregator POM — no cross-project intelligence, wasted memory, and stale workspace directories that are never cleaned up. If you don't need cross-project refactoring, use `ide_open_project` instead.
+
 ## Parameter Rules
 
 1. **Line and column are 1-based** (first line = 1, first column = 1)

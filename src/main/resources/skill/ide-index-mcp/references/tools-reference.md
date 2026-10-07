@@ -750,6 +750,8 @@ Import one or more external Maven project directories as modules into the curren
 ### ide_open_workspace (disabled by default, Maven plugin only)
 Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence. Creates a temporary aggregator POM with relative module paths.
 
+**Use only when cross-project refactoring is needed across multiple Maven repos.** For a single repo, use `ide_open_project` with `autoLink: true` instead — it's simpler, uses less memory, and doesn't create workspace artifacts. **Never call `ide_open_workspace` separately for each repo** — that defeats the purpose (no cross-project intelligence) and creates a stale workspace directory per call.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | no* | Root directory to scan for Maven projects (each must contain `pom.xml`). Mutually exclusive with `modules`. |
