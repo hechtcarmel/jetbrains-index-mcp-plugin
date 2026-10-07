@@ -1244,12 +1244,21 @@ Imported 2 module(s):
 
 Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven project paths. Creates a temporary aggregator POM with relative module paths.
 
+**Use when:**
+- Several Maven repositories must see each other (cross-repository references, rename, move). Call it **once** with all of them.
+
+**Do not use:**
+- For a single repository: use [`ide_open_project`](#ide_open_project) with `autoLink: true`. A single Maven project is refused with a ready-to-use `ide_open_project` call.
+- Once per repository, or again with a different subset of the same repositories. Each distinct set opens its own window and leaves its own directory under the IDE's `ide-workspaces/` folder.
+
+If an open project already contains every requested Maven project as a module, it is reused and no new window or workspace directory is created. To target one repository of an open workspace, pass its directory as `project_path`.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | No* | Root directory to scan for Maven projects (each must contain a `pom.xml`). Mutually exclusive with `modules`. |
-| `modules` | array of strings | No* | Explicit list of absolute paths to Maven project directories. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `path` | string | No* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
+| `modules` | array of strings | No* | Absolute paths of the Maven project directories to combine, at least two. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
 | `timeoutSeconds` | integer | No | Timeout in seconds for opening and indexing (default: 600) |
 | `project_path` | string | No | Selects the IntelliJ project window when multiple are open |
 
@@ -1284,7 +1293,11 @@ Scan a root directory for Maven projects and open them all in one IntelliJ windo
 **Example Response:**
 
 ```
-Workspace opened with 3 Maven projects from /Users/dev/monorepo. IntelliJ is indexing in the background.
+Workspace open and ready with 3 modules (3 content roots resolved):
+  - /Users/dev/casehub/engine
+  - /Users/dev/casehub/platform
+  - /Users/dev/casehub/worker
+To target one of these repositories, pass its directory as project_path; do not open it again with ide_open_project or ide_open_workspace.
 ```
 
 ---
@@ -1940,6 +1953,8 @@ Requires at least one project to already be open (needed as the JSON-RPC context
 **Use when:**
 - Opening a project that is not currently open in the IDE
 - Ensuring a project is indexed before running code intelligence tools
+
+For a single repository pass `autoLink: true` when it builds with Maven or Gradle. To combine several Maven repositories in one window, call [`ide_open_workspace`](#ide_open_workspace) once with all of them instead. A repository that is already a module of an open workspace needs no opening: pass its directory as `project_path`.
 
 **Parameters:**
 

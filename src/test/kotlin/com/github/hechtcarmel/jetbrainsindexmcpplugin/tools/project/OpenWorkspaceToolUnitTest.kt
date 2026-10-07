@@ -31,7 +31,11 @@ class OpenWorkspaceToolUnitTest : TestCase() {
         assertEquals("array", modulesSchema?.get("type")?.jsonPrimitive?.content)
         val itemsSchema = modulesSchema?.get("items")?.jsonObject
         assertEquals("string", itemsSchema?.get("type")?.jsonPrimitive?.content)
-        assertEquals("1", modulesSchema?.get("minItems")?.jsonPrimitive?.content)
+        assertEquals(
+            "a workspace combines at least two projects; one belongs in ide_open_project (issue #436)",
+            "2",
+            modulesSchema?.get("minItems")?.jsonPrimitive?.content
+        )
     }
 
     fun testToolIsDisabledByDefault() {
@@ -47,6 +51,12 @@ class OpenWorkspaceToolUnitTest : TestCase() {
         assertTrue("Should mention path mode", description.contains("path"))
         assertTrue("Should mention modules mode", description.contains("modules"))
         assertTrue("Should mention mutually exclusive", description.contains("mutually exclusive"))
+    }
+
+    fun testDescriptionRoutesSingleRepositoryToOpenProject() {
+        val description = OpenWorkspaceTool().description
+        assertTrue("Should point single repositories at ide_open_project", description.contains("ide_open_project"))
+        assertTrue("Should warn against one call per repository", description.contains("never once per repository"))
     }
 
     fun testDescriptionMentionsCaching() {

@@ -37,6 +37,23 @@ object ProjectUtils {
         }
     }
 
+    /**
+     * Returns the open project whose module content roots include every path in [roots]
+     * (already canonical and normalized), or null when none does. When several qualify, the
+     * one with the fewest content roots — the closest fit — wins.
+     */
+    fun findOpenProjectContainingRoots(roots: Set<String>): Project? {
+        if (roots.isEmpty()) return null
+        return ProjectManager.getInstance().openProjects
+            .filter { !it.isDefault && !it.isDisposed }
+            .mapNotNull { open ->
+                val openRoots = getModuleContentRoots(open).mapTo(HashSet()) { canonicalNormalizedPath(it) }
+                if (openRoots.containsAll(roots)) open to openRoots.size else null
+            }
+            .minByOrNull { (_, rootCount) -> rootCount }
+            ?.first
+    }
+
     suspend fun awaitSmartMode(opened: Project): Boolean =
         suspendCancellableCoroutine { continuation ->
             ApplicationManager.getApplication().invokeLater({

@@ -8,14 +8,17 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.PathManager
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.intellij.openapi.vfs.LocalFileSystem
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.put
 import java.io.File
 import java.security.MessageDigest
 
@@ -27,20 +30,25 @@ class OpenWorkspaceTool : AbstractMcpTool() {
     override val name = "ide_open_workspace"
 
     override val description = """
-        Open multiple Maven projects as a single IntelliJ workspace with full cross-project
-        code intelligence. Two modes:
+        Open several Maven repositories together as ONE IntelliJ workspace window with
+        cross-repository code intelligence: ide_find_references, ide_refactor_rename and
+        other tools then work across all of them.
 
-        1. Directory scan: provide `path` to scan for immediate subdirectories containing pom.xml.
-        2. Explicit modules: provide `modules` array of absolute paths to specific Maven projects.
+        Call it ONCE with every repository you need: never once per repository, and not
+        again with a different subset of the same repositories. Each distinct set opens its
+        own window and leaves its own workspace directory behind, and no window sees the
+        repositories outside its set. For a single repository use ide_open_project (with
+        "autoLink": true for Maven/Gradle) instead.
 
-        The `path` and `modules` parameters are mutually exclusive.
+        Two modes; `path` and `modules` are mutually exclusive:
+        1. Directory scan: `path` combines every immediate subdirectory containing pom.xml.
+        2. Explicit modules: `modules` lists the absolute paths of the Maven projects to combine.
 
-        Generates a temporary Maven aggregator project and opens it in IntelliJ. The result
-        is a single project window where ide_find_references, ide_refactor_rename, and other
-        tools work across all modules.
-
-        Workspaces are cached: same directory or same module combination (in any order) reuses
-        the existing workspace without reimporting. Requires the Maven plugin.
+        If an open project already contains every requested Maven project as a module, it is
+        reused and no new window opens. Workspaces are cached: the same directory or the same
+        module combination (in any order) reuses the existing workspace without reimporting.
+        Once the workspace is open, target one repository by passing its directory as
+        project_path. Requires the Maven plugin.
 
         Examples:
         - {"path": "/Users/dev/casehub"}
@@ -48,12 +56,21 @@ class OpenWorkspaceTool : AbstractMcpTool() {
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
-        .stringProperty("path", "Absolute path to the root directory containing Maven project subdirectories. Mutually exclusive with 'modules'.")
-        .property("modules", kotlinx.serialization.json.buildJsonObject {
-            put("type", kotlinx.serialization.json.JsonPrimitive("array"))
-            put("description", kotlinx.serialization.json.JsonPrimitive("Array of absolute paths to Maven project directories. Mutually exclusive with 'path'. Same modules in any order reuse the cached workspace."))
-            put("items", kotlinx.serialization.json.buildJsonObject { put("type", kotlinx.serialization.json.JsonPrimitive("string")) })
-            put("minItems", kotlinx.serialization.json.JsonPrimitive(1))
+        .stringProperty(
+            "path",
+            "Absolute path of a directory whose immediate subdirectories are Maven projects; all of them " +
+                "are combined. Mutually exclusive with 'modules'."
+        )
+        .property("modules", buildJsonObject {
+            put("type", "array")
+            put(
+                "description",
+                "Absolute paths of the Maven project directories to combine. List every repository you need " +
+                    "in this one call (at least two). Mutually exclusive with 'path'. The same set in any " +
+                    "order reuses the cached workspace."
+            )
+            put("items", buildJsonObject { put("type", "string") })
+            put("minItems", MIN_WORKSPACE_PROJECTS)
         })
         .intProperty(
             ParamNames.TIMEOUT_SECONDS,
@@ -125,18 +142,31 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             workspaceHashKey = ProjectUtils.canonicalNormalizedPath(rootPath)
         }
 
-        val workspaceDir = try {
-            createWorkspace(workspaceHashKey, mavenProjects)
+        val workspaceDir = workspaceDirFor(workspaceHashKey)
+        var openedProject: Project? = ProjectUtils.findOpenProjectByPath(workspaceDir.absolutePath)
+        val alreadyOpen = openedProject != null
+        val expectedRoots = mavenProjects.map { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }.toSet()
+
+        // Issue #436: agents opened a workspace per repository, or per subset of the same
+        // repositories. Every such call cost another window indexing code an open window
+        // already covered, and another directory under ide-workspaces/ that is never cleaned up.
+        if (!alreadyOpen) {
+            ProjectUtils.findOpenProjectContainingRoots(expectedRoots)?.let { existing ->
+                return reuseOpenProject(existing, mavenProjects, timeoutSeconds)
+            }
+            if (mavenProjects.size < MIN_WORKSPACE_PROJECTS) {
+                return createErrorResult(singleProjectMessage(mavenProjects.single(), pathArg))
+            }
+        }
+
+        try {
+            writeAggregatorPom(workspaceDir, mavenProjects)
         } catch (e: Exception) {
             return createErrorResult(
                 "Cannot create workspace: ${e.message}. " +
                     "Both workspace and module paths must be on the same filesystem root."
             )
         }
-
-        var openedProject: Project? = ProjectUtils.findOpenProjectByPath(workspaceDir.absolutePath)
-        val alreadyOpen = openedProject != null
-        val expectedRoots = mavenProjects.map { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }.toSet()
 
         val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
             val opened = if (alreadyOpen) {
@@ -195,7 +225,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                 createSuccessResult(
                     "Workspace open and ready with ${mavenProjects.size} modules " +
                         "(${roots.size} content roots resolved):\n" +
-                        mavenProjects.joinToString("\n") { "  - ${it.name}" }
+                        moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
                 )
             }
             OpenOutcome.STALE_MODULES -> {
@@ -236,7 +266,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                     createSuccessResult(
                         "Workspace open with ${mavenProjects.size} modules but still indexing " +
                             "after ${timeoutSeconds}s. Check ide_index_status.\n" +
-                            mavenProjects.joinToString("\n") { "  - ${it.name}" }
+                            moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
                     )
                 } else {
                     createErrorResult(
@@ -248,9 +278,59 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
     }
 
-    private fun createWorkspace(hashKey: String, mavenProjects: List<File>): File {
-        val hash = hashPath(hashKey)
-        val workspaceDir = File(PathManager.getSystemPath(), "ide-workspaces/ide-workspace-$hash")
+    /**
+     * Reuses [existing], which already contains every requested Maven project as a module,
+     * instead of creating a workspace for them.
+     */
+    private suspend fun reuseOpenProject(
+        existing: Project,
+        mavenProjects: List<File>,
+        timeoutSeconds: Int
+    ): CallToolResult {
+        // true: smart mode; false: closed while waiting; null: still indexing at the deadline.
+        val smart = if (!DumbService.isDumb(existing)) {
+            true
+        } else {
+            withTimeoutOrNull(timeoutSeconds * 1000L) { ProjectUtils.awaitSmartMode(existing) }
+        }
+        if (smart == false) {
+            return createErrorResult("Project '${existing.name}' was closed while waiting for indexing.")
+        }
+        val status = if (smart == true) {
+            "It is ready."
+        } else {
+            "It is still indexing after ${timeoutSeconds}s. Check ide_index_status."
+        }
+        return createSuccessResult(
+            "Reused the open project '${existing.name}' (${existing.basePath}): it already contains all " +
+                "${mavenProjects.size} requested Maven project(s) as modules, so no new workspace window " +
+                "was opened. $status\n" +
+                moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
+        )
+    }
+
+    private fun singleProjectMessage(mavenProject: File, scannedRoot: String?): String {
+        val found = if (scannedRoot != null) {
+            "Only one Maven project was found under $scannedRoot: ${mavenProject.absolutePath}."
+        } else {
+            "Only one Maven project was given: ${mavenProject.absolutePath}."
+        }
+        val openProjectArguments = buildJsonObject {
+            put("path", mavenProject.absolutePath)
+            put("autoLink", true)
+        }
+        return "$found A workspace combines two or more Maven projects; for one project it only adds " +
+            "another window. Open it with ide_open_project $openProjectArguments instead. To work across " +
+            "several repositories, call ide_open_workspace once with all of them in 'modules'."
+    }
+
+    private fun moduleList(mavenProjects: List<File>): String =
+        mavenProjects.joinToString("\n") { "  - ${it.absolutePath}" }
+
+    private fun workspaceDirFor(hashKey: String): File =
+        File(PathManager.getSystemPath(), "ide-workspaces/ide-workspace-${hashPath(hashKey)}")
+
+    private fun writeAggregatorPom(workspaceDir: File, mavenProjects: List<File>) {
         workspaceDir.mkdirs()
 
         val workspacePath = workspaceDir.toPath()
@@ -258,16 +338,14 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             workspacePath.relativize(moduleDir.toPath()).toString()
         }
 
-        val pomContent = generateAggregatorPom(hash, moduleEntries)
+        val pomContent = generateAggregatorPom(workspaceDir.name, moduleEntries)
         val pomFile = File(workspaceDir, "pom.xml")
         if (!pomFile.exists() || pomFile.readText() != pomContent) {
             pomFile.writeText(pomContent)
         }
-
-        return workspaceDir
     }
 
-    private fun generateAggregatorPom(hash: String, modulePaths: List<String>): String {
+    private fun generateAggregatorPom(workspaceName: String, modulePaths: List<String>): String {
         val moduleEntries = modulePaths.joinToString("\n") { "    <module>${escapeXml(it)}</module>" }
         return """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -275,10 +353,10 @@ class OpenWorkspaceTool : AbstractMcpTool() {
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>workspace</groupId>
-  <artifactId>ide-workspace-$hash</artifactId>
+  <artifactId>$workspaceName</artifactId>
   <version>1.0</version>
   <packaging>pom</packaging>
-  <name>ide-workspace-$hash</name>
+  <name>$workspaceName</name>
   <modules>
 $moduleEntries
   </modules>
@@ -297,5 +375,12 @@ $moduleEntries
 
     companion object {
         private const val DEFAULT_TIMEOUT_SECONDS = 600
+
+        /** Fewer would only wrap one project in a second window: use ide_open_project for that. */
+        private const val MIN_WORKSPACE_PROJECTS = 2
+
+        private const val PROJECT_PATH_HINT =
+            "To target one of these repositories, pass its directory as project_path; " +
+                "do not open it again with ide_open_project or ide_open_workspace."
     }
 }

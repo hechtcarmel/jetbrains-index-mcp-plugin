@@ -88,6 +88,20 @@ If you created or modified files outside the IDE (via Write/Edit tools) and an I
 
 Omit `paths` to sync the entire project.
 
+## Opening Projects
+
+Every project or workspace you open is another IDE window that indexes its code and stays in memory, so pick the call by what you need and make it once. Both tools are disabled by default (see the routing rule above).
+
+| Situation | Call |
+|-----------|------|
+| One repository, Maven or Gradle | `ide_open_project` with `{"path": "/abs/repo", "autoLink": true}` |
+| One repository, anything else (TypeScript, Python, plain directory) | `ide_open_project` with `{"path": "/abs/repo"}` |
+| Several Maven repositories that must see each other (cross-repository references, rename, move) | **One** `ide_open_workspace` call listing **all** of them in `modules`, or their parent directory in `path` |
+| A repository that is already a module of an open workspace | Nothing to open: pass the repository directory as `project_path` |
+| A git worktree | `ide_open_project` with the worktree path (see below) |
+
+**Never call `ide_open_workspace` once per repository, or again with a different subset of the same repositories.** Each distinct set gets its own window and its own directory under the IDE's `ide-workspaces/` folder, and no window sees the repositories outside its set. `ide_open_workspace` refuses a single Maven project and points you to `ide_open_project`; if an open project already contains every requested repository as a module, it reuses that window instead of opening another. If you later need one more repository in a workspace, call `ide_open_workspace` once with the complete list, then close the old workspace with `ide_close_project`.
+
 ## Git Worktrees
 
 When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or any checkout outside the main `.idea` directory), **call `ide_open_project` with the worktree path before using any IDE tool** (it is disabled by default — see the note above about enabling it in settings). IntelliJ does NOT require `.idea` — it opens any directory, indexes it, and provides full code intelligence. Never skip IDE tools because a directory "has no `.idea`" — that is not a prerequisite.
@@ -170,6 +184,8 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 9. **Assuming regex is the default in `ide_search_text`**: Regex requires `"regex": true`; otherwise the tool does plain-text substring matching.
 
 10. **Using `ide_find_class` for methods/functions**: It searches classes only. Use `ide_search_text` for a quick word lookup.
+
+11. **Calling `ide_open_workspace` once per repository**: each call opens another window without cross-repository intelligence. Open one repository with `ide_open_project`; combine several Maven repositories with a single `ide_open_workspace` call that lists all of them. See [Opening Projects](#opening-projects).
 
 ## Lifecycle Management
 

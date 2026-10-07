@@ -42,6 +42,11 @@ class OpenProjectTool : AbstractMcpTool() {
         so subsequent MCP tool calls against the new project will succeed immediately.
         If the project is already open, returns successfully right away.
 
+        Use this for a single repository (with autoLink: true for Maven/Gradle). When several
+        Maven repositories must see each other (cross-repository references or refactoring),
+        call ide_open_workspace once with all of them instead. A repository that is already a
+        module of an open workspace needs no opening: pass its directory as project_path.
+
         This tool does not enroll the project in lifecycle management. Lifecycle enrollment
         happens automatically on the first real semantic tool call (find references,
         diagnostics, refactoring, etc.) after the project is open — not on open/close itself.
