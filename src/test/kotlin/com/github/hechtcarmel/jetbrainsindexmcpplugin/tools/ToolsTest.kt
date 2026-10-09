@@ -859,10 +859,10 @@ class ToolsTest : McpPlatformTestCase() {
     }
 
     fun testSearchTextToolFilePatternFiltersExactSearchResults() = runBlocking {
-        myFixture.addFileToProject("mappers/UserMapper.xml", "<mapper><select id=\"a\">select needle from sys_user</select></mapper>")
-        myFixture.addFileToProject("web/pagination.js", "const q = 'needle';")
-        myFixture.addFileToProject("tmp/opac_phase2_sql-mybatis.json", "{\"query\":\"needle\"}")
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
+        registerSourceRoot("search-mask-src")
+        writeProjectFile("search-mask-src/mappers/UserMapper.xml", "<mapper><select id=\"a\">select needle from sys_user</select></mapper>")
+        writeProjectFile("search-mask-src/web/pagination.js", "const q = 'needle';")
+        writeProjectFile("search-mask-src/tmp/opac_phase2_sql-mybatis.json", "{\"query\":\"needle\"}")
 
         val tool = SearchTextTool()
         val result = tool.execute(project, buildJsonObject {
@@ -875,12 +875,13 @@ class ToolsTest : McpPlatformTestCase() {
         val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
 
-        assertEquals(listOf("mappers/UserMapper.xml"), files)
+        assertEquals(listOf("search-mask-src/mappers/UserMapper.xml"), files)
     }
 
     fun testSearchTextToolRegexUsesFindInFilesOutsideReadAction() = runBlocking {
-        myFixture.addFileToProject(
-            "src/CommandRunner.java",
+        registerSourceRoot("search-regex-src")
+        writeProjectFile(
+            "search-regex-src/CommandRunner.java",
             """
             class CommandRunner {
                 void run() throws Exception {
@@ -889,7 +890,6 @@ class ToolsTest : McpPlatformTestCase() {
             }
             """.trimIndent()
         )
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
 
         val tool = SearchTextTool()
         val result = tool.execute(project, buildJsonObject {
@@ -904,7 +904,7 @@ class ToolsTest : McpPlatformTestCase() {
         val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
 
-        assertEquals(listOf("src/CommandRunner.java"), files)
+        assertEquals(listOf("search-regex-src/CommandRunner.java"), files)
     }
 
     fun testSearchTextToolFindsSubstringOfUnderscoreSeparatedToken() = runBlocking {

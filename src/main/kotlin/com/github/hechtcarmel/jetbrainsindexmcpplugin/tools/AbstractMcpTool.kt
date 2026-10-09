@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.SymbolIdRegistry
 import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
@@ -580,7 +581,7 @@ abstract class AbstractMcpTool : McpTool {
             return findOrRefresh(canonical)
         }
 
-        // basePath match wins — this is the path form every tool returns
+        // basePath match wins — this is the path form every tool returns for files under it
         val basePath = project.basePath
         if (basePath != null) {
             val canonical = canonicalPathOrNull(File(basePath, relativePath))
@@ -591,7 +592,8 @@ abstract class AbstractMcpTool : McpTool {
             }
         }
 
-        // Content-root fallbacks: collect all matches to detect ambiguity
+        // Content-root fallbacks: collect all matches to detect ambiguity. Tools report files
+        // outside basePath by absolute path, so this serves relative paths a caller wrote itself.
         val matches = mutableListOf<VirtualFile>()
         for (rootPath in ProjectUtils.getModuleContentRoots(project)) {
             if (rootPath != basePath) {
@@ -608,16 +610,9 @@ abstract class AbstractMcpTool : McpTool {
 
         if (matches.size == 1) return matches[0]
         if (matches.size > 1) {
-            // Under basePath the project-relative form is unique and resolves back to this file.
-            // Outside it, getRelativePath strips the matching content root, so every match would
-            // print as the same ambiguous path; list those by absolute path instead.
-            val paths = matches.joinToString(", ") { file ->
-                if (basePath != null && file.path.startsWith("$basePath/")) {
-                    ProjectUtils.getRelativePath(project, file)
-                } else {
-                    file.path
-                }
-            }
+            // The reported form is unique per file (project-relative under basePath, absolute
+            // outside it) and resolves back to that file.
+            val paths = matches.joinToString(", ") { ProjectUtils.getRelativePath(project, it) }
             throw AmbiguousFileException(
                 "Ambiguous file path '$relativePath' matches ${matches.size} files: $paths. " +
                     "Use an absolute path or a longer relative path to disambiguate."
@@ -787,13 +782,13 @@ abstract class AbstractMcpTool : McpTool {
      * loudly instead of looking like "no matches" (issue #328).
      *
      * Existing is not sufficient, because [resolveFile] searches module content roots while
-     * matching relativizes against the project base path first (both mirror
-     * [ProjectUtils.getRelativePath], which produces the paths the tools return). In a
-     * `/repo` project owning a `/repo/moduleA` content root, a glob rooted at `src/main`
-     * resolves via that content root, yet every file under it is named
-     * `moduleA/src/main/...` for matching — so the glob would validate and then match
-     * nothing. Comparing the resolved directory's relative path against the prefix catches
-     * that and names the path that does work.
+     * matching uses the name [ProjectUtils.getRelativePath] reports. In a `/repo` project
+     * owning a `/repo/moduleA` content root, a glob rooted at `src/main` resolves via that
+     * content root, yet every file under it is named `moduleA/src/main/...` for matching — so
+     * the glob would validate and then match nothing. The same holds for a content root
+     * outside the project directory, whose files are named by absolute path. Comparing the
+     * resolved directory's reported name against the prefix catches both and names the path
+     * that does work.
      *
      * Exclude globs are not existence-checked: defensively excluding a directory that does
      * not exist (e.g. `!build`) is legitimate and harmless.
@@ -811,10 +806,13 @@ abstract class AbstractMcpTool : McpTool {
         val matcher = PathGlobMatcher.parse(entries).getOrElse { return Result.failure(it) }
         val unresolved = matcher.includes.mapNotNull { glob ->
             if (glob.literalPrefix.isEmpty()) return@mapNotNull null
-            val dir = resolveFile(project, glob.literalPrefix)
+            // A rooted glob names an absolute directory (a workspace root outside the project
+            // directory), or is a project-relative glob written with a leading '/'.
+            val dir = (if (glob.rooted) resolveFile(project, "/${glob.literalPrefix}") else null)
+                ?: resolveFile(project, glob.literalPrefix)
                 ?: return@mapNotNull "'${glob.original}' ('${glob.literalPrefix}' does not exist in the project)"
             val addressableAs = ProjectUtils.getRelativePath(project, dir)
-            if (addressableAs == glob.literalPrefix) null
+            if (PathGlobScope.matchingForm(addressableAs) == glob.literalPrefix) null
             else "'${glob.original}' ('${glob.literalPrefix}' resolves to '$addressableAs' in this project — " +
                 "globs match that name, so write the glob against it)"
         }
@@ -822,7 +820,8 @@ abstract class AbstractMcpTool : McpTool {
             return unresolved.joinToString(
                 prefix = "Unresolvable 'paths' glob(s): ",
                 separator = "; ",
-                postfix = ". Globs are project-relative with '/' separators; '*' matches within a path segment, " +
+                postfix = ". Globs are project-relative with '/' separators (files outside the project directory " +
+                    "are matched by absolute path, as results report them); '*' matches within a path segment, " +
                     "'**' crosses directories, and a leading '!' excludes."
             ).toArgumentFailure()
         }

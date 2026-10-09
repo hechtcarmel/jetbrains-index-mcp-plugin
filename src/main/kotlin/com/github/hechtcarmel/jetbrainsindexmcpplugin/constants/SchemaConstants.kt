@@ -33,9 +33,9 @@ object SchemaConstants {
     const val DESC_MAX_RESULTS = "Maximum number of results to return"
     const val DESC_SYMBOL = "Fully qualified symbol reference. Format: 'com.example.ClassName' or 'com.example.ClassName#memberName'. Omit generics parameters."
     const val DESC_LANGUAGE = "Language of the symbol. Required when using 'symbol' parameter."
-    const val DESC_PATHS = "Project-relative globs, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, " +
-        "'**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract " +
-        "excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar " +
-        "hits without a project-relative path; exclusion-only keeps them. Include globs must have an existing literal " +
-        "directory prefix with the exact relative spelling."
+    const val DESC_PATHS = "Globs over result paths (project-relative; absolute outside the project), e.g. " +
+        "[\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories " +
+        "include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all " +
+        "results. Combines with scope/filePattern. Includes omit library/jar hits; exclusion-only keeps them. Include " +
+        "globs need an existing literal prefix spelled as results show it."
 }

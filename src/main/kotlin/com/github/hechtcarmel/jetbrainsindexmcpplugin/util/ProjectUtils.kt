@@ -11,6 +11,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -101,29 +102,31 @@ object ProjectUtils {
         }
     }
 
-    fun getRelativePath(project: Project, virtualFile: VirtualFile): String {
-        val basePath = project.basePath
-        val filePath = virtualFile.path
-        if (basePath != null && (filePath == basePath || filePath.startsWith("$basePath/"))) {
-            return filePath.removePrefix(basePath).removePrefix("/")
-        }
-        val contentRootPath = findMatchingContentRoot(project, filePath)
-        if (contentRootPath != null) {
-            return filePath.removePrefix(contentRootPath).removePrefix("/")
-        }
-        return filePath
-    }
+    /**
+     * The path tools report for [virtualFile]: relative to [Project.basePath] when the file is
+     * under it, otherwise the file's absolute path. `AbstractMcpTool.resolveFile` accepts both
+     * forms back.
+     *
+     * Module content roots outside the base path are deliberately not stripped (issue #441).
+     * They are what `ide_open_workspace` produces (its aggregator project lives in the IDE
+     * system directory, so every repository is outside the base path), and what
+     * `ide_import_modules`, flat Maven layouts and Gradle included builds produce. Each Maven
+     * module is its own content root, so stripping reduced every module's sources to the same
+     * `src/main/...`: a path that named no file in particular, that the agent's own file tools
+     * could not open, and that collided wherever results are deduplicated by path.
+     */
+    fun getRelativePath(project: Project, virtualFile: VirtualFile): String =
+        getRelativePath(project, virtualFile.path)
 
+    /** [getRelativePath] for a path that has no [VirtualFile], such as one parsed from build output. */
     fun getRelativePath(project: Project, absolutePath: String): String {
+        // VirtualFile paths and Project.basePath use '/' on every OS; Windows build tools report '\'.
+        val path = if (SystemInfo.isWindows) absolutePath.replace('\\', '/') else absolutePath
         val basePath = project.basePath
-        if (basePath != null && (absolutePath == basePath || absolutePath.startsWith("$basePath/"))) {
-            return absolutePath.removePrefix(basePath).removePrefix("/")
+        if (basePath != null && (path == basePath || path.startsWith("$basePath/"))) {
+            return path.removePrefix(basePath).removePrefix("/")
         }
-        val contentRootPath = findMatchingContentRoot(project, absolutePath)
-        if (contentRootPath != null) {
-            return absolutePath.removePrefix(contentRootPath).removePrefix("/")
-        }
-        return absolutePath
+        return path
     }
 
     fun resolveProjectFile(project: Project, relativePath: String): VirtualFile? {

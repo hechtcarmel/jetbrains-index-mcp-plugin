@@ -14,6 +14,10 @@ import com.intellij.psi.search.GlobalSearchScope
  * built-in MCP server (issue #328):
  * - patterns are project-relative and use `/` as separator (matched against the same
  *   relative paths the tools return);
+ * - files outside the project directory (workspace content roots) are reported, and so
+ *   matched, by absolute path: `/ws/svc-a/src` names that directory. A leading `/` is
+ *   dropped from patterns and paths alike (see [PathGlobScope.matchingForm]), and [rooted]
+ *   records that it was there so the literal prefix can be resolved as absolute;
  * - `*` matches within a single path segment, `?` matches one non-separator character;
  * - a double star crosses directories, matching zero or more whole segments;
  * - a pattern also matches everything beneath a directory it names, so a plain
@@ -31,6 +35,7 @@ class PathGlob private constructor(
     val original: String,
     val pattern: String,
     val literalPrefix: String,
+    val rooted: Boolean,
     private val regex: Regex,
 ) {
 
@@ -39,7 +44,7 @@ class PathGlob private constructor(
     companion object {
         private const val REGEX_METACHARS = "\\^$.|+()[]{}"
 
-        fun compile(original: String, pattern: String): PathGlob {
+        fun compile(original: String, pattern: String, rooted: Boolean = false): PathGlob {
             val wildcardIndex = pattern.indexOfFirst { it == '*' || it == '?' }
             val literalPrefix = if (wildcardIndex < 0) {
                 pattern
@@ -55,7 +60,7 @@ class PathGlob private constructor(
             // top-level alternation has to be parenthesised, or "^" would bind to the first
             // branch alone.
             val regex = Regex("^${globToRegex(pattern)}(?:/.*)?$")
-            return PathGlob(original, pattern, literalPrefix, regex)
+            return PathGlob(original, pattern, literalPrefix, rooted, regex)
         }
 
         private fun globToRegex(glob: String): String {
@@ -148,7 +153,7 @@ class PathGlobMatcher private constructor(
                     return "'paths' entries must be non-empty globs.".toArgumentFailure()
                 }
                 val negated = entry.startsWith("!")
-                val pattern = entry
+                val separatorsNormalized = entry
                     .removePrefix("!")
                     .trim()
                     // Windows-style separators are normalized rather than rejected. Left as-is
@@ -159,13 +164,18 @@ class PathGlobMatcher private constructor(
                     // VirtualFile.path always uses '/', even on Windows, so a backslash here is
                     // never a path the caller could have meant literally.
                     .replace('\\', '/')
+                val pattern = separatorsNormalized
                     .removePrefix("./")
                     .removePrefix("/")
                     .removeSuffix("/")
                 if (pattern.isEmpty()) {
                     return "Invalid 'paths' entry '$raw': nothing after '!'.".toArgumentFailure()
                 }
-                val compiled = PathGlob.compile(original = raw, pattern = pattern)
+                val compiled = PathGlob.compile(
+                    original = raw,
+                    pattern = pattern,
+                    rooted = separatorsNormalized.startsWith("/"),
+                )
                 if (negated) excludes.add(compiled) else includes.add(compiled)
             }
             return Result.success(PathGlobMatcher(includes, excludes))
@@ -182,10 +192,11 @@ class PathGlobMatcher private constructor(
  * for filtered files, and it composes with whatever scope the tool already computed —
  * `scope` enums, generated-source exclusion, and `filePattern` all still apply.
  *
- * Relative paths are computed the same way [ProjectUtils.getRelativePath] computes the
- * paths tools return: the project base path wins, then the longest matching module
- * content root (workspace sub-projects). The roots are snapshotted at construction so
- * [contains] stays a cheap string match on the index thread.
+ * Each file is matched under the path tools report for it ([ProjectUtils.getRelativePath]),
+ * in [matchingForm]: relative to the project base path when under it, otherwise absolute
+ * (workspace content roots outside the base path). Files under no project root (library/jar
+ * entries) have no such name. The roots are snapshotted at construction so [contains] stays
+ * a cheap string match on the index thread.
  */
 class PathGlobScope(
     baseScope: GlobalSearchScope,
@@ -203,16 +214,23 @@ class PathGlobScope(
         if (basePath != null && (path == basePath || path.startsWith("$basePath/"))) {
             return path.removePrefix(basePath).removePrefix("/")
         }
-        var best: String? = null
-        for (root in contentRoots) {
-            if ((path == root || path.startsWith("$root/")) && (best == null || root.length > best.length)) {
-                best = root
-            }
-        }
-        return best?.let { path.removePrefix(it).removePrefix("/") }
+        if (contentRoots.none { root -> path == root || path.startsWith("$root/") }) return null
+        return matchingForm(path)
     }
 
     companion object {
+        /**
+         * The form in which a path reported by [ProjectUtils.getRelativePath] is matched:
+         * that path without a leading `/`.
+         *
+         * Only absolute paths (files outside the project directory) carry one, and
+         * [PathGlobMatcher.parse] strips it from patterns the same way. Keeping it would break
+         * every leading-double-star glob for those files: the double star matches whole
+         * non-empty segments, and a leading `/` begins with an empty one, so an exclude such
+         * as "everything under any generated directory" would silently stop excluding.
+         */
+        fun matchingForm(reportedPath: String): String = reportedPath.removePrefix("/")
+
         /** Wrap [scope] so only paths matching [matcher] remain; `null` matcher = no filter. */
         fun wrap(project: Project, scope: GlobalSearchScope, matcher: PathGlobMatcher?): GlobalSearchScope {
             if (matcher == null) return scope
