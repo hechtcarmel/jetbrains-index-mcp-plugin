@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.20.2] - 2026-10-09
+
 ### Fixed
 
 - **Files in workspace repositories and other modules outside the project directory are reported by absolute path** ([#441](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/441)) — in `ide_open_workspace` windows, after `ide_import_modules`, and in flat Maven layouts, every module's files came back as the same ambiguous `src/main/...` path that agents could not open, and searches dropped hits at the same position in same-named files. To restrict `paths` globs to one such repository, write them as absolute paths (e.g. `/home/me/ws/svc-a/src/**`); a relative glob naming a directory outside the project now fails with the absolute spelling to use.
@@ -1382,7 +1384,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...HEAD
+[5.20.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.20.2
 [5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0
