@@ -330,7 +330,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default: true** — keeps valid runtime references from generated DI factories, MapStruct mappers, gRPC stubs, and serializers. Set `false` to drop generated call sites when they dominate results. |
-| `paths` | array | No | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero results. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+| `paths` | array | No | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero results. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. Files outside the project directory (repositories in an `ide_open_workspace` window, imported modules) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
 | `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
@@ -490,7 +490,7 @@ Finds the definition/declaration location of a symbol at a given source location
 }
 ```
 
-**Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note:** Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ---
 
@@ -648,7 +648,7 @@ Searches for classes and interfaces by name using the IDE's class index.
 }
 ```
 
-**Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note:** Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ---
 
@@ -704,7 +704,7 @@ Searches for files by name using the IDE's file index.
 }
 ```
 
-**Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note:** Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ---
 
@@ -727,7 +727,7 @@ Searches for text using IntelliJ's Find in Files engine, matching the IDE's own 
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
 | `wholeWord` | boolean | No | Match whole words only (default: false — substring match) |
 | `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
-| `paths` | array | No | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+| `paths` | array | No | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. Files outside the project directory (repositories in an `ide_open_workspace` window, imported modules) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
@@ -1709,7 +1709,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 }
 ```
 
-**Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note:** Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 **Kind Values:**
 - `CLASS` - Concrete class
@@ -2335,7 +2335,7 @@ When `replacePattern` is omitted, the tool performs search-only and returns matc
 | `replacePattern` | string | No | Replacement pattern. If omitted, search-only mode |
 | `filePattern` | string | No | IntelliJ file mask to filter files (e.g., `"*.java"`, `"*.kt"`). Default: `"*.java"` |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
-| `paths` | array | No | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope` and `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+| `paths` | array | No | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope` and `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. Files outside the project directory (repositories in an `ide_open_workspace` window, imported modules) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
 
 **Example Request (search-only):**
 

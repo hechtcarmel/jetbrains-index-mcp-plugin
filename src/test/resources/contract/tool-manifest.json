@@ -1323,7 +1323,7 @@ schema:
       },
       "paths":
       {
-        "description": "Project-relative globs, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits without a project-relative path; exclusion-only keeps them. Include globs must have an existing literal directory prefix with the exact relative spelling.",
+        "description": "Globs over result paths (project-relative; absolute outside the project), e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits; exclusion-only keeps them. Include globs need an existing literal prefix spelled as results show it.",
         "items":
         {
           "type": "string"
@@ -3111,7 +3111,7 @@ schema:
       },
       "paths":
       {
-        "description": "Project-relative globs, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits without a project-relative path; exclusion-only keeps them. Include globs must have an existing literal directory prefix with the exact relative spelling.",
+        "description": "Globs over result paths (project-relative; absolute outside the project), e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits; exclusion-only keeps them. Include globs need an existing literal prefix spelled as results show it.",
         "items":
         {
           "type": "string"
@@ -3342,7 +3342,7 @@ schema:
       },
       "paths":
       {
-        "description": "Project-relative globs, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits without a project-relative path; exclusion-only keeps them. Include globs must have an existing literal directory prefix with the exact relative spelling.",
+        "description": "Globs over result paths (project-relative; absolute outside the project), e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits; exclusion-only keeps them. Include globs need an existing literal prefix spelled as results show it.",
         "items":
         {
           "type": "string"

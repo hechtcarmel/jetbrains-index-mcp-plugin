@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Files in workspace repositories and modules outside the project directory are reported by absolute path** ([#441](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/441)) — in a window opened with `ide_open_workspace`, after `ide_import_modules`, and in flat Maven layouts or Gradle included builds, every tool reported these files relative to their own module, so each Maven module's sources came back as the same `src/main/...` path. Agents could not tell which module a file belonged to or open it with their own file tools, and results at the same position in same-named files were merged into one (`ide_find_references`, `ide_search_text`, `ide_find_class` and other searches dropped hits). Such files are now reported by absolute path, which every tool accepts back; files under the project directory keep their project-relative paths. In `paths` globs, name those files the same way: `/abs/path/to/repo/src` restricts results to one repository, `**` globs match as before, and a relative glob such as `src/main/**` that names a directory outside the project directory now fails with the absolute spelling to use. On Windows, build and test output paths are now normalized to `/` and reported relative to the project like everything else.
+
 ## [5.20.1] - 2026-10-07
 
 ### Fixed

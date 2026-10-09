@@ -76,7 +76,7 @@ Find all usages of a symbol (semantic, not text search).
 | `symbol` | string | conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default true** — keeps valid runtime references (Dagger/MapStruct/gRPC/serializers). Set false to drop generated call sites when they dominate results on injected symbols. |
-| `paths` | array | no | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `scope`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero results. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
+| `paths` | array | no | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `scope`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero results. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/`. Files outside the project directory (workspace repositories) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
 | `maxResults` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -168,7 +168,7 @@ Search for classes/interfaces by name using IDE's class index. Equivalent to Ctr
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ classes: [{symbolId, name, qualifiedName, file, line, kind, language}], totalCount, query }`
-**Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 **Matching**: CamelCase (`USvc` -> `UserService`), substring, wildcard (`User*Impl`).
 
 ### ide_find_file
@@ -185,7 +185,7 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ files: [{name, path, directory}], totalCount, query }`
-**Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_search_text
 Search for text using IntelliJ Find in Files. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching.
@@ -198,7 +198,7 @@ Search for text using IntelliJ Find in Files. Plain-text queries do substring ma
 | `caseSensitive` | boolean | no | Default true |
 | `wholeWord` | boolean | no | Match whole words only. Default false (substring match) |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
-| `paths` | array | no | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `filePattern`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
+| `paths` | array | no | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `filePattern`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/`. Files outside the project directory (workspace repositories) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -246,7 +246,7 @@ Search for any code symbol (classes, methods, fields, functions) by name.
 
 **Returns**: `{ symbols: [{symbolId, name, qualifiedName, file, line, kind, language}], totalCount, query }`
 **Languages**: Java, Kotlin, Python, JS/TS, Go, PHP, Rust, plus other IDE-supplied symbol contributors where available.
-**Path note**: Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+**Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_find_super_methods
 Find parent methods that a given method overrides or implements.
@@ -523,7 +523,7 @@ Pattern-based code search and transformation using IntelliJ's Structural Search 
 | `replacePattern` | string | no | Replacement pattern. Omit for search-only |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.java`, `*.kt` |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
-| `paths` | array | no | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. In replace mode only files inside the globs are rewritten. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
+| `paths` | array | no | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. In replace mode only files inside the globs are rewritten. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/`. Files outside the project directory (workspace repositories) are matched by absolute path, as results report them: `/home/me/ws/svc-a/src/**` restricts to one repository. |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ matchCount, replacedCount, matches: [{ file, line, matchedText }] }`

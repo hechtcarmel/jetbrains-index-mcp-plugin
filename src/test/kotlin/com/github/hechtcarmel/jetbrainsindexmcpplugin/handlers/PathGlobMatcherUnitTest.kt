@@ -185,4 +185,60 @@ class PathGlobMatcherUnitTest : TestCase() {
         assertTrue(PathGlobMatcher.parse(listOf("!")).isFailure)
         assertTrue(PathGlobMatcher.parse(listOf("src/**")).isSuccess)
     }
+
+    /**
+     * `rooted` is what lets `AbstractMcpTool.resolvePathGlobMatcher` resolve an absolute glob's
+     * literal prefix as an absolute directory (a workspace root outside the project directory,
+     * issue #441). The pattern itself is the same either way.
+     */
+    fun testLeadingSlashIsRecordedAsRooted() {
+        assertTrue(matcherOf("/ws/svc-a/src").includes.single().rooted)
+        assertTrue("negated entries record it too", matcherOf("!/ws/svc-a/gen").excludes.single().rooted)
+        assertTrue("a backslash root is a root", matcherOf("\\ws\\svc-a\\src").includes.single().rooted)
+        assertFalse(matcherOf("src/main").includes.single().rooted)
+        assertFalse("'./' is explicitly relative", matcherOf("./src/main").includes.single().rooted)
+        assertFalse("a Windows drive path is absolute without a leading '/'", matcherOf("C:/ws/src").includes.single().rooted)
+        assertEquals("ws/svc-a/src", matcherOf("/ws/svc-a/src").includes.single().pattern)
+    }
+
+    /**
+     * Files outside the project directory are reported by absolute path and matched in
+     * [PathGlobScope.matchingForm]; an absolute glob must select exactly one such root.
+     */
+    fun testAbsoluteGlobMatchesOnlyItsOwnRootInMatchingForm() {
+        fun matchable(path: String) = PathGlobScope.matchingForm(path)
+        val matcher = matcherOf("/ws/svc-a/src/**")
+        assertTrue(matcher.matches(matchable("/ws/svc-a/src/main/java/A.java")))
+        assertFalse(
+            "a sibling root with the same layout must not match",
+            matcher.matches(matchable("/ws/svc-b/src/main/java/A.java"))
+        )
+        assertFalse(
+            "an absolute glob must not match a project-relative path of the same shape",
+            matcher.matches("src/main/java/A.java")
+        )
+    }
+
+    /**
+     * The leading `/` is exactly what [PathGlobScope.matchingForm] exists to drop: a double
+     * star matches whole non-empty segments, so against the raw absolute path a
+     * leading-double-star glob matches nothing and an exclude silently stops excluding.
+     */
+    fun testLeadingDoubleStarGlobsReachAbsolutePathsOnlyInMatchingForm() {
+        val absolute = "/ws/svc-a/src/generated/Gen.java"
+        assertFalse("precondition: the raw absolute path defeats the glob", matcherOf("**/generated/**").matches(absolute))
+
+        assertTrue(matcherOf("**/generated/**").matches(PathGlobScope.matchingForm(absolute)))
+        assertFalse(
+            "the exclude must drop the generated file outside the project directory",
+            matcherOf("!**/generated/**").matches(PathGlobScope.matchingForm(absolute))
+        )
+        assertTrue(matcherOf("!**/generated/**").matches(PathGlobScope.matchingForm("/ws/svc-a/src/Main.java")))
+    }
+
+    fun testMatchingFormLeavesProjectRelativeAndDrivePathsAlone() {
+        assertEquals("src/main/A.java", PathGlobScope.matchingForm("src/main/A.java"))
+        assertEquals("C:/ws/svc-a/A.java", PathGlobScope.matchingForm("C:/ws/svc-a/A.java"))
+        assertEquals("ws/svc-a/A.java", PathGlobScope.matchingForm("/ws/svc-a/A.java"))
+    }
 }
