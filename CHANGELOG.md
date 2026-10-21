@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_open_workspace` now accepts non-Maven directories in `modules`** — directories without `pom.xml` (TypeScript, plain directories) are registered as WEB_MODULE content roots with default excludes (`node_modules`, `dist`, `.next`, `build`, `.gradle`), enabling cross-project code intelligence between Maven and non-Maven repos in the same workspace window. At least one Maven project is still required.
+
 ## [5.20.2] - 2026-10-09
 
 ### Fixed
