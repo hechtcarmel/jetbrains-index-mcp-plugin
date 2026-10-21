@@ -1242,7 +1242,7 @@ Imported 2 module(s):
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 > **Requires**: Maven plugin
 
-Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven project paths. Creates a temporary aggregator POM with relative module paths.
+Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of directories — Maven projects (with `pom.xml`) are imported as modules, non-Maven directories (TypeScript, plain) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`, `build`, `.gradle`). At least one Maven project is required. Creates a temporary aggregator POM with relative module paths.
 
 **Use when:**
 - Several Maven repositories must see each other (cross-repository references, rename, move). Call it **once** with all of them.
@@ -1258,7 +1258,7 @@ If an open project already contains every requested Maven project as a module, i
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | No* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
-| `modules` | array of strings | No* | Absolute paths of the Maven project directories to combine, at least two. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `modules` | array of strings | No* | Absolute paths of directories to combine, at least two. Maven directories (with `pom.xml`) are imported as modules; non-Maven directories (TypeScript, plain) are registered as content roots. At least one Maven project required. Mutually exclusive with `path`. Uses SHA-based caching. |
 | `timeoutSeconds` | integer | No | Timeout in seconds for opening and indexing (default: 600) |
 | `project_path` | string | No | Selects the IntelliJ project window when multiple are open |
 

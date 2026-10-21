@@ -759,14 +759,14 @@ Import one or more external Maven project directories as modules into the curren
 **Returns**: text summary of imported, skipped, and failed module paths.
 
 ### ide_open_workspace (disabled by default, Maven plugin only)
-Open several Maven repositories together in one IntelliJ window with cross-repository code intelligence: scan a root directory for Maven projects, or provide an explicit list. Creates a temporary aggregator POM with relative module paths. Call it once with every repository you need; for a single repository use `ide_open_project` instead.
+Open several repositories together in one IntelliJ window with cross-repository code intelligence: scan a root directory for Maven projects, or provide an explicit list of directories (Maven and non-Maven). Maven directories are imported as modules; non-Maven directories (TypeScript, plain) are registered as content roots with default excludes. At least one Maven project is required. Creates a temporary aggregator POM. Call it once with every repository you need; for a single repository use `ide_open_project` instead.
 
 A single Maven project (one `modules` entry, or a `path` scan that finds one) is refused with a ready-to-use `ide_open_project` call. If an open project already contains every requested Maven project as a module, that project is reused and no new window or workspace directory is created; this check comes first, so a single repository that is already open is reused rather than refused.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | no* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
-| `modules` | string[] | no* | Absolute paths of the Maven project directories to combine, at least two. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `modules` | string[] | no* | Absolute paths of directories to combine, at least two. Maven dirs (with `pom.xml`) are imported as modules; non-Maven dirs are registered as content roots. At least one Maven project required. Mutually exclusive with `path`. Uses SHA-based caching. |
 | `timeoutSeconds` | integer | no | Timeout in seconds for opening and indexing (default 600) |
 | `project_path` | string | no | Project root path |
 
