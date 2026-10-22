@@ -758,6 +758,17 @@ Import one or more external Maven project directories as modules into the curren
 
 **Returns**: text summary of imported, skipped, and failed module paths.
 
+### ide_rename_module (disabled by default)
+Rename a Maven module atomically: directory, artifactId, parent pom `<module>` entry, and `<dependency>` references across all project pom.xml files.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `modulePath` | string | yes | Absolute path to the Maven module directory to rename |
+| `newName` | string | yes | New directory and artifactId name |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ oldPath, newPath, oldArtifactId, newArtifactId, groupId, parentPomUpdated, dependencyUpdates }`
+
 ### ide_open_workspace (disabled by default, Maven plugin only)
 Open several Maven repositories together in one IntelliJ window with cross-repository code intelligence: scan a root directory for Maven projects, or provide an explicit list. Creates a temporary aggregator POM with relative module paths. Call it once with every repository you need; for a single repository use `ide_open_project` instead.
 

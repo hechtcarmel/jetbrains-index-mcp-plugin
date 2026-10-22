@@ -589,6 +589,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             ToolNames.RELEASE_ALL_PROJECTS,
             ToolNames.RELEASE_PROJECT,
             ToolNames.RELOAD_PROJECT,
+            ToolNames.RENAME_MODULE,
             ToolNames.SET_ALL_PROJECT_MODES,
             ToolNames.SET_PROJECT_MODE
         )
