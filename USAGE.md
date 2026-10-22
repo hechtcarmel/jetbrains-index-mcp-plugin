@@ -1202,6 +1202,37 @@ Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. U
 
 ---
 
+### ide_rename_module
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
+
+Rename a Maven module atomically. Updates the directory name, artifactId in the module's own pom.xml, the `<module>` entry in the parent pom.xml, and all `<dependency>` references across the project's pom.xml files that match the module's groupId + old artifactId.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `modulePath` | string | Yes | Absolute path to the Maven module directory to rename |
+| `newName` | string | Yes | New directory and artifactId name |
+| `project_path` | string | No | Required when multiple projects are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_rename_module",
+    "arguments": {
+      "modulePath": "/Users/dev/project/old-module",
+      "newName": "new-module"
+    }
+  }
+}
+```
+
+---
+
 ### ide_import_modules
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools

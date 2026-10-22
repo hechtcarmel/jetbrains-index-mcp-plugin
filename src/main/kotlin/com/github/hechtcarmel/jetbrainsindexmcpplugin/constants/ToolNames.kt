@@ -29,6 +29,7 @@ object ToolNames {
     const val LINK_BUILD_SYSTEM = "ide_link_build_system"
     const val RELOAD_PROJECT = "ide_reload_project"
     const val LIST_TESTS = "ide_list_tests"
+    const val RENAME_MODULE = "ide_rename_module"
     const val RUN_TESTS = "ide_run_tests"
 
     // Refactoring tools
@@ -120,6 +121,7 @@ object ToolNames {
         RELEASE_ALL_PROJECTS,
         RELEASE_PROJECT,
         RELOAD_PROJECT,
+        RENAME_MODULE,
         REPLACE_MEMBER,
         REPLACE_TEXT_IN_FILE,
         RESTART_IDE,

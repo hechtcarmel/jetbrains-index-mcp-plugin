@@ -11,7 +11,7 @@ import kotlinx.serialization.json.put
 class ToolSchemaBudgetUnitTest : TestCase() {
     fun testPublishedToolDescriptionsAndSchemasFitTheContextBudget() {
         val tools = ToolRegistry().apply { registerBuiltInTools() }.getAllTools()
-        assertTrue("The budget must cover the actual registry", tools.size >= 51)
+        assertTrue("The budget must cover the actual registry", tools.size >= 52)
         val payload = buildJsonArray {
             tools.forEach { tool ->
                 add(buildJsonObject {
@@ -22,6 +22,6 @@ class ToolSchemaBudgetUnitTest : TestCase() {
             }
         }
         val bytes = payload.toString().toByteArray(Charsets.UTF_8).size
-        assertTrue("Tool discovery uses $bytes bytes; keep shared target descriptions concise (budget 115000)", bytes <= 115_000)
+        assertTrue("Tool discovery uses $bytes bytes; keep shared target descriptions concise (budget 116000)", bytes <= 116_000)
     }
 }

@@ -1,6 +1,6 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 51
+# tools: 52
 
 ## ide_build_project
 description:
@@ -2726,6 +2726,42 @@ schema:
         "type": "string"
       }
     },
+    "type": "object"
+  }
+
+## ide_rename_module
+description:
+  Rename a Maven module: directory, artifactId, parent pom module entry,
+  dependency references, and child parent references across all pom.xml files.
+  
+  When renaming a parent module, child modules' <parent><artifactId> references
+  are updated automatically. Use ide_refactor_rename on Java package directories
+  afterwards to cascade package and import renames.
+schema:
+  {
+    "properties":
+    {
+      "modulePath":
+      {
+        "description": "Absolute path to the Maven module directory to rename.",
+        "type": "string"
+      },
+      "newName":
+      {
+        "description": "New directory and artifactId name.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "modulePath",
+      "newName"
+    ],
     "type": "object"
   }
 

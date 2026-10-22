@@ -657,3 +657,16 @@ data class TextMatch(
     val context: String,       // line content
     val contextType: String    // "CODE", "COMMENT", "STRING_LITERAL"
 )
+
+// ide_rename_module output
+@Serializable
+data class RenameModuleResult(
+    val oldPath: String,
+    val newPath: String,
+    val oldArtifactId: String,
+    val newArtifactId: String,
+    val groupId: String,
+    val parentPomUpdated: Boolean,
+    val dependencyUpdates: Int,
+    val childParentUpdates: Int = 0
+)

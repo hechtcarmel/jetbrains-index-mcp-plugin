@@ -4,15 +4,9 @@
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Line endings are configured for files in this git repository ([#453](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/453))** — Dependent on a client's local `git` configuration, files may have their line endings converted between CRLF and LF. `ResultShapeContractUnitTest.testResultShapesMatchGoldenSnapshot` relies on direct string equality between the parsed shape (`result-shapes.txt`) and the generated shape. There is now a `.gitattributes` file specified for this repository, enforcing line endings for the files of this project.
-
-## [5.20.3] - 2026-10-24
-
-### Fixed
-
-- **Equivalent project paths are recognized across filename aliases** ([#450](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/450)) — fallback project membership and module-root matching resolve aliases such as Windows short filenames instead of rejecting a file because its path uses a different spelling. Files under an aliased project base retain project-relative paths; files in external workspace roots keep their distinct absolute paths.
+- **`ide_rename_module` — atomic Maven module rename** — renames directory, updates artifactId in the module's pom.xml, updates `<module>` entry in parent pom, and updates `<dependency>` references across all project pom.xml files, in one tool call. (disabled by default)
 
 ## [5.20.2] - 2026-10-09
 
@@ -1394,8 +1388,7 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...HEAD
-[5.20.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...v5.20.3
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...HEAD
 [5.20.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.20.2
 [5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
