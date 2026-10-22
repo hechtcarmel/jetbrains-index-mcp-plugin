@@ -1,6 +1,6 @@
 # MCP tool response shapes — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ResultShapeContractUnitTest" -Dcontract.update=true
-# shapes: 73
+# shapes: 74
 
 ## ActiveFileInfo
   column: number?
@@ -357,6 +357,16 @@
   unretargetedImporters: array? (optional)
   updatedSymbol: object? (optional)
   warnings: array? (optional)
+
+## RenameModuleResult
+  childParentUpdates: number (optional)
+  dependencyUpdates: number
+  groupId: string
+  newArtifactId: string
+  newPath: string
+  oldArtifactId: string
+  oldPath: string
+  parentPomUpdated: boolean
 
 ## ReplaceTextInFileTool.ReplaceTextResult
   affectedLines: array? (optional)

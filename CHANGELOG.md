@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_rename_module` — atomic Maven module rename** — renames directory, updates artifactId in the module's pom.xml, updates `<module>` entry in parent pom, and updates `<dependency>` references across all project pom.xml files, in one tool call. (disabled by default)
+
 ## [5.20.2] - 2026-10-09
 
 ### Fixed
