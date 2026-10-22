@@ -53,6 +53,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.OPEN_FILE,
             ToolNames.INSTALL_PLUGIN,
             ToolNames.RELOAD_PROJECT,
+            ToolNames.RENAME_MODULE,
             ToolNames.REPLACE_TEXT_IN_FILE,
             ToolNames.REPLACE_MEMBER,
             ToolNames.RESTART_IDE,
