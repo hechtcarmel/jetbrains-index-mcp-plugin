@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.20.3] - 2026-10-24
+
 ### Fixed
 
 - **Equivalent project paths are recognized across filename aliases** ([#450](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/450)) — fallback project membership and module-root matching resolve aliases such as Windows short filenames instead of rejecting a file because its path uses a different spelling. Files under an aliased project base retain project-relative paths; files in external workspace roots keep their distinct absolute paths.
@@ -1388,7 +1390,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...HEAD
+[5.20.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...v5.20.3
 [5.20.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.20.2
 [5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
