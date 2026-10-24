@@ -44,6 +44,28 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
       - name: Test filesystem aliases including actual Windows short names
         run: ./gradlew test --tests '*ProjectPathMatcher*UnitTest' --no-configuration-cache
+      - name: Report native Windows test execution
+        if: always()
+        shell: pwsh
+        run: |
+          $path = 'build/test-results/test/TEST-com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectPathMatcherWindowsUnitTest.xml'
+          if (-not (Test-Path $path)) { throw 'Windows test report is missing' }
+          [xml]$report = Get-Content -Raw $path
+          if ($null -eq $report.testsuite.SelectSingleNode("testcase[@name='actualShortNamesMatchLongNamesInBothDirections']")) {
+            throw 'Native Windows short-name test was not discovered'
+          }
+          foreach ($case in @($report.testsuite.testcase)) {
+            $status = if ($null -ne $case.SelectSingleNode('skipped')) { 'SKIPPED' } elseif ($null -ne $case.SelectSingleNode('failure|error')) { 'FAILED' } else { 'PASSED' }
+            Write-Output "$($case.name): $status"
+          }
+          $output = $report.testsuite.SelectSingleNode('system-out')
+          if ($null -ne $output) { Write-Output $output.InnerText }
+      - name: Upload Windows path test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: windows-path-test-results
+          path: build/test-results/test/TEST-*ProjectPathMatcher*UnitTest.xml
 
   # Prepare the environment and build the plugin
   build:
