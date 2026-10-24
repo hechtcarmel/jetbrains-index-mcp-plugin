@@ -122,11 +122,8 @@ object ProjectUtils {
     fun getRelativePath(project: Project, absolutePath: String): String {
         // VirtualFile paths and Project.basePath use '/' on every OS; Windows build tools report '\'.
         val path = if (SystemInfo.isWindows) absolutePath.replace('\\', '/') else absolutePath
-        val basePath = project.basePath
-        if (basePath != null && (path == basePath || path.startsWith("$basePath/"))) {
-            return path.removePrefix(basePath).removePrefix("/")
-        }
-        return path
+        val basePath = project.basePath ?: return path
+        return ProjectPathMatcher.relativePath(path, basePath) ?: path
     }
 
     fun resolveProjectFile(project: Project, relativePath: String): VirtualFile? {
@@ -147,9 +144,9 @@ object ProjectUtils {
             // Fall back to path-based checks below when file index is unavailable.
         }
 
-        val basePath = project.basePath ?: return false
         val filePath = virtualFile.path
-        if (filePath == basePath || filePath.startsWith("$basePath/")) return true
+        val basePath = project.basePath
+        if (basePath != null && ProjectPathMatcher.relativePath(filePath, basePath) != null) return true
 
         // Also check module content roots for workspace sub-projects
         return findMatchingContentRoot(project, filePath) != null
@@ -196,27 +193,8 @@ object ProjectUtils {
      * Finds the content root path that contains the given absolute file path.
      * Returns null if no content root matches.
      */
-    private fun findMatchingContentRoot(project: Project, absolutePath: String): String? {
-        try {
-            val modules = ModuleManager.getInstance(project).modules
-            var bestMatch: String? = null
-            for (module in modules) {
-                val contentRoots = ModuleRootManager.getInstance(module).contentRoots
-                for (root in contentRoots) {
-                    val rootPath = root.path
-                    if (absolutePath == rootPath || absolutePath.startsWith("$rootPath/")) {
-                        if (bestMatch == null || rootPath.length > bestMatch.length) {
-                            bestMatch = rootPath
-                        }
-                    }
-                }
-            }
-            return bestMatch
-        } catch (_: Exception) {
-            // ModuleManager may not be available in all contexts
-        }
-        return null
-    }
+    internal fun findMatchingContentRoot(project: Project, absolutePath: String): String? =
+        ProjectPathMatcher.findMatchingRoot(absolutePath, getModuleContentRoots(project))
 
     /**
      * Tries to resolve a relative path against each module content root.

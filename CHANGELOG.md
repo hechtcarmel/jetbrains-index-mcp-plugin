@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Equivalent project paths are recognized across filename aliases** ([#450](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/450)) — fallback project membership and module-root matching resolve aliases such as Windows short filenames instead of rejecting a file because its path uses a different spelling. Files under an aliased project base retain project-relative paths; files in external workspace roots keep their distinct absolute paths.
+
 ## [5.20.2] - 2026-10-09
 
 ### Fixed

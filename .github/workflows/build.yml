@@ -28,6 +28,23 @@ concurrency:
   
 jobs:
 
+  windows-path-aliases:
+    name: Windows path aliases
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v6
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Test filesystem aliases including actual Windows short names
+        run: ./gradlew test --tests '*ProjectPathMatcher*UnitTest' --no-configuration-cache
+
   # Prepare the environment and build the plugin
   build:
     name: Build
@@ -211,7 +228,7 @@ jobs:
   releaseDraft:
     name: Release draft
     if: github.event_name != 'pull_request'
-    needs: [ build, test, inspectCode, verify ]
+    needs: [ build, test, inspectCode, verify, windows-path-aliases ]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
