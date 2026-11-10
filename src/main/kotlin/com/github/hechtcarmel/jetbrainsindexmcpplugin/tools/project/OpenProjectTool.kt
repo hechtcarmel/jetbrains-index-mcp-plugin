@@ -122,6 +122,8 @@ class OpenProjectTool : AbstractMcpTool() {
                 val linkMsg = tryAutoLink(existing, path)
                 if (linkMsg != null) actions.add(linkMsg)
             }
+            val contentRootMsg = ensureContentRoot(existing, path)
+            if (contentRootMsg != null) actions.add(contentRootMsg)
             if (excludeDirs.isNotEmpty()) {
                 val excludeMsg = applyExclusions(existing, path, excludeDirs)
                 if (excludeMsg != null) actions.add(excludeMsg)
@@ -303,12 +305,15 @@ class OpenProjectTool : AbstractMcpTool() {
     internal suspend fun ensureContentRoot(project: Project, path: String): String? {
         if (hasBuildFile(project, path)) return null
 
-        val hasContentRoots = ModuleManager.getInstance(project).modules.any { module ->
-            ModuleRootManager.getInstance(module).contentRoots.isNotEmpty()
+        val hasContentRoots = readAction {
+            ModuleManager.getInstance(project).modules.any { module ->
+                ModuleRootManager.getInstance(module).contentRoots.isNotEmpty()
+            }
         }
         if (hasContentRoots) return null
 
-        val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(path) ?: return null
+        val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(path)
+            ?: return "Content root registration skipped: cannot resolve directory in VFS."
         val dir = File(path)
         val moduleName = dir.name
         val ideaDir = File(dir, ".idea")
