@@ -334,6 +334,11 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                     var moduleName = dir.name
                     if (moduleManager.findModuleByName(moduleName) != null) {
                         moduleName = "${dir.parentFile?.name ?: "ws"}-$moduleName"
+                        var counter = 2
+                        while (moduleManager.findModuleByName(moduleName) != null) {
+                            moduleName = "${dir.parentFile?.name ?: "ws"}-${dir.name}-$counter"
+                            counter++
+                        }
                     }
                     val imlPath = File(modulesDir, "$moduleName.iml").absolutePath
                     val module = moduleManager.newModule(imlPath, moduleTypeId)
@@ -362,7 +367,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
     }
 
     /**
-     * Reuses [existing], which already contains every requested Maven project as a module,
+     * Reuses [existing], which already contains every requested directory as a module,
      * instead of creating a workspace for them.
      */
     private suspend fun reuseOpenProject(
@@ -401,13 +406,13 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             put("path", singleDir.absolutePath)
             put("autoLink", true)
         }
-        return "$found A workspace combines two or more Maven projects; for one project it only adds " +
+        return "$found A workspace combines two or more directories; for one directory it only adds " +
             "another window. Open it with ide_open_project $openProjectArguments instead. To work across " +
             "several repositories, call ide_open_workspace once with all of them in 'modules'."
     }
 
-    private fun moduleList(mavenProjects: List<File>): String =
-        mavenProjects.joinToString("\n") { "  - ${it.absolutePath}" }
+    private fun moduleList(dirs: List<File>): String =
+        dirs.joinToString("\n") { "  - ${it.absolutePath}" }
 
     private fun workspaceDirFor(hashKey: String): File =
         File(PathManager.getSystemPath(), "ide-workspaces/ide-workspace-${hashPath(hashKey)}")

@@ -8,6 +8,16 @@
 
 - **`ide_open_workspace` now accepts non-Maven directories in `modules`** ([#446](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/446)) — directories without `pom.xml` (TypeScript, plain directories) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`), enabling cross-project code intelligence between Maven and non-Maven repos in the same workspace window. At least one Maven project is still required. Module files are stored in the workspace `.idea/modules/` directory. Name clashes are resolved with a parent-directory prefix. Gradle directories are detected and skipped via `ExternalSystemUnlinkedProjectAware`.
 
+### Fixed
+
+- **Line endings are configured for files in this git repository ([#453](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/453))** — Dependent on a client's local `git` configuration, files may have their line endings converted between CRLF and LF. `ResultShapeContractUnitTest.testResultShapesMatchGoldenSnapshot` relies on direct string equality between the parsed shape (`result-shapes.txt`) and the generated shape. There is now a `.gitattributes` file specified for this repository, enforcing line endings for the files of this project.
+
+## [5.20.3] - 2026-10-24
+
+### Fixed
+
+- **Equivalent project paths are recognized across filename aliases** ([#450](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/450)) — fallback project membership and module-root matching resolve aliases such as Windows short filenames instead of rejecting a file because its path uses a different spelling. Files under an aliased project base retain project-relative paths; files in external workspace roots keep their distinct absolute paths.
+
 ## [5.20.2] - 2026-10-09
 
 ### Fixed
@@ -1388,7 +1398,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...HEAD
+[5.20.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...v5.20.3
 [5.20.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.20.2
 [5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
