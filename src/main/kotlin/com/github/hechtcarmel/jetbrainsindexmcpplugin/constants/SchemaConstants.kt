@@ -17,7 +17,7 @@ object SchemaConstants {
     const val TYPE_ARRAY = "array"
 
     // Common parameter descriptions
-    const val DESC_PROJECT_PATH = "Absolute project root; required with multiple open projects. For workspaces use the sub-project path."
+    const val DESC_PROJECT_PATH = "Absolute project root (workspace: sub-project); required with multiple open projects."
     const val DESC_FILE = "Path to the file relative to project root"
     const val DESC_LINE = "1-based line number"
     const val DESC_COLUMN = "1-based column number"

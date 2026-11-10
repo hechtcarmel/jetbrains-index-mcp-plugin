@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.haveSameHierarchyMethodSignature
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.hierarchyMethodSignatureKey
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.psi.PsiElement
 
@@ -36,9 +37,12 @@ internal fun sameHierarchyDeclaration(first: PsiElement, second: PsiElement): Bo
 internal fun hierarchyDeclarationKey(element: PsiElement): String {
     val target = PsiUtils.resolveNavigationTarget(element)
     val file = target.containingFile?.virtualFile?.path
-    return if (file != null && target.isPhysical) {
+    val location = if (file != null && target.isPhysical) {
         "${file}|${target.textOffset}|${target.javaClass.name}"
     } else {
         "${target.javaClass.name}|${target.textOffset}|${target.text.hashCode()}"
     }
+    return if (hierarchyMethodClass?.isInstance(element) == true) {
+        "$location|${hierarchyMethodSignatureKey(element)}"
+    } else location
 }
