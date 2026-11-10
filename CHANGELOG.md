@@ -6,6 +6,8 @@
 
 ### Fixed
 
+- **Kotlin/JS hierarchy navigation ([#456](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/456))** — Type hierarchy, implementation search, and super-method lookup use Kotlin declarations when a target has no JVM light class or method. Fully qualified class lookup also finds Kotlin/JS declarations.
+
 - **Line endings are configured for files in this git repository ([#453](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/453))** — Dependent on a client's local `git` configuration, files may have their line endings converted between CRLF and LF. `ResultShapeContractUnitTest.testResultShapesMatchGoldenSnapshot` relies on direct string equality between the parsed shape (`result-shapes.txt`) and the generated shape. There is now a `.gitattributes` file specified for this repository, enforcing line endings for the files of this project.
 
 ## [5.20.3] - 2026-10-24

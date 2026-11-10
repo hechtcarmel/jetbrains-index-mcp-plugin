@@ -250,6 +250,7 @@ Search for any code symbol (classes, methods, fields, functions) by name.
 
 ### ide_find_super_methods
 Find parent methods that a given method overrides or implements.
+Select the method's name or body (including for Kotlin/JS); a class declaration is not a method target.
 
 **Target (mutually exclusive):** top-level `symbolId` OR `file`+`line`+`column` OR `language`+`symbol`; this tool also accepts the equivalent nested `target`.
 
@@ -275,6 +276,11 @@ IDs above the budget while retaining all nodes. Use bounded pages when every nod
 A query through a member's ID preserves that input declaration.
 When scope filtering hides an intermediate type, eligible descendants remain discoverable under
 their nearest included ancestor.
+
+Kotlin/JVM and Kotlin/JS (klib) declarations are supported. Use
+`scope: "project_and_libraries"` to include library supertypes such as `HTMLElement` or
+Gradle's `Plugin`; the default `project_files` scope can return an empty supertype tree
+when every ancestor is in a library.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
