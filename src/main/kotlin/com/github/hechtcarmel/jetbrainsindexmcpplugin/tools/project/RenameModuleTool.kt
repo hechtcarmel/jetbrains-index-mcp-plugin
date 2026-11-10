@@ -225,9 +225,10 @@ class RenameModuleTool : AbstractMcpTool() {
         val parentEnd = pomXml.indexOf("</parent>")
         val searchFrom = if (parentEnd >= 0) parentEnd + "</parent>".length else 0
         val depStart = pomXml.indexOf("<dependencies>", searchFrom)
+        val depMgmtStart = pomXml.indexOf("<dependencyManagement>", searchFrom)
         val buildStart = pomXml.indexOf("<build>", searchFrom)
         val profilesStart = pomXml.indexOf("<profiles>", searchFrom)
-        val searchEnd = listOf(depStart, buildStart, profilesStart).filter { it >= 0 }.minOrNull() ?: pomXml.length
+        val searchEnd = listOf(depStart, depMgmtStart, buildStart, profilesStart).filter { it >= 0 }.minOrNull() ?: pomXml.length
         val topLevel = pomXml.substring(searchFrom, searchEnd)
         return Regex("<groupId>\\s*([^<]+?)\\s*</groupId>").find(topLevel)?.groupValues?.get(1)
     }
@@ -262,10 +263,19 @@ class RenameModuleTool : AbstractMcpTool() {
     }
 
     private fun updateDependencyArtifactId(pomXml: String, groupId: String, oldArtifactId: String, newArtifactId: String): String {
-        val depBlockPattern = Regex("<dependency>([\\s\\S]*?)</dependency>")
         val groupPattern = Regex("<groupId>\\s*${Regex.escape(groupId)}\\s*</groupId>")
         val artifactPattern = Regex("<artifactId>\\s*${Regex.escape(oldArtifactId)}\\s*</artifactId>")
-        return depBlockPattern.replace(pomXml) { match ->
+        var result = replaceInBlocks(pomXml, "<dependency>", "</dependency>", groupPattern, artifactPattern, newArtifactId)
+        result = replaceInBlocks(result, "<plugin>", "</plugin>", groupPattern, artifactPattern, newArtifactId)
+        return result
+    }
+
+    private fun replaceInBlocks(
+        xml: String, openTag: String, closeTag: String,
+        groupPattern: Regex, artifactPattern: Regex, newArtifactId: String
+    ): String {
+        val blockPattern = Regex("${Regex.escape(openTag)}([\\s\\S]*?)${Regex.escape(closeTag)}")
+        return blockPattern.replace(xml) { match ->
             val block = match.value
             if (groupPattern.containsMatchIn(block) && artifactPattern.containsMatchIn(block)) {
                 artifactPattern.replace(block) { "<artifactId>$newArtifactId</artifactId>" }
@@ -276,12 +286,12 @@ class RenameModuleTool : AbstractMcpTool() {
     }
 
     private fun findAllPomFiles(root: File): List<File> {
+        val skipDirs = setOf("target", ".git", ".idea", "node_modules")
         val result = mutableListOf<File>()
         fun walk(dir: File) {
             val pom = File(dir, "pom.xml")
             if (pom.exists()) result.add(pom)
-            dir.listFiles()?.filter { it.isDirectory && it.name != "target" && it.name != ".git" && it.name != "node_modules" }
-                ?.forEach { walk(it) }
+            dir.listFiles()?.filter { it.isDirectory && it.name !in skipDirs }?.forEach { walk(it) }
         }
         walk(root)
         return result
