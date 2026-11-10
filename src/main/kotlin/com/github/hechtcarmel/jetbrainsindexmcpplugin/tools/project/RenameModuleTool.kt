@@ -10,7 +10,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiDocumentManager
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonObject
@@ -18,6 +17,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 class RenameModuleTool : AbstractMcpTool() {
+
+    override val requiresPsiSync = false
+    override val participatesInLifecycle = false
 
     override val name = ToolNames.RENAME_MODULE
 
@@ -83,10 +85,12 @@ class RenameModuleTool : AbstractMcpTool() {
             val syncError = syncFileForEdit(project, vf)
             if (syncError != null) return syncError
             val doc = FileDocumentManager.getInstance().getDocument(vf)
-            documentContents[pom.absolutePath] = doc?.text ?: pom.readText()
+            documentContents[pom.absolutePath] = doc?.text
+                ?: return createErrorResult("Cannot read document for ${pom.absolutePath}")
         }
 
-        val pomContent = documentContents[pomFile.absolutePath] ?: pomFile.readText()
+        val pomContent = documentContents[pomFile.absolutePath]
+            ?: return createErrorResult("Module pom.xml not in synced documents: ${pomFile.absolutePath}")
         val oldArtifactId = extractModuleArtifactId(pomContent)
             ?: return createErrorResult("Cannot parse <artifactId> from ${pomFile.absolutePath}")
         val moduleGroupId = extractModuleGroupId(pomContent)
@@ -104,7 +108,7 @@ class RenameModuleTool : AbstractMcpTool() {
         if (parentPomFile != null && parentPomFile.exists()) {
             val text = pendingChanges[parentPomFile.absolutePath]
                 ?: documentContents[parentPomFile.absolutePath]
-                ?: parentPomFile.readText()
+                ?: return createErrorResult("Parent pom.xml not in synced documents: ${parentPomFile.absolutePath}")
             val updated = text.replace("<module>$oldDirName</module>", "<module>$newName</module>")
             if (updated != text) {
                 pendingChanges[parentPomFile.absolutePath] = updated
@@ -126,7 +130,7 @@ class RenameModuleTool : AbstractMcpTool() {
             if (!childPomFile.exists()) continue
             val childContent = pendingChanges[childPomFile.absolutePath]
                 ?: documentContents[childPomFile.absolutePath]
-                ?: childPomFile.readText()
+                ?: continue
             val updated = updateParentArtifactId(childContent, oldArtifactId, newName)
             if (updated != childContent) {
                 pendingChanges[childPomFile.absolutePath] = updated
@@ -189,7 +193,13 @@ class RenameModuleTool : AbstractMcpTool() {
                 "Failed to rename directory: ${e.message}"
             }
         }
-        if (renameError != null) return createErrorResult(renameError)
+        if (renameError != null) {
+            val updatedFiles = pendingChanges.keys.joinToString(", ") { File(it).name }
+            return createErrorResult(
+                "$renameError WARNING: pom.xml files ($updatedFiles) were already updated with " +
+                    "the new name '$newName'. Revert those changes or rename the directory manually."
+            )
+        }
 
         val newPath = newDir.absolutePath
 
