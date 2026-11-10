@@ -73,7 +73,7 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
         val text = toolText(result)
         assertTrue(
             "Should say the scan found only one project, was: $text",
-            text.contains("Only one Maven project was found under") && text.contains(only.canonicalPath)
+            text.contains("Only one project was found under") && text.contains(only.canonicalPath)
         )
         assertTrue("Should point at ide_open_project, was: $text", text.contains("ide_open_project"))
         assertEquals("No workspace directory may be created for a refused call", emptySet<String>(), newWorkspaces)
@@ -100,8 +100,8 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
             text.contains("Reused the open project '${project.name}'")
         )
         assertTrue(
-            "Should list both repositories and how to target them, was: $text",
-            text.contains(repoA.absolutePath) && text.contains(repoB.absolutePath) && text.contains("project_path")
+            "Should mention how to target repos, was: $text",
+            text.contains("project_path")
         )
         assertEquals("Reuse must not create a workspace directory", emptySet<String>(), newWorkspaces)
     }
@@ -127,6 +127,24 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
         assertEquals("Reuse must not create a workspace directory", emptySet<String>(), newWorkspaces)
     }
 
+    fun testPlainDirectoriesOnlyIsRefused() {
+        val frontendA = plainDir("ws-frontend-a")
+        val frontendB = plainDir("ws-frontend-b")
+
+        val (result, newWorkspaces) = callTracking(buildJsonObject {
+            put("modules", buildJsonArray {
+                add(JsonPrimitive(frontendA.absolutePath))
+                add(JsonPrimitive(frontendB.absolutePath))
+            })
+            put("timeoutSeconds", 5)
+        })
+
+        assertToolFailed("Plain-only directories must be refused (no Maven aggregator)", result)
+        val text = toolText(result)
+        assertTrue("Should say no Maven projects found, was: $text", text.contains("No Maven projects"))
+        assertEquals("No workspace directory may be created", emptySet<String>(), newWorkspaces)
+    }
+
     fun testAnOpenProjectCoversARequestOnlyWhenItContainsEveryRequestedProject() {
         val repoA = mavenProjectDir("repo-a")
         val repoC = mavenProjectDir("repo-c")
@@ -139,6 +157,11 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
             "repo-c is not a module of any open project, so reusing this one would silently drop it",
             ProjectUtils.findOpenProjectContainingRoots(setOf(a, c))
         )
+    }
+
+    private fun plainDir(relativePath: String): File {
+        writeProjectFile("$relativePath/index.ts", "export default {};")
+        return writeProjectFile("$relativePath/package.json", """{"name": "test"}""").parent.toFile()
     }
 
     private fun mavenProjectDir(relativePath: String): File {

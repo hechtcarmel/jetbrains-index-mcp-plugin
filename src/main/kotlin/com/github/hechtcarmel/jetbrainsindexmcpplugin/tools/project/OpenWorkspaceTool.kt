@@ -8,10 +8,17 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.PathManager
+import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.application.readAction
+import com.intellij.openapi.externalSystem.autolink.ExternalSystemUnlinkedProjectAware
+import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.module.ModuleTypeManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
+import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtilCore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -42,7 +49,10 @@ class OpenWorkspaceTool : AbstractMcpTool() {
 
         Two modes; `path` and `modules` are mutually exclusive:
         1. Directory scan: `path` combines every immediate subdirectory containing pom.xml.
-        2. Explicit modules: `modules` lists the absolute paths of the Maven projects to combine.
+        2. Explicit modules: `modules` lists the absolute paths of directories to combine.
+           Directories with pom.xml are imported as Maven modules; directories without pom.xml
+           (TypeScript, plain directories) are registered as content roots with default excludes
+           (node_modules, dist, .next). At least one Maven project is required.
 
         If an open project already contains every requested Maven project as a module, it is
         reused and no new window opens. Workspaces are cached: the same directory or the same
@@ -65,9 +75,11 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             put("type", "array")
             put(
                 "description",
-                "Absolute paths of the Maven project directories to combine. List every repository you need " +
-                    "in this one call (at least two). Mutually exclusive with 'path'. The same set in any " +
-                    "order reuses the cached workspace."
+                "Absolute paths of directories to combine. Maven directories (with pom.xml) are imported as " +
+                    "modules; non-Maven directories (TypeScript, plain) are registered as content roots. " +
+                    "At least one Maven project required. List every repository you need in this one call " +
+                    "(at least two). Mutually exclusive with 'path'. The same set in any order reuses the " +
+                    "cached workspace."
             )
             put("items", buildJsonObject { put("type", "string") })
             put("minItems", MIN_WORKSPACE_PROJECTS)
@@ -99,29 +111,44 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
 
         val mavenProjects: List<File>
+        val plainDirs: List<File>
         val workspaceHashKey: String
 
         if (modulesArg != null) {
             val errors = mutableListOf<String>()
-            val validated = mutableListOf<File>()
+            val validatedMaven = mutableListOf<File>()
+            val validatedPlain = mutableListOf<File>()
             for (path in modulesArg) {
                 val f = File(path)
                 if (!f.isAbsolute) { errors.add("Not absolute: $path"); continue }
                 if (!f.exists()) { errors.add("Does not exist: $path"); continue }
                 if (!f.isDirectory) { errors.add("Not a directory: $path"); continue }
-                if (!File(f, "pom.xml").exists()) { errors.add("No pom.xml in: $path"); continue }
-                validated.add(f)
+                if (File(f, "pom.xml").exists()) {
+                    validatedMaven.add(f)
+                } else {
+                    validatedPlain.add(f)
+                }
             }
             if (errors.isNotEmpty()) {
                 return createErrorResult("Invalid module paths:\n" + errors.joinToString("\n") { "  - $it" })
             }
-            if (validated.isEmpty()) {
-                return createErrorResult("No valid Maven projects in the provided modules list.")
+            if (validatedMaven.isEmpty() && validatedPlain.isEmpty()) {
+                return createErrorResult("No valid directories in the provided modules list.")
             }
-            mavenProjects = validated
+            if (validatedMaven.isEmpty()) {
+                return createErrorResult(
+                    "No Maven projects found in the provided modules list. ide_open_workspace " +
+                        "requires at least one Maven project (with pom.xml) to create the aggregator. " +
+                        "Non-Maven directories can be included alongside Maven projects for cross-project " +
+                        "code intelligence."
+                )
+            }
+            val allValidated = (validatedMaven + validatedPlain)
                 .sortedBy { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
                 .distinctBy { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
-            workspaceHashKey = mavenProjects.joinToString("\n") { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
+            mavenProjects = allValidated.filter { File(it, "pom.xml").exists() }
+            plainDirs = allValidated.filter { !File(it, "pom.xml").exists() }
+            workspaceHashKey = allValidated.joinToString("\n") { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
         } else {
             val rootPath = pathArg!!
             if (!File(rootPath).isAbsolute) {
@@ -139,23 +166,25 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             if (mavenProjects.isEmpty()) {
                 return createErrorResult("No Maven projects found in subdirectories of $rootPath")
             }
+            plainDirs = emptyList()
             workspaceHashKey = ProjectUtils.canonicalNormalizedPath(rootPath)
         }
 
         val workspaceDir = workspaceDirFor(workspaceHashKey)
         var openedProject: Project? = ProjectUtils.findOpenProjectByPath(workspaceDir.absolutePath)
         val alreadyOpen = openedProject != null
-        val expectedRoots = mavenProjects.map { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }.toSet()
+        val allModules = mavenProjects + plainDirs
+        val expectedRoots = allModules.map { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }.toSet()
 
         // Issue #436: agents opened a workspace per repository, or per subset of the same
         // repositories. Every such call cost another window indexing code an open window
         // already covered, and another directory under ide-workspaces/ that is never cleaned up.
         if (!alreadyOpen) {
             ProjectUtils.findOpenProjectContainingRoots(expectedRoots)?.let { existing ->
-                return reuseOpenProject(existing, mavenProjects, timeoutSeconds)
+                return reuseOpenProject(existing, expectedRoots, timeoutSeconds)
             }
-            if (mavenProjects.size < MIN_WORKSPACE_PROJECTS) {
-                return createErrorResult(singleProjectMessage(mavenProjects.single(), pathArg))
+            if (allModules.size < MIN_WORKSPACE_PROJECTS) {
+                return createErrorResult(singleProjectMessage(allModules.single(), pathArg))
             }
         }
 
@@ -199,6 +228,11 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                 if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
             }
 
+            if (plainDirs.isNotEmpty()) {
+                registerPlainDirectories(opened, plainDirs, workspaceDir)
+                if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
+            }
+
             val finalRoots = ProjectUtils.getModuleContentRoots(opened)
                 .map(ProjectUtils::canonicalNormalizedPath).toSet()
             val workspaceRoot = ProjectUtils.canonicalNormalizedPath(workspaceDir.absolutePath)
@@ -222,10 +256,11 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                 val roots = if (opened != null && !opened.isDisposed) {
                     ProjectUtils.getModuleContentRoots(opened)
                 } else emptyList()
+                val plainNote = if (plainDirs.isNotEmpty()) " (${plainDirs.size} non-Maven)" else ""
                 createSuccessResult(
-                    "Workspace open and ready with ${mavenProjects.size} modules " +
+                    "Workspace open and ready with ${allModules.size} modules$plainNote " +
                         "(${roots.size} content roots resolved):\n" +
-                        moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
+                        moduleList(allModules) + "\n" + PROJECT_PATH_HINT
                 )
             }
             OpenOutcome.STALE_MODULES -> {
@@ -264,9 +299,9 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             null -> {
                 if (opened != null && !opened.isDisposed) {
                     createSuccessResult(
-                        "Workspace open with ${mavenProjects.size} modules but still indexing " +
+                        "Workspace open with ${allModules.size} modules but still indexing " +
                             "after ${timeoutSeconds}s. Check ide_index_status.\n" +
-                            moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
+                            moduleList(allModules) + "\n" + PROJECT_PATH_HINT
                     )
                 } else {
                     createErrorResult(
@@ -278,13 +313,70 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
     }
 
+    internal suspend fun registerPlainDirectories(project: Project, dirs: List<File>, workspaceDir: File) {
+        val existingRoots = ProjectUtils.getModuleContentRoots(project)
+            .map(ProjectUtils::canonicalNormalizedPath).toSet()
+
+        val buildFileExtensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
+        val toRegister = dirs.filter { dir ->
+            ProjectUtils.canonicalNormalizedPath(dir.absolutePath) !in existingRoots
+        }.filter { dir -> !hasBuildFile(project, dir.absolutePath, buildFileExtensions) }
+        if (toRegister.isEmpty()) return
+
+        val modulesDir = File(workspaceDir, ".idea/modules")
+        if (!modulesDir.exists() && !modulesDir.mkdirs()) return
+
+        edtAction {
+            WriteAction.run<Exception> {
+                val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
+                val moduleManager = ModuleManager.getInstance(project)
+                for (dir in toRegister) {
+                    val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.absolutePath) ?: continue
+                    var moduleName = dir.name
+                    if (moduleManager.findModuleByName(moduleName) != null) {
+                        moduleName = "${dir.parentFile?.name ?: "ws"}-$moduleName"
+                        var counter = 2
+                        while (moduleManager.findModuleByName(moduleName) != null) {
+                            moduleName = "${dir.parentFile?.name ?: "ws"}-${dir.name}-$counter"
+                            counter++
+                        }
+                    }
+                    val imlPath = File(modulesDir, "$moduleName.iml").absolutePath
+                    val module = moduleManager.newModule(imlPath, moduleTypeId)
+                    val rootModel = ModuleRootManager.getInstance(module).modifiableModel
+                    try {
+                        val contentEntry = rootModel.addContentEntry(dirVf)
+                        for (exclude in DEFAULT_PLAIN_EXCLUDES) {
+                            contentEntry.addExcludeFolder(
+                                VfsUtilCore.pathToUrl(File(dir, exclude).absolutePath)
+                            )
+                        }
+                        rootModel.commit()
+                    } catch (e: Exception) {
+                        rootModel.dispose()
+                        throw e
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun hasBuildFile(
+        project: Project,
+        dirPath: String,
+        extensions: List<ExternalSystemUnlinkedProjectAware> = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
+    ): Boolean = readAction {
+        val dir = LocalFileSystem.getInstance().findFileByPath(dirPath) ?: return@readAction false
+        dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
+    }
+
     /**
-     * Reuses [existing], which already contains every requested Maven project as a module,
+     * Reuses [existing], which already contains every requested directory as a module,
      * instead of creating a workspace for them.
      */
     private suspend fun reuseOpenProject(
         existing: Project,
-        mavenProjects: List<File>,
+        expectedRoots: Set<String>,
         timeoutSeconds: Int
     ): CallToolResult {
         // true: smart mode; false: closed while waiting; null: still indexing at the deadline.
@@ -303,29 +395,28 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
         return createSuccessResult(
             "Reused the open project '${existing.name}' (${existing.basePath}): it already contains all " +
-                "${mavenProjects.size} requested Maven project(s) as modules, so no new workspace window " +
-                "was opened. $status\n" +
-                moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
+                "${expectedRoots.size} requested directory(s) as modules, so no new workspace window " +
+                "was opened. $status\n" + PROJECT_PATH_HINT
         )
     }
 
-    private fun singleProjectMessage(mavenProject: File, scannedRoot: String?): String {
+    private fun singleProjectMessage(singleDir: File, scannedRoot: String?): String {
         val found = if (scannedRoot != null) {
-            "Only one Maven project was found under $scannedRoot: ${mavenProject.absolutePath}."
+            "Only one project was found under $scannedRoot: ${singleDir.absolutePath}."
         } else {
-            "Only one Maven project was given: ${mavenProject.absolutePath}."
+            "Only one directory was given: ${singleDir.absolutePath}."
         }
         val openProjectArguments = buildJsonObject {
-            put("path", mavenProject.absolutePath)
+            put("path", singleDir.absolutePath)
             put("autoLink", true)
         }
-        return "$found A workspace combines two or more Maven projects; for one project it only adds " +
+        return "$found A workspace combines two or more directories; for one directory it only adds " +
             "another window. Open it with ide_open_project $openProjectArguments instead. To work across " +
             "several repositories, call ide_open_workspace once with all of them in 'modules'."
     }
 
-    private fun moduleList(mavenProjects: List<File>): String =
-        mavenProjects.joinToString("\n") { "  - ${it.absolutePath}" }
+    private fun moduleList(dirs: List<File>): String =
+        dirs.joinToString("\n") { "  - ${it.absolutePath}" }
 
     private fun workspaceDirFor(hashKey: String): File =
         File(PathManager.getSystemPath(), "ide-workspaces/ide-workspace-${hashPath(hashKey)}")
@@ -375,6 +466,7 @@ $moduleEntries
 
     companion object {
         private const val DEFAULT_TIMEOUT_SECONDS = 600
+        internal val DEFAULT_PLAIN_EXCLUDES = listOf("node_modules", "dist", ".next")
 
         /** Fewer would only wrap one project in a second window: use ide_open_project for that. */
         private const val MIN_WORKSPACE_PROJECTS = 2

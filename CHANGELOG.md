@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_open_workspace` now accepts non-Maven directories in `modules`** ([#446](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/446)) — directories without `pom.xml` (TypeScript, plain directories) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`), enabling cross-project code intelligence between Maven and non-Maven repos in the same workspace window. At least one Maven project is still required. Module files are stored in the workspace `.idea/modules/` directory. Name clashes are resolved with a parent-directory prefix. Gradle directories are detected and skipped via `ExternalSystemUnlinkedProjectAware`.
+
 ### Fixed
 
 - **Kotlin/JS hierarchy navigation ([#456](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/456))** — Type hierarchy, implementation search, and super-method lookup use Kotlin declarations when a target has no JVM light class or method. Fully qualified class lookup also finds Kotlin/JS declarations.
