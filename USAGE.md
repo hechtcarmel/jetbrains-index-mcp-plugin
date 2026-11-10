@@ -1242,7 +1242,7 @@ Imported 2 module(s):
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 > **Requires**: Maven plugin
 
-Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of directories — Maven projects (with `pom.xml`) are imported as modules, non-Maven directories (TypeScript, plain) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`, `build`, `.gradle`). At least one Maven project is required. Creates a temporary aggregator POM with relative module paths.
+Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of directories — Maven projects (with `pom.xml`) are imported as modules, non-Maven directories (TypeScript, plain) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`). Gradle directories are detected and skipped. At least one Maven project is required. Creates a temporary aggregator POM with relative module paths.
 
 **Use when:**
 - Several Maven repositories must see each other (cross-repository references, rename, move). Call it **once** with all of them.

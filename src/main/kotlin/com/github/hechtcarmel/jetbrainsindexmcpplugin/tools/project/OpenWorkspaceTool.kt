@@ -9,7 +9,10 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.application.readAction
+import com.intellij.openapi.externalSystem.autolink.ExternalSystemUnlinkedProjectAware
 import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.module.ModuleTypeManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
@@ -49,7 +52,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         2. Explicit modules: `modules` lists the absolute paths of directories to combine.
            Directories with pom.xml are imported as Maven modules; directories without pom.xml
            (TypeScript, plain directories) are registered as content roots with default excludes
-           (node_modules, dist, .next, build, .gradle). At least one Maven project is required.
+           (node_modules, dist, .next). At least one Maven project is required.
 
         If an open project already contains every requested Maven project as a module, it is
         reused and no new window opens. Workspaces are cached: the same directory or the same
@@ -178,10 +181,10 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         // already covered, and another directory under ide-workspaces/ that is never cleaned up.
         if (!alreadyOpen) {
             ProjectUtils.findOpenProjectContainingRoots(expectedRoots)?.let { existing ->
-                return reuseOpenProject(existing, mavenProjects, timeoutSeconds)
+                return reuseOpenProject(existing, expectedRoots, timeoutSeconds)
             }
-            if (mavenProjects.size < MIN_WORKSPACE_PROJECTS) {
-                return createErrorResult(singleProjectMessage(mavenProjects.single(), pathArg))
+            if (allModules.size < MIN_WORKSPACE_PROJECTS) {
+                return createErrorResult(singleProjectMessage(allModules.single(), pathArg))
             }
         }
 
@@ -226,7 +229,8 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             }
 
             if (plainDirs.isNotEmpty()) {
-                registerPlainDirectories(opened, plainDirs)
+                registerPlainDirectories(opened, plainDirs, workspaceDir)
+                if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
             }
 
             val finalRoots = ProjectUtils.getModuleContentRoots(opened)
@@ -309,31 +313,37 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
     }
 
-    private suspend fun registerPlainDirectories(project: Project, dirs: List<File>) {
+    internal suspend fun registerPlainDirectories(project: Project, dirs: List<File>, workspaceDir: File) {
         val existingRoots = ProjectUtils.getModuleContentRoots(project)
             .map(ProjectUtils::canonicalNormalizedPath).toSet()
 
         val toRegister = dirs.filter { dir ->
             ProjectUtils.canonicalNormalizedPath(dir.absolutePath) !in existingRoots
-        }
+        }.filter { dir -> !hasBuildFile(project, dir.absolutePath) }
         if (toRegister.isEmpty()) return
+
+        val modulesDir = File(workspaceDir, ".idea/modules")
+        modulesDir.mkdirs()
+        val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
 
         edtAction {
             WriteAction.run<Exception> {
                 val moduleManager = ModuleManager.getInstance(project)
                 for (dir in toRegister) {
                     val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.absolutePath) ?: continue
-                    val moduleName = dir.name
-                    val imlPath = File(dir, "$moduleName.iml").absolutePath
-                    val module = moduleManager.newModule(imlPath, MODULE_TYPE_WEB)
+                    var moduleName = dir.name
+                    if (moduleManager.findModuleByName(moduleName) != null) {
+                        moduleName = "${dir.parentFile?.name ?: "ws"}-$moduleName"
+                    }
+                    val imlPath = File(modulesDir, "$moduleName.iml").absolutePath
+                    val module = moduleManager.newModule(imlPath, moduleTypeId)
                     val rootModel = ModuleRootManager.getInstance(module).modifiableModel
                     try {
                         val contentEntry = rootModel.addContentEntry(dirVf)
                         for (exclude in DEFAULT_PLAIN_EXCLUDES) {
-                            val excludeDir = dirVf.findChild(exclude)
-                            if (excludeDir != null) {
-                                contentEntry.addExcludeFolder(VfsUtilCore.pathToUrl(excludeDir.path))
-                            }
+                            contentEntry.addExcludeFolder(
+                                VfsUtilCore.pathToUrl(File(dir, exclude).absolutePath)
+                            )
                         }
                         rootModel.commit()
                     } catch (e: Exception) {
@@ -345,13 +355,19 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
     }
 
+    private suspend fun hasBuildFile(project: Project, dirPath: String): Boolean = readAction {
+        val dir = LocalFileSystem.getInstance().findFileByPath(dirPath) ?: return@readAction false
+        val extensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
+        dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
+    }
+
     /**
      * Reuses [existing], which already contains every requested Maven project as a module,
      * instead of creating a workspace for them.
      */
     private suspend fun reuseOpenProject(
         existing: Project,
-        mavenProjects: List<File>,
+        expectedRoots: Set<String>,
         timeoutSeconds: Int
     ): CallToolResult {
         // true: smart mode; false: closed while waiting; null: still indexing at the deadline.
@@ -370,20 +386,19 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
         return createSuccessResult(
             "Reused the open project '${existing.name}' (${existing.basePath}): it already contains all " +
-                "${mavenProjects.size} requested Maven project(s) as modules, so no new workspace window " +
-                "was opened. $status\n" +
-                moduleList(mavenProjects) + "\n" + PROJECT_PATH_HINT
+                "${expectedRoots.size} requested directory(s) as modules, so no new workspace window " +
+                "was opened. $status\n" + PROJECT_PATH_HINT
         )
     }
 
-    private fun singleProjectMessage(mavenProject: File, scannedRoot: String?): String {
+    private fun singleProjectMessage(singleDir: File, scannedRoot: String?): String {
         val found = if (scannedRoot != null) {
-            "Only one Maven project was found under $scannedRoot: ${mavenProject.absolutePath}."
+            "Only one project was found under $scannedRoot: ${singleDir.absolutePath}."
         } else {
-            "Only one Maven project was given: ${mavenProject.absolutePath}."
+            "Only one directory was given: ${singleDir.absolutePath}."
         }
         val openProjectArguments = buildJsonObject {
-            put("path", mavenProject.absolutePath)
+            put("path", singleDir.absolutePath)
             put("autoLink", true)
         }
         return "$found A workspace combines two or more Maven projects; for one project it only adds " +
@@ -442,8 +457,7 @@ $moduleEntries
 
     companion object {
         private const val DEFAULT_TIMEOUT_SECONDS = 600
-        private const val MODULE_TYPE_WEB = "WEB_MODULE"
-        private val DEFAULT_PLAIN_EXCLUDES = listOf("node_modules", "dist", ".next", "build", ".gradle")
+        internal val DEFAULT_PLAIN_EXCLUDES = listOf("node_modules", "dist", ".next")
 
         /** Fewer would only wrap one project in a second window: use ide_open_project for that. */
         private const val MIN_WORKSPACE_PROJECTS = 2
