@@ -317,13 +317,15 @@ class OpenProjectTool : AbstractMcpTool() {
         val dir = File(path)
         val moduleName = dir.name
         val ideaDir = File(dir, ".idea")
-        ideaDir.mkdirs()
+        if (!ideaDir.exists() && !ideaDir.mkdirs()) {
+            return "Content root registration failed: cannot create .idea/ directory in $path."
+        }
         val imlPath = File(ideaDir, "$moduleName.iml").absolutePath
-        val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
 
         return try {
             edtAction {
                 WriteAction.run<Exception> {
+                    val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
                     val moduleManager = ModuleManager.getInstance(project)
                     val module = moduleManager.newModule(imlPath, moduleTypeId)
                     val rootModel = ModuleRootManager.getInstance(module).modifiableModel
