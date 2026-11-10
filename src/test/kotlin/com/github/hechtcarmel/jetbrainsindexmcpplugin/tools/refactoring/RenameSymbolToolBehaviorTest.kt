@@ -459,4 +459,44 @@ class RenameSymbolToolBehaviorTest : McpPlatformTestCase() {
             processor.capturedConflicts
         )
     }
+
+    /**
+     * A `RenamePsiElementProcessor` returning `true` from `forcesShowPreview()` re-enables
+     * the Refactoring Preview tab even after `setPreviewUsages(false)`. In test mode the
+     * platform throws "Unexpected preview in tests" when preview is triggered, so the tool
+     * would return an error instead of applying the rename. `HeadlessRenameProcessor`
+     * overrides `isPreviewUsages` to short-circuit all three preview triggers. If the
+     * override is removed, this test fails with a tool error.
+     */
+    fun testForcedPreviewProcessorDoesNotBlockHeadlessRename() {
+        registerSourceRoot("forced-preview-src")
+        writeProjectFile(
+            "forced-preview-src/PreviewTarget.java",
+            "public class PreviewTarget { public void execute() {} }"
+        )
+
+        val forcePreviewProcessor = object : com.intellij.refactoring.rename.RenamePsiElementProcessor() {
+            override fun canProcessElement(element: PsiElement): Boolean =
+                element is com.intellij.psi.PsiClass && element.name == "PreviewTarget"
+
+            override fun forcesShowPreview(): Boolean = true
+        }
+        com.intellij.refactoring.rename.RenamePsiElementProcessor.EP_NAME.point.registerExtension(
+            forcePreviewProcessor, com.intellij.openapi.extensions.LoadingOrder.FIRST, testRootDisposable
+        )
+
+        com.intellij.refactoring.BaseRefactoringProcessor.runWithDisabledPreview<RuntimeException> {
+            runBlocking {
+                val result = RenameSymbolTool().execute(project, buildJsonObject {
+                    put("file", "forced-preview-src/PreviewTarget.java")
+                    put("line", 1)
+                    put("column", 14)
+                    put("newName", "PreviewRenamed")
+                })
+                assertToolSucceeded("Rename must apply despite forcesShowPreview()=true", result)
+            }
+        }
+
+        assertRenamedInFile("forced-preview-src/PreviewRenamed.java", "PreviewTarget", "PreviewRenamed")
+    }
 }

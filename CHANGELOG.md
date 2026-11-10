@@ -6,6 +6,8 @@
 
 ### Fixed
 
+- **Forced refactoring preview no longer opens during headless rename** ([#411](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/411)) — When a `RenamePsiElementProcessor` returns `true` from `forcesShowPreview()`, or when usages include generated sources or non-code occurrences, `RenameProcessor.isPreviewUsages` re-enables the Refactoring Preview tab regardless of `setPreviewUsages(false)`. This caused the rename tool to report a misleading "rename was not applied" error and leave a dangling preview tab in the IDE. `HeadlessRenameProcessor` now overrides `isPreviewUsages` to always return `false`, matching the existing headless overrides for `showAutomaticRenamingDialog` and `prepareConflictsDialog`.
+
 - **Line endings are configured for files in this git repository ([#453](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/453))** — Dependent on a client's local `git` configuration, files may have their line endings converted between CRLF and LF. `ResultShapeContractUnitTest.testResultShapesMatchGoldenSnapshot` relies on direct string equality between the parsed shape (`result-shapes.txt`) and the generated shape. There is now a `.gitattributes` file specified for this repository, enforcing line endings for the files of this project.
 
 ## [5.20.3] - 2026-10-24
