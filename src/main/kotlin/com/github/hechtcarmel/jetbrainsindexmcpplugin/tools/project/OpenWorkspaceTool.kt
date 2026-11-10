@@ -317,17 +317,18 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         val existingRoots = ProjectUtils.getModuleContentRoots(project)
             .map(ProjectUtils::canonicalNormalizedPath).toSet()
 
+        val buildFileExtensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
         val toRegister = dirs.filter { dir ->
             ProjectUtils.canonicalNormalizedPath(dir.absolutePath) !in existingRoots
-        }.filter { dir -> !hasBuildFile(project, dir.absolutePath) }
+        }.filter { dir -> !hasBuildFile(project, dir.absolutePath, buildFileExtensions) }
         if (toRegister.isEmpty()) return
 
         val modulesDir = File(workspaceDir, ".idea/modules")
-        modulesDir.mkdirs()
-        val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
+        if (!modulesDir.exists() && !modulesDir.mkdirs()) return
 
         edtAction {
             WriteAction.run<Exception> {
+                val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
                 val moduleManager = ModuleManager.getInstance(project)
                 for (dir in toRegister) {
                     val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.absolutePath) ?: continue
@@ -360,9 +361,12 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         }
     }
 
-    private suspend fun hasBuildFile(project: Project, dirPath: String): Boolean = readAction {
+    private suspend fun hasBuildFile(
+        project: Project,
+        dirPath: String,
+        extensions: List<ExternalSystemUnlinkedProjectAware> = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
+    ): Boolean = readAction {
         val dir = LocalFileSystem.getInstance().findFileByPath(dirPath) ?: return@readAction false
-        val extensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
         dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
     }
 

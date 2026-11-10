@@ -19,6 +19,7 @@ import java.io.File
 class WorkspacePlainModuleBehaviorTest : McpPlatformTestCase() {
 
     private val createdModuleNames = mutableListOf<String>()
+    private val tempDirs = mutableListOf<File>()
 
     override fun tearDown() {
         try {
@@ -31,6 +32,8 @@ class WorkspacePlainModuleBehaviorTest : McpPlatformTestCase() {
                 }
                 createdModuleNames.clear()
             }
+            tempDirs.forEach { it.deleteRecursively() }
+            tempDirs.clear()
         } finally {
             super.tearDown()
         }
@@ -138,6 +141,7 @@ class WorkspacePlainModuleBehaviorTest : McpPlatformTestCase() {
     private fun tempWorkspaceDir(): File {
         val dir = File(project.basePath!!, ".test-workspace-${System.nanoTime()}")
         dir.mkdirs()
+        tempDirs.add(dir)
         return dir
     }
 
