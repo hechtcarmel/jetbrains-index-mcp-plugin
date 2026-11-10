@@ -40,12 +40,27 @@ object ClassResolver {
 
         // Try Java/Kotlin (if Java plugin is available)
         if (PluginDetectors.java.isAvailable) {
-            return try {
+            val javaClass = try {
                 findClassByNameWithJavaPlugin(project, qualifiedName)
             } catch (e: Exception) {
                 rethrowControlFlowExceptions(e)
                 null
             }
+            if (javaClass != null) return javaClass
+        }
+
+        if (PluginDetectors.kotlin.isAvailable) {
+            val indexClass = Class.forName("org.jetbrains.kotlin.idea.stubindex.KotlinFullClassNameIndex")
+            val helper = indexClass.getField("Helper").get(null)
+            val scopeClass = Class.forName("com.intellij.psi.search.GlobalSearchScope")
+            val scope = scopeClass.getMethod("allScope", Project::class.java).invoke(null, project)
+            val classes = try {
+                helper.javaClass.getMethod("get", String::class.java, Project::class.java, scopeClass)
+                    .invoke(helper, qualifiedName, project, scope) as Collection<*>
+            } catch (failure: InvocationTargetException) {
+                throw failure.targetException
+            }
+            return classes.filterIsInstance<PsiElement>().firstOrNull { PsiUtils.qualifiedName(it) == qualifiedName }
         }
 
         return null

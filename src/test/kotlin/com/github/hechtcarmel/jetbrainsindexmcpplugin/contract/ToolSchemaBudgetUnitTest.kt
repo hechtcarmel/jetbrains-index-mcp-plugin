@@ -1,6 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.contract
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import io.mockk.every
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import io.modelcontextprotocol.kotlin.sdk.types.McpJson
 import junit.framework.TestCase
 import kotlinx.serialization.json.buildJsonArray
@@ -9,9 +13,23 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 
 class ToolSchemaBudgetUnitTest : TestCase() {
+    override fun setUp() {
+        super.setUp()
+        mockkObject(PluginDetectors.kotlin)
+        every { PluginDetectors.kotlin.isAvailable } returns true
+    }
+
+    override fun tearDown() {
+        try {
+            unmockkObject(PluginDetectors.kotlin)
+        } finally {
+            super.tearDown()
+        }
+    }
+
     fun testPublishedToolDescriptionsAndSchemasFitTheContextBudget() {
         val tools = ToolRegistry().apply { registerBuiltInTools() }.getAllTools()
-        assertTrue("The budget must cover the actual registry", tools.size >= 51)
+        assertTrue("The budget must cover the actual registry, including J2K", tools.size >= 52)
         val payload = buildJsonArray {
             tools.forEach { tool ->
                 add(buildJsonObject {

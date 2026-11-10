@@ -56,7 +56,6 @@ object JavaHandlers {
         registry.registerSuperMethodsHandler(JavaSuperMethodsHandler())
         registry.registerStructureHandler(JavaStructureHandler())
 
-        // Also register for Kotlin (uses same Java PSI under the hood)
         registry.registerTypeHierarchyHandler(KotlinTypeHierarchyHandler())
         registry.registerImplementationsHandler(KotlinImplementationsHandler())
         registry.registerCallHierarchyHandler(KotlinCallHierarchyHandler())
@@ -1204,22 +1203,33 @@ class JavaSuperMethodsHandler : BaseJavaHandler<SuperMethodsData>(), SuperMethod
     }
 }
 
-// Kotlin handlers delegate to Java handlers since Kotlin uses Java PSI under the hood
-
-class KotlinTypeHierarchyHandler : TypeHierarchyHandler by JavaTypeHierarchyHandler() {
+class KotlinTypeHierarchyHandler(private val java: TypeHierarchyHandler = JavaTypeHierarchyHandler()) : TypeHierarchyHandler by java {
     override val languageId = "kotlin"
+
+    override fun getTypeHierarchy(element: PsiElement, project: Project, scope: BuiltInSearchScope, excludeGenerated: Boolean,
+                                  directOnly: Boolean, direction: TypeHierarchyDirection?, page: HierarchyPageRequest?): TypeHierarchyData? =
+        java.getTypeHierarchy(element, project, scope, excludeGenerated, directOnly, direction, page)
+            ?: KotlinNativeHierarchy.typeHierarchy(element, project, scope, excludeGenerated, directOnly, direction, page)
 }
 
-class KotlinImplementationsHandler : ImplementationsHandler by JavaImplementationsHandler() {
+class KotlinImplementationsHandler(private val java: ImplementationsHandler = JavaImplementationsHandler()) : ImplementationsHandler by java {
     override val languageId = "kotlin"
+
+    override fun findImplementations(element: PsiElement, project: Project, scope: BuiltInSearchScope,
+                                     excludeGenerated: Boolean): List<ImplementationData>? =
+        java.findImplementations(element, project, scope, excludeGenerated)
+            ?: KotlinNativeHierarchy.implementations(element, project, scope, excludeGenerated)
 }
 
 class KotlinCallHierarchyHandler : CallHierarchyHandler by JavaCallHierarchyHandler() {
     override val languageId = "kotlin"
 }
 
-class KotlinSuperMethodsHandler : SuperMethodsHandler by JavaSuperMethodsHandler() {
+class KotlinSuperMethodsHandler(private val java: SuperMethodsHandler = JavaSuperMethodsHandler()) : SuperMethodsHandler by java {
     override val languageId = "kotlin"
+
+    override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? =
+        java.findSuperMethods(element, project) ?: KotlinNativeHierarchy.superMethods(element, project)
 }
 
 /**

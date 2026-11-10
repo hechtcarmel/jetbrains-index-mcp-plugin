@@ -48,7 +48,10 @@ class KotlinOutlineKindsBehaviorTest : McpPlatformTestCase() {
             object Singleton
             class Ordinary
         """.trimIndent())
-        val result = FileStructureTool().execute(project, buildJsonObject { put("file", file) })
+        val result = FileStructureTool().execute(project, buildJsonObject {
+            put("file", file)
+            put("includeSymbolIds", true)
+        })
         assertToolSucceeded("extract Kotlin kinds", result)
         val payload = json.decodeFromString<FileStructureResult>(toolText(result))
         assertEquals(

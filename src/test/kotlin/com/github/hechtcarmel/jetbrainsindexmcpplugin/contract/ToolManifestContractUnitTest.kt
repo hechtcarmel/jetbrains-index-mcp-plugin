@@ -3,6 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.contract
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import io.modelcontextprotocol.kotlin.sdk.types.McpJson
 import kotlinx.serialization.json.encodeToJsonElement
 import io.mockk.every
@@ -21,8 +22,8 @@ import java.io.File
  * fail here rather than silently shipping.
  *
  * Two limits worth knowing before trusting it:
- * - It covers the tools that register headlessly — currently 51 of the 54 in [ToolNames.ALL].
- *   The three in [NOT_REGISTRABLE_HEADLESS] are guarded by set-equality in
+ * - It covers the tools that register headlessly — currently 52 of the 54 in [ToolNames.ALL].
+ *   The two in [NOT_REGISTRABLE_HEADLESS] are guarded by set-equality in
  *   [testEveryDeclaredToolNameIsRegistered] instead, so they cannot vanish unnoticed, but their
  *   schemas are not snapshotted.
  * - It covers INPUTS only. Response shapes are pinned separately by
@@ -58,14 +59,13 @@ class ToolManifestContractUnitTest : TestCase() {
          * Tools in [ToolNames.ALL] that legitimately do not register in the test JVM because
          * their guarding plugin is absent from the test platform.
          *
-         * `ide_convert_java_to_kotlin` needs the Kotlin plugin; `ide_import_modules` and
-         * `ide_open_workspace` need the Maven plugin. Neither is on the test classpath.
+         * `ide_import_modules` and `ide_open_workspace` need the Maven plugin, which is not
+         * on the test classpath.
          *
          * Keeping this list explicit means a tool that silently stops registering for any *other*
          * reason still fails the build.
          */
         val NOT_REGISTRABLE_HEADLESS = setOf(
-            ToolNames.CONVERT_JAVA_TO_KOTLIN,
             ToolNames.IMPORT_MODULES,
             ToolNames.OPEN_WORKSPACE,
         )
@@ -74,12 +74,15 @@ class ToolManifestContractUnitTest : TestCase() {
     override fun setUp() {
         super.setUp()
         mockkObject(LanguageHandlerRegistry)
+        mockkObject(PluginDetectors.kotlin)
+        every { PluginDetectors.kotlin.isAvailable } returns true
         every { LanguageHandlerRegistry.getSupportedLanguageNamesForSymbolReference() } returns PINNED_LANGUAGES
     }
 
     override fun tearDown() {
         try {
             unmockkObject(LanguageHandlerRegistry)
+            unmockkObject(PluginDetectors.kotlin)
         } finally {
             super.tearDown()
         }

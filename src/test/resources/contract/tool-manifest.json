@@ -1,6 +1,6 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 51
+# tools: 52
 
 ## ide_build_project
 description:
@@ -38,7 +38,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "rebuild":
@@ -144,7 +144,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "scope":
@@ -302,7 +302,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "symbol":
@@ -391,10 +391,44 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
+    "type": "object"
+  }
+
+## ide_convert_java_to_kotlin
+description:
+  Convert Java files to Kotlin with IntelliJ's built-in J2K converter. Requires Java and Kotlin plugins.
+  Supports classes, interfaces, enums, annotations, methods, fields and Java 8+ features.
+  Formats code and optimizes imports. Some advanced constructs need manual adjustment.
+  Provide project-relative files. Returns created .kt files, conversion warnings and success status.
+  Original Java files are deleted after successful conversion.
+  Example: {"files": ["src/Main.java"]}
+schema:
+  {
+    "properties":
+    {
+      "files":
+      {
+        "description": "Java files to convert (relative to project root).",
+        "items":
+        {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "files"
+    ],
     "type": "object"
   }
 
@@ -431,7 +465,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -487,7 +521,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -573,7 +607,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "severity":
@@ -680,7 +714,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "reformat":
@@ -772,7 +806,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -820,7 +854,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -885,7 +919,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "query":
@@ -965,7 +999,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "symbol":
@@ -1071,7 +1105,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "query":
@@ -1167,7 +1201,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "scope":
@@ -1333,7 +1367,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "scope":
@@ -1467,7 +1501,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "symbol":
@@ -1580,7 +1614,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "query":
@@ -1619,7 +1653,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1644,7 +1678,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1666,7 +1700,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1735,7 +1769,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "reformat":
@@ -1781,7 +1815,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1828,7 +1862,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1877,7 +1911,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "waitSeconds":
@@ -1914,7 +1948,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1952,7 +1986,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -1992,7 +2026,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -2065,7 +2099,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "timeoutSeconds":
@@ -2101,7 +2135,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -2173,7 +2207,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "severity":
@@ -2225,7 +2259,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -2258,7 +2292,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "qualifiedName":
@@ -2342,7 +2376,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "relatedRenamingStrategy":
@@ -2502,7 +2536,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "symbol":
@@ -2616,7 +2650,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "rearrangeCode":
@@ -2652,7 +2686,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -2689,7 +2723,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -2722,7 +2756,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -2796,7 +2830,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "reformat":
@@ -2908,7 +2942,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "regex":
@@ -2956,7 +2990,7 @@ schema:
     {
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -3025,7 +3059,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "runId":
@@ -3121,7 +3155,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "query":
@@ -3176,7 +3210,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -3216,7 +3250,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -3257,7 +3291,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -3305,7 +3339,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -3352,7 +3386,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "replacePattern":
@@ -3444,7 +3478,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "symbol":
@@ -3533,7 +3567,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       }
     },
@@ -3606,7 +3640,7 @@ schema:
       },
       "project_path":
       {
-        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "description": "Absolute project root (workspace: sub-project); required with multiple open projects.",
         "type": "string"
       },
       "scope":

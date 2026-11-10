@@ -5,9 +5,12 @@ import com.intellij.psi.PsiMethod
 
 /** Loaded only after the universal hierarchy helper has verified that Java PSI is available. */
 internal fun haveSameHierarchyMethodSignature(first: PsiElement, second: PsiElement): Boolean {
-    val left = first as PsiMethod
-    val right = second as PsiMethod
-    return left.name == right.name &&
-        left.parameterList.parameters.map { it.type.canonicalText } ==
-        right.parameterList.parameters.map { it.type.canonicalText }
+    return hierarchyMethodSignatureKey(first) == hierarchyMethodSignatureKey(second)
+}
+
+internal fun hierarchyMethodSignatureKey(element: PsiElement): String {
+    val method = element as PsiMethod
+    return method.name + method.parameterList.parameters.joinToString(prefix = "(", postfix = ")") {
+        it.type.canonicalText
+    }
 }
