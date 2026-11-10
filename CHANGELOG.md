@@ -6,7 +6,7 @@
 
 ### Added
 
-- **`ide_rename_module` — atomic Maven module rename** — renames directory, updates artifactId in the module's pom.xml, updates `<module>` entry in parent pom, and updates `<dependency>` references across all project pom.xml files, in one tool call. (disabled by default)
+- **`ide_rename_module` — atomic Maven module rename** ([#448](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/448)) — renames directory, updates artifactId in the module's pom.xml, updates `<module>` entry in parent pom, and updates `<dependency>` references across all project pom.xml files, in one tool call. Document content is read after sync (not from stale disk), dependency matching is scoped to individual `<dependency>` blocks, and multiple edits to the same file are combined. (disabled by default)
 
 ## [5.20.2] - 2026-10-09
 

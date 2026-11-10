@@ -325,4 +325,165 @@ class RenameModuleBehaviorTest : McpPlatformTestCase() {
         assertTrue("Child artifactId should be updated",
             childPom.contains("<artifactId>child-b</artifactId>"))
     }
+
+    fun testAdjacentDependenciesWithDifferentGroupsAreNotConfused() = runBlocking {
+        writeProjectFile("adj-parent/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>adj-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>target-mod</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("adj-parent/target-mod/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent><groupId>io.test</groupId><artifactId>adj-parent</artifactId><version>1.0</version></parent>
+              <artifactId>target-mod</artifactId>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("adj-parent/consumer/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>consumer</artifactId>
+              <version>1.0</version>
+              <dependencies>
+                <dependency>
+                  <groupId>com.other</groupId>
+                  <artifactId>target-mod</artifactId>
+                </dependency>
+                <dependency>
+                  <groupId>io.test</groupId>
+                  <artifactId>target-mod</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/adj-parent/target-mod")
+            put("newName", "renamed-mod")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val consumerPom = readProjectFileVfs("adj-parent/consumer/pom.xml")
+        assertTrue("io.test dependency should be renamed",
+            consumerPom.contains("<groupId>io.test</groupId>") &&
+                consumerPom.contains("<artifactId>renamed-mod</artifactId>"))
+        assertTrue("com.other dependency should NOT be renamed",
+            consumerPom.contains("<groupId>com.other</groupId>") &&
+                consumerPom.contains("<artifactId>target-mod</artifactId>"))
+    }
+
+    fun testInheritedGroupIdFromParentIsUsedForDependencyMatching() = runBlocking {
+        writeProjectFile("inh-root/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.inherited</groupId>
+              <artifactId>inh-root</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>child-mod</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("inh-root/child-mod/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.inherited</groupId>
+                <artifactId>inh-root</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>child-mod</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>com.external</groupId>
+                  <artifactId>unrelated</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("inh-root/consumer/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.inherited</groupId>
+              <artifactId>consumer</artifactId>
+              <version>1.0</version>
+              <dependencies>
+                <dependency>
+                  <groupId>io.inherited</groupId>
+                  <artifactId>child-mod</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/inh-root/child-mod")
+            put("newName", "new-child")
+        })
+        assertToolSucceeded("Rename with inherited groupId should succeed", result)
+
+        val consumerPom = readProjectFileVfs("inh-root/consumer/pom.xml")
+        assertTrue("Consumer dependency should use the inherited groupId for matching and rename",
+            consumerPom.contains("<artifactId>new-child</artifactId>"))
+    }
+
+    fun testMultipleChangesToSamePomAreCombined() = runBlocking {
+        writeProjectFile("multi/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>multi-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules>
+                <module>api</module>
+              </modules>
+              <dependencies>
+                <dependency>
+                  <groupId>io.test</groupId>
+                  <artifactId>api</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("multi/api/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent><groupId>io.test</groupId><artifactId>multi-parent</artifactId><version>1.0</version></parent>
+              <artifactId>api</artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/multi/api")
+            put("newName", "core-api")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val parentPom = readProjectFileVfs("multi/pom.xml")
+        assertTrue("Module entry should be updated: $parentPom",
+            parentPom.contains("<module>core-api</module>"))
+        assertFalse("Old module entry should be gone: $parentPom",
+            parentPom.contains("<module>api</module>"))
+        assertTrue("Dependency should also be updated: $parentPom",
+            parentPom.contains("<artifactId>core-api</artifactId>"))
+    }
 }
