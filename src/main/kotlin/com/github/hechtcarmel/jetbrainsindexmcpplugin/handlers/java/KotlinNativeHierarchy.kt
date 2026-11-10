@@ -115,7 +115,7 @@ internal object KotlinNativeHierarchy {
             "Kotlin", target
         )
         val hierarchy = mutableListOf<SuperMethodData>()
-        val visited = mutableSetOf<PsiElement>(target)
+        val visited = mutableSetOf(target)
         fun collect(current: PsiElement, depth: Int) {
             if (depth > 100) return
             for (parent in directSuperMethods(current)) {
