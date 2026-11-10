@@ -68,7 +68,25 @@ class RenameModuleTool : AbstractMcpTool() {
             return createErrorResult("Destination already exists: ${newDir.absolutePath}")
         }
 
-        val pomContent = pomFile.readText()
+        // Sync all pom.xml files and read from Documents (not disk) to avoid stale content
+        val allPomFiles = mutableListOf(pomFile)
+        val parentPomFile = if (parentDir != null) File(parentDir, "pom.xml") else null
+        if (parentPomFile?.exists() == true) allPomFiles.add(parentPomFile)
+        val projectBase = project.basePath
+        if (projectBase != null) allPomFiles.addAll(findAllPomFiles(File(projectBase)))
+        val uniquePoms = allPomFiles.distinctBy { it.absolutePath }
+
+        // Sync all POMs and read their current document content
+        val documentContents = mutableMapOf<String, String>()
+        for (pom in uniquePoms) {
+            val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(pom.absolutePath) ?: continue
+            val syncError = syncFileForEdit(project, vf)
+            if (syncError != null) return syncError
+            val doc = FileDocumentManager.getInstance().getDocument(vf)
+            documentContents[pom.absolutePath] = doc?.text ?: pom.readText()
+        }
+
+        val pomContent = documentContents[pomFile.absolutePath] ?: pomFile.readText()
         val oldArtifactId = extractModuleArtifactId(pomContent)
             ?: return createErrorResult("Cannot parse <artifactId> from ${pomFile.absolutePath}")
         val moduleGroupId = extractModuleGroupId(pomContent)
@@ -76,27 +94,29 @@ class RenameModuleTool : AbstractMcpTool() {
         val effectiveGroupId = moduleGroupId ?: parentGroupId
             ?: return createErrorResult("Cannot determine groupId for module (checked both <groupId> and <parent><groupId>)")
 
-        val parentPomFile = if (parentDir != null) File(parentDir, "pom.xml") else null
+        // Accumulate changes per file — multiple edits to the same file are combined
+        val pendingChanges = mutableMapOf<String, String>()
         var parentPomUpdated = false
         var dependencyUpdates = 0
         var childParentUpdates = 0
 
-        val pomFilesToUpdate = mutableListOf<Pair<File, String>>()
-
         // 1. Update parent pom's <module> entry
         if (parentPomFile != null && parentPomFile.exists()) {
-            val text = parentPomFile.readText()
+            val text = pendingChanges[parentPomFile.absolutePath]
+                ?: documentContents[parentPomFile.absolutePath]
+                ?: parentPomFile.readText()
             val updated = text.replace("<module>$oldDirName</module>", "<module>$newName</module>")
             if (updated != text) {
-                pomFilesToUpdate.add(parentPomFile to updated)
+                pendingChanges[parentPomFile.absolutePath] = updated
                 parentPomUpdated = true
             }
         }
 
         // 2. Update the module's own artifactId
-        val updatedModulePom = replaceFirstArtifactId(pomContent, oldArtifactId, newName)
-        if (updatedModulePom != pomContent) {
-            pomFilesToUpdate.add(pomFile to updatedModulePom)
+        val currentModulePom = pendingChanges[pomFile.absolutePath] ?: pomContent
+        val updatedModulePom = replaceFirstArtifactId(currentModulePom, oldArtifactId, newName)
+        if (updatedModulePom != currentModulePom) {
+            pendingChanges[pomFile.absolutePath] = updatedModulePom
         }
 
         // 3. Update child modules' <parent><artifactId> references
@@ -104,50 +124,48 @@ class RenameModuleTool : AbstractMcpTool() {
         for (childName in childModuleDirs) {
             val childPomFile = File(moduleDir, "$childName/pom.xml")
             if (!childPomFile.exists()) continue
-            val childContent = childPomFile.readText()
+            val childContent = pendingChanges[childPomFile.absolutePath]
+                ?: documentContents[childPomFile.absolutePath]
+                ?: childPomFile.readText()
             val updated = updateParentArtifactId(childContent, oldArtifactId, newName)
             if (updated != childContent) {
-                pomFilesToUpdate.add(childPomFile to updated)
+                pendingChanges[childPomFile.absolutePath] = updated
                 childParentUpdates++
             }
         }
 
         // 4. Update dependency references across all project pom.xml files
-        val projectBase = project.basePath
-        val processedPaths = pomFilesToUpdate.map { it.first.absolutePath }.toSet() + pomFile.absolutePath
         if (projectBase != null) {
-            val allPoms = findAllPomFiles(File(projectBase))
-            for (otherPom in allPoms) {
-                if (otherPom.absolutePath in processedPaths) continue
+            for (otherPom in uniquePoms) {
+                if (otherPom.absolutePath == pomFile.absolutePath) continue
 
-                val otherContent = otherPom.readText()
+                val otherContent = pendingChanges[otherPom.absolutePath]
+                    ?: documentContents[otherPom.absolutePath]
+                    ?: continue
                 if (!otherContent.contains(oldArtifactId)) continue
 
                 val updated = updateDependencyArtifactId(otherContent, effectiveGroupId, oldArtifactId, newName)
                 if (updated != otherContent) {
-                    pomFilesToUpdate.add(otherPom to updated)
+                    pendingChanges[otherPom.absolutePath] = updated
                     dependencyUpdates++
                 }
             }
         }
 
-        // Phase 1: Update all pom.xml files via Document API
+        // Phase 1: Apply all pom.xml changes via Document API
         val saveErrors = mutableListOf<String>()
-        for ((file, newContent) in pomFilesToUpdate) {
-            val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(file.absolutePath)
+        for ((filePath, newContent) in pendingChanges) {
+            val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath)
             if (vf == null) {
-                saveErrors.add("Cannot find VFS entry for ${file.absolutePath}")
+                saveErrors.add("Cannot find VFS entry for $filePath")
                 continue
             }
-            val syncError = syncFileForEdit(project, vf)
-            if (syncError != null) return syncError
-
             val doc = FileDocumentManager.getInstance().getDocument(vf)
             if (doc == null) {
-                saveErrors.add("Cannot get document for ${file.absolutePath}")
+                saveErrors.add("Cannot get document for $filePath")
                 continue
             }
-            val writeError = suspendingWriteActionAndSave(project, "Rename module: update ${file.name}", doc) {
+            val writeError = suspendingWriteActionAndSave(project, "Rename module: update ${File(filePath).name}", doc) {
                 doc.setText(newContent)
             }
             if (writeError != null) return writeError
@@ -195,8 +213,13 @@ class RenameModuleTool : AbstractMcpTool() {
 
     private fun extractModuleGroupId(pomXml: String): String? {
         val parentEnd = pomXml.indexOf("</parent>")
-        val searchIn = if (parentEnd >= 0) pomXml.substring(parentEnd) else pomXml
-        return Regex("<groupId>\\s*([^<]+?)\\s*</groupId>").find(searchIn)?.groupValues?.get(1)
+        val searchFrom = if (parentEnd >= 0) parentEnd + "</parent>".length else 0
+        val depStart = pomXml.indexOf("<dependencies>", searchFrom)
+        val buildStart = pomXml.indexOf("<build>", searchFrom)
+        val profilesStart = pomXml.indexOf("<profiles>", searchFrom)
+        val searchEnd = listOf(depStart, buildStart, profilesStart).filter { it >= 0 }.minOrNull() ?: pomXml.length
+        val topLevel = pomXml.substring(searchFrom, searchEnd)
+        return Regex("<groupId>\\s*([^<]+?)\\s*</groupId>").find(topLevel)?.groupValues?.get(1)
     }
 
     private fun extractParentGroupId(pomXml: String): String? {
@@ -229,11 +252,16 @@ class RenameModuleTool : AbstractMcpTool() {
     }
 
     private fun updateDependencyArtifactId(pomXml: String, groupId: String, oldArtifactId: String, newArtifactId: String): String {
-        val depPattern = Regex(
-            "(<dependency>[\\s\\S]*?<groupId>\\s*${Regex.escape(groupId)}\\s*</groupId>[\\s\\S]*?)<artifactId>\\s*${Regex.escape(oldArtifactId)}\\s*</artifactId>"
-        )
-        return depPattern.replace(pomXml) { match ->
-            "${match.groupValues[1]}<artifactId>$newArtifactId</artifactId>"
+        val depBlockPattern = Regex("<dependency>([\\s\\S]*?)</dependency>")
+        val groupPattern = Regex("<groupId>\\s*${Regex.escape(groupId)}\\s*</groupId>")
+        val artifactPattern = Regex("<artifactId>\\s*${Regex.escape(oldArtifactId)}\\s*</artifactId>")
+        return depBlockPattern.replace(pomXml) { match ->
+            val block = match.value
+            if (groupPattern.containsMatchIn(block) && artifactPattern.containsMatchIn(block)) {
+                artifactPattern.replace(block) { "<artifactId>$newArtifactId</artifactId>" }
+            } else {
+                block
+            }
         }
     }
 
