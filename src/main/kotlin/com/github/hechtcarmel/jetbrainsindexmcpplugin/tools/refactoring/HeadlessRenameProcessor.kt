@@ -198,10 +198,12 @@ internal class HeadlessRenameProcessor(
         return ConflictMessages.sanitizeAll(conflicts.values())
     }
 
-    // The base `isPreviewUsages` ORs `setPreviewUsages`, `forcesShowPreview()` from any
-    // registered RenamePsiElementProcessor, and non-code/generated-source usages. Clearing
-    // `setPreviewUsages(false)` alone leaves the other two triggers active, so an unconditional
-    // override is the only public way to prevent the Refactoring Preview tab from opening.
+    /**
+     * The base `isPreviewUsages` ORs `setPreviewUsages`, `forcesShowPreview()` from any
+     * registered `RenamePsiElementProcessor`, and non-code/generated-source usages. Clearing
+     * `setPreviewUsages(false)` alone leaves the other two triggers active, so an unconditional
+     * override is the only public way to prevent the Refactoring Preview tab from opening.
+     */
     override fun isPreviewUsages(usages: Array<out UsageInfo>): Boolean = false
 
     override fun showAutomaticRenamingDialog(automaticVariableRenamer: AutomaticRenamer): Boolean {
