@@ -83,34 +83,27 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
     override val name = ToolNames.PROJECT_DIAGNOSTICS
 
     override val description = """
-        Analyze many files — up to the whole project, including files not open in any editor — for code
-        problems (errors and warnings), with fail-closed coverage metadata.
+        Analyze many project files, including unopened files, for errors and warnings with fail-closed coverage.
 
-        Coverage contract: every file in scope gets exactly one state — analyzed, timed_out, failed,
-        skipped (not eligible for analysis, with reason), or not_analyzed (maxFiles/timeoutSeconds cut it
-        off). The top-level "complete" flag is true only when every considered file was analyzed. An empty
-        problems list is a clean signal ONLY when complete=true; otherwise inspect incompleteFiles and the
-        per-state counts. filesAnalyzedOpenDaemon/filesAnalyzedClosedBatch report which analysis mode
-        covered each file; closed-file batch analysis does not include weak warnings or editor-only
-        annotators.
+        Every considered file gets one state: analyzed, timed_out, failed, skipped (with reason), or
+        not_analyzed (maxFiles/timeoutSeconds). An empty problems list is a clean signal ONLY when
+        complete=true. Inspect incompleteFiles and per-state counts otherwise. Open files use fresh
+        daemon highlights; closed-file batch analysis omits weak warnings and editor-only annotators.
 
-        Long-running analysis: each call blocks at most waitSeconds (default ${LongPoll.DEFAULT_WAIT_SECONDS}). If analysis is still
-        running when the wait budget ends, the call returns {"status": "running", "analysisId": "..."} while
-        analysis continues inside the IDE — call this tool again with that analysisId to keep waiting.
-        Only one analysis runs per project at a time.
+        Each call waits at most waitSeconds (default 45, max 55). While analysis continues in the IDE,
+        it returns {"status": "running", "analysisId": "..."}; poll with that analysisId. Only one run
+        per project is allowed. Polls ignore other analysis options.
 
-        Returns: complete flag, status (completed | timed_out), per-state file counts, incompleteFiles
-        (every non-analyzed file with state and reason, capped at $MAX_INCOMPLETE_FILE_ENTRIES entries), problems with severity
-        and location, problemCount, errorCount, warningCount, durationMs.
+        fileTimeoutSeconds (integer 1–600, default 30) bounds each file, including setup and queueing,
+        and is capped by the remaining timeoutSeconds for the whole run (default 600, max 3600).
+        Expiry keeps coverage incomplete. maxFiles defaults to 1000 (max 10000); maxProblems defaults
+        to 1000 (max 5000). severity defaults to 'all'. Omit paths to cover all project content roots.
 
-        Parameters: project_path (optional), paths (optional array of files/directories relative to project
-        root; omit to analyze all content roots), severity (optional, default 'all'), maxFiles (optional,
-        default $DEFAULT_MAX_FILES, max $MAX_MAX_FILES), maxProblems (optional, default $DEFAULT_MAX_TOTAL_PROBLEMS, max $MAX_TOTAL_PROBLEMS), timeoutSeconds (optional, default $DEFAULT_TIMEOUT_SECONDS, max $MAX_TIMEOUT_SECONDS),
-        waitSeconds (optional, default ${LongPoll.DEFAULT_WAIT_SECONDS}, max ${LongPoll.MAX_WAIT_SECONDS}), analysisId (optional, polls a running analysis; excludes all
-        other parameters).
+        Returns: complete, status (completed | timed_out), file counts by state and analysis mode,
+        incompleteFiles (capped at 100), problems with severity/location, problemCount, errorCount,
+        warningCount, durationMs.
 
-        Example: {"paths": ["src/main"]} or {} for the whole project — then if a "running" status comes
-        back: {"analysisId": "<analysisId from that response>"}
+        Example: {"paths": ["src/Huge.java"], "fileTimeoutSeconds": 300}; then {"analysisId": "..."}.
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
@@ -149,6 +142,11 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                     "keeps waiting instead of starting a new one."
         )
         .intProperty(
+            ParamNames.FILE_TIMEOUT_SECONDS,
+            "Per-file analysis seconds, including setup and queueing; capped by the whole-run deadline. " +
+                    "Default: 30, range: 1–600. Ignored when analysisId is given."
+        )
+        .intProperty(
             ParamNames.WAIT_SECONDS,
             "Maximum seconds this call may block before returning results or a \"running\" status. " +
                     "Default: ${LongPoll.DEFAULT_WAIT_SECONDS}, max: ${LongPoll.MAX_WAIT_SECONDS}. Keep below your MCP client's request timeout."
@@ -172,6 +170,17 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                             "Start a new analysis by omitting analysisId."
                 )
             return awaitAnalysisResult(project, analysis, waitSeconds, callStartMs)
+        }
+
+        val fileTimeoutArg = arguments[ParamNames.FILE_TIMEOUT_SECONDS]
+        val fileTimeoutMs = if (fileTimeoutArg == null) {
+            null // Keep the service default, including its test-only override.
+        } else {
+            val seconds = (fileTimeoutArg as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull
+            if (seconds == null || seconds !in 1..DiagnosticsAnalysisBudget.MAX_FILE_TIMEOUT_SECONDS) {
+                return createErrorResult("fileTimeoutSeconds must be an integer between 1 and 600.")
+            }
+            seconds * 1000L
         }
 
         // Fast path only — the authoritative, race-free claim is tryStartExclusive below.
@@ -216,7 +225,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
 
         registry.launchAnalysis {
             try {
-                runAnalysisLoop(project, analysis, targets, maxFiles, severity, maxProblems)
+                runAnalysisLoop(project, analysis, targets, maxFiles, severity, maxProblems, fileTimeoutMs)
             } catch (t: Throwable) {
                 if (!analysis.result.isCompleted) {
                     analysis.result.completeExceptionally(
@@ -320,7 +329,8 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
         targets: List<TargetFile>,
         maxFiles: Int,
         severity: String,
-        maxProblems: Int
+        maxProblems: Int,
+        fileTimeoutMs: Long?
     ) {
         val service = DiagnosticsAnalysisService.getInstance(project)
         val problems = mutableListOf<ProblemInfo>()
@@ -337,7 +347,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
         var failed = 0
         var skipped = 0
         var notAnalyzed = 0
-        var deadlineHit = false
+        var deadlineHit = System.currentTimeMillis() >= analysis.deadlineAtMs
 
         fun recordIncomplete(target: TargetFile, state: String, reason: String?) {
             if (incompleteFiles.size < MAX_INCOMPLETE_FILE_ENTRIES) {
@@ -355,7 +365,11 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
             // instead of relying on the next suspension point inside analyzeFile.
             currentCoroutineContext().ensureActive()
 
-            if (System.currentTimeMillis() >= analysis.deadlineAtMs) {
+            val budgetMs = DiagnosticsAnalysisBudget.perFileTimeoutMs(
+                fileTimeoutMs ?: service.configuredAnalysisTimeoutMs(),
+                analysis.deadlineAtMs - System.currentTimeMillis()
+            )
+            if (budgetMs == 0L) {
                 deadlineHit = true
                 for (remaining in toAnalyze.subList(index, toAnalyze.size)) {
                     notAnalyzed++
@@ -376,7 +390,8 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                     severity = severity,
                     startLine = null,
                     endLine = null,
-                    maxProblems = MAX_PROBLEMS_PER_FILE
+                    maxProblems = MAX_PROBLEMS_PER_FILE,
+                    timeoutMs = budgetMs
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -385,13 +400,27 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                 // is not under that indicator, so the cancellation is per-file, not ours — the
                 // file is reported failed and coverage stays fail-closed. A cancelled registry
                 // scope exits via ensureActive() above.
-                failed++
-                recordIncomplete(target, STATE_FAILED, e.message ?: e.javaClass.simpleName)
+                deadlineHit = System.currentTimeMillis() >= analysis.deadlineAtMs
+                if (deadlineHit) {
+                    timedOut++
+                    recordIncomplete(target, STATE_TIMED_OUT,
+                        "timeoutSeconds (${analysis.timeoutSeconds}s) elapsed during this file's analysis.")
+                } else {
+                    failed++
+                    recordIncomplete(target, STATE_FAILED, e.message ?: e.javaClass.simpleName)
+                }
                 analysis.filesProcessed.incrementAndGet()
                 continue
             }
 
-            val (state, reason) = coverageStateFor(outcome)
+            // Also check the last file: there may be no next iteration to notice the deadline.
+            // Never accept a late fresh result from a cooperatively cancelled provider as clean.
+            deadlineHit = System.currentTimeMillis() >= analysis.deadlineAtMs
+            val (state, reason) = if (deadlineHit) {
+                STATE_TIMED_OUT to "timeoutSeconds (${analysis.timeoutSeconds}s) elapsed during this file's analysis."
+            } else {
+                coverageStateFor(outcome)
+            }
             when (state) {
                 STATE_ANALYZED -> {
                     analyzed++
@@ -439,7 +468,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
 
         analysis.result.complete(
             ProjectDiagnosticsResult(
-                complete = analyzed == targets.size,
+                complete = !deadlineHit && analyzed == targets.size,
                 status = if (deadlineHit) STATUS_TIMED_OUT else STATUS_COMPLETED,
                 filesConsidered = targets.size,
                 filesAnalyzed = analyzed,

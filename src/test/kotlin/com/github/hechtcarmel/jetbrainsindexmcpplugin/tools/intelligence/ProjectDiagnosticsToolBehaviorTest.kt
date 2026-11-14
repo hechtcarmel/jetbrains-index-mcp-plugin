@@ -3,10 +3,12 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagnosticsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagnosticsResult
+import com.intellij.openapi.vfs.LocalFileSystem
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -279,6 +281,7 @@ class ProjectDiagnosticsToolBehaviorTest : McpPlatformTestCase() {
 
         val result = callTool {
             putJsonArray("paths") { add("src/slowscope") }
+            put("fileTimeoutSeconds", 600)
             put("timeoutSeconds", 1)
             put("waitSeconds", 10)
         }
@@ -340,6 +343,110 @@ class ProjectDiagnosticsToolBehaviorTest : McpPlatformTestCase() {
             "error must echo the analysisId so the agent can see what it asked for",
             toolText(result).contains("no-such-analysis")
         )
+    }
+
+    fun testFileTimeoutRejectsNonIntegerAndOutOfRangeArgumentsBeforeStarting() {
+        val registry = ActiveProjectAnalysisRegistry.getInstance(project)
+        val previous = registry.mostRecent
+        for (value in listOf("0", "-1", "601", "1.5", "\"2\"", "true", "null", "{}", "2147483648")) {
+            val result = callTool { put("fileTimeoutSeconds", Json.parseToJsonElement(value)) }
+            assertToolFailed("invalid fileTimeoutSeconds=$value must fail", result)
+            assertTrue(toolText(result).contains("fileTimeoutSeconds must be an integer between 1 and 600"))
+            assertSame("invalid arguments must not claim an analysis slot", previous, registry.mostRecent)
+        }
+    }
+
+    fun testFileTimeoutAcceptsBothRangeBoundaries() {
+        writeProjectFile("src/filebudget/Boundary.java", "class Boundary {}")
+        DiagnosticsAnalysisService.getInstance(project).closedFileAnalysisOverride = { emptyList() }
+        for (seconds in listOf(1, 600)) {
+            val result = callTool {
+                putJsonArray("paths") { add("src/filebudget") }
+                put("fileTimeoutSeconds", seconds)
+            }
+            assertToolSucceeded("fileTimeoutSeconds=$seconds is valid", result)
+            assertTrue(decodeFinal(result).complete)
+        }
+    }
+
+    fun testCustomBudgetDoesNotChangeConcurrentOrdinaryDiagnosticsOrAnotherStart() = runBlocking {
+        writeProjectFile("src/isolated/Gated.java", "class Gated {}")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        service.analysisTimeoutMsOverride = 200L
+        service.closedFileAnalysisOverride = {
+            entered.complete(Unit)
+            release.await()
+            emptyList()
+        }
+        try {
+            val started = callTool {
+                putJsonArray("paths") { add("src/isolated") }
+                put("fileTimeoutSeconds", 5)
+                put("waitSeconds", 0)
+            }
+            assertToolSucceeded("custom-budget run starts", started)
+            val running = decodeRunning(started)
+            withTimeout(5_000) { entered.await() }
+
+            val concurrent = callTool { put("fileTimeoutSeconds", 1) }
+            assertToolFailed("a second start cannot replace the running budget", concurrent)
+            assertTrue(toolText(concurrent).contains(running.analysisId))
+
+            val file = requireNotNull(LocalFileSystem.getInstance()
+                .refreshAndFindFileByNioFile(Path.of(project.basePath!!, "src/isolated/Gated.java")))
+            val ordinary = service.analyzeFile(file, "src/isolated/Gated.java", "all", null, null, 100)
+            assertTrue("ordinary diagnostics must retain its short budget while the project run holds the lock",
+                ordinary.analysisTimedOut)
+            assertEquals(200L, service.configuredAnalysisTimeoutMs())
+
+            release.complete(Unit)
+            val payload = pollUntilFinal(running.analysisId)
+            assertTrue("custom per-file budget must survive longer than the ordinary budget", payload.complete)
+            assertEquals(1, payload.filesAnalyzed)
+        } finally {
+            release.complete(Unit)
+        }
+    }
+
+    fun testRequestedFileBudgetExpiresWithoutClaimingCleanCoverage() {
+        writeProjectFile("src/filelimit/Slow.java", "class Slow {}")
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        service.closedFileAnalysisOverride = { delay(5_000); emptyList() }
+        val result = callTool {
+            putJsonArray("paths") { add("src/filelimit") }
+            put("fileTimeoutSeconds", 1)
+            put("timeoutSeconds", 10)
+        }
+        assertToolSucceeded("a per-file timeout is an in-band coverage result", result)
+        val payload = decodeFinal(result)
+        assertEquals(ProjectDiagnosticsTool.STATUS_COMPLETED, payload.status)
+        assertFalse(payload.complete)
+        assertEquals(1, payload.filesTimedOut)
+        assertEquals(ProjectDiagnosticsTool.STATE_TIMED_OUT, payload.incompleteFiles.single().state)
+        assertTrue(payload.problems.isEmpty())
+    }
+
+    fun testOverallDeadlineCapsLongFileBudgetEvenOnTheLastFile() {
+        writeProjectFile("src/lastlimit/Slow.java", "class Slow {}")
+        DiagnosticsAnalysisService.getInstance(project).closedFileAnalysisOverride = { delay(5_000); emptyList() }
+        val startedAt = System.currentTimeMillis()
+        val result = callTool {
+            putJsonArray("paths") { add("src/lastlimit") }
+            put("fileTimeoutSeconds", 600)
+            put("timeoutSeconds", 1)
+            put("waitSeconds", 10)
+        }
+        assertToolSucceeded("deadline produces a final partial result", result)
+        val payload = decodeFinal(result)
+        assertTrue("must cancel the slow provider instead of waiting five seconds",
+            System.currentTimeMillis() - startedAt < 4_000)
+        assertEquals(ProjectDiagnosticsTool.STATUS_TIMED_OUT, payload.status)
+        assertFalse(payload.complete)
+        assertEquals(0, payload.filesAnalyzed)
+        assertEquals(1, payload.filesTimedOut)
+        assertEquals(ProjectDiagnosticsTool.STATE_TIMED_OUT, payload.incompleteFiles.single().state)
     }
 
     fun testPathNotFoundFailsFast() {

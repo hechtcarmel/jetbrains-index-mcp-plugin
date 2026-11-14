@@ -37,7 +37,6 @@ class DiagnosticsAnalysisService(private val project: Project) {
         const val MODE_OPEN_DAEMON = "open_daemon"
         const val MODE_CLOSED_BATCH = "closed_batch"
 
-        private const val DEFAULT_ANALYSIS_TIMEOUT_MS = 30_000L
         private const val HIGHLIGHT_POLL_INTERVAL_MS = 50L
         private const val HIGHLIGHT_RESTART_GRACE_MS = 150L
         private const val HIGHLIGHT_STABLE_SNAPSHOTS_REQUIRED = 2
@@ -124,7 +123,7 @@ class DiagnosticsAnalysisService(private val project: Project) {
      * part of one shared budget through [analyzeFile]'s `timeoutMs` parameter.
      */
     internal fun configuredAnalysisTimeoutMs(): Long =
-        (analysisTimeoutMsOverride ?: DEFAULT_ANALYSIS_TIMEOUT_MS).coerceAtLeast(1L)
+        (analysisTimeoutMsOverride ?: DiagnosticsAnalysisBudget.DEFAULT_TIMEOUT_MS).coerceAtLeast(1L)
 
     private suspend fun analyzeFileWithinBudget(
         virtualFile: VirtualFile,

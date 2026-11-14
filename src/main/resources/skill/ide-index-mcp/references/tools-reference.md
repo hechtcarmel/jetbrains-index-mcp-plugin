@@ -405,6 +405,8 @@ Analyze many files — up to the whole project, including files not open in any 
 
 Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit. If analysis is still running when the wait budget ends, the call returns `{"status": "running", "analysisId": "..."}` while analysis continues in the IDE — call the tool again with that `analysisId` to keep waiting. Only one analysis runs per project at a time.
 
+For a large file, request `{"paths": ["src/Huge.java"], "fileTimeoutSeconds": 300}` and poll the returned `analysisId`. A per-file timeout keeps `complete` false while later files can still be checked. At the whole-run `timeoutSeconds` deadline, the in-flight file is `timed_out` and remaining files are `not_analyzed`. This per-run option does not change `ide_diagnostics`.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | no | Project root path |
@@ -413,6 +415,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's request 
 | `maxFiles` | integer | no | Max files to analyze (default 1000, max 10000). Overflow files are reported `not_analyzed` and `complete` becomes false |
 | `maxProblems` | integer | no | Max problems returned across all files (default 1000, max 5000). `problemCount` keeps counting beyond it |
 | `timeoutSeconds` | integer | no | Max seconds for the whole analysis (default 600, max 3600). Remaining files are reported `not_analyzed` when it elapses. Ignored with `analysisId` |
+| `fileTimeoutSeconds` | integer | no | Per-file analysis budget including setup and queueing (default 30, range 1–600), capped by the remaining whole-run time. Ignored with `analysisId` |
 | `analysisId` | string | no | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis and keeps waiting |
 | `waitSeconds` | integer | no | Max seconds this call may block before returning results or a `running` status (default 45, max 55) |
 
