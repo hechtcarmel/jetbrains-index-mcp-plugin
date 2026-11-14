@@ -2148,35 +2148,27 @@ schema:
 
 ## ide_project_diagnostics
 description:
-  Analyze many files — up to the whole project, including files not open in any editor — for code
-  problems (errors and warnings), with fail-closed coverage metadata.
+  Analyze many project files, including unopened files, for errors and warnings with fail-closed coverage.
   
-  Coverage contract: every file in scope gets exactly one state — analyzed, timed_out, failed,
-  skipped (not eligible for analysis, with reason), or not_analyzed (maxFiles/timeoutSeconds cut it
-  off). The top-level "complete" flag is true only when every considered file was analyzed. An empty
-  problems list is a clean signal ONLY when complete=true; otherwise inspect incompleteFiles and the
-  per-state counts. filesAnalyzedOpenDaemon/filesAnalyzedClosedBatch report which analysis mode
-  covered each file; closed-file batch analysis does not include weak warnings or editor-only
-  annotators.
+  Every considered file gets one state: analyzed, timed_out, failed, skipped (with reason), or
+  not_analyzed (maxFiles/timeoutSeconds). An empty problems list is a clean signal ONLY when
+  complete=true. Inspect incompleteFiles and per-state counts otherwise. Open files use fresh
+  daemon highlights; closed-file batch analysis omits weak warnings and editor-only annotators.
   
-  Long-running analysis: each call blocks at most waitSeconds (default 45). If analysis is still
-  running when the wait budget ends, the call returns {"status": "running", "analysisId": "..."} while
-  analysis continues inside the IDE — call this tool again with that analysisId to keep waiting.
-  Only one analysis runs per project at a time.
+  Each call waits at most waitSeconds (default 45, max 55). While analysis continues in the IDE,
+  it returns {"status": "running", "analysisId": "..."}; poll with that analysisId. Only one run
+  per project is allowed. Polls ignore other analysis options.
   
-  Returns: complete flag, status (completed | timed_out), per-state file counts, incompleteFiles
-  (every non-analyzed file with state and reason, capped at 100 entries), problems with severity
-  and location, problemCount, errorCount, warningCount, durationMs.
+  fileTimeoutSeconds (integer 1–600, default 30) bounds each file, including setup and queueing,
+  and is capped by the remaining timeoutSeconds for the whole run (default 600, max 3600).
+  Expiry keeps coverage incomplete. maxFiles defaults to 1000 (max 10000); maxProblems defaults
+  to 1000 (max 5000). severity defaults to 'all'. Omit paths to cover all project content roots.
   
-  Parameters: project_path (optional), paths (optional array of files/directories relative to project
-  root; omit to analyze all content roots), severity (optional, default 'all'), maxFiles (optional,
-  default 1000, max 10000), maxProblems (optional, default 1000, max 5000), timeoutSeconds (optional, default 600, max 3600),
-  fileTimeoutSeconds (optional integer, 1–600, default 30): per-file budget including setup and queueing, capped by the run's remaining time.
-  waitSeconds (optional, default 45, max 55), analysisId (optional, polls a running analysis; excludes all
-  other parameters).
+  Returns: complete, status (completed | timed_out), file counts by state and analysis mode,
+  incompleteFiles (capped at 100), problems with severity/location, problemCount, errorCount,
+  warningCount, durationMs.
   
-  Example: {"paths": ["src/main"]} or {} for the whole project — then if a "running" status comes
-  back: {"analysisId": "<analysisId from that response>"}
+  Example: {"paths": ["src/Huge.java"], "fileTimeoutSeconds": 300}; then {"analysisId": "..."}.
 schema:
   {
     "properties":
