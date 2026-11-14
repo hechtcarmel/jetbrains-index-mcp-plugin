@@ -84,25 +84,25 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
 
     override val description = """
         Analyze many project files, including unopened files, for errors and warnings with fail-closed coverage.
-        
+
         Every considered file gets one state: analyzed, timed_out, failed, skipped (with reason), or
         not_analyzed (maxFiles/timeoutSeconds). An empty problems list is a clean signal ONLY when
         complete=true. Inspect incompleteFiles and per-state counts otherwise. Open files use fresh
         daemon highlights; closed-file batch analysis omits weak warnings and editor-only annotators.
-        
+
         Each call waits at most waitSeconds (default 45, max 55). While analysis continues in the IDE,
         it returns {"status": "running", "analysisId": "..."}; poll with that analysisId. Only one run
         per project is allowed. Polls ignore other analysis options.
-        
+
         fileTimeoutSeconds (integer 1–600, default 30) bounds each file, including setup and queueing,
         and is capped by the remaining timeoutSeconds for the whole run (default 600, max 3600).
         Expiry keeps coverage incomplete. maxFiles defaults to 1000 (max 10000); maxProblems defaults
         to 1000 (max 5000). severity defaults to 'all'. Omit paths to cover all project content roots.
-        
+
         Returns: complete, status (completed | timed_out), file counts by state and analysis mode,
         incompleteFiles (capped at 100), problems with severity/location, problemCount, errorCount,
         warningCount, durationMs.
-        
+
         Example: {"paths": ["src/Huge.java"], "fileTimeoutSeconds": 300}; then {"analysisId": "..."}.
     """.trimIndent()
 
