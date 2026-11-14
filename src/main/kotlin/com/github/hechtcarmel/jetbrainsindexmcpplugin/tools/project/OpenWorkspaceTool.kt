@@ -353,7 +353,8 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             return createErrorResult("Cannot add plain roots to the open project: ${e.message}. Check Project Structure before retrying.")
         }
         if (smart == false) return createErrorResult("Project '${existing.name}' was closed while waiting for indexing.")
-        val status = if (smart == true) "It is ready." else "It is still indexing after ${timeoutSeconds}s. Check ide_index_status."
+        val status = if (smart == true) "It is ready." else
+            "Setup/indexing did not finish after ${timeoutSeconds}s. Check ide_index_status and retry with the same complete modules list."
         return createSuccessResult(
             "Reused the open project '${existing.name}' (${existing.basePath}): " +
                 "${allModules.size} requested directories; no new workspace window was opened. $status\n" +
