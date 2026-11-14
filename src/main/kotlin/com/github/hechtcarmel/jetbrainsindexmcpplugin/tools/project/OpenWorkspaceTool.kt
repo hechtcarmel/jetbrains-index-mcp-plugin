@@ -247,8 +247,8 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             null -> {
                 if (opened != null && !opened.isDisposed) {
                     createSuccessResult(
-                        "Workspace open with ${allModules.size} modules but still indexing " +
-                            "after ${timeoutSeconds}s. Check ide_index_status.\n" +
+                        "Workspace open for ${allModules.size} requested roots, but setup/indexing did not finish " +
+                            "after ${timeoutSeconds}s. Check ide_index_status and retry with the same complete modules list.\n" +
                             moduleList(allModules) + "\n" + registrationNotes.joinToString("\n") + "\n" + PROJECT_PATH_HINT
                     )
                 } else {

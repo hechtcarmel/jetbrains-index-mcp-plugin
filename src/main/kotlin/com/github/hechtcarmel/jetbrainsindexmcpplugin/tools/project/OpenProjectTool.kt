@@ -45,7 +45,7 @@ class OpenProjectTool : AbstractMcpTool() {
         by URL, even before they exist. Module files stay under .idea/modules. Existing models are
         preserved; recognized build projects are not converted into plain modules.
         Use autoLink=true for Maven/Gradle. Setup order: link, plain-root registration, explicit
-        excludeDirectories; indexing is awaited after changes. Timeout reports still indexing;
+        excludeDirectories; indexing is awaited after changes. Timeout reports incomplete setup/indexing;
         setup failures are errors. Modules persist; remove them in Project Structure to undo.
         For several repositories, call ide_open_workspace once with every Maven/plain directory.
         A repository already in an open workspace needs no new window: pass it as project_path.
@@ -137,8 +137,8 @@ class OpenProjectTool : AbstractMcpTool() {
                 val opened = openedProject
                 if (opened != null && !opened.isDisposed) {
                     createSuccessResult(
-                        "Project '${opened.name}' is open but still indexing after ${timeoutSeconds}s. " +
-                            "Index-dependent tools may fail until indexing completes — check ide_index_status."
+                        "Project '${opened.name}' is open but setup/indexing did not finish after ${timeoutSeconds}s. " +
+                            "Check ide_index_status and retry ide_open_project to finish any missing root registration."
                     )
                 } else {
                     createErrorResult(

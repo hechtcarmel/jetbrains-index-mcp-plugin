@@ -2045,7 +2045,7 @@ description:
   by URL, even before they exist. Module files stay under .idea/modules. Existing models are
   preserved; recognized build projects are not converted into plain modules.
   Use autoLink=true for Maven/Gradle. Setup order: link, plain-root registration, explicit
-  excludeDirectories; indexing is awaited after changes. Timeout reports still indexing;
+  excludeDirectories; indexing is awaited after changes. Timeout reports incomplete setup/indexing;
   setup failures are errors. Modules persist; remove them in Project Structure to undo.
   For several repositories, call ide_open_workspace once with every Maven/plain directory.
   A repository already in an open workspace needs no new window: pass it as project_path.
