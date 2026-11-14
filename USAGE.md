@@ -968,6 +968,8 @@ Analyzes many files — up to the whole project, including files not open in any
 
 Long analyses use the same long-poll pattern as `ide_build_project`: each call blocks at most `waitSeconds` (default 45); a still-running call returns `{"status": "running", "analysisId": "..."}` and you poll with that `analysisId` while analysis continues in the IDE. Only one analysis runs per project at a time.
 
+For a large file, request `{"paths": ["src/Huge.java"], "fileTimeoutSeconds": 300}` and poll the returned `analysisId`. A per-file timeout keeps `complete` false while later files can still be checked. At the whole-run `timeoutSeconds` deadline, the in-flight file is `timed_out` and remaining files are `not_analyzed`. This per-run option does not change `ide_diagnostics`.
+
 **Use when:**
 - Verifying the whole project (or a directory) is clean before committing, without opening files
 - Getting diagnostics for files that are not open in any editor
@@ -982,6 +984,7 @@ Long analyses use the same long-poll pattern as `ide_build_project`: each call b
 | `maxFiles` | integer | No | Maximum files to analyze (default: 1000, max: 10000). Overflow files are reported `not_analyzed` and `complete` becomes `false` |
 | `maxProblems` | integer | No | Maximum problems returned across all files (default: 1000, max: 5000). `problemCount` keeps counting beyond it |
 | `timeoutSeconds` | integer | No | Maximum seconds for the whole analysis (default: 600, max: 3600). Remaining files are reported `not_analyzed` when it elapses |
+| `fileTimeoutSeconds` | integer | No | Per-file analysis budget including setup and queueing (default 30, range 1–600), capped by the remaining whole-run time. Ignored with `analysisId` |
 | `analysisId` | string | No | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis instead of starting a new one |
 | `waitSeconds` | integer | No | Maximum seconds this call may block (default: 45, max: 55). Keep below your MCP client's request timeout |
 | `project_path` | string | No | Project root path |

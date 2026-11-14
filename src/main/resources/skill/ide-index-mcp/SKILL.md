@@ -154,7 +154,7 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 
 ### "I need to check for problems"
 1. `ide_diagnostics` - compiler errors/warnings for one `file` or a small relative/in-project-absolute `files` batch; inspect each `state`/`reason`, and use `maxProblems` to bound output. Quick fixes and ranges are single-file only (plus build/test results)
-2. `ide_project_diagnostics` - batch/project scope including unopened files, with fail-closed coverage metadata (`complete` flag, per-file states); long analyses return an `analysisId` to poll (disabled by default)
+2. `ide_project_diagnostics` - batch/project scope including unopened files, with fail-closed coverage metadata (`complete` flag, per-file states); long analyses return an `analysisId` to poll. For large files, set `fileTimeoutSeconds` (default 30, range 1–600, capped by remaining run time) (disabled by default)
 
 ### "I need to find implementations of an interface"
 1. `ide_find_implementations` - cursor on interface/abstract class/method

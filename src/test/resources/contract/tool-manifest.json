@@ -2171,6 +2171,7 @@ description:
   Parameters: project_path (optional), paths (optional array of files/directories relative to project
   root; omit to analyze all content roots), severity (optional, default 'all'), maxFiles (optional,
   default 1000, max 10000), maxProblems (optional, default 1000, max 5000), timeoutSeconds (optional, default 600, max 3600),
+  fileTimeoutSeconds (optional integer, 1–600, default 30): per-file budget including setup and queueing, capped by the run's remaining time.
   waitSeconds (optional, default 45, max 55), analysisId (optional, polls a running analysis; excludes all
   other parameters).
   
@@ -2184,6 +2185,11 @@ schema:
       {
         "description": "analysisId from a previous {\"status\": \"running\"} response: attaches to that analysis and keeps waiting instead of starting a new one.",
         "type": "string"
+      },
+      "fileTimeoutSeconds":
+      {
+        "description": "Per-file analysis seconds, including setup and queueing; capped by the whole-run deadline. Default: 30, range: 1–600. Ignored when analysisId is given.",
+        "type": "integer"
       },
       "maxFiles":
       {

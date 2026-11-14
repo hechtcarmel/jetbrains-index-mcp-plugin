@@ -17,7 +17,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * MCP call; see [LongPollRegistry] for the shared lifetime machinery.
  *
  * Unlike builds and test runs, the analysis loop is our own code: it self-enforces
- * `timeoutSeconds` at every file boundary and always completes [ActiveProjectAnalysis.result]
+ * `timeoutSeconds` at every file boundary and caps in-flight file analysis to the remaining time.
+ * It always completes [ActiveProjectAnalysis.result]
  * with a partial, fail-closed result. The base watchdog therefore only provides retention
  * eviction ([deadlineMs][LongPollOperation.deadlineMs] is null).
  */
