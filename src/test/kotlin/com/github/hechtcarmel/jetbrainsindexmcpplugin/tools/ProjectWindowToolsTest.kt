@@ -140,13 +140,5 @@ class ProjectWindowToolsTest : BasePlatformTestCase() {
         assertTrue(result.isFailure)
     }
 
-    fun testOpenProjectIsIdempotentWhenProjectAlreadyOpen() = runBlocking {
-        val basePath = project.basePath
-        assertNotNull("test project must have a basePath", basePath)
 
-        val result = OpenProjectTool().execute(project, buildJsonObject { put("path", basePath!!) })
-
-        assertFalse(result.isFailure)
-        assertTrue(resultText(result).contains("already open", ignoreCase = true))
-    }
 }

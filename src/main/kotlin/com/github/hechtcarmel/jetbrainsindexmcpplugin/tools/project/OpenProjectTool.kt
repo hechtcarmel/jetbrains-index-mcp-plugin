@@ -8,6 +8,8 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildSystemLinker
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.LinkResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PlainDirectoryModules
+import com.intellij.openapi.application.readAction
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.module.ModuleManager
@@ -19,6 +21,7 @@ import com.intellij.openapi.vfs.VfsUtilCore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -36,40 +39,21 @@ class OpenProjectTool : AbstractMcpTool() {
     override val name = "ide_open_project"
 
     override val description = """
-        Open a project by filesystem path and wait until indexing is complete.
-
-        Blocks until the IDE is ready for code intelligence on the opened project,
-        so subsequent MCP tool calls against the new project will succeed immediately.
-        If the project is already open, returns successfully right away.
-
-        Use this for a single repository (with autoLink: true for Maven/Gradle). When several
-        Maven repositories must see each other (cross-repository references or refactoring),
-        call ide_open_workspace once with all of them instead. A repository that is already a
-        module of an open workspace needs no opening: pass its directory as project_path.
-
-        This tool does not enroll the project in lifecycle management. Lifecycle enrollment
-        happens automatically on the first real semantic tool call (find references,
-        diagnostics, refactoring, etc.) after the project is open — not on open/close itself.
-
-        Requires at least one project to already be open (needed as the JSON-RPC context).
-
-        Opening a project the IDE has not seen before may show the modal "Trust project?"
-        dialog, which only a human can answer; the call fails after timeoutSeconds if the
-        project has not opened by then.
-
-        When invoked, this tool marks the target directory as trusted before opening,
-        so the trust dialog does not appear. Build scripts (Maven, Gradle) may execute
-        on import.
-
-        Parameters:
-        - path: absolute filesystem path of the project directory to open (required)
-        - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
-        - excludeDirectories (optional): array of directory names to exclude from indexing and refactoring scope. Useful for non-code directories (workspace docs, symlinks to markdown) that interfere with rename/move refactoring. Applied after autoLink completes. Each name must not be blank or contain '..'.
-        - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: $DEFAULT_TIMEOUT_SECONDS.
-        - project_path (optional): selects the JSON-RPC context project when multiple are open
-
-        Example: { "path": "/Users/dev/myproject", "autoLink": true }
-        Example: { "path": "/Users/dev/myproject", "excludeDirectories": ["wksp", ".claude", "node_modules"] }
+        Open one repository by absolute path and wait for indexing (timeoutSeconds default 600).
+        Already-open projects receive the same idempotent setup. Plain directories without content
+        roots get a module inheriting the project SDK, with node_modules, dist and .next excluded
+        by URL, even before they exist. Module files stay under .idea/modules. Existing models are
+        preserved; recognized build projects are not converted into plain modules.
+        Use autoLink=true for Maven/Gradle. Setup order: link, plain-root registration, explicit
+        excludeDirectories; indexing is awaited after changes. Timeout reports still indexing;
+        setup failures are errors. Modules persist; remove them in Project Structure to undo.
+        For several repositories, call ide_open_workspace once with every Maven/plain directory.
+        A repository already in an open workspace needs no new window: pass it as project_path.
+        Requires an open project as MCP context. The directory is marked trusted before opening;
+        build scripts may execute on import. Lifecycle enrollment waits for a semantic tool call.
+        Parameters: path (required absolute directory), autoLink (default false), excludeDirectories
+        (relative directory names; not blank or containing '..'), timeoutSeconds (positive integer),
+        project_path (optional MCP context). Example: {"path": "/abs/repo", "autoLink": true}.
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
@@ -101,56 +85,45 @@ class OpenProjectTool : AbstractMcpTool() {
 
         val autoLink = arguments["autoLink"]?.jsonPrimitive?.booleanOrNull ?: false
         val excludeDirs = parseExcludeDirectories(arguments)
-            ?: return createErrorResult("excludeDirectories entries must not be blank or contain '..'.")
+            ?: return createErrorResult("excludeDirectories entries must not be blank, absolute, or contain '..'.")
         val timeoutSeconds = arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull
             ?: DEFAULT_TIMEOUT_SECONDS
         if (timeoutSeconds <= 0) {
             return createErrorResult("timeoutSeconds must be a positive integer.")
         }
 
-        ProjectUtils.findOpenProjectByPath(path)?.let { existing ->
-            val actions = mutableListOf<String>()
-            if (autoLink) {
-                val linkMsg = tryAutoLink(existing, path)
-                if (linkMsg != null) actions.add(linkMsg)
-            }
-            if (excludeDirs.isNotEmpty()) {
-                val excludeMsg = applyExclusions(existing, path, excludeDirs)
-                if (excludeMsg != null) actions.add(excludeMsg)
-            }
-            val msg = "Project '${existing.name}' is already open."
-            return createSuccessResult(if (actions.isNotEmpty()) "$msg ${actions.joinToString(" ")}" else msg)
-        }
+        val existing = ProjectUtils.findOpenProjectByPath(path)
 
         val dir = File(path)
         if (!dir.exists()) return createErrorResult("Path does not exist: $path")
         if (!dir.isDirectory) return createErrorResult("Path is not a directory: $path")
 
-        TrustedProjects.setProjectTrusted(Path.of(path), true)
+        if (existing == null) TrustedProjects.setProjectTrusted(Path.of(path), true)
 
-        var openedProject: Project? = null
+        var openedProject: Project? = existing
         val setupActions = mutableListOf<String>()
-        val outcome = withTimeoutOrNull(timeoutSeconds * 1000L) {
-            val opened = ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
-                ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
-            openedProject = opened
-            if (!ProjectUtils.awaitSmartMode(opened)) return@withTimeoutOrNull OpenOutcome.CLOSED_WHILE_WAITING
-            if (autoLink) {
-                val linkMsg = tryAutoLink(opened, path)
-                if (linkMsg != null) setupActions.add(linkMsg)
-                ProjectUtils.awaitSmartMode(opened)
+        val outcome = try {
+            withTimeoutOrNull(timeoutSeconds * 1000L) {
+                val opened = existing ?: ProjectManagerEx.getInstanceEx()
+                    .openProjectAsync(Path.of(path), ProjectUtils.openTask())
+                    ?: return@withTimeoutOrNull OpenOutcome.OPEN_FAILED
+                openedProject = opened
+                if (configureOpenedProject(opened, path, autoLink, excludeDirs, setupActions)) {
+                    OpenOutcome.READY
+                } else OpenOutcome.CLOSED_WHILE_WAITING
             }
-            if (excludeDirs.isNotEmpty()) {
-                val excludeMsg = applyExclusions(opened, path, excludeDirs)
-                if (excludeMsg != null) setupActions.add(excludeMsg)
-                ProjectUtils.awaitSmartMode(opened)
-            }
-            OpenOutcome.READY
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            return createErrorResult("Project setup failed: ${e.message}. Check Project Structure before retrying.")
         }
 
         return when (outcome) {
             OpenOutcome.READY -> {
-                val msg = "Project '${openedProject!!.name}' is open and ready."
+                val msg = if (existing != null) "Project '${existing.name}' is already open and ready."
+                    else "Project '${openedProject!!.name}' is open and ready."
                 if (setupActions.isNotEmpty()) createSuccessResult("$msg ${setupActions.joinToString(" ")}") else createSuccessResult(msg)
             }
 
@@ -178,11 +151,45 @@ class OpenProjectTool : AbstractMcpTool() {
         }
     }
 
+    /** Kept shared by fresh and already-open paths so neither can bypass registration or indexing. */
+    internal suspend fun configureOpenedProject(
+        opened: Project, path: String, autoLink: Boolean, excludeDirs: List<String>, actions: MutableList<String>
+    ): Boolean {
+        if (!ProjectUtils.awaitSmartMode(opened)) return false
+        if (autoLink) {
+            tryAutoLink(opened, path)?.let(actions::add)
+            if (!ProjectUtils.awaitSmartMode(opened)) return false
+        }
+        ensureContentRoot(opened, path)?.let(actions::add)
+        if (!ProjectUtils.awaitSmartMode(opened)) return false
+        if (excludeDirs.isNotEmpty()) {
+            applyExclusions(opened, path, excludeDirs)?.let(actions::add)
+            if (!ProjectUtils.awaitSmartMode(opened)) return false
+        }
+        return true
+    }
+
+    internal suspend fun ensureContentRoot(project: Project, path: String): String? {
+        val hasRoots = readAction {
+            ModuleManager.getInstance(project).modules.any { ModuleRootManager.getInstance(it).contentRoots.isNotEmpty() }
+        }
+        if (hasRoots) return null
+        BuildSystemLinker.detectedBuildSystem(project, path)?.let { build ->
+            return "$build build detected; no plain module was added. If files are not indexed, " +
+                "use ide_link_build_system or reopen with autoLink=true."
+        }
+        return PlainDirectoryModules.register(project, listOf(File(path)), File(path, ".idea/modules"), onlyIfEmpty = true)
+            .joinToString("\n") { it.describe() }.takeIf { it.isNotEmpty() }
+    }
+
     private fun parseExcludeDirectories(arguments: JsonObject): List<String>? {
         val element = arguments["excludeDirectories"] ?: return emptyList()
-        val names = element.jsonArray.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        if (element !is JsonArray) return null
+        val names = element.map {
+            (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.contentOrNull ?: return null
+        }
         for (name in names) {
-            if (name.isBlank() || name.contains("..")) return null
+            if (name.isBlank() || name.contains("..") || File(name).isAbsolute) return null
         }
         return names
     }

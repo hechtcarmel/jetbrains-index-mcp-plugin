@@ -96,11 +96,11 @@ Every project or workspace you open is another IDE window that indexes its code 
 |-----------|------|
 | One repository, Maven or Gradle | `ide_open_project` with `{"path": "/abs/repo", "autoLink": true}` |
 | One repository, anything else (TypeScript, Python, plain directory) | `ide_open_project` with `{"path": "/abs/repo"}` |
-| Several Maven repositories that must see each other (cross-repository references, rename, move) | **One** `ide_open_workspace` call listing **all** of them in `modules`, or their parent directory in `path` |
+| Several repositories, at least one Maven, optionally with plain roots | **One** `ide_open_workspace` call listing **all** of them in `modules`, or their parent directory in `path` |
 | A repository that is already a module of an open workspace | Nothing to open: pass the repository directory as `project_path` |
 | A git worktree | `ide_open_project` with the worktree path (see below) |
 
-**Never call `ide_open_workspace` once per repository, or again with a different subset of the same repositories.** Each distinct set gets its own window and its own directory under the IDE's `ide-workspaces/` folder, and no window sees the repositories outside its set. `ide_open_workspace` refuses a single Maven project and points you to `ide_open_project`; if an open project already contains every requested repository as a module, it reuses that window instead of opening another. If you later need one more repository in a workspace, call `ide_open_workspace` once with the complete list, then close the old workspace with `ide_close_project`.
+**Never call `ide_open_workspace` once per repository, or again with a different subset of the same repositories.** Each distinct set gets its own window and its own directory under the IDE's `ide-workspaces/` folder, and no window sees the repositories outside its set. `ide_open_workspace` accepts Maven plus plain directories, refuses unsupported build roots and single-directory new workspaces, and points single repositories to `ide_open_project`; if an open project already contains the Maven roots, it reuses that window and adds missing plain roots. Plain-only sets use `ide_open_project` plus `ide_create_module`. If you later need one more repository in a workspace, call `ide_open_workspace` once with the complete list, then close the old workspace with `ide_close_project`.
 
 ## Git Worktrees
 

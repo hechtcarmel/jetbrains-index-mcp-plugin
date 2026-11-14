@@ -27,6 +27,22 @@ object BuildSystemLinker {
         "Gradle" to ProjectSystemId("GRADLE"),
     )
 
+    /** Detection is separate from linking: an asynchronous import may not have modules yet. */
+    internal suspend fun detectedBuildSystem(project: Project, projectPath: String): String? {
+        val dir = LocalFileSystem.getInstance().refreshAndFindFileByPath(projectPath)
+            ?: error("Could not resolve directory in VFS: $projectPath")
+        return readAction {
+            val children = dir.children
+            ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList.firstOrNull { aware ->
+                children.any { aware.isBuildFile(project, it) }
+            }?.systemId?.readableName ?: when {
+                children.any { it.name == "pom.xml" } -> "Maven"
+                children.any { it.name in setOf("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts") } -> "Gradle"
+                else -> null
+            }
+        }
+    }
+
     fun checkLinked(project: Project, projectPath: String): String? {
         for ((name, systemId) in SYSTEM_IDS) {
             val aware = ExternalSystemUnlinkedProjectAware.getInstance(systemId) ?: continue

@@ -665,7 +665,7 @@ Replace a method body or field initializer only, preserving the signature.
 |-----------|------|
 | One repository, Maven or Gradle | `ide_open_project` with `{"path": "/abs/repo", "autoLink": true}` |
 | One repository, anything else | `ide_open_project` with `{"path": "/abs/repo"}` |
-| Several Maven repositories needing cross-repository navigation or refactoring | **One** `ide_open_workspace` call with **all** of them in `modules` (or their parent directory in `path`) |
+| Several Maven repositories, optionally with plain directories | **One** `ide_open_workspace` call with **all** of them in `modules` (or their parent directory in `path`) |
 | A repository that is already a module of an open workspace | Nothing to open: pass its directory as `project_path` |
 
 Never call `ide_open_workspace` once per repository, or again with a different subset of the same repositories: each distinct set opens its own window and leaves its own directory under the IDE's `ide-workspaces/` folder.
@@ -768,14 +768,18 @@ Import one or more external Maven project directories as modules into the curren
 **Returns**: text summary of imported, skipped, and failed module paths.
 
 ### ide_open_workspace (disabled by default, Maven plugin only)
-Open several Maven repositories together in one IntelliJ window with cross-repository code intelligence: scan a root directory for Maven projects, or provide an explicit list. Creates a temporary aggregator POM with relative module paths. Call it once with every repository you need; for a single repository use `ide_open_project` instead.
+Open several Maven repositories together in one IntelliJ window with cross-repository code intelligence: scan a root directory for Maven projects, or provide an explicit list of Maven and plain directories. Creates a temporary aggregator POM with relative module paths. Call it once with every repository you need; for a single repository use `ide_open_project` instead.
 
-A single Maven project (one `modules` entry, or a `path` scan that finds one) is refused with a ready-to-use `ide_open_project` call. If an open project already contains every requested Maven project as a module, that project is reused and no new window or workspace directory is created; this check comes first, so a single repository that is already open is reused rather than refused.
+Explicit `modules` accepts Maven projects plus optional TypeScript/plain directories; at least one Maven project is required. Other detected build systems (including Gradle) are refused before workspace creation or plain-module registration; open those with `ide_open_project` and `autoLink: true`. Plain-only requests should use `ide_open_project` plus `ide_create_module`. Search covers all roots; cross-language symbol relationships still depend on IDE language support.
+
+**Side effects:** automatic modules persist in the owning project configuration under `.idea/modules/`; workspace projects keep this under the IDE-owned workspace directory. The result lists created module names, files and exclusions. Remove unwanted modules in Project Structure to undo registration. The tools do not write `.iml` files into the plain repository root.
+
+A single Maven project (one `modules` entry, or a `path` scan that finds one) is refused with a ready-to-use `ide_open_project` call. If an open project already contains every requested Maven project as a module, that project is reused and missing plain roots are added there; no new window or workspace directory is created; this check comes first, so a single repository that is already open is reused rather than refused.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | no* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
-| `modules` | string[] | no* | Absolute paths of the Maven project directories to combine, at least two. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `modules` | string[] | no* | Absolute directories to combine: at least one Maven project plus optional plain roots, at least two distinct directories for a new workspace. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
 | `timeoutSeconds` | integer | no | Timeout in seconds for opening and indexing (default 600) |
 | `project_path` | string | no | Project root path |
 
@@ -815,7 +819,11 @@ Add a directory as an IntelliJ module with a content root, enabling code intelli
 **Returns**: text confirmation with module name, content root path, module file path, count of excluded directories, and an async-indexing note.
 
 ### ide_open_project (disabled by default)
-Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects. Use it for a single repository (`autoLink: true` for Maven/Gradle); combine several Maven repositories with one `ide_open_workspace` call instead. A repository that is already a module of an open workspace needs no opening: pass its directory as `project_path`.
+Open a project by absolute path and wait until indexing completes. Idempotent: performs idempotent setup if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects. Use it for a single repository (`autoLink: true` for Maven/Gradle); combine several Maven repositories with one `ide_open_workspace` call instead. A repository that is already a module of an open workspace needs no opening: pass its directory as `project_path`.
+
+Plain directories without recognized build files and without existing content roots are registered automatically. New modules inherit the project SDK and exclude `node_modules`, `dist` and `.next` by URL, including directories created later. Existing configured roots are preserved. Setup runs linking, registration and explicit exclusions in that order, and waits for indexing after changes; already-open projects use the same path.
+
+**Side effects:** automatic modules persist in the owning project configuration under `.idea/modules/`; workspace projects keep this under the IDE-owned workspace directory. The result lists created module names, files and exclusions. Remove unwanted modules in Project Structure to undo registration. The tools do not write `.iml` files into the plain repository root.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

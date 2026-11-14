@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.suppressWorkspaceModelErrors
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.cancellableEdtAction
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.roots.ContentEntry
@@ -16,22 +18,21 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 class OpenProjectExcludeDirectoriesBehaviorTest : McpPlatformTestCase() {
+    override fun runInDispatchThread(): Boolean = false
 
     private var addedRoot: VirtualFile? = null
 
     override fun setUp() {
         super.setUp()
         val baseVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(project.basePath!!)!!
-        PsiTestUtil.addContentRoot(module, baseVf)
+        runBlocking { cancellableEdtAction { WriteAction.run<RuntimeException> { PsiTestUtil.addContentRoot(module, baseVf) } } }
         addedRoot = baseVf
     }
 
     override fun tearDown() {
         try {
             addedRoot?.let { root ->
-                WriteAction.run<Exception> {
-                    PsiTestUtil.removeContentEntry(module, root)
-                }
+                runBlocking { cancellableEdtAction { WriteAction.run<RuntimeException> { PsiTestUtil.removeContentEntry(module, root) } } }
             }
         } finally {
             super.tearDown()
@@ -57,11 +58,11 @@ class OpenProjectExcludeDirectoriesBehaviorTest : McpPlatformTestCase() {
             text.contains("Excluded: wksp")
         )
 
-        val modules = ModuleManager.getInstance(project).modules
+        val modules = ReadAction.compute<Array<com.intellij.openapi.module.Module>, RuntimeException> { ModuleManager.getInstance(project).modules }
         assertTrue("Should have at least one module", modules.isNotEmpty())
-        val excludeUrls = modules.flatMap { module ->
+        val excludeUrls = ReadAction.compute<List<String>, RuntimeException> { modules.flatMap { module ->
             ModuleRootManager.getInstance(module).contentEntries.flatMap { it.excludeFolderUrls }
-        }
+        } }
         assertTrue(
             "wksp should be in the excluded folder URLs: $excludeUrls",
             excludeUrls.any { it.contains("/wksp") }

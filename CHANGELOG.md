@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **Plain projects and mixed workspaces ([#421](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/421), [#446](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/446))** — opening a plain directory now adds a content root with SDK inheritance and safe default exclusions. Maven workspaces accept plain directories, reuse existing Maven windows and wait for indexing after registration. Unsupported build roots are refused before mutation; automatic module metadata stays in project configuration. Based on Mark Proctor's #423 and #447.
+
 - **Configurable project diagnostics file budgets ([#464](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/464))** — `ide_project_diagnostics` accepts `fileTimeoutSeconds` (default 30, range 1–600) for large files. Each file is capped by the remaining run deadline, including setup and queueing; timed-out and unprocessed files keep coverage incomplete.
 
 - **Kotlin/JS hierarchy navigation ([#456](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/456))** — Type hierarchy, implementation search, and super-method lookup use Kotlin declarations when a target has no JVM light class or method. Fully qualified class lookup also finds Kotlin/JS declarations.

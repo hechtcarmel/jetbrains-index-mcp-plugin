@@ -1242,10 +1242,14 @@ Imported 2 module(s):
 
 ### ide_open_workspace
 
+Explicit `modules` accepts Maven projects plus optional TypeScript/plain directories; at least one Maven project is required. Other detected build systems (including Gradle) are refused before workspace creation or plain-module registration; open those with `ide_open_project` and `autoLink: true`. Plain-only requests should use `ide_open_project` plus `ide_create_module`. Search covers all roots; cross-language symbol relationships still depend on IDE language support.
+
+**Side effects:** automatic modules persist in the owning project configuration under `.idea/modules/`; workspace projects keep this under the IDE-owned workspace directory. The result lists created module names, files and exclusions. Remove unwanted modules in Project Structure to undo registration. The tools do not write `.iml` files into the plain repository root.
+
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 > **Requires**: Maven plugin
 
-Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven project paths. Creates a temporary aggregator POM with relative module paths.
+Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven and plain directory paths. Creates a temporary aggregator POM with relative module paths.
 
 **Use when:**
 - Several Maven repositories must see each other (cross-repository references, rename, move). Call it **once** with all of them.
@@ -1254,14 +1258,14 @@ Scan a root directory for Maven projects and open them all in one IntelliJ windo
 - For a single repository: use [`ide_open_project`](#ide_open_project) with `autoLink: true`. A single Maven project is refused with a ready-to-use `ide_open_project` call.
 - Once per repository, or again with a different subset of the same repositories. Each distinct set opens its own window and leaves its own directory under the IDE's `ide-workspaces/` folder.
 
-If an open project already contains every requested Maven project as a module, it is reused and no new window or workspace directory is created. To target one repository of an open workspace, pass its directory as `project_path`.
+If an open project already contains every requested Maven project as a module, it is reused and missing plain roots are added there; no new window or workspace directory is created. To target one repository of an open workspace, pass its directory as `project_path`.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | No* | Root directory whose immediate subdirectories are Maven projects (each with a `pom.xml`); all of them are combined. Mutually exclusive with `modules`. |
-| `modules` | array of strings | No* | Absolute paths of the Maven project directories to combine, at least two. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `modules` | array of strings | No* | Absolute directories to combine: at least one Maven project plus optional plain roots, at least two distinct directories for a new workspace. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
 | `timeoutSeconds` | integer | No | Timeout in seconds for opening and indexing (default: 600) |
 | `project_path` | string | No | Selects the IntelliJ project window when multiple are open |
 
@@ -1947,9 +1951,13 @@ Note: indexing is async — call ide_index_status if subsequent tools hit dumb m
 
 ### ide_open_project
 
+Plain directories without recognized build files and without existing content roots are registered automatically. New modules inherit the project SDK and exclude `node_modules`, `dist` and `.next` by URL, including directories created later. Existing configured roots are preserved. Setup runs linking, registration and explicit exclusions in that order, and waits for indexing after changes; already-open projects use the same path.
+
+**Side effects:** automatic modules persist in the owning project configuration under `.idea/modules/`; workspace projects keep this under the IDE-owned workspace directory. The result lists created module names, files and exclusions. Remove unwanted modules in Project Structure to undo registration. The tools do not write `.iml` files into the plain repository root.
+
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
-Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, returns successfully right away.
+Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, performs the same idempotent setup.
 
 Requires at least one project to already be open (needed as the JSON-RPC context). Opening a project the IDE has not seen before may show the modal "Trust project?" dialog, which only a human can answer; the call fails after `timeoutSeconds` if the project has not opened by then. If the project opens but indexing outlasts the timeout, the tool returns success with a note to check `ide_index_status`.
 

@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.cancellableEdtAction
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -28,13 +30,14 @@ import java.io.File
  * fails quickly instead of waiting out the 600-second default.
  */
 class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
+    override fun runInDispatchThread(): Boolean = false
 
     private val addedContentRoots = mutableListOf<VirtualFile>()
 
     override fun tearDown() {
         try {
             addedContentRoots.forEach { root ->
-                WriteAction.run<Exception> { PsiTestUtil.removeContentEntry(module, root) }
+                runBlocking { cancellableEdtAction { WriteAction.run<RuntimeException> { PsiTestUtil.removeContentEntry(module, root) } } }
             }
             addedContentRoots.clear()
         } finally {
@@ -134,11 +137,24 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
         val a = ProjectUtils.canonicalNormalizedPath(repoA.absolutePath)
         val c = ProjectUtils.canonicalNormalizedPath(repoC.absolutePath)
 
-        assertSame(project, ProjectUtils.findOpenProjectContainingRoots(setOf(a)))
-        assertNull(
+        ReadAction.run<RuntimeException> {
+            assertSame(project, ProjectUtils.findOpenProjectContainingRoots(setOf(a)))
+            assertNull(
             "repo-c is not a module of any open project, so reusing this one would silently drop it",
             ProjectUtils.findOpenProjectContainingRoots(setOf(a, c))
-        )
+            )
+        }
+    }
+
+    fun testPlainOnlyRequestIsRefusedWithoutCreatingWorkspaceDirectory() {
+        val a = writeProjectFile("plain-a/index.ts", "export const a = 1").parent.toFile()
+        val b = writeProjectFile("plain-b/index.ts", "export const b = 1").parent.toFile()
+        val (result, created) = callTracking(buildJsonObject {
+            put("modules", buildJsonArray { add(JsonPrimitive(a.path)); add(JsonPrimitive(b.path)) })
+        })
+        assertToolFailed("A Maven aggregator cannot be created for plain-only roots", result)
+        assertTrue(toolText(result).contains("ide_create_module"))
+        assertTrue(created.isEmpty())
     }
 
     private fun mavenProjectDir(relativePath: String): File {
@@ -160,7 +176,7 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
         val root = requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.absolutePath)) {
             "Failed to refresh VFS for $dir"
         }
-        PsiTestUtil.addContentRoot(module, root)
+        runBlocking { cancellableEdtAction { WriteAction.run<RuntimeException> { PsiTestUtil.addContentRoot(module, root) } } }
         addedContentRoots += root
         IndexingTestUtil.waitUntilIndexesAreReady(project)
     }
