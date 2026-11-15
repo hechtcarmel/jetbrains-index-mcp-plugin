@@ -74,6 +74,8 @@ class OpenProjectContentRootBehaviorTest : McpPlatformTestCase() {
 
         val createdModule = modules.find { it.moduleFilePath.contains(".idea/") }
         assertNotNull("Module file should be in .idea/ directory", createdModule)
+        assertTrue("Module should inherit the project SDK",
+            ModuleRootManager.getInstance(createdModule!!).isSdkInherited)
 
         val excludeUrls = modules.flatMap { module ->
             ModuleRootManager.getInstance(module).contentEntries.flatMap { it.excludeFolderUrls }
