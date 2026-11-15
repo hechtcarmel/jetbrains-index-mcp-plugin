@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Forced refactoring preview no longer opens during headless rename** ([#411](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/411)) — When a `RenamePsiElementProcessor` returns `true` from `forcesShowPreview()`, or when usages include generated sources or non-code occurrences, `RenameProcessor.isPreviewUsages` re-enables the Refactoring Preview tab regardless of `setPreviewUsages(false)`. This caused the rename tool to report a misleading "rename was not applied" error and leave a dangling preview tab in the IDE. `HeadlessRenameProcessor` now overrides `isPreviewUsages` to always return `false`, matching the existing headless overrides for `showAutomaticRenamingDialog` and `prepareConflictsDialog`.
+
 ## [5.20.4] - 2026-11-10
 
 ### Fixed

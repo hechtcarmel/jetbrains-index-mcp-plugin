@@ -3,7 +3,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.SymbolIdRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.extensions.LoadingOrder
+import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
+import com.intellij.refactoring.BaseRefactoringProcessor
+import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.util.containers.MultiMap
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -458,5 +462,45 @@ class RenameSymbolToolBehaviorTest : McpPlatformTestCase() {
             listOf("Field bar will hide the local variable"),
             processor.capturedConflicts
         )
+    }
+
+    /**
+     * A `RenamePsiElementProcessor` returning `true` from `forcesShowPreview()` re-enables
+     * the Refactoring Preview tab even after `setPreviewUsages(false)`. In test mode the
+     * platform throws "Unexpected preview in tests" when preview is triggered, so the tool
+     * would return an error instead of applying the rename. `HeadlessRenameProcessor`
+     * overrides `isPreviewUsages` to short-circuit all three preview triggers. If the
+     * override is removed, this test fails with a tool error.
+     */
+    fun testForcedPreviewProcessorDoesNotBlockHeadlessRename() {
+        registerSourceRoot("forced-preview-src")
+        writeProjectFile(
+            "forced-preview-src/PreviewTarget.java",
+            "public class PreviewTarget { public void execute() {} }"
+        )
+
+        val forcePreviewProcessor = object : RenamePsiElementProcessor() {
+            override fun canProcessElement(element: PsiElement): Boolean =
+                element is PsiClass && element.name == "PreviewTarget"
+
+            override fun forcesShowPreview(): Boolean = true
+        }
+        RenamePsiElementProcessor.EP_NAME.point.registerExtension(
+            forcePreviewProcessor, LoadingOrder.FIRST, testRootDisposable
+        )
+
+        BaseRefactoringProcessor.runWithDisabledPreview<RuntimeException> {
+            runBlocking {
+                val result = RenameSymbolTool().execute(project, buildJsonObject {
+                    put("file", "forced-preview-src/PreviewTarget.java")
+                    put("line", 1)
+                    put("column", 14)
+                    put("newName", "PreviewRenamed")
+                })
+                assertToolSucceeded("Rename must apply despite forcesShowPreview()=true", result)
+            }
+        }
+
+        assertRenamedInFile("forced-preview-src/PreviewRenamed.java", "PreviewTarget", "PreviewRenamed")
     }
 }
