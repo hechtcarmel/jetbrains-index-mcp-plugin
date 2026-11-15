@@ -143,6 +143,24 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                         "code intelligence."
                 )
             }
+            val buildFileExtensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
+            val unsupportedBuildDirs = validatedPlain.filter { dir ->
+                dir.listFiles()?.any { child ->
+                    child.isFile && buildFileExtensions.any { ext ->
+                        val vf = LocalFileSystem.getInstance().findFileByPath(child.absolutePath)
+                        vf != null && ext.isBuildFile(project, vf)
+                    }
+                } == true
+            }
+            if (unsupportedBuildDirs.isNotEmpty()) {
+                val paths = unsupportedBuildDirs.joinToString("\n") { "  - ${it.absolutePath}" }
+                return createErrorResult(
+                    "The following directories contain recognized build files (Gradle) but no pom.xml. " +
+                        "ide_open_workspace cannot import them as workspace modules.\n$paths\n" +
+                        "Open them separately with ide_open_project {\"path\": \"...\", \"autoLink\": true} " +
+                        "or use ide_link_build_system to link them after opening."
+                )
+            }
             val allValidated = (validatedMaven + validatedPlain)
                 .sortedBy { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
                 .distinctBy { ProjectUtils.canonicalNormalizedPath(it.absolutePath) }
