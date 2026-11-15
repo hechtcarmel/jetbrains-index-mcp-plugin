@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.20.6] - 2026-11-15
+
 ### Fixed
 
 - **Forced refactoring preview no longer opens during headless rename** ([#411](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/411)) — When a `RenamePsiElementProcessor` returns `true` from `forcesShowPreview()`, or when usages include generated sources or non-code occurrences, `RenameProcessor.isPreviewUsages` re-enables the Refactoring Preview tab regardless of `setPreviewUsages(false)`. This caused the rename tool to report a misleading "rename was not applied" error and leave a dangling preview tab in the IDE. `HeadlessRenameProcessor` now overrides `isPreviewUsages` to always return `false`, matching the existing headless overrides for `showAutomaticRenamingDialog` and `prepareConflictsDialog`.
@@ -13,7 +15,6 @@
 ### Fixed
 
 - **Configurable project diagnostics file budgets ([#464](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/464))** — `ide_project_diagnostics` accepts `fileTimeoutSeconds` (default 30, range 1–600) for large files. Each file is capped by the remaining run deadline, including setup and queueing; timed-out and unprocessed files keep coverage incomplete.
-
 - **Kotlin/JS hierarchy navigation ([#456](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/456))** — Type hierarchy, implementation search, and super-method lookup use Kotlin declarations when a target has no JVM light class or method. Fully qualified class lookup also finds Kotlin/JS declarations.
 - **Kotlin accessor paging** — Paged call hierarchies preserve getter and setter callables that share the same source property, including their distinct handles and child calls.
 - **Line endings are configured for files in this git repository ([#453](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/453))** — Dependent on a client's local `git` configuration, files may have their line endings converted between CRLF and LF. `ResultShapeContractUnitTest.testResultShapesMatchGoldenSnapshot` relies on direct string equality between the parsed shape (`result-shapes.txt`) and the generated shape. There is now a `.gitattributes` file specified for this repository, enforcing line endings for the files of this project.
@@ -1404,7 +1405,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.4...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.6...HEAD
+[5.20.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.4...v5.20.6
 [5.20.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...v5.20.4
 [5.20.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...v5.20.3
 [5.20.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.20.2
