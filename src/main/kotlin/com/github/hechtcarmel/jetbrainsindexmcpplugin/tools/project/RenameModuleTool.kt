@@ -156,7 +156,8 @@ class RenameModuleTool : AbstractMcpTool() {
             }
         }
 
-        // Phase 1: Apply all pom.xml changes via Document API
+        // Phase 1: Apply all pom.xml changes via Document API, saving originals for rollback
+        val savedOriginals = mutableMapOf<String, String>()
         val saveErrors = mutableListOf<String>()
         for ((filePath, newContent) in pendingChanges) {
             val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath)
@@ -169,19 +170,27 @@ class RenameModuleTool : AbstractMcpTool() {
                 saveErrors.add("Cannot get document for $filePath")
                 continue
             }
+            savedOriginals[filePath] = doc.text
             val writeError = suspendingWriteActionAndSave(project, "Rename module: update ${File(filePath).name}", doc) {
                 doc.setText(newContent)
             }
-            if (writeError != null) return writeError
+            if (writeError != null) {
+                rollbackChanges(project, savedOriginals)
+                return writeError
+            }
         }
 
         if (saveErrors.isNotEmpty()) {
+            rollbackChanges(project, savedOriginals)
             return createErrorResult("Failed to update pom files: ${saveErrors.joinToString("; ")}")
         }
 
         // Phase 2: Rename directory via VFS
         val moduleVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(modulePath)
-            ?: return createErrorResult("Cannot find module directory in VFS: $modulePath")
+        if (moduleVf == null) {
+            rollbackChanges(project, savedOriginals)
+            return createErrorResult("Cannot find module directory in VFS: $modulePath")
+        }
 
         val renameError = edtAction {
             try {
@@ -194,11 +203,8 @@ class RenameModuleTool : AbstractMcpTool() {
             }
         }
         if (renameError != null) {
-            val updatedFiles = pendingChanges.keys.joinToString(", ") { File(it).name }
-            return createErrorResult(
-                "$renameError WARNING: pom.xml files ($updatedFiles) were already updated with " +
-                    "the new name '$newName'. Revert those changes or rename the directory manually."
-            )
+            rollbackChanges(project, savedOriginals)
+            return createErrorResult("$renameError POM changes have been rolled back.")
         }
 
         val newPath = newDir.absolutePath
@@ -213,6 +219,16 @@ class RenameModuleTool : AbstractMcpTool() {
             dependencyUpdates = dependencyUpdates,
             childParentUpdates = childParentUpdates
         ))
+    }
+
+    private suspend fun rollbackChanges(project: Project, originals: Map<String, String>) {
+        for ((filePath, originalContent) in originals) {
+            val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath) ?: continue
+            val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
+            suspendingWriteActionAndSave(project, "Rollback: restore ${File(filePath).name}", doc) {
+                doc.setText(originalContent)
+            }
+        }
     }
 
     private fun extractModuleArtifactId(pomXml: String): String? {
@@ -244,22 +260,23 @@ class RenameModuleTool : AbstractMcpTool() {
     private fun replaceFirstArtifactId(pomXml: String, oldId: String, newId: String): String {
         val parentEnd = pomXml.indexOf("</parent>")
         val searchFrom = if (parentEnd >= 0) parentEnd else 0
-        val target = "<artifactId>$oldId</artifactId>"
-        val idx = pomXml.indexOf(target, searchFrom)
-        if (idx < 0) return pomXml
-        return pomXml.substring(0, idx) +
+        val pattern = Regex("<artifactId>\\s*${Regex.escape(oldId)}\\s*</artifactId>")
+        val match = pattern.find(pomXml, searchFrom) ?: return pomXml
+        return pomXml.substring(0, match.range.first) +
             "<artifactId>$newId</artifactId>" +
-            pomXml.substring(idx + target.length)
+            pomXml.substring(match.range.last + 1)
     }
 
     private fun updateParentArtifactId(pomXml: String, oldParentArtifactId: String, newParentArtifactId: String): String {
-        val parentPattern = Regex(
-            "(<parent>[\\s\\S]*?)<artifactId>\\s*${Regex.escape(oldParentArtifactId)}\\s*</artifactId>"
-        )
-        val match = parentPattern.find(pomXml) ?: return pomXml
-        return pomXml.substring(0, match.range.first) +
-            "${match.groupValues[1]}<artifactId>$newParentArtifactId</artifactId>" +
-            pomXml.substring(match.range.last + 1)
+        val parentBlockPattern = Regex("<parent>([\\s\\S]*?)</parent>")
+        val parentMatch = parentBlockPattern.find(pomXml) ?: return pomXml
+        val parentBlock = parentMatch.value
+        val artifactPattern = Regex("<artifactId>\\s*${Regex.escape(oldParentArtifactId)}\\s*</artifactId>")
+        if (!artifactPattern.containsMatchIn(parentBlock)) return pomXml
+        val updatedBlock = artifactPattern.replace(parentBlock) { "<artifactId>$newParentArtifactId</artifactId>" }
+        return pomXml.substring(0, parentMatch.range.first) +
+            updatedBlock +
+            pomXml.substring(parentMatch.range.last + 1)
     }
 
     private fun updateDependencyArtifactId(pomXml: String, groupId: String, oldArtifactId: String, newArtifactId: String): String {
