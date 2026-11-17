@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.20.7] - 2026-11-17
+
 ### Fixed
 
 - **Project reload uses a write-safe context** ([#470](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/470)) — `ide_reload_project` schedules linked Maven and Gradle refreshes on the non-modal EDT, avoiding write-unsafe context errors in the IDE log.
@@ -1409,7 +1411,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.6...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.7...HEAD
+[5.20.7]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.6...v5.20.7
 [5.20.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.4...v5.20.6
 [5.20.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...v5.20.4
 [5.20.3]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.2...v5.20.3
