@@ -12,7 +12,14 @@ import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 import java.io.File
 
-class ReloadProjectTool : AbstractMcpTool() {
+class ReloadProjectTool internal constructor(
+    private val linkedCount: (Project, ProjectSystemId) -> Int = { project, systemId ->
+        ProjectDataManager.getInstance().getExternalProjectsData(project, systemId).size
+    },
+    private val refresh: (Project, ProjectSystemId) -> Unit = { project, systemId ->
+        ExternalSystemUtil.refreshProjects(ImportSpecBuilder(project, systemId))
+    }
+) : AbstractMcpTool() {
 
     override val requiresPsiSync = false
     override val participatesInLifecycle = false
@@ -45,15 +52,14 @@ class ReloadProjectTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
-        val dataManager = ProjectDataManager.getInstance()
         val lines = mutableListOf<String>()
         var anyScheduled = false
 
         for ((label, systemId, buildFiles) in BUILD_SYSTEMS) {
-            val linked = dataManager.getExternalProjectsData(project, systemId)
-            if (linked.isNotEmpty()) {
-                ExternalSystemUtil.refreshProjects(ImportSpecBuilder(project, systemId))
-                lines.add("$label: reload scheduled (${linked.size} linked project(s))")
+            val linked = linkedCount(project, systemId)
+            if (linked > 0) {
+                edtAction { refresh(project, systemId) }
+                lines.add("$label: reload scheduled ($linked linked project(s))")
                 anyScheduled = true
             } else {
                 // Check disk to give a more helpful skip reason
