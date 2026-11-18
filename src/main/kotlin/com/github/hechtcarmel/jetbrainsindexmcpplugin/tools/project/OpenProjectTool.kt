@@ -303,7 +303,7 @@ class OpenProjectTool : AbstractMcpTool() {
     }
 
     internal suspend fun ensureContentRoot(project: Project, path: String): String? {
-        if (hasBuildFile(project, path)) return null
+        if (hasBuildFileDetected(project, path)) return null
 
         val hasContentRoots = readAction {
             ModuleManager.getInstance(project).modules.any { module ->
@@ -355,7 +355,7 @@ class OpenProjectTool : AbstractMcpTool() {
         }
     }
 
-    private suspend fun hasBuildFile(project: Project, projectPath: String): Boolean = readAction {
+    internal suspend fun hasBuildFileDetected(project: Project, projectPath: String): Boolean = readAction {
         val dir = LocalFileSystem.getInstance().findFileByPath(projectPath) ?: return@readAction false
         val extensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
         dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
