@@ -568,4 +568,44 @@ class RenameModuleBehaviorTest : McpPlatformTestCase() {
             childPom.contains("<groupId>io.third</groupId>") &&
                 childPom.contains("<artifactId>scope-root</artifactId>"))
     }
+
+    fun testSameArtifactIdDifferentGroupIdParentIsLeftUnchanged() = runBlocking {
+        writeProjectFile("gid-root/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>shared-name</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>child</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("gid-root/child/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>com.other</groupId>
+                <artifactId>shared-name</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>child</artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/gid-root")
+            put("newName", "gid-renamed")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val childPom = java.nio.file.Files.readString(
+            java.nio.file.Path.of(project.basePath!!, "gid-renamed/child/pom.xml"))
+        assertTrue("Parent with different groupId must NOT be renamed: $childPom",
+            childPom.contains("<artifactId>shared-name</artifactId>"))
+        assertTrue("Parent groupId must be unchanged: $childPom",
+            childPom.contains("<groupId>com.other</groupId>"))
+    }
 }

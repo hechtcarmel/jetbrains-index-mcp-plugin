@@ -131,7 +131,7 @@ class RenameModuleTool : AbstractMcpTool() {
             val childContent = pendingChanges[childPomFile.absolutePath]
                 ?: documentContents[childPomFile.absolutePath]
                 ?: continue
-            val updated = updateParentArtifactId(childContent, oldArtifactId, newName)
+            val updated = updateParentArtifactId(childContent, effectiveGroupId, oldArtifactId, newName)
             if (updated != childContent) {
                 pendingChanges[childPomFile.absolutePath] = updated
                 childParentUpdates++
@@ -175,21 +175,21 @@ class RenameModuleTool : AbstractMcpTool() {
                 doc.setText(newContent)
             }
             if (writeError != null) {
-                rollbackChanges(project, savedOriginals)
-                return writeError
+                val rollbackResult = rollbackChanges(project, savedOriginals)
+                return createErrorResult("Failed to save ${File(filePath).name}. $rollbackResult")
             }
         }
 
         if (saveErrors.isNotEmpty()) {
-            rollbackChanges(project, savedOriginals)
-            return createErrorResult("Failed to update pom files: ${saveErrors.joinToString("; ")}")
+            val rollbackResult = rollbackChanges(project, savedOriginals)
+            return createErrorResult("Failed to update pom files: ${saveErrors.joinToString("; ")}. $rollbackResult")
         }
 
         // Phase 2: Rename directory via VFS
         val moduleVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(modulePath)
         if (moduleVf == null) {
-            rollbackChanges(project, savedOriginals)
-            return createErrorResult("Cannot find module directory in VFS: $modulePath")
+            val rollbackResult = rollbackChanges(project, savedOriginals)
+            return createErrorResult("Cannot find module directory in VFS: $modulePath. $rollbackResult")
         }
 
         val renameError = edtAction {
@@ -203,8 +203,8 @@ class RenameModuleTool : AbstractMcpTool() {
             }
         }
         if (renameError != null) {
-            rollbackChanges(project, savedOriginals)
-            return createErrorResult("$renameError POM changes have been rolled back.")
+            val rollbackResult = rollbackChanges(project, savedOriginals)
+            return createErrorResult("$renameError $rollbackResult")
         }
 
         val newPath = newDir.absolutePath
@@ -221,13 +221,28 @@ class RenameModuleTool : AbstractMcpTool() {
         ))
     }
 
-    private suspend fun rollbackChanges(project: Project, originals: Map<String, String>) {
+    private suspend fun rollbackChanges(project: Project, originals: Map<String, String>): String {
+        val restored = mutableListOf<String>()
+        val failed = mutableListOf<String>()
         for ((filePath, originalContent) in originals) {
-            val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath) ?: continue
-            val doc = FileDocumentManager.getInstance().getDocument(vf) ?: continue
-            suspendingWriteActionAndSave(project, "Rollback: restore ${File(filePath).name}", doc) {
+            val fileName = File(filePath).name
+            val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath)
+            if (vf == null) { failed.add("$fileName (not found in VFS)"); continue }
+            val doc = FileDocumentManager.getInstance().getDocument(vf)
+            if (doc == null) { failed.add("$fileName (no document)"); continue }
+            val writeError = suspendingWriteActionAndSave(project, "Rollback: restore $fileName", doc) {
                 doc.setText(originalContent)
             }
+            if (writeError != null) { failed.add("$fileName (save failed)"); continue }
+            restored.add(fileName)
+        }
+        return if (failed.isEmpty()) {
+            "POM changes rolled back: ${restored.joinToString(", ")}."
+        } else if (restored.isEmpty()) {
+            "Rollback failed for all files: ${failed.joinToString(", ")}. Manual revert required."
+        } else {
+            "Partial rollback: restored ${restored.joinToString(", ")}; " +
+                "failed to restore ${failed.joinToString(", ")}. Manual revert required for failed files."
         }
     }
 
@@ -267,12 +282,13 @@ class RenameModuleTool : AbstractMcpTool() {
             pomXml.substring(match.range.last + 1)
     }
 
-    private fun updateParentArtifactId(pomXml: String, oldParentArtifactId: String, newParentArtifactId: String): String {
+    private fun updateParentArtifactId(pomXml: String, parentGroupId: String, oldParentArtifactId: String, newParentArtifactId: String): String {
         val parentBlockPattern = Regex("<parent>([\\s\\S]*?)</parent>")
         val parentMatch = parentBlockPattern.find(pomXml) ?: return pomXml
         val parentBlock = parentMatch.value
+        val groupPattern = Regex("<groupId>\\s*${Regex.escape(parentGroupId)}\\s*</groupId>")
         val artifactPattern = Regex("<artifactId>\\s*${Regex.escape(oldParentArtifactId)}\\s*</artifactId>")
-        if (!artifactPattern.containsMatchIn(parentBlock)) return pomXml
+        if (!groupPattern.containsMatchIn(parentBlock) || !artifactPattern.containsMatchIn(parentBlock)) return pomXml
         val updatedBlock = artifactPattern.replace(parentBlock) { "<artifactId>$newParentArtifactId</artifactId>" }
         return pomXml.substring(0, parentMatch.range.first) +
             updatedBlock +
