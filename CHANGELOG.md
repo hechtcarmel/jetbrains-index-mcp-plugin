@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_open_workspace` now accepts non-Maven directories in `modules`** ([#446](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/446)) — directories without `pom.xml` (TypeScript, plain directories) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`). At least one Maven project is still required. Directories with recognized build files (Gradle) are refused upfront with an actionable linking alternative.
+
 ## [5.20.7] - 2026-11-17
 
 ### Fixed

@@ -145,12 +145,12 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             }
             val buildFileExtensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
             val unsupportedBuildDirs = validatedPlain.filter { dir ->
-                dir.listFiles()?.any { child ->
-                    child.isFile && buildFileExtensions.any { ext ->
-                        val vf = LocalFileSystem.getInstance().findFileByPath(child.absolutePath)
-                        vf != null && ext.isBuildFile(project, vf)
+                val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.absolutePath)
+                dirVf != null && com.intellij.openapi.application.ReadAction.compute<Boolean, RuntimeException> {
+                    dirVf.children.any { child ->
+                        !child.isDirectory && buildFileExtensions.any { ext -> ext.isBuildFile(project, child) }
                     }
-                } == true
+                }
             }
             if (unsupportedBuildDirs.isNotEmpty()) {
                 val paths = unsupportedBuildDirs.joinToString("\n") { "  - ${it.absolutePath}" }
@@ -383,9 +383,11 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         project: Project,
         dirPath: String,
         extensions: List<ExternalSystemUnlinkedProjectAware> = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
-    ): Boolean = readAction {
-        val dir = LocalFileSystem.getInstance().findFileByPath(dirPath) ?: return@readAction false
-        dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
+    ): Boolean {
+        val dir = LocalFileSystem.getInstance().refreshAndFindFileByPath(dirPath) ?: return false
+        return readAction {
+            dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
+        }
     }
 
     /**
