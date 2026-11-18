@@ -109,7 +109,8 @@ class RenameModuleTool : AbstractMcpTool() {
             val text = pendingChanges[parentPomFile.absolutePath]
                 ?: documentContents[parentPomFile.absolutePath]
                 ?: return createErrorResult("Parent pom.xml not in synced documents: ${parentPomFile.absolutePath}")
-            val updated = text.replace("<module>$oldDirName</module>", "<module>$newName</module>")
+            val modulePattern = Regex("<module>\\s*${Regex.escape(oldDirName)}\\s*</module>")
+            val updated = modulePattern.replace(text) { "<module>$newName</module>" }
             if (updated != text) {
                 pendingChanges[parentPomFile.absolutePath] = updated
                 parentPomUpdated = true
