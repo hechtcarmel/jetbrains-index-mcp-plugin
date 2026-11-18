@@ -363,6 +363,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
                     val module = moduleManager.newModule(imlPath, moduleTypeId)
                     val rootModel = ModuleRootManager.getInstance(module).modifiableModel
                     try {
+                        rootModel.inheritSdk()
                         val contentEntry = rootModel.addContentEntry(dirVf)
                         for (exclude in DEFAULT_PLAIN_EXCLUDES) {
                             contentEntry.addExcludeFolder(
