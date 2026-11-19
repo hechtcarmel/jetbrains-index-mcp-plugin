@@ -96,7 +96,7 @@ Every project or workspace you open is another IDE window that indexes its code 
 |-----------|------|
 | One repository, Maven or Gradle | `ide_open_project` with `{"path": "/abs/repo", "autoLink": true}` |
 | One repository, anything else (TypeScript, Python, plain directory) | `ide_open_project` with `{"path": "/abs/repo"}` |
-| Several Maven repositories that must see each other (cross-repository references, rename, move) | **One** `ide_open_workspace` call listing **all** of them in `modules`, or their parent directory in `path` |
+| Several repositories that must see each other (cross-repository references, rename, move) | **One** `ide_open_workspace` call listing **all** of them in `modules` (Maven and non-Maven directories accepted; at least one Maven project required), or their parent directory in `path` |
 | A repository that is already a module of an open workspace | Nothing to open: pass the repository directory as `project_path` |
 | A git worktree | `ide_open_project` with the worktree path (see below) |
 

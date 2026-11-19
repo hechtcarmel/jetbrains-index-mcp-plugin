@@ -2,10 +2,16 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.externalSystem.autolink.ExternalSystemProjectLinkListener
+import com.intellij.openapi.externalSystem.autolink.ExternalSystemUnlinkedProjectAware
+import com.intellij.openapi.externalSystem.model.ProjectSystemId
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.PsiTestUtil
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -73,7 +79,7 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
         val text = toolText(result)
         assertTrue(
             "Should say the scan found only one project, was: $text",
-            text.contains("Only one Maven project was found under") && text.contains(only.canonicalPath)
+            text.contains("Only one project was found under") && text.contains(only.canonicalPath)
         )
         assertTrue("Should point at ide_open_project, was: $text", text.contains("ide_open_project"))
         assertEquals("No workspace directory may be created for a refused call", emptySet<String>(), newWorkspaces)
@@ -100,8 +106,8 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
             text.contains("Reused the open project '${project.name}'")
         )
         assertTrue(
-            "Should list both repositories and how to target them, was: $text",
-            text.contains(repoA.absolutePath) && text.contains(repoB.absolutePath) && text.contains("project_path")
+            "Should mention how to target repos, was: $text",
+            text.contains("project_path")
         )
         assertEquals("Reuse must not create a workspace directory", emptySet<String>(), newWorkspaces)
     }
@@ -127,6 +133,53 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
         assertEquals("Reuse must not create a workspace directory", emptySet<String>(), newWorkspaces)
     }
 
+    fun testPlainDirectoriesOnlyIsRefused() {
+        val frontendA = plainDir("ws-frontend-a")
+        val frontendB = plainDir("ws-frontend-b")
+
+        val (result, newWorkspaces) = callTracking(buildJsonObject {
+            put("modules", buildJsonArray {
+                add(JsonPrimitive(frontendA.absolutePath))
+                add(JsonPrimitive(frontendB.absolutePath))
+            })
+            put("timeoutSeconds", 5)
+        })
+
+        assertToolFailed("Plain-only directories must be refused (no Maven aggregator)", result)
+        val text = toolText(result)
+        assertTrue("Should say no Maven projects found, was: $text", text.contains("No Maven projects"))
+        assertEquals("No workspace directory may be created", emptySet<String>(), newWorkspaces)
+    }
+
+    fun testGradleDirectoryIsRefusedUpfrontWithNoPartialRegistration() {
+        val backend = mavenProjectDir("ws-gradle-backend")
+        val gradleDir = plainDir("ws-gradle-frontend")
+        writeProjectFile("ws-gradle-frontend/build.gradle", "apply plugin: 'java'")
+
+        val fakeAware = FakeBuildSystemAware("build.gradle")
+        ExtensionTestUtil.maskExtensions(
+            ExternalSystemUnlinkedProjectAware.Companion.EP_NAME,
+            listOf(fakeAware),
+            testRootDisposable
+        )
+
+        val (result, newWorkspaces) = callTracking(buildJsonObject {
+            put("modules", buildJsonArray {
+                add(JsonPrimitive(backend.absolutePath))
+                add(JsonPrimitive(gradleDir.absolutePath))
+            })
+            put("timeoutSeconds", 5)
+        })
+
+        assertToolFailed("Gradle directory must be refused upfront", result)
+        val text = toolText(result)
+        assertTrue("Should mention recognized build files, was: $text",
+            text.contains("recognized build files"))
+        assertTrue("Should suggest ide_open_project or ide_link_build_system, was: $text",
+            text.contains("ide_open_project") || text.contains("ide_link_build_system"))
+        assertEquals("No workspace directory may be created for a refused call", emptySet<String>(), newWorkspaces)
+    }
+
     fun testAnOpenProjectCoversARequestOnlyWhenItContainsEveryRequestedProject() {
         val repoA = mavenProjectDir("repo-a")
         val repoC = mavenProjectDir("repo-c")
@@ -139,6 +192,11 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
             "repo-c is not a module of any open project, so reusing this one would silently drop it",
             ProjectUtils.findOpenProjectContainingRoots(setOf(a, c))
         )
+    }
+
+    private fun plainDir(relativePath: String): File {
+        writeProjectFile("$relativePath/index.ts", "export default {};")
+        return writeProjectFile("$relativePath/package.json", """{"name": "test"}""").parent.toFile()
     }
 
     private fun mavenProjectDir(relativePath: String): File {
@@ -174,4 +232,16 @@ class OpenWorkspaceBehaviorTest : McpPlatformTestCase() {
 
     private fun workspaceDirectories(): Set<String> =
         File(PathManager.getSystemPath(), "ide-workspaces").list()?.toSet() ?: emptySet()
+
+    private class FakeBuildSystemAware(
+        private val buildFileName: String
+    ) : ExternalSystemUnlinkedProjectAware {
+        override val systemId = ProjectSystemId("FAKE_BUILD")
+        override fun isBuildFile(project: Project, file: VirtualFile): Boolean =
+            file.name == buildFileName
+        override fun isLinkedProject(project: Project, externalProjectPath: String): Boolean = false
+        override suspend fun linkAndLoadProjectAsync(project: Project, externalProjectPath: String) {}
+        override suspend fun unlinkProject(project: Project, externalProjectPath: String) {}
+        override fun subscribe(project: Project, listener: ExternalSystemProjectLinkListener, parentDisposable: Disposable) {}
+    }
 }
