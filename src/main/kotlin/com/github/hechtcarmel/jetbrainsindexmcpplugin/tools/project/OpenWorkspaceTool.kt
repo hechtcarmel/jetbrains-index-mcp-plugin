@@ -146,6 +146,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
             val buildFileExtensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
             val unsupportedBuildDirs = validatedPlain.filter { dir ->
                 val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(dir.absolutePath)
+                dirVf?.refresh(false, true)
                 dirVf != null && com.intellij.openapi.application.ReadAction.compute<Boolean, RuntimeException> {
                     dirVf.children.any { child ->
                         !child.isDirectory && buildFileExtensions.any { ext -> ext.isBuildFile(project, child) }
@@ -386,6 +387,7 @@ class OpenWorkspaceTool : AbstractMcpTool() {
         extensions: List<ExternalSystemUnlinkedProjectAware> = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
     ): Boolean {
         val dir = LocalFileSystem.getInstance().refreshAndFindFileByPath(dirPath) ?: return false
+        dir.refresh(false, true)
         return readAction {
             dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
         }
