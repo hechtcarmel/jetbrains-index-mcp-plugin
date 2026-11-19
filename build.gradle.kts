@@ -228,6 +228,7 @@ intellijPlatform {
 // Configure Gradle Changelog Plugin - read more: https://github.com/JetBrains/gradle-changelog-plugin
 changelog {
     groups.empty()
+    versionPrefix.set("")
     repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
 }
 

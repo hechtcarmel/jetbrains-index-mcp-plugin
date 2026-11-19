@@ -1421,8 +1421,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.8...HEAD
-[5.20.8]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.7...v5.20.8
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/5.20.8...HEAD
+[5.20.8]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/5.20.7...5.20.8
 [5.20.7]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.6...v5.20.7
 [5.20.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.4...v5.20.6
 [5.20.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...v5.20.4
