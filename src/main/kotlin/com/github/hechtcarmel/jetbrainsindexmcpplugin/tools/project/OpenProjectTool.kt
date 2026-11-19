@@ -10,11 +10,15 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.LinkResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.application.readAction
+import com.intellij.openapi.externalSystem.autolink.ExternalSystemUnlinkedProjectAware
 import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.module.ModuleTypeManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -60,6 +64,10 @@ class OpenProjectTool : AbstractMcpTool() {
         When invoked, this tool marks the target directory as trusted before opening,
         so the trust dialog does not appear. Build scripts (Maven, Gradle) may execute
         on import.
+
+        For directories without a recognized build system (TypeScript, plain directories),
+        automatically registers the project directory as a content root so files are indexed.
+        Common non-source directories (node_modules, dist, .next) are excluded automatically.
 
         Parameters:
         - path: absolute filesystem path of the project directory to open (required)
@@ -114,6 +122,8 @@ class OpenProjectTool : AbstractMcpTool() {
                 val linkMsg = tryAutoLink(existing, path)
                 if (linkMsg != null) actions.add(linkMsg)
             }
+            val contentRootMsg = ensureContentRoot(existing, path)
+            if (contentRootMsg != null) actions.add(contentRootMsg)
             if (excludeDirs.isNotEmpty()) {
                 val excludeMsg = applyExclusions(existing, path, excludeDirs)
                 if (excludeMsg != null) actions.add(excludeMsg)
@@ -138,6 +148,11 @@ class OpenProjectTool : AbstractMcpTool() {
             if (autoLink) {
                 val linkMsg = tryAutoLink(opened, path)
                 if (linkMsg != null) setupActions.add(linkMsg)
+                ProjectUtils.awaitSmartMode(opened)
+            }
+            val contentRootMsg = ensureContentRoot(opened, path)
+            if (contentRootMsg != null) {
+                setupActions.add(contentRootMsg)
                 ProjectUtils.awaitSmartMode(opened)
             }
             if (excludeDirs.isNotEmpty()) {
@@ -287,6 +302,68 @@ class OpenProjectTool : AbstractMcpTool() {
         return parts.joinToString(" ")
     }
 
+    internal suspend fun ensureContentRoot(project: Project, path: String): String? {
+        if (hasBuildFileDetected(project, path)) return null
+
+        val hasContentRoots = readAction {
+            ModuleManager.getInstance(project).modules.any { module ->
+                ModuleRootManager.getInstance(module).contentRoots.isNotEmpty()
+            }
+        }
+        if (hasContentRoots) return null
+
+        val dirVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(path)
+            ?: return "Content root registration skipped: cannot resolve directory in VFS."
+        val dir = File(path)
+        val moduleName = dir.name
+        val ideaDir = File(dir, ".idea")
+        if (!ideaDir.exists() && !ideaDir.mkdirs()) {
+            return "Content root registration failed: cannot create .idea/ directory in $path."
+        }
+        val imlPath = File(ideaDir, "$moduleName.iml").absolutePath
+
+        return try {
+            edtAction {
+                WriteAction.run<Exception> {
+                    val moduleTypeId = ModuleTypeManager.getInstance().defaultModuleType.id
+                    val moduleManager = ModuleManager.getInstance(project)
+                    val module = moduleManager.newModule(imlPath, moduleTypeId)
+                    val rootModel = ModuleRootManager.getInstance(module).modifiableModel
+                    try {
+                        rootModel.inheritSdk()
+                        val contentEntry = rootModel.addContentEntry(dirVf)
+                        for (exclude in DEFAULT_EXCLUDES) {
+                            contentEntry.addExcludeFolder(
+                                VfsUtilCore.pathToUrl(File(dir, exclude).absolutePath)
+                            )
+                        }
+                        rootModel.commit()
+                    } catch (e: Exception) {
+                        rootModel.dispose()
+                        throw e
+                    }
+                }
+            }
+            "Content root registered (no build system detected). Module '$moduleName' created at $imlPath. " +
+                "Excluded: ${DEFAULT_EXCLUDES.joinToString(", ")}."
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            "Content root registration failed: ${e.message}"
+        }
+    }
+
+    internal suspend fun hasBuildFileDetected(project: Project, projectPath: String): Boolean {
+        val dir = LocalFileSystem.getInstance().refreshAndFindFileByPath(projectPath) ?: return false
+        dir.refresh(false, true)
+        return readAction {
+            val extensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
+            dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
+        }
+    }
+
     private suspend fun tryAutoLink(project: Project, path: String): String? {
         return try {
             when (val result = BuildSystemLinker.linkBuildSystem(project, path)) {
@@ -307,5 +384,6 @@ class OpenProjectTool : AbstractMcpTool() {
 
     companion object {
         private const val DEFAULT_TIMEOUT_SECONDS = 600
+        internal val DEFAULT_EXCLUDES = listOf("node_modules", "dist", ".next")
     }
 }
