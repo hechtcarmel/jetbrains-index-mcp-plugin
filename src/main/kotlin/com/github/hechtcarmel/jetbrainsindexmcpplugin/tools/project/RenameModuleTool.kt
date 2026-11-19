@@ -177,7 +177,7 @@ class RenameModuleTool : AbstractMcpTool() {
             }
             if (writeError != null) {
                 val rollbackResult = rollbackChanges(project, savedOriginals)
-                return createErrorResult("Failed to save ${File(filePath).name}. $rollbackResult")
+                return createErrorResult("Failed to save $filePath. $rollbackResult")
             }
         }
 
@@ -226,16 +226,15 @@ class RenameModuleTool : AbstractMcpTool() {
         val restored = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for ((filePath, originalContent) in originals) {
-            val fileName = File(filePath).name
             val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath)
-            if (vf == null) { failed.add("$fileName (not found in VFS)"); continue }
+            if (vf == null) { failed.add("$filePath (not found in VFS)"); continue }
             val doc = FileDocumentManager.getInstance().getDocument(vf)
-            if (doc == null) { failed.add("$fileName (no document)"); continue }
-            val writeError = suspendingWriteActionAndSave(project, "Rollback: restore $fileName", doc) {
+            if (doc == null) { failed.add("$filePath (no document)"); continue }
+            val writeError = suspendingWriteActionAndSave(project, "Rollback: restore ${File(filePath).name}", doc) {
                 doc.setText(originalContent)
             }
-            if (writeError != null) { failed.add("$fileName (save failed)"); continue }
-            restored.add(fileName)
+            if (writeError != null) { failed.add("$filePath (save failed)"); continue }
+            restored.add(filePath)
         }
         return if (failed.isEmpty()) {
             "POM changes rolled back: ${restored.joinToString(", ")}."
