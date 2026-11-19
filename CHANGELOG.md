@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.20.8] - 2026-11-19
+
 ### Added
 
 - **`ide_open_workspace` now accepts non-Maven directories in `modules`** ([#446](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/446)) — directories without `pom.xml` (TypeScript, plain directories) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`). At least one Maven project is still required. Directories with recognized build files (Gradle) are refused upfront with an actionable linking alternative.
@@ -1419,7 +1421,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.7...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.8...HEAD
+[5.20.8]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.7...v5.20.8
 [5.20.7]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.6...v5.20.7
 [5.20.6]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.4...v5.20.6
 [5.20.4]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.3...v5.20.4
