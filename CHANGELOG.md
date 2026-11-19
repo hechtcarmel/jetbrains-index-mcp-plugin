@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_open_workspace` now accepts non-Maven directories in `modules`** ([#446](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/446)) — directories without `pom.xml` (TypeScript, plain directories) are registered as content roots with default excludes (`node_modules`, `dist`, `.next`). At least one Maven project is still required. Directories with recognized build files (Gradle) are refused upfront with an actionable linking alternative.
+
 ### Fixed
 
 - **`ide_open_project` auto-registers a content root for non-Maven/Gradle projects** ([#421](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/421)) — directories without a recognized build system (TypeScript, plain directories) previously opened with zero content roots, making all MCP tools return empty results. The tool now checks for build files via `ExternalSystemUnlinkedProjectAware` and, if none are found, creates a module with the project directory as content root. The module file is stored in `.idea/` (not the project root), uses the platform's default module type, inherits the project SDK, and excludes `node_modules`, `dist`, and `.next` by URL whether or not they exist on disk.
