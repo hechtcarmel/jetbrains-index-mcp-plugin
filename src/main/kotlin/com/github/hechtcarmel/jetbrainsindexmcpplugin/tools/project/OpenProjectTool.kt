@@ -357,6 +357,7 @@ class OpenProjectTool : AbstractMcpTool() {
 
     internal suspend fun hasBuildFileDetected(project: Project, projectPath: String): Boolean {
         val dir = LocalFileSystem.getInstance().refreshAndFindFileByPath(projectPath) ?: return false
+        dir.refresh(false, true)
         return readAction {
             val extensions = ExternalSystemUnlinkedProjectAware.EP_NAME.extensionList
             dir.children.any { child -> extensions.any { it.isBuildFile(project, child) } }
