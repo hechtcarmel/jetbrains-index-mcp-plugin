@@ -1,0 +1,611 @@
+package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+class RenameModuleBehaviorTest : McpPlatformTestCase() {
+
+    fun testRenameModuleUpdatesDirectoryAndPomFiles() = runBlocking {
+        writeProjectFile("parent-project/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>parent-project</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules>
+                <module>old-module</module>
+                <module>other-module</module>
+              </modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("parent-project/old-module/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.test</groupId>
+                <artifactId>parent-project</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>old-module</artifactId>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("parent-project/other-module/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.test</groupId>
+                <artifactId>parent-project</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>other-module</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>io.test</groupId>
+                  <artifactId>old-module</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        val modulePath = "${project.basePath}/parent-project/old-module"
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", modulePath)
+            put("newName", "new-module")
+        })
+
+        assertToolSucceeded("Rename should succeed", result)
+        val text = toolText(result)
+        assertTrue("Should mention new-module, was: $text", text.contains("new-module"))
+
+        // Directory renamed
+        assertTrue("New directory should exist", projectFileExists("parent-project/new-module/pom.xml"))
+        assertFalse("Old directory should not exist", projectFileExists("parent-project/old-module/pom.xml"))
+
+        // Parent pom updated
+        val parentPom = readProjectFileVfs("parent-project/pom.xml")
+        assertTrue("Parent pom should reference new-module", parentPom.contains("<module>new-module</module>"))
+        assertFalse("Parent pom should not reference old-module", parentPom.contains("<module>old-module</module>"))
+
+        // Module's own pom updated
+        val modulePomPath = java.nio.file.Path.of(project.basePath!!, "parent-project/new-module/pom.xml")
+        val modulePom = java.nio.file.Files.readString(modulePomPath)
+        assertTrue("Module pom should have new artifactId", modulePom.contains("<artifactId>new-module</artifactId>"))
+        assertFalse("Module pom should not have old artifactId", modulePom.contains("<artifactId>old-module</artifactId>"))
+
+        // Sibling dependency updated
+        val siblingPom = readProjectFileVfs("parent-project/other-module/pom.xml")
+        assertTrue("Sibling dependency should reference new-module", siblingPom.contains("<artifactId>new-module</artifactId>"))
+        assertFalse("Sibling dependency should not reference old-module as artifactId",
+            siblingPom.contains("<artifactId>old-module</artifactId>"))
+    }
+
+    fun testRenameModuleWithNoPomReturnsError() = runBlocking {
+        writeProjectFile("no-pom-dir/README.md", "just a readme")
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/no-pom-dir")
+            put("newName", "renamed")
+        })
+
+        assertToolFailed("Should fail for dir without pom.xml", result)
+        assertTrue("Error should mention pom.xml", toolText(result).contains("pom.xml"))
+    }
+
+    fun testRenameModuleWithBlankNameReturnsError() = runBlocking {
+        writeProjectFile("some-module/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>some-module</artifactId>
+              <version>1.0</version>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/some-module")
+            put("newName", "")
+        })
+
+        assertToolFailed("Should fail for blank name", result)
+    }
+
+    fun testRenameModuleWithSlashInNameReturnsError() = runBlocking {
+        writeProjectFile("some-module/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>some-module</artifactId>
+              <version>1.0</version>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/some-module")
+            put("newName", "path/traversal")
+        })
+
+        assertToolFailed("Should fail for name with slash", result)
+    }
+
+    fun testRenameRootModuleWithNoParentPom() = runBlocking {
+        writeProjectFile("root-project/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.casehub</groupId>
+              <artifactId>casehub-blocks-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules>
+                <module>blocks-core</module>
+              </modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("root-project/blocks-core/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-blocks-parent</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>casehub-blocks-core</artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/root-project")
+            put("newName", "agency-project")
+        })
+
+        assertToolSucceeded("Root rename should succeed", result)
+
+        assertTrue("New directory should exist", projectFileExists("agency-project/pom.xml"))
+        assertFalse("Old directory should not exist", projectFileExists("root-project/pom.xml"))
+
+        val rootPom = java.nio.file.Files.readString(
+            java.nio.file.Path.of(project.basePath!!, "agency-project/pom.xml"))
+        assertTrue("Root artifactId should be updated",
+            rootPom.contains("<artifactId>agency-project</artifactId>"))
+        assertFalse("Old artifactId should be gone",
+            rootPom.contains("<artifactId>casehub-blocks-parent</artifactId>"))
+
+        // Child's <parent><artifactId> should be updated to the new name
+        val childPom = java.nio.file.Files.readString(
+            java.nio.file.Path.of(project.basePath!!, "agency-project/blocks-core/pom.xml"))
+        assertTrue("Child parent artifactId should be updated",
+            childPom.contains("<artifactId>agency-project</artifactId>"))
+        assertFalse("Child parent should not reference old name",
+            childPom.contains("<artifactId>casehub-blocks-parent</artifactId>"))
+        // Child's own artifactId should be unchanged
+        assertTrue("Child own artifactId should be preserved",
+            childPom.contains("<artifactId>casehub-blocks-core</artifactId>"))
+
+        val text = toolText(result)
+        assertTrue("Should report parentPomUpdated false", text.contains("\"parentPomUpdated\":false"))
+        assertTrue("Should report childParentUpdates", text.contains("\"childParentUpdates\":1"))
+    }
+
+    fun testRenameMultiModuleProjectUpdatesAllChildren() = runBlocking {
+        writeProjectFile("workspace/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.casehub</groupId>
+              <artifactId>casehub-blocks-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules>
+                <module>blocks-core</module>
+                <module>blocks-spring</module>
+              </modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("workspace/blocks-core/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-blocks-parent</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>casehub-blocks-core</artifactId>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("workspace/blocks-core/src/main/java/io/casehub/blocks/BlocksService.java", """
+            package io.casehub.blocks;
+            public class BlocksService {
+                public String name() { return "blocks"; }
+            }
+        """.trimIndent())
+
+        writeProjectFile("workspace/blocks-spring/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-blocks-parent</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>casehub-blocks-spring</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>io.casehub</groupId>
+                  <artifactId>casehub-blocks-core</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        // Step 1: Rename blocks-core → agency-core
+        val result1 = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/workspace/blocks-core")
+            put("newName", "agency-core")
+        })
+        assertToolSucceeded("Child rename should succeed", result1)
+
+        // Verify directory renamed
+        assertTrue("agency-core dir should exist", projectFileExists("workspace/agency-core/pom.xml"))
+        assertFalse("blocks-core dir should be gone", projectFileExists("workspace/blocks-core/pom.xml"))
+
+        // Verify parent pom module entry updated
+        val parentPom = readProjectFileVfs("workspace/pom.xml")
+        assertTrue("Parent should list agency-core", parentPom.contains("<module>agency-core</module>"))
+        assertFalse("Parent should not list blocks-core", parentPom.contains("<module>blocks-core</module>"))
+
+        // Verify sibling dependency updated
+        val springPom = readProjectFileVfs("workspace/blocks-spring/pom.xml")
+        assertTrue("Spring dep should reference agency-core",
+            springPom.contains("<artifactId>agency-core</artifactId>"))
+
+        // Verify Java file survived the directory rename
+        val javaPath = java.nio.file.Path.of(project.basePath!!,
+            "workspace/agency-core/src/main/java/io/casehub/blocks/BlocksService.java")
+        assertTrue("Java file should exist in renamed dir", java.nio.file.Files.exists(javaPath))
+        val javaContent = java.nio.file.Files.readString(javaPath)
+        assertTrue("Java content should be preserved", javaContent.contains("public class BlocksService"))
+    }
+
+    fun testRenameChildModuleUpdatesChildParentArtifactId() = runBlocking {
+        writeProjectFile("proj/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>my-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules>
+                <module>child-a</module>
+              </modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("proj/child-a/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.test</groupId>
+                <artifactId>my-parent</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>child-a</artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/proj/child-a")
+            put("newName", "child-b")
+        })
+
+        assertToolSucceeded("Rename should succeed", result)
+
+        // Parent ref in child pom should still point to my-parent (not renamed)
+        val childPom = java.nio.file.Files.readString(
+            java.nio.file.Path.of(project.basePath!!, "proj/child-b/pom.xml"))
+        assertTrue("Parent artifactId should be preserved",
+            childPom.contains("<artifactId>my-parent</artifactId>"))
+        assertTrue("Child artifactId should be updated",
+            childPom.contains("<artifactId>child-b</artifactId>"))
+    }
+
+    fun testAdjacentDependenciesWithDifferentGroupsAreNotConfused() = runBlocking {
+        writeProjectFile("adj-parent/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>adj-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>target-mod</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("adj-parent/target-mod/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent><groupId>io.test</groupId><artifactId>adj-parent</artifactId><version>1.0</version></parent>
+              <artifactId>target-mod</artifactId>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("adj-parent/consumer/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>consumer</artifactId>
+              <version>1.0</version>
+              <dependencies>
+                <dependency>
+                  <groupId>com.other</groupId>
+                  <artifactId>target-mod</artifactId>
+                </dependency>
+                <dependency>
+                  <groupId>io.test</groupId>
+                  <artifactId>target-mod</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/adj-parent/target-mod")
+            put("newName", "renamed-mod")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val consumerPom = readProjectFileVfs("adj-parent/consumer/pom.xml")
+        assertTrue("io.test dependency should be renamed",
+            consumerPom.contains("<groupId>io.test</groupId>") &&
+                consumerPom.contains("<artifactId>renamed-mod</artifactId>"))
+        assertTrue("com.other dependency should NOT be renamed",
+            consumerPom.contains("<groupId>com.other</groupId>") &&
+                consumerPom.contains("<artifactId>target-mod</artifactId>"))
+    }
+
+    fun testInheritedGroupIdFromParentIsUsedForDependencyMatching() = runBlocking {
+        writeProjectFile("inh-root/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.inherited</groupId>
+              <artifactId>inh-root</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>child-mod</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("inh-root/child-mod/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.inherited</groupId>
+                <artifactId>inh-root</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>child-mod</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>com.external</groupId>
+                  <artifactId>unrelated</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("inh-root/consumer/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.inherited</groupId>
+              <artifactId>consumer</artifactId>
+              <version>1.0</version>
+              <dependencies>
+                <dependency>
+                  <groupId>io.inherited</groupId>
+                  <artifactId>child-mod</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/inh-root/child-mod")
+            put("newName", "new-child")
+        })
+        assertToolSucceeded("Rename with inherited groupId should succeed", result)
+
+        val consumerPom = readProjectFileVfs("inh-root/consumer/pom.xml")
+        assertTrue("Consumer dependency should use the inherited groupId for matching and rename",
+            consumerPom.contains("<artifactId>new-child</artifactId>"))
+    }
+
+    fun testMultipleChangesToSamePomAreCombined() = runBlocking {
+        writeProjectFile("multi/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>multi-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules>
+                <module>api</module>
+              </modules>
+              <dependencies>
+                <dependency>
+                  <groupId>io.test</groupId>
+                  <artifactId>api</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("multi/api/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent><groupId>io.test</groupId><artifactId>multi-parent</artifactId><version>1.0</version></parent>
+              <artifactId>api</artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/multi/api")
+            put("newName", "core-api")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val parentPom = readProjectFileVfs("multi/pom.xml")
+        assertTrue("Module entry should be updated: $parentPom",
+            parentPom.contains("<module>core-api</module>"))
+        assertFalse("Old module entry should be gone: $parentPom",
+            parentPom.contains("<module>api</module>"))
+        assertTrue("Dependency should also be updated: $parentPom",
+            parentPom.contains("<artifactId>core-api</artifactId>"))
+    }
+
+    fun testWhitespaceInArtifactIdIsHandledConsistently() = runBlocking {
+        writeProjectFile("ws-parent/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>ws-parent</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>ws-mod</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("ws-parent/ws-mod/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent><groupId>io.test</groupId><artifactId>ws-parent</artifactId><version>1.0</version></parent>
+              <artifactId> ws-mod </artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/ws-parent/ws-mod")
+            put("newName", "ws-renamed")
+        })
+        assertToolSucceeded("Rename should handle whitespace in artifactId", result)
+
+        val modulePom = java.nio.file.Files.readString(
+            java.nio.file.Path.of(project.basePath!!, "ws-parent/ws-renamed/pom.xml"))
+        assertTrue("ArtifactId should be updated despite whitespace",
+            modulePom.contains("<artifactId>ws-renamed</artifactId>"))
+        assertFalse("Old artifactId should be gone",
+            modulePom.contains("ws-mod"))
+    }
+
+    fun testParentArtifactIdUpdateIsConstrainedToParentBlock() = runBlocking {
+        writeProjectFile("scope-root/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>scope-root</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>scope-child</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("scope-root/scope-child/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>io.other</groupId>
+                <artifactId>unrelated-parent</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>scope-child</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>io.third</groupId>
+                  <artifactId>scope-root</artifactId>
+                </dependency>
+              </dependencies>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/scope-root")
+            put("newName", "scope-renamed")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val childPom = readProjectFileVfs("scope-renamed/scope-child/pom.xml")
+        assertTrue("Unrelated parent artifactId must NOT be renamed: $childPom",
+            childPom.contains("<artifactId>unrelated-parent</artifactId>"))
+        assertTrue("Dependency with different groupId must NOT be renamed: $childPom",
+            childPom.contains("<groupId>io.third</groupId>") &&
+                childPom.contains("<artifactId>scope-root</artifactId>"))
+    }
+
+    fun testSameArtifactIdDifferentGroupIdParentIsLeftUnchanged() = runBlocking {
+        writeProjectFile("gid-root/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>io.test</groupId>
+              <artifactId>shared-name</artifactId>
+              <version>1.0</version>
+              <packaging>pom</packaging>
+              <modules><module>child</module></modules>
+            </project>
+        """.trimIndent())
+
+        writeProjectFile("gid-root/child/pom.xml", """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <parent>
+                <groupId>com.other</groupId>
+                <artifactId>shared-name</artifactId>
+                <version>1.0</version>
+              </parent>
+              <artifactId>child</artifactId>
+            </project>
+        """.trimIndent())
+
+        val result = RenameModuleTool().execute(project, buildJsonObject {
+            put("modulePath", "${project.basePath}/gid-root")
+            put("newName", "gid-renamed")
+        })
+        assertToolSucceeded("Rename should succeed", result)
+
+        val childPom = java.nio.file.Files.readString(
+            java.nio.file.Path.of(project.basePath!!, "gid-renamed/child/pom.xml"))
+        assertTrue("Parent with different groupId must NOT be renamed: $childPom",
+            childPom.contains("<artifactId>shared-name</artifactId>"))
+        assertTrue("Parent groupId must be unchanged: $childPom",
+            childPom.contains("<groupId>com.other</groupId>"))
+    }
+}

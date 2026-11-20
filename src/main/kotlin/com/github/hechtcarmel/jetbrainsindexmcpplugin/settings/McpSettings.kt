@@ -9,7 +9,7 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 
 private object ToolSettingsDefaults {
-    const val CURRENT_SCHEMA_VERSION = 9
+    const val CURRENT_SCHEMA_VERSION = 10
 
     val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
         ToolNames.BUILD_PROJECT,
@@ -50,6 +50,7 @@ private object ToolSettingsDefaults {
         ToolNames.PROJECT_DIAGNOSTICS,
         ToolNames.LINK_BUILD_SYSTEM,
         ToolNames.SYMBOL_INFO,
+        ToolNames.RENAME_MODULE,
     )
 
     // Add only newly introduced default-disabled tools here; old entries are snapshots
@@ -63,7 +64,8 @@ private object ToolSettingsDefaults {
         6 to setOf(ToolNames.CREATE_MODULE),
         7 to setOf(ToolNames.PROJECT_DIAGNOSTICS),
         8 to setOf(ToolNames.LINK_BUILD_SYSTEM),
-        9 to setOf(ToolNames.SYMBOL_INFO)
+        9 to setOf(ToolNames.SYMBOL_INFO),
+        10 to setOf(ToolNames.RENAME_MODULE)
     )
 }
 

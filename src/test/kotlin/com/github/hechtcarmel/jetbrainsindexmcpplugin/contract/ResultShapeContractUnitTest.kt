@@ -27,6 +27,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ListTestsResu
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.OpenFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.PositionInput
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RenameModuleResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagnosticsInProgressResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProjectDiagnosticsResult
@@ -1205,6 +1206,19 @@ class ResultShapeContractUnitTest : TestCase() {
                 )
             ),
             struct(ConversionSummary.serializer(), conversionSummary),
+            struct(
+                RenameModuleResult.serializer(),
+                RenameModuleResult(
+                    oldPath = "/dev/project/old-module",
+                    newPath = "/dev/project/new-module",
+                    oldArtifactId = "old-module",
+                    newArtifactId = "new-module",
+                    groupId = "io.example",
+                    parentPomUpdated = true,
+                    dependencyUpdates = 2,
+                    childParentUpdates = 1
+                )
+            ),
         )
     }
 }

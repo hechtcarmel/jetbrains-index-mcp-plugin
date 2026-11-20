@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`ide_rename_module` — atomic Maven module rename** ([#448](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/448)) — renames directory, updates artifactId, `<module>` entries, `<dependency>` and `<plugin>` references across all project pom.xml files. Rollback reports which files were restored on failure with full paths. Parent-block updates match both groupId and artifactId. (disabled by default)
+
 ## [5.20.8] - 2026-11-19
 
 ### Added
