@@ -176,8 +176,11 @@ class RenameModuleTool : AbstractMcpTool() {
                 doc.setText(newContent)
             }
             if (writeError != null) {
+                val saveExplanation = writeError.content
+                    .filterIsInstance<io.modelcontextprotocol.kotlin.sdk.types.TextContent>()
+                    .joinToString(" ") { it.text }
                 val rollbackResult = rollbackChanges(project, savedOriginals)
-                return createErrorResult("Failed to save $filePath. $rollbackResult")
+                return createErrorResult("$saveExplanation $rollbackResult")
             }
         }
 
