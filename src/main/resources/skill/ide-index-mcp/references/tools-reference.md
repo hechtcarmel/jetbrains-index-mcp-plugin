@@ -61,7 +61,7 @@ Parse the `text` field as JSON for structured data.
 ## Navigation Tools
 
 ### ide_find_references
-Find all usages of a symbol (semantic, not text search).
+Find all usages of a symbol (semantic, not text search). For JVM methods this is the IDE's Find Usages query: Kotlin property-syntax reads of Java accessors (`bean.name` -> `getName()`) and calls resolving to an override count as usages.
 
 **Target for a fresh search (mutually exclusive):** top-level `symbolId` OR `file`+`line`+`column` OR `language`+`symbol`; this tool also accepts the equivalent nested `target`. Pagination requests pass `cursor` instead.
 
@@ -170,6 +170,7 @@ Search for classes/interfaces by name using IDE's class index. Equivalent to Ctr
 **Returns**: `{ classes: [{symbolId, name, qualifiedName, file, line, kind, language}], totalCount, query }`
 **Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 **Matching**: CamelCase (`USvc` -> `UserService`), substring, wildcard (`User*Impl`).
+**Kotlin**: file facade classes (`UtilsKt`, `@file:JvmName("Util")`) are returned with kind `FILE_FACADE`; type aliases with kind `TYPE_ALIAS`.
 
 ### ide_find_file
 Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cmd+Shift+O.
@@ -185,10 +186,11 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ files: [{name, path, directory}], totalCount, query }`
+**Matching**: CamelCase (`USJ` -> `UserService.java`), substring, and wildcard: a query with `*`/`?` is a glob over the whole file name in the `paths` syntax (`K*.kt` matches `KRect.kt`, not `WorldTask.kt`).
 **Path note**: Project results use paths relative to the project directory; files in modules outside it (workspace repositories, imported modules) use absolute paths. Dependency/library results may use absolute paths or `jar://` URLs.
 
 ### ide_search_text
-Search for text using IntelliJ Find in Files. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching.
+Search for text using IntelliJ Find in Files. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching. Every occurrence is its own result, including several on one line.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -305,6 +307,7 @@ when every ancestor is in a library.
 ### ide_call_hierarchy
 
 Build call tree showing who calls a method or what a method calls.
+A recursive method is listed among its own callers (`super.foo()` from an override is not recursion).
 Kotlin getter/setter handles identify distinct callable bodies. A source property or parameter
 used as input keeps its original ID binding even if the hierarchy selects a related callable.
 

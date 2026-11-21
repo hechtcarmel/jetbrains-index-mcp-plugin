@@ -164,7 +164,7 @@ class SearchTextTool : AbstractMcpTool() {
     ): String {
         val serializedResults = matches.map { match ->
             PaginationService.SerializedResult(
-                key = "${match.file}:${match.line}",
+                key = matchKey(match),
                 data = json.encodeToJsonElement(match)
             )
         }
@@ -261,7 +261,7 @@ class SearchTextTool : AbstractMcpTool() {
             searchRegex(project, findModel, searchContext, limit, seenKeys)
                 .map { match ->
                     PaginationService.SerializedResult(
-                        key = "${match.file}:${match.line}",
+                        key = matchKey(match),
                         data = json.encodeToJsonElement(match)
                     )
                 }
@@ -269,6 +269,8 @@ class SearchTextTool : AbstractMcpTool() {
             emptyList()
         }
     }
+
+    private fun matchKey(match: TextMatch): String = "${match.file}:${match.line}:${match.column}"
 
     private fun searchRegex(
         project: Project,
@@ -278,7 +280,7 @@ class SearchTextTool : AbstractMcpTool() {
         seenKeys: Set<String> = emptySet()
     ): List<TextMatch> {
         val results = ConcurrentLinkedQueue<TextMatch>()
-        val seenLines = ConcurrentHashMap.newKeySet<String>().apply { addAll(seenKeys) }
+        val seenMatches = ConcurrentHashMap.newKeySet<String>().apply { addAll(seenKeys) }
         val count = AtomicInteger(0)
         val presentation =
             FindInProjectUtil.setupProcessPresentation(FindInProjectUtil.setupViewPresentation(findModel))
@@ -292,8 +294,9 @@ class SearchTextTool : AbstractMcpTool() {
             if (count.get() >= limit) return@findUsages false
 
             val match = convertToTextMatch(project, usageInfo, searchContext) ?: return@findUsages true
-            val lineKey = "${match.file}:${match.line}"
-            if (seenLines.add(lineKey)) {
+            // One result per occurrence: two matches on one line (`foo(1) + foo(2)`) are both
+            // reported, with their own columns, like the IDE's Find in Files.
+            if (seenMatches.add(matchKey(match))) {
                 if (count.incrementAndGet() <= limit) results.add(match)
             }
 

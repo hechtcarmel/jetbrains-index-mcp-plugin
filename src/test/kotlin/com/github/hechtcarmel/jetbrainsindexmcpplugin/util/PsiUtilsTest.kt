@@ -4,6 +4,7 @@ import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiEnumConstant
 import com.intellij.psi.PsiField
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.io.File
@@ -20,6 +21,7 @@ import java.util.jar.JarOutputStream
  * - Method call references (resolves to the called method)
  * - Field access references (resolves to the field)
  * - Declaration positions (returns the declaration itself)
+ * - Enum constant names (the constant, not the implicit constructor its reference targets)
  */
 class PsiUtilsTest : BasePlatformTestCase() {
 
@@ -106,6 +108,28 @@ class PsiUtilsTest : BasePlatformTestCase() {
         assertNotNull("Should resolve declaration", resolved)
         assertTrue("Should be PsiMethod", resolved is PsiMethod)
         assertEquals("myMethod", (resolved as PsiMethod).name)
+    }
+
+    fun testResolveTargetElement_EnumConstantNameResolvesToConstantNotConstructor() {
+        // PsiEnumConstant carries its own reference, to the enum's (here implicit) constructor.
+        // Walking up to that reference used to turn "references of RED" into "references of the
+        // Color constructor", i.e. the declarations RED and GREEN.
+        val file = myFixture.configureByText(
+            "Color.java",
+            """
+            public enum Color {
+                R<caret>ED,
+                GREEN
+            }
+            """.trimIndent()
+        )
+
+        val element = file.findElementAt(myFixture.caretOffset)
+        assertNotNull("Should find element at caret", element)
+
+        val resolved = PsiUtils.resolveTargetElement(element!!)
+        assertTrue("Should resolve to the enum constant, got $resolved", resolved is PsiEnumConstant)
+        assertEquals("RED", (resolved as PsiEnumConstant).name)
     }
 
     fun testResolveTargetElement_ClassReferenceResolvesToClass() {

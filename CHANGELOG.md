@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ide_find_references` finds Kotlin property-syntax uses of Java accessors and calls through overrides** — JVM methods are searched with `MethodReferencesSearch` (the IDE's Find Usages query) instead of `ReferencesSearch`: `circle.name` in Kotlin is now a reference of Java `getName()`, and `base.area()` resolving to an override is a reference of the interface method `Shape.area()`.
+- **Position on a Java enum constant searches the constant** — position resolution walked up to `PsiEnumConstant`, whose own reference targets the enum's implicit constructor, so `ide_find_references` on `RED` returned the enum constants' declarations instead of the uses of `RED`.
+- **`ide_call_hierarchy`**: recursive self-calls are reported as callers (a `super.foo()` call from an override still is not), and Kotlin callees include Java accessors used with property syntax (`bean.name` → `getName()`).
+- **`ide_find_class` returns Kotlin file facade classes** (`UtilsKt`, `@file:JvmName("Util")`) with kind `FILE_FACADE`, and Kotlin type aliases report kind `TYPE_ALIAS` instead of `CLASS` (also in `ide_find_symbol`).
+- **`ide_find_file` wildcard queries are globs over the whole file name** (the `paths` glob syntax) — `K*.kt` matches `KRect.kt` but no longer `WorldTask.kt` or `StatisticKey.kt`; queries without `*`/`?` keep the fuzzy camelCase matching.
+- **`ide_search_text` reports every occurrence** — results were deduplicated per line, so a second match on the same line was dropped.
+
 ## [5.20.8] - 2026-11-19
 
 ### Added

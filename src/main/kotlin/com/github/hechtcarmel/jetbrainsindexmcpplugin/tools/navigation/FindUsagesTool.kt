@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobScope
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.JavaMethodReferenceQuery
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
@@ -17,6 +18,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ResolvedSymbo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
@@ -26,10 +28,13 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiReference
 import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.search.SearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.Processor
+import com.intellij.util.Query
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.encodeToString
@@ -63,6 +68,11 @@ class FindUsagesTool : AbstractMcpTool() {
          * while still below the hard cache cap. At [PaginationService.MAX_CACHED_RESULTS_PER_CURSOR]
          * continuation is unavailable but `hasMore` remains true, so exactness cannot be claimed.
          */
+        /** JVM methods use the IDE Find Usages query (see [JavaMethodReferenceQuery]); everything else ReferencesSearch. */
+        internal fun referenceQuery(target: PsiElement, scope: SearchScope): Query<PsiReference> =
+            (if (PluginDetectors.java.isAvailable) JavaMethodReferenceQuery.forMethod(target, scope) else null)
+                ?: ReferencesSearch.search(target, scope)
+
         internal fun computeTotalIsExact(metadata: Map<String, String>, hasMore: Boolean, totalCollected: Int): Boolean {
             return metadata[METADATA_SEARCH_EXHAUSTED] == "true" ||
                 (!hasMore && totalCollected < PaginationService.MAX_CACHED_RESULTS_PER_CURSOR)
@@ -184,7 +194,7 @@ class FindUsagesTool : AbstractMcpTool() {
             )
 
             try {
-                ReferencesSearch.search(targetElement, searchScope).forEach(Processor { reference ->
+                referenceQuery(targetElement, searchScope).forEach(Processor { reference ->
                     ProgressManager.checkCanceled()
 
                     val refElement = reference.element
@@ -322,7 +332,7 @@ class FindUsagesTool : AbstractMcpTool() {
         )
 
         try {
-            ReferencesSearch.search(targetElement, searchScope).forEach(Processor { reference ->
+            referenceQuery(targetElement, searchScope).forEach(Processor { reference ->
                 ProgressManager.checkCanceled()
                 val refElement = reference.element
                 val refFile = refElement.containingFile?.virtualFile

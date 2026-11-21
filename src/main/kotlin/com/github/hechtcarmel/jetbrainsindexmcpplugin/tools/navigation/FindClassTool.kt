@@ -1,5 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.KotlinFileFacadeSearch
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
@@ -55,6 +58,7 @@ class FindClassTool : AbstractMcpTool() {
         private val LOG = logger<FindClassTool>()
         private const val DEFAULT_PAGE_SIZE = 25
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
+        internal const val FILE_FACADE_KIND = "FILE_FACADE"
         // processNames may emit names from broader scope (including libraries/JDK) even when
         // we search in project scope. Short/common patterns like "Tool" would fill a small buffer
         // with library class names (e.g., "Toolkit", "ToolProvider") before reaching project classes.
@@ -260,7 +264,43 @@ class FindClassTool : AbstractMcpTool() {
             }
         }
 
+        if (results.size < limit &&
+            PluginDetectors.kotlin.isAvailable &&
+            (languageFilter == null || languageFilter.equals("Kotlin", ignoreCase = true))
+        ) {
+            addKotlinFileFacades(project, searchScope, limit, nameFilter, results, seen)
+        }
+
         return results
+    }
+
+    /** See [KotlinFileFacadeSearch]: Java-visible facade classes of Kotlin files, kind `FILE_FACADE`. */
+    private fun addKotlinFileFacades(
+        project: Project,
+        searchScope: GlobalSearchScope,
+        limit: Int,
+        nameFilter: (String) -> Boolean,
+        results: MutableList<SymbolMatch>,
+        seen: MutableSet<String>
+    ) {
+        for (facade in KotlinFileFacadeSearch.facades(project, searchScope, nameFilter, limit - results.size)) {
+            if (results.size >= limit) break
+            val file = facade.file.virtualFile ?: continue
+            if (!searchScope.contains(file)) continue
+            val match = SymbolMatch(
+                symbolId = PaginationService.UNMATERIALIZED_SYMBOL_ID,
+                name = facade.name,
+                qualifiedName = facade.qualifiedName,
+                kind = FILE_FACADE_KIND,
+                file = ProjectUtils.getToolFilePath(project, file),
+                line = 1,
+                column = 1,
+                containerName = null,
+                language = "Kotlin",
+                pointerTarget = facade.lightClass
+            )
+            if (seen.add("${match.file}:${match.line}:${match.column}:${match.name}")) results.add(match)
+        }
     }
 
     private fun processContributor(

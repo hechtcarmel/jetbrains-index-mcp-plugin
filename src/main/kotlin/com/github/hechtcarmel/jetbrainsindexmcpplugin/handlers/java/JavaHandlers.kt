@@ -746,6 +746,12 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
             } catch (_: ClassNotFoundException) { null }
         }
 
+        private val ktNameReferenceExpressionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNameReferenceExpression")
+            } catch (_: ClassNotFoundException) { null }
+        }
+
         private val getCalleeExpressionMethod by lazy {
             try {
                 ktCallExpressionClass?.getMethod("getCalleeExpression")
@@ -822,15 +828,18 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
             var inspectedReferences = 0
             val rawReferenceCap = if (legacyReferenceCap) maxResults * 2 else Int.MAX_VALUE
 
-            fun collectCaller(refElement: PsiElement): Boolean {
+            fun collectCaller(refElement: PsiElement, searched: PsiMethod): Boolean {
                 if (results.size >= maxResults) return false
 
                 val containingMethod = PsiTreeUtil.getParentOfType(refElement, PsiMethod::class.java)
                     ?: resolveKotlinMethod(refElement)
+                // A method calling itself is a (recursive) caller, as in the IDE's Call Hierarchy.
+                // A call of a *super* method from inside the searched method (`super.foo()` in an
+                // override) is not a call of the searched method, so that case stays excluded.
+                val recursiveSelfCall = containingMethod == method && searched == method
                 if (
                     containingMethod == null ||
-                    containingMethod == method ||
-                    methodsToSearch.contains(containingMethod)
+                    (!recursiveSelfCall && methodsToSearch.contains(containingMethod))
                 ) {
                     return true
                 }
@@ -848,7 +857,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                 MethodReferencesSearch.search(methodToSearch, searchScope, true)
                     .forEach(Processor { reference ->
                         if (++inspectedReferences > rawReferenceCap) return@Processor false
-                        collectCaller(reference.element)
+                        collectCaller(reference.element, methodToSearch)
                     })
             }
 
@@ -888,7 +897,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                 ReferencesSearch.search(navElement, searchScope)
                     .forEach(Processor { reference ->
                         if (++inspectedReferences > rawReferenceCap) return@Processor false
-                        collectCaller(reference.element)
+                        collectCaller(reference.element, methodToSearch)
                     })
             }
             results
@@ -1005,12 +1014,22 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
         val navigationElement = kotlinCallableSource(method) ?: return
         if (navigationElement.language.id != "kotlin") return
 
-        // Find all call expressions in the Kotlin function body via reflection
+        // Find all call expressions in the Kotlin function body via reflection, plus bare name
+        // references: `bean.name` on a Java bean is a call of `getName()` written as a property
+        // access (synthetic Java property), which no KtCallExpression represents.
+        val nameRefClass = ktNameReferenceExpressionClass
         @Suppress("UNCHECKED_CAST")
-        val callExpressions = PsiTreeUtil.findChildrenOfType(navigationElement, callExprClass as Class<PsiElement>)
+        val candidates = PsiTreeUtil.findChildrenOfAnyType(
+            navigationElement,
+            *listOfNotNull(callExprClass, nameRefClass).toTypedArray() as Array<Class<out PsiElement>>
+        )
 
-        for (callExpr in callExpressions) {
+        for (callExpr in candidates) {
             if (callees.size >= maxResults) break
+
+            val isNameReference = nameRefClass?.isInstance(callExpr) == true && !callExprClass.isInstance(callExpr)
+            // The callee name of a call expression is handled through the call expression itself.
+            if (isNameReference && callExprClass.isInstance(callExpr.parent)) continue
 
             // Resolve the call expression's reference to find the called method
             val calledMethod = callExpr.references
@@ -1021,7 +1040,7 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                 .filterIsInstance<PsiMethod>()
                 .firstOrNull()
                 // Fallback: try resolving via the callExpression's calleeExpression
-                ?: resolveKotlinCalleeFromExpression(callExpr)
+                ?: if (isNameReference) null else resolveKotlinCalleeFromExpression(callExpr)
 
             if (calledMethod != null) {
                 val children = if (depth > 1) {
@@ -1678,7 +1697,9 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
     }
 
     private fun getClassKind(ktClass: PsiElement): StructureKind {
-        PsiUtils.kotlinClassKind(ktClass)?.let { return StructureKind.valueOf(it) }
+        PsiUtils.kotlinClassKind(ktClass)?.let { kind ->
+            StructureKind.entries.firstOrNull { it.name == kind }?.let { return it }
+        }
 
         return try {
             val isInterfaceMethod = ktClass.javaClass.getMethod("isInterface")

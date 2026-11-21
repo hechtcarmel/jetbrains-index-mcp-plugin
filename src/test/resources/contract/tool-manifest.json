@@ -1071,7 +1071,7 @@ schema:
 description:
   Search for files by name. Very fast file lookup using IDE's file index.
   
-  Matching: camelCase ("USJ" → "UserService.java"), substring ("User" → "UserService.java"), and wildcard ("*Test.kt").
+  Matching: camelCase ("USJ" → "UserService.java"), substring ("User" → "UserService.java"), and wildcard ("*Test.kt", "K*.kt": a glob over the whole file name, same syntax as paths).
   
   Returns: matching files with name, path, and containing directory.
   

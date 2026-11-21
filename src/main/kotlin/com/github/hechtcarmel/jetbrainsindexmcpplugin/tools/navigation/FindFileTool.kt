@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlob
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
@@ -57,7 +58,7 @@ class FindFileTool : AbstractMcpTool() {
     override val description = """
         Search for files by name. Very fast file lookup using IDE's file index.
 
-        Matching: camelCase ("USJ" → "UserService.java"), substring ("User" → "UserService.java"), and wildcard ("*Test.kt").
+        Matching: camelCase ("USJ" → "UserService.java"), substring ("User" → "UserService.java"), and wildcard ("*Test.kt", "K*.kt": a glob over the whole file name, same syntax as paths).
 
         Returns: matching files with name, path, and containing directory.
 
@@ -197,6 +198,14 @@ class FindFileTool : AbstractMcpTool() {
     }
 
     /**
+     * A query with `*`/`?` is a glob over the whole file name, in the same dialect as the
+     * `paths` parameter ([PathGlob]): `K*.kt` matches `KRect.kt` but not `WorldTask.kt`.
+     * Without wildcards the IDE's fuzzy camelCase matcher applies unchanged.
+     */
+    private fun fileNameGlob(query: String): PathGlob? =
+        if ('*' in query || '?' in query) PathGlob.compile(query, query) else null
+
+    /**
      * Search for files using FILE_EP_NAME index (optimized for file lookups).
      */
     private fun searchFiles(
@@ -246,6 +255,9 @@ class FindFileTool : AbstractMcpTool() {
         results: MutableList<FileMatch>,
         seen: MutableSet<String>
     ) {
+        val glob = fileNameGlob(pattern)
+        fun nameMatches(name: String) = glob?.matches(name) ?: matcher.matches(name)
+
         if (contributor is ChooseByNameContributorEx) {
             // Modern API with Processor pattern
             val matchingNames = mutableListOf<String>()
@@ -257,7 +269,7 @@ class FindFileTool : AbstractMcpTool() {
             // the same approach as the IDE's own Goto File (DefaultChooseByNameItemProvider).
             contributor.processNames(
                 { name ->
-                    if (matcher.matches(name)) {
+                    if (nameMatches(name)) {
                         matchingNames.add(name)
                     }
                     true
@@ -295,7 +307,7 @@ class FindFileTool : AbstractMcpTool() {
         } else {
             // Legacy API
             val names = contributor.getNames(project, scope == BuiltInSearchScope.PROJECT_AND_LIBRARIES)
-            val matchingNames = names.filter { matcher.matches(it) }
+            val matchingNames = names.filter { nameMatches(it) }
 
             for (name in matchingNames) {
                 if (results.size >= limit) break

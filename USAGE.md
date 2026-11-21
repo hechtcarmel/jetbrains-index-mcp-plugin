@@ -310,6 +310,11 @@ These tools work in all JetBrains IDEs (IntelliJ, PyCharm, WebStorm, GoLand, etc
 
 Finds all references to a symbol across the entire project using IntelliJ's semantic index.
 
+For JVM methods the search is the IDE's own Find Usages query: Kotlin property-syntax accesses of
+Java accessors (`bean.name` for `getName()`) are references of the accessor, and calls that resolve
+to an override (`base.area()` where `base: Base` overrides `Shape.area()`) are references of the
+overridden method too.
+
 **Use when:**
 - Locating where a method, class, variable, or field is called or accessed
 - Understanding code dependencies
@@ -599,6 +604,10 @@ Searches for classes and interfaces by name using the IDE's class index.
 - Wildcard: `"User*Impl"` matches `"UserServiceImpl"`
 - Exact: case-sensitive exact match
 
+**Kotlin specifics:** file facade classes — the JVM class Java code uses for a file's top-level
+declarations (`UtilsKt`, or the name from `@file:JvmName("Util")`) — are included with kind
+`FILE_FACADE` and point at the Kotlin file. Type aliases report kind `TYPE_ALIAS`.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -660,7 +669,7 @@ Searches for files by name using the IDE's file index.
 - Finding a file when you know part of its name
 - Discovering test files, config files, etc.
 
-**Matching:** CamelCase (`"USJ"` matches `"UserService.java"`), substring, and wildcard (`"*Test.kt"`).
+**Matching:** CamelCase (`"USJ"` matches `"UserService.java"`), substring, and wildcard (`"*Test.kt"`). A query containing `*` or `?` is a glob over the whole file name, with the same syntax as the `paths` parameter: `"K*.kt"` matches `KRect.kt` but not `WorldTask.kt`.
 
 **Parameters:**
 
@@ -710,7 +719,7 @@ Searches for files by name using the IDE's file index.
 
 ### ide_search_text
 
-Searches for text using IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching.
+Searches for text using IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching. Every occurrence is its own result: two matches on one line are returned separately, each with its column.
 
 **Use when:**
 - Searching for text or patterns across the codebase
@@ -3077,6 +3086,10 @@ does not reliably deliver live progress; page metadata is the progress contract.
 ### ide_call_hierarchy
 
 Analyzes method call relationships to find callers or callees.
+
+A recursive method appears among its own callers (a `super.foo()` call from an override is not
+counted as recursion). For Kotlin callers, a property-syntax access of a Java accessor
+(`bean.name`) is a callee `getName()`.
 
 **Use when:**
 - Tracing execution flow
