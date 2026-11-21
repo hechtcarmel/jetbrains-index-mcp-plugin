@@ -157,6 +157,34 @@ class FindFileToolBehaviorTest : McpPlatformTestCase() {
     }
 
     /**
+     * A wildcard query is a glob anchored at the start of the name. The fuzzy matcher used to
+     * accept `XFfwqGamma.txt` for `Ffwq*.txt` (like `WorldTask.kt` for `K*.kt`), because every
+     * query was prefixed with `*` and matched by camelCase humps.
+     */
+    fun testWildcardQueryIsAnchoredAtTheStartOfTheName() {
+        val root = addSourceRoot(PROD_ROOT, isTestSource = false)
+        writeProjectFile("$PROD_ROOT/FfwqAlpha.txt", "a\n")
+        writeProjectFile("$PROD_ROOT/FfwqBeta.txt", "b\n")
+        writeProjectFile("$PROD_ROOT/XFfwqGamma.txt", "decoy\n")
+        refreshAndIndex(root)
+
+        val result = runBlocking {
+            tool.execute(project, buildJsonObject {
+                put("query", "Ffwq*.txt")
+                put("scope", "project_files")
+            })
+        }
+        assertToolSucceeded("ide_find_file anchored wildcard search", result)
+        val parsed = json.decodeFromString<FindFileResult>(toolText(result))
+
+        assertEquals(
+            "Only names starting with Ffwq may match",
+            setOf("FfwqAlpha.txt", "FfwqBeta.txt"),
+            parsed.files.map { it.name }.toSet()
+        )
+    }
+
+    /**
      * `McpPlatformTestCase.registerSourceRoot` only registers production roots, and the
      * completeness test needs a test source root so `project_test_files` selects a strict
      * subset of the indexed names. Idempotent because the light fixture's module is shared

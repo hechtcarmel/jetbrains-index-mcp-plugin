@@ -15,6 +15,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiQualifiedNamedElement
 import com.intellij.psi.PsiReference
@@ -56,6 +57,10 @@ object PsiUtils {
             if (refined != null) return refined
         }
 
+        // On the name of a declaration that carries its own reference (Java enum constant ->
+        // implicit constructor call), the caller means the declaration, not the reference target.
+        declarationNamedBy(element)?.let { return it }
+
         // Walk up parent chain looking for references (handles cases where
         // the leaf element doesn't have a reference but its parent does)
         val parentReference = findReferenceInParent(element)
@@ -69,6 +74,19 @@ object PsiUtils {
 
         // Fallback: if we're ON a declaration (not a reference), find it syntactically
         return findNamedElement(element)
+    }
+
+    /**
+     * The declaration whose name identifier is [element], when that declaration also has its own
+     * [PsiReference]. A Java enum constant is such a declaration: its reference points at the
+     * enum's (implicit) constructor, so walking up to it would turn "references of RED" into
+     * "references of the JColor constructor". Limited to Java, the only language observed with
+     * this shape, to leave other languages' resolution (e.g. Python qualified targets) untouched.
+     */
+    internal fun declarationNamedBy(element: PsiElement): PsiElement? {
+        val owner = element.parent as? PsiNameIdentifierOwner ?: return null
+        if (owner.language.id != "JAVA" || owner.reference == null) return null
+        return owner.takeIf { it.nameIdentifier == element }
     }
 
     /**
@@ -402,6 +420,9 @@ object PsiUtils {
     private val ktClassClass: Class<*>? by lazy {
         runCatching { Class.forName("org.jetbrains.kotlin.psi.KtClass") }.getOrNull()
     }
+    private val ktTypeAliasClass: Class<*>? by lazy {
+        runCatching { Class.forName("org.jetbrains.kotlin.psi.KtTypeAlias") }.getOrNull()
+    }
     private val ktObjectDeclarationClass: Class<*>? by lazy {
         runCatching { Class.forName("org.jetbrains.kotlin.psi.KtObjectDeclaration") }.getOrNull()
     }
@@ -418,7 +439,8 @@ object PsiUtils {
      * `KtObjectDeclaration` type and are checked first.
      */
     internal fun kotlinClassKind(element: PsiElement): String? =
-        reflectiveKotlinClassKind(element, ktClassClass, ktObjectDeclarationClass)
+        if (ktTypeAliasClass?.isInstance(element) == true) "TYPE_ALIAS"
+        else reflectiveKotlinClassKind(element, ktClassClass, ktObjectDeclarationClass)
 
     /** Reflection seam used by headless tests; production passes the optional Kotlin PSI types. */
     internal fun reflectiveKotlinClassKind(
