@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Closed-file diagnostics preserve timeout and cancellation status** ([#480](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/480)) — platform exceptions wrapping an interrupted analysis no longer turn an owned timeout into a single-file error or a batch `failed` result. Independent analyzer failures remain failures.
+
 ## [5.20.8] - 2026-11-19
 
 ### Added

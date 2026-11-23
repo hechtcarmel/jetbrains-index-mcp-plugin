@@ -1,6 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
-import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.util.ProgressIndicatorBase
 import com.intellij.openapi.util.Computable
@@ -32,9 +31,11 @@ internal suspend fun <T> cancellableBlockingAction(action: () -> T): T = corouti
         runInterruptible(Dispatchers.IO) {
             ProgressManager.getInstance().runProcess(Computable { action() }, indicator)
         }
-    } catch (e: ProcessCanceledException) {
-        // Restore the coroutine's cancellation (including an owned timeout), while preserving
-        // independent platform cancellation such as project disposal.
+    } catch (e: Exception) {
+        // Platform code may wrap an interrupted wait (or indicator cancellation) in another
+        // exception. Restore our coroutine's cancellation, including its owning timeout, before
+        // that worker failure can mask it. An active caller keeps the original failure: an
+        // InterruptedException in the cause chain alone does not establish a request timeout.
         currentCoroutineContext().ensureActive()
         throw e
     } finally {
