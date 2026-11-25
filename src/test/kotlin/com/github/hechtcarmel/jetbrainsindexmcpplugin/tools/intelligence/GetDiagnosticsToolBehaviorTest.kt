@@ -288,27 +288,43 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         createProjectFile("IndependentFailure.java", "class IndependentFailure {}")
         createProjectFile("Healthy.java", "class Healthy {}")
         val entered = AtomicBoolean()
+        val independentFailure = RuntimeException("Independent detector failure", InterruptedException())
         project.replaceService(CodeSmellDetector::class.java, object : CodeSmellDetector() {
             override fun findCodeSmells(files: List<VirtualFile>): List<CodeSmellInfo> {
                 if (files.single().name == "IndependentFailure.java") {
                     entered.set(true)
-                    throw RuntimeException("Independent detector failure", InterruptedException())
+                    throw independentFailure
                 }
                 return emptyList()
             }
 
             override fun showCodeSmellErrors(smells: List<CodeSmellInfo>) = Unit
         }, testRootDisposable)
-        val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+        val arguments = buildJsonObject {
             if (batch) put("files", buildJsonArray {
                 add(JsonPrimitive("src/IndependentFailure.java"))
                 add(JsonPrimitive("src/Healthy.java"))
             }) else put("file", "src/IndependentFailure.java")
-        })
+        }
+        val result = if (batch) {
+            GetDiagnosticsTool().execute(project, arguments)
+        } else {
+            try {
+                GetDiagnosticsTool().execute(project, arguments)
+                fail("The direct tool entry point must propagate an independent detector failure")
+            } catch (actual: RuntimeException) {
+                assertEquals(independentFailure.javaClass, actual.javaClass)
+                assertEquals(independentFailure.message, actual.message)
+                assertTrue("Coroutine recovery must retain the original detector failure",
+                    generateSequence<Throwable>(actual) { it.cause }.any { it === independentFailure })
+            }
+            null
+        }
         assertTrue("The worker failure must actually execute", entered.get())
         if (batch) {
-            assertFalse(renderResult(result), result.isFailure)
-            val diagnostics = decodeDiagnostics(result)
+            val batchResult = requireNotNull(result)
+            assertFalse(renderResult(batchResult), batchResult.isFailure)
+            val diagnostics = decodeDiagnostics(batchResult)
             val analyses = diagnostics.fileAnalyses.orEmpty()
             val failure = analyses.single { it.file == "src/IndependentFailure.java" }
             assertEquals(ProjectDiagnosticsTool.STATE_FAILED, failure.state)
@@ -316,9 +332,6 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
             assertEquals(ProjectDiagnosticsTool.STATE_ANALYZED, analyses.single { it.file == "src/Healthy.java" }.state)
             assertFalse("An independent failure is not an owned timeout", diagnostics.analysisTimedOut == true)
             assertFalse("Failed coverage must not appear complete", diagnostics.analysisFresh == true)
-        } else {
-            assertTrue("An active worker failure remains a tool error", result.isFailure)
-            assertTrue(renderResult(result).contains("Independent detector failure"))
         }
     }
 

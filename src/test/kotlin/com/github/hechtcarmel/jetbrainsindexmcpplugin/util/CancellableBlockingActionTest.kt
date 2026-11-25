@@ -136,7 +136,7 @@ class CancellableBlockingActionTest : McpPlatformTestCase() {
             cancellableBlockingAction<Unit> { throw failure }
             fail("Expected the original worker failure")
         } catch (actual: RuntimeException) {
-            assertSame("An interruption cause alone does not establish cancellation", failure, actual)
+            assertPreservedWorkerFailure(failure, actual)
         }
     }
 
@@ -146,7 +146,7 @@ class CancellableBlockingActionTest : McpPlatformTestCase() {
             cancellableBlockingAction<Unit> { throw failure }
             fail("Expected the original worker failure")
         } catch (actual: IllegalStateException) {
-            assertSame(failure, actual)
+            assertPreservedWorkerFailure(failure, actual)
         }
     }
 
@@ -170,8 +170,17 @@ class CancellableBlockingActionTest : McpPlatformTestCase() {
             val independent = async {
                 runCatching { cancellableBlockingAction<Unit> { throw failure } }
             }
-            assertSame(failure, independent.await().exceptionOrNull())
+            assertPreservedWorkerFailure(failure, requireNotNull(independent.await().exceptionOrNull()))
             assertNull("Only the owning request timed out", timingOut.await())
         }
+    }
+
+    private fun assertPreservedWorkerFailure(expected: Throwable, actual: Throwable) {
+        assertEquals(expected.javaClass, actual.javaClass)
+        assertEquals(expected.message, actual.message)
+        // Coroutine stack-trace recovery can copy the exception while retaining the original
+        // instance in its cause chain. Do not require identity of the recovered outer exception.
+        assertTrue("The original worker failure must survive coroutine recovery",
+            generateSequence(actual) { it.cause }.any { it === expected })
     }
 }
