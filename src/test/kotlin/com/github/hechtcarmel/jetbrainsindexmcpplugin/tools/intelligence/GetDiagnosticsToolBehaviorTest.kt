@@ -223,6 +223,118 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         }
     }
 
+    fun testSingleFileWrappedDetectorInterruptionReportsTimeout() =
+        assertWrappedDetectorInterruptionReportsTimeout(batch = false)
+
+    fun testBatchWrappedDetectorInterruptionReportsTimeout() =
+        assertWrappedDetectorInterruptionReportsTimeout(batch = true)
+
+    private fun assertWrappedDetectorInterruptionReportsTimeout(batch: Boolean) = runBlocking {
+        createProjectFile("WrappedTimeout.java", "class WrappedTimeout {}")
+        val service = DiagnosticsAnalysisService.getInstance(project)
+        val originalTimeout = service.analysisTimeoutMsOverride
+        val entered = AtomicBoolean()
+        val wrapped = AtomicBoolean()
+        val exited = AtomicBoolean()
+        project.replaceService(CodeSmellDetector::class.java, object : CodeSmellDetector() {
+            override fun findCodeSmells(files: List<VirtualFile>): List<CodeSmellInfo> {
+                entered.set(true)
+                try {
+                    CountDownLatch(1).await(10, TimeUnit.SECONDS)
+                } catch (interrupted: InterruptedException) {
+                    wrapped.set(true)
+                    throw RuntimeException("Platform analysis wrapper", interrupted)
+                } finally {
+                    exited.set(true)
+                }
+                return emptyList()
+            }
+
+            override fun showCodeSmellErrors(smells: List<CodeSmellInfo>) = Unit
+        }, testRootDisposable)
+        try {
+            service.analysisTimeoutMsOverride = 1_000L
+            val result = GetDiagnosticsTool().execute(project, buildJsonObject {
+                if (batch) put("files", buildJsonArray { add(JsonPrimitive("src/WrappedTimeout.java")) })
+                else put("file", "src/WrappedTimeout.java")
+            })
+            assertTrue("The real blocking bridge must reach the detector", entered.get())
+            assertTrue("The detector must actually wrap an interruption", wrapped.get())
+            assertTrue("The worker must exit before the request returns", exited.get())
+            assertFalse("An owned timeout is an in-band result: ${renderResult(result)}", result.isFailure)
+            val diagnostics = decodeDiagnostics(result)
+            if (batch) {
+                val analysis = diagnostics.fileAnalyses.orEmpty().single()
+                assertEquals(ProjectDiagnosticsTool.STATE_TIMED_OUT, analysis.state)
+                assertTrue(analysis.reason.orEmpty().contains("timed out", ignoreCase = true))
+            } else {
+                assertTrue("The timeout must not appear clean", diagnostics.analysisTimedOut == true)
+                assertFalse(diagnostics.analysisFresh == true)
+                assertTrue(diagnostics.analysisMessage.orEmpty().contains("timed out", ignoreCase = true))
+                assertNull("A timeout produced no complete analysis mode", diagnostics.analysisMode)
+            }
+        } finally {
+            service.analysisTimeoutMsOverride = originalTimeout
+        }
+    }
+
+    fun testSingleFileActiveWorkerInterruptionRemainsFailure() =
+        assertActiveWorkerInterruptionRemainsFailure(batch = false)
+
+    fun testBatchActiveWorkerInterruptionRemainsFailureAndRetainsOtherFiles() =
+        assertActiveWorkerInterruptionRemainsFailure(batch = true)
+
+    private fun assertActiveWorkerInterruptionRemainsFailure(batch: Boolean) = runBlocking {
+        createProjectFile("IndependentFailure.java", "class IndependentFailure {}")
+        createProjectFile("Healthy.java", "class Healthy {}")
+        val entered = AtomicBoolean()
+        val independentFailure = RuntimeException("Independent detector failure", InterruptedException())
+        project.replaceService(CodeSmellDetector::class.java, object : CodeSmellDetector() {
+            override fun findCodeSmells(files: List<VirtualFile>): List<CodeSmellInfo> {
+                if (files.single().name == "IndependentFailure.java") {
+                    entered.set(true)
+                    throw independentFailure
+                }
+                return emptyList()
+            }
+
+            override fun showCodeSmellErrors(smells: List<CodeSmellInfo>) = Unit
+        }, testRootDisposable)
+        val arguments = buildJsonObject {
+            if (batch) put("files", buildJsonArray {
+                add(JsonPrimitive("src/IndependentFailure.java"))
+                add(JsonPrimitive("src/Healthy.java"))
+            }) else put("file", "src/IndependentFailure.java")
+        }
+        val result = if (batch) {
+            GetDiagnosticsTool().execute(project, arguments)
+        } else {
+            try {
+                GetDiagnosticsTool().execute(project, arguments)
+                fail("The direct tool entry point must propagate an independent detector failure")
+            } catch (actual: RuntimeException) {
+                assertEquals(independentFailure.javaClass, actual.javaClass)
+                assertEquals(independentFailure.message, actual.message)
+                assertTrue("Coroutine recovery must retain the original detector failure",
+                    generateSequence<Throwable>(actual) { it.cause }.any { it === independentFailure })
+            }
+            null
+        }
+        assertTrue("The worker failure must actually execute", entered.get())
+        if (batch) {
+            val batchResult = requireNotNull(result)
+            assertFalse(renderResult(batchResult), batchResult.isFailure)
+            val diagnostics = decodeDiagnostics(batchResult)
+            val analyses = diagnostics.fileAnalyses.orEmpty()
+            val failure = analyses.single { it.file == "src/IndependentFailure.java" }
+            assertEquals(ProjectDiagnosticsTool.STATE_FAILED, failure.state)
+            assertTrue(failure.reason.orEmpty().contains("Independent detector failure"))
+            assertEquals(ProjectDiagnosticsTool.STATE_ANALYZED, analyses.single { it.file == "src/Healthy.java" }.state)
+            assertFalse("An independent failure is not an owned timeout", diagnostics.analysisTimedOut == true)
+            assertFalse("Failed coverage must not appear complete", diagnostics.analysisFresh == true)
+        }
+    }
+
     fun testUsesOpenEditorPathWhenFileIsAlreadyOpen() = runBlocking {
         val openFile = createProjectFile(
             "OpenEditorExample.java",
